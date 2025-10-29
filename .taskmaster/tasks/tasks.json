@@ -1,0 +1,322 @@
+{
+  "version": "0.30.2",
+  "name": "task-master-ai",
+  "tags": {},
+  "currentTag": "master",
+  "principal": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Configuração do Ambiente de Desenvolvimento",
+        "description": "Setup completo do ambiente de desenvolvimento com Node.js, TypeScript, estrutura de pastas, configuração de dependências e ferramentas essenciais usando paradigma POO",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Instalação do Node.js e npm",
+            "description": "Instalar Node.js LTS e verificar instalação do npm",
+            "details": "- Baixar e instalar Node.js LTS (versão 20.x ou superior)\n- Verificar instalação com node --version e npm --version\n- Configurar npm para usar registry oficial",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 1
+          },
+          {
+            "id": 2,
+            "title": "Configuração do TypeScript",
+            "description": "Instalar e configurar TypeScript com configurações otimizadas",
+            "details": "- Instalar TypeScript globalmente: npm install -g typescript\n- Instalar @types/node para tipagem do Node.js\n- Criar tsconfig.json com configurações para projeto Node.js\n- Configurar strict mode e outras opções de qualidade",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 1
+          },
+          {
+            "id": 3,
+            "title": "Estrutura de Pastas do Projeto",
+            "description": "Criar estrutura de pastas seguindo padrões de POO e organização modular",
+            "details": "- Criar estrutura de pastas: src/, public/, docs/, tests/\n- Organizar por módulos: src/models/, src/controllers/, src/services/, src/utils/\n- Configurar pastas para assets estáticos\n- Criar arquivos de configuração base",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 1
+          },
+          {
+            "id": 4,
+            "title": "Configuração do package.json",
+            "description": "Criar e configurar package.json com dependências essenciais",
+            "details": "- Inicializar package.json com npm init\n- Adicionar scripts de build, dev, test\n- Configurar dependências de produção e desenvolvimento\n- Definir metadados do projeto (nome, versão, descrição)",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 1
+          },
+          {
+            "id": 5,
+            "title": "Configuração do Git e .gitignore",
+            "description": "Inicializar repositório Git e configurar arquivos de exclusão",
+            "details": "- Inicializar repositório Git: git init\n- Criar .gitignore para Node.js/TypeScript\n- Configurar .gitignore para arquivos de build, node_modules, logs\n- Fazer commit inicial da estrutura base",
+            "status": "in-progress",
+            "dependencies": [],
+            "parentTaskId": 1
+          },
+          {
+            "id": 6,
+            "title": "Configuração de Ferramentas de Desenvolvimento",
+            "description": "Instalar e configurar ferramentas essenciais para desenvolvimento",
+            "details": "- Instalar ESLint para linting de código\n- Configurar Prettier para formatação automática\n- Instalar nodemon para desenvolvimento\n- Configurar ts-node para execução direta de TypeScript",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 1
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Modelos de Dados e Banco",
+        "description": "Design e implementação do modelo de dados orientado a objetos, configuração do banco Supabase, criação de tabelas e relacionamentos",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Configuração das Tabelas DCTF",
+        "description": "Estruturação específica das tabelas DCTF, implementação de validações, constraints e regras de negócio",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          2
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Interface Frontend - Estrutura Base",
+        "description": "Configuração do framework frontend orientado a objetos, estrutura de componentes, sistema de roteamento e estado global",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Configuração do Tailwind CSS",
+        "description": "Instalação e configuração do Tailwind CSS, criação de sistema de design e componentes reutilizáveis",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          4
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Aba Clientes com CRUD e Upload de Planilhas",
+        "description": "Interface completa para gerenciamento de clientes com operações CRUD orientadas a objetos, upload de planilhas (.xls, .xlsx, .csv) com drag and drop, filtros, busca e validações",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          4,
+          5,
+          2
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Página Inicial com Upload de Planilhas DCTF",
+        "description": "Interface drag and drop para upload de planilhas DCTF (.xls, .xlsx, .csv) com validação, preview e salvamento automático no Supabase",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          4,
+          5
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Sistema de Análise Robusta DCTF com Match de Clientes",
+        "description": "Algoritmos de análise de dados DCTF orientados a objetos, análise à prova de falhas, verificação de possibilidades de multa, match com tabela clientes e geração de relatórios",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          3,
+          7
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "API Backend - CRUD Básico",
+        "description": "Desenvolvimento de APIs RESTful orientadas a objetos para todas as operações CRUD com validação e integração Supabase",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          2,
+          3
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Sistema de Validação de Flags",
+        "description": "Implementação de regras de validação robustas, sistema de flags e verificação de consistência",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          9
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "WebSocket - Atualizações em Tempo Real",
+        "description": "Implementação de WebSocket para atualizações em tempo real, notificações push e sincronização",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          9
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Painel Administrativo e Dashboard Principal",
+        "description": "Dashboard principal interativo com métricas críticas, gerenciamento de dados DCTF, configurações e monitoramento",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          6,
+          8,
+          9
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "Sistema de Upload de Arquivos",
+        "description": "Processamento assíncrono de arquivos, validação, compressão e armazenamento seguro",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          7,
+          9
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "Testes e Deploy",
+        "description": "Implementação de testes automatizados orientados a objetos, configuração de CI/CD e deploy em produção",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 15,
+        "title": "Dashboard Interativo de Análise DCTF",
+        "description": "Dashboard interativo orientado a objetos com informações críticas para identificação de problemas, métricas de severidade e visualizações em tempo real",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          8
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 16,
+        "title": "Sistema de Geração de Relatórios PDF",
+        "description": "Sistema orientado a objetos para geração de relatórios de apuração em PDF com design harmonioso e configuração profissional",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          8
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 17,
+        "title": "Sistema de Gerenciamento de Dados DCTF",
+        "description": "Sistema orientado a objetos para limpeza e gerenciamento de dados da tabela de declarações DCTF com controle de usuário",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          9
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 18,
+        "title": "Sistema de Análise com Severidade e Plano de Ação",
+        "description": "Sistema orientado a objetos para análise de severidade e geração de planos de ação personalizados com linguagem simples e sucinta",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          8
+        ],
+        "priority": "high",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-10-29T13:30:29.963Z",
+      "updated": "2025-10-29T14:05:03.337Z",
+      "description": "Tag principal com todas as tarefas do projeto DCTF"
+    }
+  }
+}

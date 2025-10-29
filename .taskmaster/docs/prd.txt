@@ -1,0 +1,169 @@
+# DCTF Management Platform - Product Requirements Document
+
+## Visão Geral
+Sistema web robusto para gerenciamento e análise de declarações DCTF (Declaração de Débitos e Créditos Tributários Federais) com interface moderna, upload de arquivos, análise de dados e painel administrativo completo.
+
+## Objetivos Principais
+- Criar uma plataforma web completa para gerenciamento de DCTF
+- Implementar sistema de upload e processamento de arquivos CSV
+- Desenvolver interface moderna com Tailwind CSS
+- Implementar análise robusta de dados DCTF
+- Criar sistema de CRUD completo para clientes
+- Implementar atualizações em tempo real via WebSocket
+- Desenvolver painel administrativo avançado
+
+## Funcionalidades Principais
+
+### 1. Configuração do Ambiente de Desenvolvimento
+- Setup completo do ambiente de desenvolvimento
+- Configuração de dependências e ferramentas
+- Estrutura de pastas e arquivos
+- Configuração de ambiente de desenvolvimento local
+
+### 2. Modelos de Dados e Banco
+- Design e implementação do modelo de dados
+- Configuração do banco de dados Supabase
+- Criação de tabelas e relacionamentos
+- Implementação de migrações e seeds
+- Otimização de índices e performance
+
+### 3. Configuração das Tabelas DCTF
+- Estruturação das tabelas específicas para DCTF
+- Implementação de validações de dados
+- Configuração de constraints e regras de negócio
+- Setup de triggers e procedures
+
+### 4. Interface Frontend - Estrutura Base
+- Configuração do framework frontend (React/Next.js)
+- Estrutura de componentes e páginas
+- Sistema de roteamento
+- Configuração de estado global
+- Setup de bibliotecas essenciais
+
+### 5. Configuração do Tailwind CSS
+- Instalação e configuração do Tailwind CSS
+- Criação de sistema de design consistente
+- Implementação de componentes reutilizáveis
+- Configuração de temas e variáveis
+- Responsividade e acessibilidade
+
+### 6. Aba Clientes com CRUD
+- Interface para listagem de clientes
+- Formulários de criação e edição
+- Sistema de filtros e busca
+- Funcionalidade de exclusão
+- Validação de dados do lado cliente
+- Paginação e ordenação
+
+### 7. Página Inicial com Upload de Arquivos
+- Interface drag and drop para upload
+- Suporte a múltiplos formatos (CSV, Excel)
+- Validação de arquivos
+- Preview dos dados antes do upload
+- Progress bar e feedback visual
+- Tratamento de erros
+
+### 8. Sistema de Análise Robusta DCTF
+- Algoritmos de análise de dados DCTF
+- Geração de relatórios e dashboards
+- Identificação de padrões e anomalias
+- Cálculos automáticos de impostos
+- Exportação de relatórios (PDF, Excel)
+- Visualizações gráficas e charts
+
+### 9. API Backend - CRUD Básico
+- Desenvolvimento de APIs RESTful
+- Endpoints para todas as operações CRUD
+- Validação de dados no backend
+- Tratamento de erros e exceções
+- Documentação da API
+- Rate limiting e segurança
+
+### 10. Sistema de Validação de Flags
+- Implementação de regras de validação
+- Sistema de flags para diferentes tipos de dados
+- Validação de CNPJ e documentos
+- Verificação de consistência de dados
+- Alertas e notificações de validação
+- Log de validações
+
+### 11. WebSocket - Atualizações em Tempo Real
+- Implementação de WebSocket server
+- Atualizações em tempo real da interface
+- Notificações push
+- Sincronização de dados entre usuários
+- Gerenciamento de conexões
+- Fallback para polling
+
+### 12. Painel Administrativo
+- Dashboard principal com métricas
+- Gerenciamento de usuários e permissões
+- Configurações do sistema
+- Logs e auditoria
+- Backup e restore
+- Monitoramento de performance
+
+### 13. Sistema de Upload de Arquivos
+- Processamento assíncrono de arquivos
+- Validação de formato e conteúdo
+- Tratamento de arquivos grandes
+- Compressão e otimização
+- Armazenamento seguro
+- Integração com cloud storage
+
+## Requisitos Técnicos
+
+### Frontend
+- React 18+ ou Next.js 14+
+- TypeScript
+- Tailwind CSS
+- Zustand ou Redux para estado
+- React Query para cache
+- Chart.js ou D3.js para visualizações
+- React Hook Form para formulários
+
+### Backend
+- Node.js com Express ou Fastify
+- TypeScript
+- Prisma ou TypeORM para ORM
+- Supabase para banco de dados
+- WebSocket (Socket.io)
+- Multer para upload de arquivos
+- JWT para autenticação
+
+### Banco de Dados
+- PostgreSQL (Supabase)
+- Tabelas otimizadas para DCTF
+- Índices para performance
+- Triggers e procedures
+- Backup automático
+
+### Infraestrutura
+- Deploy na Vercel ou Netlify (frontend)
+- Deploy no Railway ou Heroku (backend)
+- CDN para assets estáticos
+- Monitoramento com Sentry
+- CI/CD com GitHub Actions
+
+## Critérios de Sucesso
+- Interface responsiva e intuitiva
+- Upload e processamento de arquivos em menos de 30 segundos
+- Análise de dados DCTF com 99% de precisão
+- Tempo de resposta da API menor que 200ms
+- Suporte a até 10.000 registros simultâneos
+- 99.9% de uptime
+
+## Cronograma Estimado
+- Fase 1 (Semanas 1-2): Configuração do ambiente e modelos de dados
+- Fase 2 (Semanas 3-4): Interface frontend e CRUD básico
+- Fase 3 (Semanas 5-6): Sistema de upload e análise
+- Fase 4 (Semanas 7-8): WebSocket e painel administrativo
+- Fase 5 (Semanas 9-10): Testes, otimização e deploy
+
+## Considerações de Segurança
+- Autenticação e autorização robusta
+- Validação de dados em todas as camadas
+- Criptografia de dados sensíveis
+- Logs de auditoria
+- Rate limiting
+- Sanitização de inputs
