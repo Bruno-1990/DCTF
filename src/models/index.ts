@@ -9,6 +9,7 @@ export { DCTFDados } from './DCTFDados';
 export { Analise } from './Analise';
 export { Flag } from './Flag';
 export { Relatorio } from './Relatorio';
+export { DCTFCode, DCTFReceitaCode, DCTFAliquota } from './DCTFCode';
 
 // Interfaces e tipos
 export type { DCTFDados as IDCTFDados } from './DCTFDados';

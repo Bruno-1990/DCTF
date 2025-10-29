@@ -145,12 +145,67 @@
         "description": "Estruturação específica das tabelas DCTF, implementação de validações, constraints e regras de negócio",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Validações Específicas DCTF",
+            "description": "Implementar validações específicas para dados DCTF conforme legislação fiscal",
+            "details": "- Implementar validação de códigos DCTF obrigatórios\n- Criar validação de períodos fiscais válidos\n- Implementar validação de valores monetários\n- Criar validação de CNPJ/CPF em dados DCTF\n- Implementar validação de códigos de receita",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3
+          },
+          {
+            "id": 2,
+            "title": "Constraints de Negócio",
+            "description": "Implementar constraints e regras de negócio específicas para DCTF",
+            "details": "- Criar constraints de integridade referencial\n- Implementar regras de validação de períodos\n- Criar constraints de valores obrigatórios\n- Implementar regras de consistência de dados\n- Criar constraints de formato de dados",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3
+          },
+          {
+            "id": 3,
+            "title": "Códigos e Categorias DCTF",
+            "description": "Implementar sistema de códigos e categorias específicas do DCTF",
+            "details": "- Criar tabela de códigos DCTF válidos\n- Implementar categorização de receitas\n- Criar sistema de códigos de dedução\n- Implementar códigos de retenção\n- Criar validação de códigos por período",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3
+          },
+          {
+            "id": 4,
+            "title": "Validação de Planilhas",
+            "description": "Implementar validação específica para upload e processamento de planilhas DCTF",
+            "details": "- Criar validação de estrutura de planilhas\n- Implementar validação de colunas obrigatórias\n- Criar validação de formato de dados\n- Implementar validação de encoding\n- Criar validação de tamanho e limites",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3
+          },
+          {
+            "id": 5,
+            "title": "Regras de Cálculo Fiscal",
+            "description": "Implementar regras de cálculo e validação fiscal específicas do DCTF",
+            "details": "- Implementar cálculos de alíquotas\n- Criar validação de bases de cálculo\n- Implementar regras de arredondamento\n- Criar validação de totais e subtotais\n- Implementar regras de compensação",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3
+          },
+          {
+            "id": 6,
+            "title": "Índices e Performance",
+            "description": "Otimizar performance das tabelas DCTF com índices específicos",
+            "details": "- Criar índices para consultas frequentes\n- Implementar índices compostos\n- Otimizar consultas por período\n- Criar índices para códigos DCTF\n- Implementar particionamento por período",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3
+          }
+        ]
       },
       {
         "id": 4,
@@ -370,7 +425,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-10-29T14:23:03.965Z",
+      "updated": "2025-10-29T14:58:52.847Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF"
     }
   }
