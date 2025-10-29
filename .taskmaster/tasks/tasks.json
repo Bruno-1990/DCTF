@@ -11,7 +11,7 @@
         "description": "Setup completo do ambiente de desenvolvimento com Node.js, TypeScript, estrutura de pastas, configuração de dependências e ferramentas essenciais usando paradigma POO",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": [
@@ -56,7 +56,7 @@
             "title": "Configuração do Git e .gitignore",
             "description": "Inicializar repositório Git e configurar arquivos de exclusão",
             "details": "- Inicializar repositório Git: git init\n- Criar .gitignore para Node.js/TypeScript\n- Configurar .gitignore para arquivos de build, node_modules, logs\n- Fazer commit inicial da estrutura base",
-            "status": "in-progress",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 1
           },
@@ -65,7 +65,7 @@
             "title": "Configuração de Ferramentas de Desenvolvimento",
             "description": "Instalar e configurar ferramentas essenciais para desenvolvimento",
             "details": "- Instalar ESLint para linting de código\n- Configurar Prettier para formatação automática\n- Instalar nodemon para desenvolvimento\n- Configurar ts-node para execução direta de TypeScript",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 1
           }
@@ -315,7 +315,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-10-29T14:05:03.337Z",
+      "updated": "2025-10-29T14:08:12.950Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF"
     }
   }

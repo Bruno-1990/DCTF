@@ -17,11 +17,11 @@ export interface AppConfig {
 }
 
 const config: AppConfig = {
-  port: parseInt(process.env.PORT || '3000', 10),
-  nodeEnv: process.env.NODE_ENV || 'development',
+  port: parseInt(process.env['PORT'] || '3000', 10),
+  nodeEnv: process.env['NODE_ENV'] || 'development',
   database: {
-    url: process.env.SUPABASE_URL || '',
-    apiKey: process.env.SUPABASE_ANON_KEY || '',
+    url: process.env['SUPABASE_URL'] || '',
+    apiKey: process.env['SUPABASE_ANON_KEY'] || '',
   },
   upload: {
     maxFileSize: 10 * 1024 * 1024, // 10MB
