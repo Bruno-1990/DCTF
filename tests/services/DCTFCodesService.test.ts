@@ -8,9 +8,9 @@ import { DCTFCodesService } from '../../src/services/DCTFCodesService';
 jest.mock('../../src/models/DCTFCode', () => ({
   DCTFCode: jest.fn().mockImplementation(() => ({
     findAll: jest.fn().mockResolvedValue([
-      { codigo: '001', descricao: 'Receita Bruta', tipo: 'receita', ativo: true },
-      { codigo: '101', descricao: 'Deduções Legais', tipo: 'deducao', ativo: true },
-      { codigo: '201', descricao: 'IRRF', tipo: 'retencao', ativo: true }
+      { codigo: '001', descricao: 'Receita Bruta', tipo: 'receita', ativo: true, categoria: 'Receitas' },
+      { codigo: '101', descricao: 'Deduções Legais', tipo: 'deducao', ativo: true, categoria: 'Deduções' },
+      { codigo: '201', descricao: 'IRRF', tipo: 'retencao', ativo: true, categoria: 'Retenções' }
     ]),
     findById: jest.fn().mockImplementation((id) => {
       if (id === '001') {
@@ -18,14 +18,23 @@ jest.mock('../../src/models/DCTFCode', () => ({
           codigo: '001',
           descricao: 'Receita Bruta',
           tipo: 'receita',
-          ativo: true
+          ativo: true,
+          categoria: 'Receitas'
         });
       }
       return Promise.resolve(null);
     }),
     findActiveInPeriod: jest.fn().mockResolvedValue([
-      { codigo: '001', descricao: 'Receita Bruta', tipo: 'receita', ativo: true }
+      { codigo: '001', descricao: 'Receita Bruta', tipo: 'receita', ativo: true, categoria: 'Receitas' }
     ]),
+    findByTipo: jest.fn().mockImplementation((tipo) => {
+      const all = [
+        { codigo: '001', descricao: 'Receita Bruta', tipo: 'receita', ativo: true, categoria: 'Receitas' },
+        { codigo: '101', descricao: 'Deduções Legais', tipo: 'deducao', ativo: true, categoria: 'Deduções' },
+        { codigo: '201', descricao: 'IRRF', tipo: 'retencao', ativo: true, categoria: 'Retenções' }
+      ];
+      return Promise.resolve(all.filter(c => (tipo ? c.tipo === tipo : true)));
+    }),
     isActiveInPeriod: jest.fn().mockResolvedValue(true),
     supabase: {
       from: jest.fn(() => ({
@@ -33,7 +42,7 @@ jest.mock('../../src/models/DCTFCode', () => ({
           ilike: jest.fn(() => ({
             eq: jest.fn(() => ({
               data: [
-                { codigo: '001', descricao: 'Receita Bruta', tipo: 'receita', ativo: true }
+                { codigo: '001', descricao: 'Receita Bruta', tipo: 'receita', ativo: true, categoria: 'Receitas' }
               ],
               error: null
             }))
@@ -54,10 +63,10 @@ jest.mock('../../src/models/DCTFCode', () => ({
       baseCalculo: 'Valor da Operação'
     }),
     findByPeriod: jest.fn().mockResolvedValue([
-      { codigo_dctf: '201', aliquota: 0.0150, base_calculo: 'Valor da Operação' }
+      { codigoDctf: '201', aliquota: 0.0150, baseCalculo: 'Valor da Operação' }
     ]),
     findAll: jest.fn().mockResolvedValue([
-      { codigo_dctf: '201', aliquota: 0.0150, base_calculo: 'Valor da Operação' }
+      { codigoDctf: '201', aliquota: 0.0150, baseCalculo: 'Valor da Operação' }
     ])
   }))
 }));
@@ -262,3 +271,4 @@ describe('DCTFCodesService', () => {
     });
   });
 });
+

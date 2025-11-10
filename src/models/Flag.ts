@@ -268,13 +268,43 @@ export class Flag extends DatabaseService<Flag> {
   }
 
   /**
+   * Criar ou atualizar flag garantindo idempotência por declaração + código
+   */
+  async upsertFlag(
+    declaracaoId: string,
+    codigoFlag: string,
+    descricao: string,
+    severidade: 'baixa' | 'media' | 'alta' | 'critica',
+    linhaDctf?: number
+  ): Promise<ApiResponse<Flag>> {
+    const existing = await this.findBy({ declaracao_id: declaracaoId, codigo_flag: codigoFlag });
+    if (existing.success && existing.data && existing.data.length > 0) {
+      const flag = existing.data[0] as any;
+      return this.update(flag.id, {
+        declaracaoId,
+        codigoFlag,
+        descricao,
+        severidade,
+        linhaDctf,
+        resolvido: false,
+        resolucao: undefined,
+      });
+    }
+
+    return this.criarFlagAutomatica(declaracaoId, codigoFlag, descricao, severidade, linhaDctf);
+  }
+
+  /**
    * Resolver flags por código
    */
   async resolverFlagsPorCodigo(codigoFlag: string, resolucao: string): Promise<ApiResponse<number>> {
     try {
       const flagsResult = await this.findByCodigo(codigoFlag);
       if (!flagsResult.success) {
-        return flagsResult;
+        return {
+          success: false,
+          error: flagsResult.error,
+        };
       }
 
       const flags = flagsResult.data!;
@@ -300,5 +330,69 @@ export class Flag extends DatabaseService<Flag> {
         error: error instanceof Error ? error.message : 'Erro desconhecido',
       };
     }
+  }
+
+  /**
+   * Buscar flags com filtros e paginação
+   */
+  async search(options: {
+    page?: number;
+    limit?: number;
+    declaracaoId?: string;
+    codigoFlag?: string;
+    severidade?: string;
+    resolvido?: boolean;
+    orderBy?: string;
+    order?: 'asc' | 'desc';
+  }): Promise<ApiResponse<{ items: Flag[]; pagination: { page: number; limit: number; total: number } }>> {
+    const page = Math.max(1, Number(options.page ?? 1));
+    const limit = Math.max(1, Math.min(100, Number(options.limit ?? 20)));
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    let query = this.supabase
+      .from(this.tableName)
+      .select('*', { count: 'exact' })
+      .range(from, to);
+
+    if (options.declaracaoId) {
+      query = query.eq('declaracao_id', options.declaracaoId);
+    }
+    if (options.codigoFlag) {
+      query = query.eq('codigo_flag', options.codigoFlag);
+    }
+    if (options.severidade) {
+      query = query.eq('severidade', options.severidade);
+    }
+    if (typeof options.resolvido === 'boolean') {
+      query = query.eq('resolvido', options.resolvido);
+    }
+
+    if (options.orderBy) {
+      query = query.order(options.orderBy, { ascending: options.order === 'asc' });
+    } else {
+      query = query.order('created_at', { ascending: false });
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        items: (data || []) as Flag[],
+        pagination: {
+          page,
+          limit,
+          total: count ?? 0,
+        },
+      },
+    };
   }
 }

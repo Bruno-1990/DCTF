@@ -80,3 +80,4 @@ router.post('/optimize', PerformanceController.optimizeQueries);
 router.get('/report', PerformanceController.generateReport);
 
 export default router;
+

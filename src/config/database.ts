@@ -14,10 +14,17 @@ interface SupabaseConfig {
 
 // Configuração do Supabase
 const supabaseConfig: SupabaseConfig = {
-  url: config.database.url,
-  anonKey: config.database.apiKey,
+  url: config.database.url || 'https://placeholder.supabase.co',
+  anonKey: config.database.apiKey || 'placeholder-key',
   serviceRoleKey: process.env['SUPABASE_SERVICE_ROLE_KEY'],
 };
+
+// Verificar se as variáveis estão definidas e avisar o usuário
+if (!config.database.url || (!config.database.apiKey && !supabaseConfig.serviceRoleKey)) {
+  console.warn('⚠️  SUPABASE_URL e SUPABASE_ANON_KEY (ou SUPABASE_SERVICE_ROLE_KEY) não estão definidas.');
+  console.warn('   Configure as variáveis de ambiente para conectar ao Supabase.');
+  console.warn('   Consulte docs/SUPABASE_SETUP.md para instruções.');
+}
 
 // Cliente Supabase para operações públicas
 export const supabase = createClient(
@@ -44,6 +51,14 @@ export const supabaseAdmin = supabaseConfig.serviceRoleKey
       }
     )
   : null;
+
+// Log de qual cliente está sendo usado (apenas em dev)
+if (process.env['NODE_ENV'] === 'development') {
+  console.log('🔐 Supabase configurado:');
+  console.log('   - anon key:', supabaseConfig.anonKey ? '✅ Definida' : '❌ Não definida');
+  console.log('   - service_role key:', supabaseConfig.serviceRoleKey ? '✅ Definida' : '❌ Não definida');
+  console.log('   - usando:', supabaseAdmin ? 'service_role (admin)' : 'anon (public)');
+}
 
 // Função para testar conexão
 export const testConnection = async (): Promise<boolean> => {

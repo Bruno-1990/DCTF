@@ -4,24 +4,17 @@
 
 import { Router } from 'express';
 import { ClienteController } from '../controllers/ClienteController';
+import { validate, validateParams, validateQuery, sanitizeData } from '../middleware/validation';
+import { clienteSchemas } from '../middleware/schemas';
 
 const router = Router();
 const clienteController = new ClienteController();
 
-// Middleware de validação básica
-const validateId = (req: any, res: any, next: any) => {
-  const { id } = req.params;
-  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    return res.status(400).json({
-      success: false,
-      error: 'ID inválido',
-    });
-  }
-  next();
-};
+// Middleware de sanitização global
+router.use(sanitizeData);
 
 // GET /api/clientes - Listar clientes
-router.get('/', (req, res) => {
+router.get('/', validateQuery(clienteSchemas.query), (req, res) => {
   clienteController.listarClientes(req, res);
 });
 
@@ -36,22 +29,31 @@ router.get('/cnpj/:cnpj', (req, res) => {
 });
 
 // GET /api/clientes/:id - Obter cliente por ID
-router.get('/:id', validateId, (req, res) => {
+router.get('/:id', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.obterCliente(req, res);
 });
 
 // POST /api/clientes - Criar cliente
-router.post('/', (req, res) => {
+router.post('/', validate(clienteSchemas.create), (req, res) => {
   clienteController.criarCliente(req, res);
 });
 
-// PUT /api/clientes/:id - Atualizar cliente
-router.put('/:id', validateId, (req, res) => {
-  clienteController.atualizarCliente(req, res);
+// POST /api/clientes/import-json - Importar clientes em lote via JSON
+router.post('/import-json', (req, res) => {
+  clienteController.importarClientesJson(req, res);
 });
 
+// PUT /api/clientes/:id - Atualizar cliente
+router.put('/:id', 
+  validateParams(clienteSchemas.params),
+  validate(clienteSchemas.update),
+  (req, res) => {
+    clienteController.atualizarCliente(req, res);
+  }
+);
+
 // DELETE /api/clientes/:id - Deletar cliente
-router.delete('/:id', validateId, (req, res) => {
+router.delete('/:id', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.deletarCliente(req, res);
 });
 

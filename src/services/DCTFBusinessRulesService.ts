@@ -41,7 +41,30 @@ export class DCTFBusinessRulesService {
     const suggestions: string[] = [];
 
     try {
-      // 1. Validar se cliente existe
+      // 1. Validar período (antes de qualquer acesso a DB)
+      const validacaoPeriodo = DCTFValidationService.validatePeriodoFiscal(dados.periodo);
+      if (!validacaoPeriodo.isValid) {
+        errors.push(...validacaoPeriodo.errors);
+      }
+      warnings.push(...validacaoPeriodo.warnings);
+
+      // 2. Validar arquivo (antes de qualquer acesso a DB)
+      if (dados.arquivo.tamanho > 10 * 1024 * 1024) { // 10MB
+        errors.push('Arquivo excede o limite de 10MB');
+      }
+
+      const tiposPermitidos = ['xls', 'xlsx', 'csv'];
+      const extensao = dados.arquivo.nome.split('.').pop()?.toLowerCase();
+      if (!extensao || !tiposPermitidos.includes(extensao)) {
+        errors.push(`Tipo de arquivo não permitido. Use: ${tiposPermitidos.join(', ')}`);
+      }
+
+      // Se já houver erros críticos, retornar cedo
+      if (errors.length > 0) {
+        return { isValid: false, errors, warnings, suggestions };
+      }
+
+      // 3. Validar se cliente existe
       const { data: cliente, error: clienteError } = await supabase
         .from('clientes')
         .select('id, nome, ativo')
@@ -54,14 +77,7 @@ export class DCTFBusinessRulesService {
         errors.push('Cliente está inativo');
       }
 
-      // 2. Validar período
-      const validacaoPeriodo = DCTFValidationService.validatePeriodoFiscal(dados.periodo);
-      if (!validacaoPeriodo.isValid) {
-        errors.push(...validacaoPeriodo.errors);
-      }
-      warnings.push(...validacaoPeriodo.warnings);
-
-      // 3. Verificar se já existe DCTF para o mesmo cliente e período
+      // 4. Verificar duplicidade de DCTF no período
       const { data: dctfExistente, error: dctfError } = await supabase
         .from('dctf_declaracoes')
         .select('id, status')
@@ -71,17 +87,6 @@ export class DCTFBusinessRulesService {
 
       if (dctfExistente && !dctfError) {
         errors.push(`Já existe DCTF para este cliente no período ${dados.periodo} (Status: ${dctfExistente.status})`);
-      }
-
-      // 4. Validar arquivo
-      if (dados.arquivo.tamanho > 10 * 1024 * 1024) { // 10MB
-        errors.push('Arquivo excede o limite de 10MB');
-      }
-
-      const tiposPermitidos = ['xls', 'xlsx', 'csv'];
-      const extensao = dados.arquivo.nome.split('.').pop()?.toLowerCase();
-      if (!extensao || !tiposPermitidos.includes(extensao)) {
-        errors.push(`Tipo de arquivo não permitido. Use: ${tiposPermitidos.join(', ')}`);
       }
 
       // 5. Sugestões baseadas no período
@@ -261,8 +266,21 @@ export class DCTFBusinessRulesService {
     const warnings: string[] = [];
     const suggestions: string[] = [];
 
+    // Sugestões baseadas no tipo de análise (independente do DB)
+    switch (tipoAnalise) {
+      case 'consistencia':
+        suggestions.push('Análise de consistência - verificar cálculos e totais');
+        break;
+      case 'conformidade':
+        suggestions.push('Análise de conformidade - verificar regras fiscais');
+        break;
+      case 'performance':
+        suggestions.push('Análise de performance - verificar indicadores de negócio');
+        break;
+    }
+
     try {
-      // 1. Verificar se DCTF existe e está no status correto
+      // Verificar se DCTF existe e está no status correto
       const { data: dctf, error: dctfError } = await supabase
         .from('dctf_declaracoes')
         .select('id, status, periodo')
@@ -271,14 +289,11 @@ export class DCTFBusinessRulesService {
 
       if (dctfError || !dctf) {
         errors.push('DCTF não encontrado');
-        return { isValid: false, errors, warnings, suggestions };
-      }
-
-      if (!['validado', 'processado'].includes(dctf.status)) {
+      } else if (!['validado', 'processado'].includes(dctf.status)) {
         errors.push(`DCTF deve estar validado ou processado para criar análise (Status atual: ${dctf.status})`);
       }
 
-      // 2. Verificar se já existe análise do mesmo tipo
+      // Verificar análise duplicada
       const { data: analiseExistente, error: analiseError } = await supabase
         .from('analises')
         .select('id, tipo, status')
@@ -288,19 +303,6 @@ export class DCTFBusinessRulesService {
 
       if (analiseExistente && !analiseError) {
         warnings.push(`Já existe análise do tipo '${tipoAnalise}' para este DCTF`);
-      }
-
-      // 3. Sugestões baseadas no tipo de análise
-      switch (tipoAnalise) {
-        case 'consistencia':
-          suggestions.push('Análise de consistência - verificar cálculos e totais');
-          break;
-        case 'conformidade':
-          suggestions.push('Análise de conformidade - verificar regras fiscais');
-          break;
-        case 'performance':
-          suggestions.push('Análise de performance - verificar indicadores de negócio');
-          break;
       }
 
     } catch (error: any) {
@@ -323,8 +325,21 @@ export class DCTFBusinessRulesService {
     const warnings: string[] = [];
     const suggestions: string[] = [];
 
+    // Sugestões baseadas no tipo de relatório (independente do DB)
+    switch (tipoRelatorio) {
+      case 'executivo':
+        suggestions.push('Relatório executivo - incluir resumo e principais indicadores');
+        break;
+      case 'detalhado':
+        suggestions.push('Relatório detalhado - incluir todos os dados e análises');
+        break;
+      case 'fiscal':
+        suggestions.push('Relatório fiscal - focar em aspectos tributários');
+        break;
+    }
+
     try {
-      // 1. Verificar se DCTF está processado
+      // Verificar se DCTF está processado
       const { data: dctf, error: dctfError } = await supabase
         .from('dctf_declaracoes')
         .select('id, status, periodo, cliente_id')
@@ -333,18 +348,15 @@ export class DCTFBusinessRulesService {
 
       if (dctfError || !dctf) {
         errors.push('DCTF não encontrado');
-        return { isValid: false, errors, warnings, suggestions };
-      }
-
-      if (dctf.status !== 'processado') {
+      } else if (dctf.status !== 'processado') {
         errors.push(`DCTF deve estar processado para gerar relatório (Status atual: ${dctf.status})`);
       }
 
-      // 2. Verificar se cliente está ativo
+      // Verificar se cliente está ativo
       const { data: cliente, error: clienteError } = await supabase
         .from('clientes')
         .select('id, nome, ativo')
-        .eq('id', dctf.cliente_id)
+        .eq('id', dctf?.cliente_id)
         .single();
 
       if (clienteError || !cliente) {
@@ -353,30 +365,17 @@ export class DCTFBusinessRulesService {
         warnings.push('Cliente está inativo - relatório pode não ser necessário');
       }
 
-      // 3. Verificar se já existe relatório recente
+      // Verificar relatório recente
       const { data: relatorioRecente, error: relatorioError } = await supabase
         .from('relatorios')
         .select('id, tipo, created_at')
         .eq('dctf_id', dctfId)
         .eq('tipo', tipoRelatorio)
-        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) // Últimas 24h
+        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
         .single();
 
       if (relatorioRecente && !relatorioError) {
         warnings.push(`Relatório do tipo '${tipoRelatorio}' foi gerado recentemente`);
-      }
-
-      // 4. Sugestões baseadas no tipo de relatório
-      switch (tipoRelatorio) {
-        case 'executivo':
-          suggestions.push('Relatório executivo - incluir resumo e principais indicadores');
-          break;
-        case 'detalhado':
-          suggestions.push('Relatório detalhado - incluir todos os dados e análises');
-          break;
-        case 'fiscal':
-          suggestions.push('Relatório fiscal - focar em aspectos tributários');
-          break;
       }
 
     } catch (error: any) {
@@ -447,3 +446,4 @@ export class DCTFBusinessRulesService {
     };
   }
 }
+

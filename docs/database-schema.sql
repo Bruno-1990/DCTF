@@ -145,3 +145,21 @@ COMMENT ON TABLE dctf_dados IS 'Dados processados das declarações DCTF';
 COMMENT ON TABLE analises IS 'Resultados das análises realizadas';
 COMMENT ON TABLE flags IS 'Sinalizações de problemas encontrados';
 COMMENT ON TABLE relatorios IS 'Relatórios gerados pelo sistema';
+
+-- Upload history table for spreadsheet uploads
+CREATE TABLE IF NOT EXISTS public.upload_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  clienteId uuid NOT NULL,
+  clienteNome text,
+  periodo text NOT NULL,
+  filename text NOT NULL,
+  totalLinhas integer NOT NULL DEFAULT 0,
+  processadas integer NOT NULL DEFAULT 0,
+  status text NOT NULL CHECK (status IN ('sucesso','erro')),
+  mensagem text,
+  timestamp timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_history_cliente ON public.upload_history (clienteId);
+CREATE INDEX IF NOT EXISTS idx_upload_history_periodo ON public.upload_history (periodo);
+CREATE INDEX IF NOT EXISTS idx_upload_history_timestamp ON public.upload_history (timestamp DESC);

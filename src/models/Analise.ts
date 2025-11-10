@@ -138,15 +138,15 @@ export class Analise extends DatabaseService<IAnalise> {
    * Atualizar status da análise
    */
   async updateStatus(id: string, status: string): Promise<ApiResponse<IAnalise>> {
-    const validStatuses = ['pendente', 'em_analise', 'concluida'];
-    if (!validStatuses.includes(status)) {
+    const validStatuses = ['pendente', 'em_analise', 'concluida'] as const;
+    if (!validStatuses.includes(status as any)) {
       return {
         success: false,
         error: 'Status inválido',
       };
     }
 
-    return this.update(id, { status });
+    return this.update(id, { status: status as 'pendente' | 'em_analise' | 'concluida' });
   }
 
   /**
@@ -242,16 +242,12 @@ export class Analise extends DatabaseService<IAnalise> {
 
       // Por enquanto, criar análise de exemplo
       const analiseData: Partial<IAnalise> = {
-        declaracaoId,
+        dctfId: declaracaoId,
         tipoAnalise,
         severidade: 'media',
         descricao: `Análise ${tipoAnalise} executada automaticamente`,
         recomendacoes: ['Verificar dados', 'Validar cálculos'],
         status: 'concluida',
-        dadosAnalise: {
-          executadaEm: new Date().toISOString(),
-          versao: '1.0',
-        },
       };
 
       return this.createAnalise(analiseData);

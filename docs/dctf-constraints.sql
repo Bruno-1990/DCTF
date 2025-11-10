@@ -342,3 +342,4 @@ COMMENT ON CONSTRAINT chk_dctf_dados_valor_positivo ON dctf_dados IS 'Valores n�
 COMMENT ON CONSTRAINT uk_dctf_cliente_periodo ON dctf_declaracoes IS 'Evita DCTF duplicado por cliente/período';
 COMMENT ON CONSTRAINT chk_dctf_receita_liquida ON dctf_declaracoes IS 'Valida cálculo de receita líquida';
 COMMENT ON CONSTRAINT chk_dctf_total_impostos ON dctf_declaracoes IS 'Valida cálculo de total de impostos';
+

@@ -120,3 +120,4 @@ router.get('/aliquotas', DCTFCodesController.listAliquotas);
 router.post('/', DCTFCodesController.createCode);
 
 export default router;
+

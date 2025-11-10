@@ -91,8 +91,9 @@ export class DCTFValidationService {
       return { isValid: false, errors, warnings };
     }
 
-    // Validar formato YYYY-MM
-    if (!ValidationService.validatePeriodo(periodo)) {
+    // Validar formato puro YYYY-MM (sem validar ano/mês aqui)
+    const formatoRegex = /^\d{4}-\d{2}$/;
+    if (!formatoRegex.test(periodo)) {
       errors.push('Período deve estar no formato YYYY-MM');
       return { isValid: false, errors, warnings };
     }

@@ -107,7 +107,7 @@ export class PerformanceMonitoringService {
         size: index.tamanho,
         usage: index.uso,
         efficiency: index.eficiencia,
-        recommendations: this.getIndexRecommendations(index)
+        recommendations: this.getIndexRecommendationsForIndex(index)
       }));
 
     } catch (error: any) {
@@ -270,7 +270,7 @@ export class PerformanceMonitoringService {
   /**
    * Obter recomendações para um índice
    */
-  private static getIndexRecommendations(index: any): string[] {
+  private static getIndexRecommendationsForIndex(index: any): string[] {
     const recommendations: string[] = [];
 
     if (index.uso === 'Nunca usado') {
@@ -370,3 +370,4 @@ export class PerformanceMonitoringService {
     }
   }
 }
+

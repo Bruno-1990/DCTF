@@ -27,6 +27,20 @@ router.post('/validate', uploadMiddleware, SpreadsheetController.validateFile);
 router.post('/upload', uploadMiddleware, SpreadsheetController.uploadFile);
 
 /**
+ * POST /api/spreadsheet/import
+ * Importar e persistir dados válidos em lotes
+ * Body: arquivo (multipart/form-data), declaracaoId, chunkSize?
+ */
+router.post('/import', uploadMiddleware, SpreadsheetController.importData);
+
+/**
+ * POST /api/spreadsheet/import-json
+ * Importar dados DCTF em lote via JSON
+ * Body: { declaracaoId: string, dados: Array<...> }
+ */
+router.post('/import-json', SpreadsheetController.importJson);
+
+/**
  * POST /api/spreadsheet/validate-batch
  * Validar múltiplos arquivos
  * Body: { arquivos: [{ nome: string, conteudo: string }] }
@@ -39,7 +53,7 @@ router.post('/validate-batch', SpreadsheetController.validateBatch);
 
 /**
  * GET /api/spreadsheet/template
- * Download do template de planilha DCTF
+ * Download do template de planilha DCTF (pública)
  */
 router.get('/template', SpreadsheetController.downloadTemplate);
 
@@ -60,4 +74,11 @@ router.post('/export', SpreadsheetController.exportData);
  */
 router.get('/validation-rules', SpreadsheetController.getValidationRules);
 
+/**
+ * GET /api/spreadsheet/uploads
+ * Histórico de uploads (em memória/banco) com filtros e paginação
+ */
+router.get('/uploads', SpreadsheetController.getUploadsHistory);
+
 export default router;
+

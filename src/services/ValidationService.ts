@@ -69,6 +69,58 @@ export class ValidationService {
   }
 
   /**
+   * Normalizar período em formatos comuns para YYYY-MM
+   * Aceita entradas como "YYYY/MM", "MM-YYYY", "MM/YYYY", com/sem espaços
+   */
+  static normalizePeriodo(input: string): string | null {
+    if (!input) return null;
+    const raw = String(input).trim();
+
+    // Já no formato correto
+    if (this.validatePeriodo(raw)) return raw;
+
+    // Remover espaços
+    const cleaned = raw.replace(/\s+/g, '');
+
+    // Possíveis padrões e sua conversão
+    // 1) YYYY/MM ou YYYY.MM
+    let match = cleaned.match(/^(\d{4})[\/.-](\d{2})$/);
+    if (match) {
+      const ano = match[1];
+      const mes = match[2];
+      const normalized = `${ano}-${mes}`;
+      return this.validatePeriodo(normalized) ? normalized : null;
+    }
+
+    // 2) MM-YYYY ou MM/YYYY ou MM.YYYY
+    match = cleaned.match(/^(\d{2})[\/.-](\d{4})$/);
+    if (match) {
+      const mes = match[1];
+      const ano = match[2];
+      const normalized = `${ano}-${mes}`;
+      return this.validatePeriodo(normalized) ? normalized : null;
+    }
+
+    // 3) YYYYMM
+    match = cleaned.match(/^(\d{4})(\d{2})$/);
+    if (match) {
+      const ano = match[1];
+      const mes = match[2];
+      const normalized = `${ano}-${mes}`;
+      return this.validatePeriodo(normalized) ? normalized : null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Sanitizar código (trim e uppercase)
+   */
+  static sanitizeCodigo(input: string): string {
+    return (input || '').trim().toUpperCase();
+  }
+
+  /**
    * Validar email
    */
   static validateEmail(email: string): boolean {
@@ -120,6 +172,39 @@ export class ValidationService {
   static validateData(data: string | Date): boolean {
     const date = new Date(data);
     return !isNaN(date.getTime());
+  }
+
+  /**
+   * Verifica se a string está no formato pt-BR dd/mm/yyyy
+   */
+  static isPtBrDateString(str: string): boolean {
+    return /^\d{2}\/\d{2}\/\d{4}$/.test((str || '').trim());
+  }
+
+  /**
+   * Converte data pt-BR dd/mm/yyyy para ISO (YYYY-MM-DD)
+   */
+  static toISOFromPtBr(str: string): string | null {
+    if (!this.isPtBrDateString(str)) return null;
+    const [dd, mm, yyyy] = str.trim().split('/');
+    const iso = `${yyyy}-${mm}-${dd}`;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : iso;
+  }
+
+  /**
+   * Normaliza data recebida (Date | string) para Date válida.
+   * Aceita dd/mm/yyyy e ISO strings.
+   */
+  static normalizeDate(input: string | Date | undefined | null): Date | null {
+    if (!input) return null;
+    if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
+    const raw = String(input).trim();
+    // dd/mm/yyyy
+    const isoFromPt = this.toISOFromPtBr(raw);
+    const candidate = isoFromPt ?? raw; // tenta ISO direto se não for pt-BR
+    const d = new Date(candidate);
+    return isNaN(d.getTime()) ? null : d;
   }
 
   /**

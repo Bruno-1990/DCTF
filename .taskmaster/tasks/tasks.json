@@ -213,12 +213,67 @@
         "description": "Configuração do framework frontend orientado a objetos, estrutura de componentes, sistema de roteamento e estado global",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           1
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Configuração do Framework Frontend",
+            "description": "Configurar React com TypeScript, Vite, e estrutura base orientada a objetos",
+            "details": "- Instalar e configurar React 18 com TypeScript\n- Configurar Vite como bundler e dev server\n- Configurar ESLint e Prettier para frontend\n- Configurar estrutura de pastas orientada a objetos\n- Configurar aliases de importação\n- Configurar variáveis de ambiente",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 4
+          },
+          {
+            "id": 2,
+            "title": "Sistema de Roteamento",
+            "description": "Implementar React Router com estrutura de rotas protegidas e lazy loading",
+            "details": "- Configurar React Router v6 com TypeScript\n- Implementar rotas protegidas com autenticação\n- Configurar lazy loading de componentes\n- Implementar sistema de navegação\n- Configurar rotas aninhadas\n- Implementar guards de rota",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 4
+          },
+          {
+            "id": 3,
+            "title": "Gerenciamento de Estado Global",
+            "description": "Implementar Zustand para gerenciamento de estado com padrões orientados a objetos",
+            "details": "- Configurar Zustand com TypeScript\n- Implementar stores orientados a objetos\n- Configurar persistência de estado\n- Implementar middleware de logging\n- Configurar devtools para desenvolvimento\n- Implementar stores para autenticação e DCTF",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 4
+          },
+          {
+            "id": 4,
+            "title": "Sistema de Componentes Base",
+            "description": "Criar biblioteca de componentes reutilizáveis com padrões orientados a objetos",
+            "details": "- Implementar componentes base (Button, Input, Modal, etc.)\n- Configurar sistema de temas e estilos\n- Implementar componentes de layout\n- Configurar Storybook para documentação\n- Implementar sistema de validação de formulários\n- Configurar testes de componentes",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 4
+          },
+          {
+            "id": 5,
+            "title": "Integração com API Backend",
+            "description": "Configurar cliente HTTP e serviços para comunicação com a API",
+            "details": "- Configurar Axios com interceptors\n- Implementar serviços orientados a objetos para API\n- Configurar tratamento de erros global\n- Implementar sistema de cache de requisições\n- Configurar autenticação automática\n- Implementar retry automático para falhas",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 4
+          },
+          {
+            "id": 6,
+            "title": "Configuração de Testes Frontend",
+            "description": "Configurar Vitest, Testing Library e testes E2E com Playwright",
+            "details": "- Configurar Vitest para testes unitários\n- Configurar React Testing Library\n- Configurar Playwright para testes E2E\n- Implementar testes de componentes\n- Configurar cobertura de testes\n- Implementar testes de integração",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 4
+          }
+        ]
       },
       {
         "id": 5,
@@ -226,7 +281,7 @@
         "description": "Instalação e configuração do Tailwind CSS, criação de sistema de design e componentes reutilizáveis",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4
         ],
@@ -239,7 +294,7 @@
         "description": "Interface completa para gerenciamento de clientes com operações CRUD orientadas a objetos, upload de planilhas (.xls, .xlsx, .csv) com drag and drop, filtros, busca e validações",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           5,
@@ -254,7 +309,7 @@
         "description": "Interface drag and drop para upload de planilhas DCTF (.xls, .xlsx, .csv) com validação, preview e salvamento automático no Supabase",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           5
@@ -268,13 +323,86 @@
         "description": "Algoritmos de análise de dados DCTF orientados a objetos, análise à prova de falhas, verificação de possibilidades de multa, match com tabela clientes e geração de relatórios",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           3,
           7
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Mapear requisitos fiscais e regras de multas",
+            "description": "Consolidar referências legais aplicáveis às declarações DCTF (IN RFB nº 2005/2021, CTN, Lei 9.430/96) e identificar gatilhos de multa por atraso, omissão ou valores divergentes.",
+            "details": "- Levantar dispositivos que tratam de obrigatoriedade, prazos e penalidades.\n- Criar matriz de risco com tipos de inconsistência e respectiva multa.\n- Definir critérios de severidade e prazos de regularização.\n- Registrar referências e fontes para rastreabilidade.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 8
+          },
+          {
+            "id": 2,
+            "title": "Modelar pipeline de ingestão e normalização de dados",
+            "description": "Desenhar fluxo para consolidar dados DCTF, clientes e históricos de entrega em estrutura única e auditável.",
+            "details": "- Mapear fontes Supabase e definir joins/chaves entre declarações e clientes.\n- Normalizar períodos, CNPJ/CPF, códigos de receita e valores.\n- Prever logs de carregamento com carimbo de data/hora e usuário.\n- Preparar base para reprocessamentos e versionamento das análises.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 8
+          },
+          {
+            "id": 3,
+            "title": "Implementar validações cruzadas e consistência",
+            "description": "Construir conjunto de regras automáticas que confronte dados DCTF com cadastro de clientes e parâmetros fiscais.",
+            "details": "- Verificar vínculos Cliente x Declaração (CNPJ, CNAE, regime).\n- Validar periodicidade, códigos de receita obrigatórios e bases de cálculo.\n- Detectar omissões de períodos, duplicidades e divergências de valores.\n- Classificar achados por severidade e impacto potencial.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 8
+          },
+          {
+            "id": 4,
+            "title": "Desenvolver motor de análise de risco e cálculo de multas potenciais",
+            "description": "Calcular probabilidade e valor estimado de penalidades com base nos achados, prazos legais e histórico do contribuinte.",
+            "details": "- Encapsular regras de multa (atraso, omissão, inexatidão) e seus percentuais.\n- Considerar reincidência, valores declarados e datas de transmissão.\n- Priorizar casos críticos com base em severidade e prazo restante.\n- Produzir API/serviço que retorne score, valor estimado e recomendações imediatas.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 8
+          },
+          {
+            "id": 5,
+            "title": "Automatizar alertas e workflow de notificações",
+            "description": "Criar mecanismo para disparar alertas e acompanhar resolução dos casos de risco identificados.",
+            "details": "- Definir canais (dashboard, e-mail, fila interna) e critérios de disparo.\n- Registrar histórico de alertas com status (novo, em tratamento, resolvido).\n- Permitir anexar evidências e comentários de usuários responsáveis.\n- Integrar com autenticação/roles para garantir visibilidade adequada.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 8
+          },
+          {
+            "id": 6,
+            "title": "Gerar relatórios e plano de ação orientado à legislação",
+            "description": "Produzir relatórios executivos e detalhados com evidências, referências legais e recomendações de regularização.",
+            "details": "- Montar templates com quadro resumo, achados por severidade e valores.\n- Anexar citação da base legal e prazo limite para regularização.\n- Exibir histórico de transmitidas e pendências por cliente/competência.\n- Fornecer exportação (PDF/Excel) e endpoint para consumo externo.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 8
+          },
+          {
+            "id": 7,
+            "title": "Implementar trilhas de auditoria e testes automatizados",
+            "description": "Garantir rastreabilidade das análises e cobertura de testes para regras críticas.",
+            "details": "- Registrar logs estruturados com dados de entrada, regras aplicadas e decisões.\n- Criar testes unitários/integrados para validações, motor de risco e notificações.\n- Incorporar cenários reais com chance de multa e casos sem risco.\n- Configurar métricas de qualidade (coverage, performance) e alertas de falhas.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 8
+          },
+          {
+            "id": 8,
+            "title": "Documentar processo e orientar operação",
+            "description": "Produzir documentação funcional/técnica e checklist operacional para uso contínuo da análise DCTF.",
+            "details": "- Resumir fluxo ponta a ponta, dependências e parâmetros configuráveis.\n- Criar guia para interpretação de relatórios e tratamento de alertas.\n- Registrar procedimentos de exceção e escalonamento.\n- Compartilhar referências legais e calendário atualizado de obrigações.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 8
+          }
+        ]
       },
       {
         "id": 9,
@@ -282,13 +410,68 @@
         "description": "Desenvolvimento de APIs RESTful orientadas a objetos para todas as operações CRUD com validação e integração Supabase",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2,
           3
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Configuração do Servidor Express",
+            "description": "Configurar servidor Express com middleware essencial e estrutura base",
+            "details": "- Configurar Express com TypeScript\n- Implementar middleware de CORS\n- Configurar middleware de parsing (JSON, URL-encoded)\n- Implementar middleware de logging\n- Configurar tratamento de erros global\n- Implementar middleware de autenticação",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9
+          },
+          {
+            "id": 2,
+            "title": "APIs de Clientes",
+            "description": "Implementar APIs CRUD completas para gerenciamento de clientes",
+            "details": "- Implementar GET /clientes (listar todos)\n- Implementar GET /clientes/:id (buscar por ID)\n- Implementar POST /clientes (criar novo)\n- Implementar PUT /clientes/:id (atualizar)\n- Implementar DELETE /clientes/:id (excluir)\n- Implementar validação com Joi\n- Implementar tratamento de erros",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9
+          },
+          {
+            "id": 3,
+            "title": "APIs de DCTF",
+            "description": "Implementar APIs CRUD para gerenciamento de declarações DCTF",
+            "details": "- Implementar GET /dctf (listar declarações)\n- Implementar GET /dctf/:id (buscar declaração)\n- Implementar POST /dctf (criar declaração)\n- Implementar PUT /dctf/:id (atualizar declaração)\n- Implementar DELETE /dctf/:id (excluir declaração)\n- Implementar GET /dctf/cliente/:clienteId (por cliente)\n- Implementar validações específicas DCTF",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9
+          },
+          {
+            "id": 4,
+            "title": "APIs de Relatórios",
+            "description": "Implementar APIs para geração e gerenciamento de relatórios",
+            "details": "- Implementar GET /relatorios (listar relatórios)\n- Implementar GET /relatorios/:id (buscar relatório)\n- Implementar POST /relatorios (criar relatório)\n- Implementar PUT /relatorios/:id (atualizar relatório)\n- Implementar DELETE /relatorios/:id (excluir relatório)\n- Implementar GET /relatorios/cliente/:clienteId (por cliente)\n- Implementar POST /relatorios/generate (gerar relatório)",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9
+          },
+          {
+            "id": 5,
+            "title": "Middleware de Validação",
+            "description": "Implementar middleware centralizado para validação de dados",
+            "details": "- Criar middleware de validação genérico\n- Implementar validação de schemas Joi\n- Configurar tratamento de erros de validação\n- Implementar sanitização de dados\n- Configurar validação de tipos TypeScript\n- Implementar validação de parâmetros de rota",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9
+          },
+          {
+            "id": 6,
+            "title": "Testes da API",
+            "description": "Implementar testes unitários e de integração para as APIs",
+            "details": "- Configurar Jest para testes de API\n- Implementar testes para endpoints de clientes\n- Implementar testes para endpoints de DCTF\n- Implementar testes para endpoints de relatórios\n- Implementar testes de validação\n- Implementar testes de tratamento de erros\n- Configurar cobertura de testes",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9
+          }
+        ]
       },
       {
         "id": 10,
@@ -296,12 +479,49 @@
         "description": "Implementação de regras de validação robustas, sistema de flags e verificação de consistência",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           9
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Definir catálogo de flags e matriz de severidade",
+            "description": "Especificar códigos de flag, classificação de severidade e base legal para inconsistências detectadas na análise DCTF.",
+            "details": "- Documentar flags padrão (atraso, omissão, divergência, dados inválidos).\n- Mapear severidade (baixa, média, alta, crítica) e impacto esperado.\n- Associar referências legais e recomendações de correção para cada flag.\n- Publicar documento em docs/ com tabela consolidada.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 10
+          },
+          {
+            "id": 2,
+            "title": "Implementar motor de validação de flags",
+            "description": "Criar serviço que avalie declarações e dados normalizados aplicando regras de flags, gerando registros persistentes com severidade e contexto.",
+            "details": "- Consumir dataset do DCTFIngestionService.\n- Aplicar regras do catálogo para detectar inconsistências.\n- Criar/atualizar registros na tabela flags garantindo idempotência.\n- Registrar auditoria das execuções e retornos estruturados.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 10
+          },
+          {
+            "id": 3,
+            "title": "Expor API e integrações para flags",
+            "description": "Criar endpoints REST e integrações com análise DCTF para consultar e acionar workflow de flags.",
+            "details": "- Adicionar rotas para listar, detalhar, resolver e reabrir flags.\n- Integrar DCTFAnalysisService e motor de risco para gravação automática.\n- Garantir controle de acesso e paginação/filtragem por severidade, status e código.\n- Atualizar documentação da API.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 10
+          },
+          {
+            "id": 4,
+            "title": "Automatizar alertas e monitoramento das flags",
+            "description": "Criar notificações e métricas para acompanhar flags abertas, incluindo logs e testes automatizados.",
+            "details": "- Criar serviço para enviar alertas críticos (e-mail/console) em flags novas.\n- Registrar eventos no AuditTrailService.\n- Adicionar testes unitários para motor e rotas.\n- Atualizar documentação operacional com fluxo de tratamento de flags.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 10
+          }
+        ]
       },
       {
         "id": 11,
@@ -309,12 +529,58 @@
         "description": "Implementação de WebSocket para atualizações em tempo real, notificações push e sincronização",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           9
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Selecionar arquitetura e tecnologia WebSocket",
+            "description": "Definir stack (Socket.IO, ws nativo ou SSE), requisitos de autenticação e topologia de eventos (salas por cliente, broadcast por severidade).",
+            "details": "- Avaliar bibliotecas disponíveis e compatibilidade com Express/TypeScript.\n- Delimitar protocolo de payload (JSON, schema por evento).\n- Planejar autenticação via token (JWT ou sessão existente).\n- Documentar diagrama de canais/eventos em docs/.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 11
+          },
+          {
+            "id": 2,
+            "title": "Implementar gateway WebSocket no backend",
+            "description": "Criar servidor Socket.IO integrado ao Express com autenticação e salas por cliente/tipo de evento.",
+            "details": "- Configurar servidor Socket.IO (ou ws) com middleware de autenticação (JWT/token).\n- Criar namespaces/salas para notificações gerais e por cliente.\n- Disponibilizar endpoint de handshake e health check.\n- Exportar serviço para reutilização em análises e flags.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 11
+          },
+          {
+            "id": 3,
+            "title": "Propagar eventos de análise e flags em tempo real",
+            "description": "Integrar serviços de análise/flags para emitir eventos WebSocket quando novas análises são concluídas ou flags críticas são criadas/atualizadas.",
+            "details": "- Publicar evento `analysis.completed` com resumo (riskScore, penalidades, findings).\n- Publicar evento `flags.created`/`flags.updated` com severidade, código e link.\n- Garantir agrupamento por cliente e broadcast quando crítico.\n- Registrar eventos em auditoria.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 11
+          },
+          {
+            "id": 4,
+            "title": "Implementar cliente WebSocket no frontend",
+            "description": "Criar hook/serviço React para conectar ao gateway, exibir notificações em tempo real e histórico de alertas.",
+            "details": "- Adicionar configuração de endpoint WS e autenticação.\n- Exibir toasts/badges para eventos críticos/altos.\n- Manter painel com histórico e status de conexão.\n- Testar reconexão e fallback para polling.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 11
+          },
+          {
+            "id": 5,
+            "title": "Cobrir testes, monitoramento e documentação do WebSocket",
+            "description": "Adicionar testes unitários/integrados, monitoramento de saúde e documentação operacional do sistema WebSocket.",
+            "details": "- Criar testes de carga/reconexão com jest/supertest ou ferramenta dedicada.\n- Expor rota de health check do WebSocket.\n- Configurar métricas básicas (conexões ativas, eventos emitidos).\n- Atualizar docs com uso do gateway e exemplos de payloads.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 11
+          }
+        ]
       },
       {
         "id": 12,
@@ -402,12 +668,85 @@
         "description": "Sistema orientado a objetos para limpeza e gerenciamento de dados da tabela de declarações DCTF com controle de usuário",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           9
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Modelagem e normalização de dados DCTF",
+            "description": "Revisar modelos e índices; normalizar campos (competência, CNPJ, códigos) e garantir integridade relacional.",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          },
+          {
+            "id": 2,
+            "title": "Serviço de limpeza e deduplicação DCTF",
+            "description": "Implementar serviço para sanitização, padronização e remoção de duplicidades conforme regras de competência/CNPJ/código.",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          },
+          {
+            "id": 3,
+            "title": "Validações e regras de negócio centralizadas",
+            "description": "Consolidar validações e regras no serviço dedicado; mensagens de erro consistentes e reutilizáveis.",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          },
+          {
+            "id": 4,
+            "title": "Auditoria e histórico de uploads",
+            "description": "Registrar ações de limpeza/gestão e histórico de uploads com usuário, timestamp e difs relevantes.",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          },
+          {
+            "id": 5,
+            "title": "Endpoints REST para limpeza e gestão com filtros/paginação",
+            "description": "Expor endpoints para executar limpeza, listar e gerenciar registros com filtros e paginação.",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          },
+          {
+            "id": 6,
+            "title": "Controle de acesso e roles nos endpoints",
+            "description": "Aplicar autenticação e autorização (roles) aos endpoints de gestão/limpeza e auditoria.",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          },
+          {
+            "id": 7,
+            "title": "Testes unitários e de integração do gerenciamento DCTF",
+            "description": "Cobrir serviço de limpeza, validações, endpoints e autorização com testes confiáveis.",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          },
+          {
+            "id": 8,
+            "title": "Documentação de endpoints e jobs de limpeza",
+            "description": "Especificar contratos, exemplos e instruções de execução/observabilidade dos jobs e rotas.",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          }
+        ]
       },
       {
         "id": 18,
@@ -425,7 +764,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-10-29T14:58:52.847Z",
+      "updated": "2025-11-10T20:25:53.048Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF"
     }
   }

@@ -8,6 +8,7 @@ import { ApiResponse } from '../types';
 
 export abstract class DatabaseService<T> {
   protected tableName: string;
+  protected supabase = supabaseAdmin || supabase; // Usar supabaseAdmin se disponível, senão usar supabase
 
   constructor(tableName: string) {
     this.tableName = tableName;

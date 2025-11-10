@@ -90,3 +90,4 @@ router.get('/aliquota/:codigo', FiscalCalculationController.getAliquota);
 router.get('/calculation-rules', FiscalCalculationController.getCalculationRules);
 
 export default router;
+

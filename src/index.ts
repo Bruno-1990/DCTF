@@ -3,14 +3,31 @@
  * Ponto de entrada do sistema
  */
 
+// Carregar variáveis de ambiente do arquivo .env
+import 'dotenv/config';
+
+import Server from './server';
 import config from './config';
 
 console.log('🚀 Iniciando aplicação DCTF...');
 console.log(`📊 Ambiente: ${config.nodeEnv}`);
 console.log(`🔌 Porta: ${config.port}`);
 
-// TODO: Implementar servidor Express
-// TODO: Implementar conexão com Supabase
-// TODO: Implementar rotas da API
+// Inicializar servidor
+const server = new Server();
 
-export default config;
+// Iniciar servidor
+server.start();
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
+export default server;

@@ -175,6 +175,35 @@ describe('DCTFSpreadsheetService', () => {
       expect(result.isValid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
     });
+
+    it('marca linhas inválidas e mantém isValid=false quando existirem', async () => {
+      const mockWorkbook = { SheetNames: ['Sheet1'], Sheets: { Sheet1: {} } };
+      const mockJsonData = [
+        ['codigo', 'descricao', 'valor', 'periodo', 'data_ocorrencia', 'cnpj_cpf'],
+        ['001', 'Receita Bruta', 1000, '2024-01', '2024-01-15', '12345678000195'],
+        ['XYZ', 'Invalida', -10, '2024-13', '31/02/2024', '']
+      ];
+
+      const { read, utils } = require('xlsx');
+      read.mockReturnValue(mockWorkbook);
+      utils.sheet_to_json.mockReturnValue(mockJsonData);
+
+      const { DCTFValidationService } = require('../../src/services/DCTFValidationService');
+      (DCTFValidationService.validateDCTFLinha as jest.Mock).mockImplementation(({ codigo }: any) => ({
+        isValid: codigo === '001',
+        errors: codigo === '001' ? [] : ['Código inválido'],
+        warnings: []
+      }));
+
+      const buffer = Buffer.from('test content');
+      const filename = 'test.xlsx';
+      const result = await DCTFSpreadsheetService.processarPlanilha(buffer, filename);
+
+      expect(result.isValid).toBe(false);
+      expect(Array.isArray(result.dados)).toBe(true);
+      const invalid = result.dados.filter((r: any) => !r.__valid);
+      expect(invalid.length).toBeGreaterThan(0);
+    });
   });
 
   describe('gerarTemplate', () => {
@@ -208,3 +237,4 @@ describe('DCTFSpreadsheetService', () => {
     });
   });
 });
+

@@ -19,34 +19,48 @@ export class ClienteController {
    */
   async listarClientes(req: Request, res: Response): Promise<void> {
     try {
-      const { page = 1, limit = 10, search } = req.query;
-      
-      let result: ApiResponse<any>;
-      
-      if (search) {
-        result = await this.clienteModel.searchByName(search as string);
-      } else {
-        result = await this.clienteModel.findAll();
-      }
+      const { page = 1, limit = 10, search, nome, cnpj } = req.query;
+
+      let result: ApiResponse<any> = await this.clienteModel.findAll();
 
       if (!result.success) {
         res.status(400).json(result);
         return;
       }
 
-      // Paginação simples
-      const startIndex = (Number(page) - 1) * Number(limit);
-      const endIndex = startIndex + Number(limit);
-      const paginatedData = result.data!.slice(startIndex, endIndex);
+      let data = result.data || [];
+
+      // Filtros (compatível com 'search' legado e novos 'nome'/'cnpj')
+      const q = (nome as string) || (search as string) || '';
+      if (q) {
+        const qLower = q.toLowerCase();
+        data = data.filter((c: any) => 
+          (c.razao_social || c.nome || '').toLowerCase().includes(qLower)
+        );
+      }
+
+      if (cnpj) {
+        const cnpjStr = String(cnpj).replace(/\D/g, '');
+        data = data.filter((c: any) => 
+          String(c.cnpj_limpo || c.cnpj || '').replace(/\D/g, '').includes(cnpjStr)
+        );
+      }
+
+      // Paginação
+      const pageNum = Number(page);
+      const limitNum = Number(limit);
+      const startIndex = (pageNum - 1) * limitNum;
+      const endIndex = startIndex + limitNum;
+      const paginatedData = data.slice(startIndex, endIndex);
 
       res.json({
         success: true,
         data: paginatedData,
         pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total: result.data!.length,
-          totalPages: Math.ceil(result.data!.length / Number(limit)),
+          page: pageNum,
+          limit: limitNum,
+          total: data.length,
+          totalPages: Math.ceil(data.length / limitNum),
         },
       });
     } catch (error) {
@@ -183,6 +197,40 @@ export class ClienteController {
   }
 
   /**
+   * Importar clientes em lote via JSON
+   * Body esperado: { clientes: [{ nome: string, cnpj: string, email?, telefone?, endereco? }, ...] }
+   */
+  async importarClientesJson(req: Request, res: Response): Promise<void> {
+    try {
+      const { clientes } = req.body as any;
+      if (!Array.isArray(clientes) || clientes.length === 0) {
+        res.status(400).json({ success: false, error: 'Campo "clientes" é obrigatório e deve ser um array não-vazio' });
+        return;
+      }
+
+      const resultados: { ok: number; fail: number; erros: string[] } = { ok: 0, fail: 0, erros: [] };
+      for (const item of clientes) {
+        try {
+          const resp = await this.clienteModel.createCliente(item);
+          if (resp.success) {
+            resultados.ok += 1;
+          } else {
+            resultados.fail += 1;
+            if (resp.error) resultados.erros.push(resp.error);
+          }
+        } catch (e: any) {
+          resultados.fail += 1;
+          resultados.erros.push(e?.message || 'Erro desconhecido');
+        }
+      }
+
+      res.json({ success: resultados.fail === 0, data: resultados });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
+    }
+  }
+
+  /**
    * Buscar cliente por CNPJ
    */
   async buscarPorCNPJ(req: Request, res: Response): Promise<void> {
@@ -217,7 +265,7 @@ export class ClienteController {
   /**
    * Obter estatísticas dos clientes
    */
-  async obterEstatisticas(req: Request, res: Response): Promise<void> {
+  async obterEstatisticas(_req: Request, res: Response): Promise<void> {
     try {
       const result = await this.clienteModel.getStats();
 

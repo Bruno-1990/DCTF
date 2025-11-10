@@ -4,6 +4,7 @@
  */
 
 import { DatabaseService } from '../services/DatabaseService';
+import { ValidationService } from '../services/ValidationService';
 import { DCTF as IDCTF, ApiResponse } from '../types';
 import Joi from 'joi';
 
@@ -44,6 +45,182 @@ export class DCTF extends DatabaseService<IDCTF> {
   }
 
   /**
+   * Dados mock para teste (temporário)
+   */
+  private getMockData(): ApiResponse<IDCTF[]> {
+    const mockDCTFs: IDCTF[] = [
+      {
+        id: '1',
+        clienteId: '1',
+        periodo: '2024-01',
+        dataDeclaracao: new Date('2024-01-15'),
+        status: 'concluido',
+        arquivoOriginal: 'http://example.com/dctf-2024-01.xlsx',
+        debitoApurado: 1500.75,
+        saldoAPagar: 950.5,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        cliente: {
+          id: '1',
+          razao_social: 'Empresa Exemplo Ltda',
+          cnpj: '12.345.678/0001-90',
+          cnpj_limpo: '12345678000190',
+        },
+      },
+      {
+        id: '2',
+        clienteId: '2',
+        periodo: '2024-02',
+        dataDeclaracao: new Date('2024-02-15'),
+        status: 'pendente',
+        arquivoOriginal: 'http://example.com/dctf-2024-02.xlsx',
+        debitoApurado: 3200.1,
+        saldoAPagar: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        cliente: {
+          id: '2',
+          razao_social: 'Comércio Teste S.A.',
+          cnpj: '98.765.432/0001-10',
+          cnpj_limpo: '98765432000110',
+        },
+      },
+    ];
+
+    return {
+      success: true,
+      data: mockDCTFs,
+    };
+  }
+
+  /**
+   * Buscar todos os registros (com mock temporário)
+   */
+  async findAll(): Promise<ApiResponse<IDCTF[]>> {
+    try {
+      // Mock temporário se Supabase não estiver configurado
+      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
+        return this.getMockData();
+      }
+
+      // Buscar registros
+      const { data, error } = await this.supabase
+        .from(this.tableName)
+        .select('*');
+
+      if (error) {
+        console.error('Erro ao buscar DCTF:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+
+      if (!data || data.length === 0) {
+        return {
+          success: true,
+          data: [],
+        };
+      }
+
+      // Buscar dados dos clientes em batch usando os IDs únicos
+      const clienteIds = [...new Set(data.map((item: any) => item.cliente_id).filter(Boolean))];
+      let clientesMap = new Map();
+      
+      if (clienteIds.length > 0) {
+        const { data: clientesData, error: clientesError } = await this.supabase
+          .from('clientes')
+          .select('id, razao_social, cnpj, cnpj_limpo')
+          .in('id', clienteIds);
+        
+        if (!clientesError && clientesData) {
+          clientesMap = new Map(clientesData.map((c: any) => [c.id, c]));
+        }
+      }
+
+      // Mapear resultado para camelCase e incluir dados do cliente
+      const mappedData = data.map((item: any) => {
+        const statusRaw = item.status || item.situacao;
+        let statusNormalized = 'pendente';
+        if (statusRaw) {
+          const statusLower = statusRaw.toLowerCase();
+          if (statusLower === 'ativa' || statusLower === 'concluido' || statusLower === 'concluída') {
+            statusNormalized = 'concluido';
+          } else if (statusLower === 'processando') {
+            statusNormalized = 'processando';
+          } else if (statusLower === 'erro' || statusLower === 'erros') {
+            statusNormalized = 'erro';
+          }
+        }
+        
+        return {
+          id: item.id,
+          clienteId: item.cliente_id,
+          periodo: item.periodo || item.periodo_apuracao,
+          dataDeclaracao: item.data_declaracao || item.data_transmissao || new Date(),
+          status: statusNormalized as 'pendente' | 'processando' | 'concluido' | 'erro',
+        situacao: item.situacao || item.status || statusNormalized,
+          arquivoOriginal: item.arquivo_original,
+          observacoes: item.observacoes,
+          debitoApurado: item.debito_apurado != null ? Number(item.debito_apurado) : null,
+          saldoAPagar: item.saldo_a_pagar != null ? Number(item.saldo_a_pagar) : null,
+          createdAt: item.created_at,
+          updatedAt: item.updated_at,
+          cliente: item.cliente_id && clientesMap.has(item.cliente_id) ? {
+            id: clientesMap.get(item.cliente_id).id,
+            razao_social: clientesMap.get(item.cliente_id).razao_social,
+            cnpj: clientesMap.get(item.cliente_id).cnpj,
+            cnpj_limpo: clientesMap.get(item.cliente_id).cnpj_limpo,
+          } : undefined,
+        };
+      });
+
+      return {
+        success: true,
+        data: mappedData,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+      };
+    }
+  }
+
+  /**
+   * Buscar registro por ID (com mock temporário)
+   */
+  async findById(id: string): Promise<ApiResponse<IDCTF>> {
+    try {
+      // Mock temporário se Supabase não estiver configurado
+      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
+        const mockData = this.getMockData();
+        if (mockData.success && mockData.data) {
+          const dctf = mockData.data.find(d => d.id === id);
+          if (dctf) {
+            return {
+              success: true,
+              data: dctf,
+            };
+          } else {
+            return {
+              success: false,
+              error: 'Declaração DCTF não encontrada',
+            };
+          }
+        }
+      }
+
+      return super.findById(id);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+      };
+    }
+  }
+
+  /**
    * Valida os dados da declaração DCTF
    */
   private validateDCTF(data: Partial<IDCTF>): { isValid: boolean; error?: string } {
@@ -71,6 +248,35 @@ export class DCTF extends DatabaseService<IDCTF> {
    * Criar declaração DCTF com validações
    */
   async createDCTF(dctfData: Partial<IDCTF>): Promise<ApiResponse<IDCTF>> {
+    // Normalizar período se fornecido
+    if (dctfData.periodo) {
+      const normalized = ValidationService.normalizePeriodo(dctfData.periodo);
+      if (!normalized) {
+        return {
+          success: false,
+          error: 'Período inválido. Use o formato YYYY-MM',
+        };
+      }
+      dctfData.periodo = normalized;
+    }
+
+    // Normalizar data de declaração (aceita dd/mm/yyyy) e permitir vazio
+    if ((dctfData as any).dataDeclaracao !== undefined) {
+      const raw = (dctfData as any).dataDeclaracao;
+      if (typeof raw === 'string' && raw.trim() === '') {
+        delete (dctfData as any).dataDeclaracao;
+      } else {
+        const normalizedDate = ValidationService.normalizeDate(raw);
+        if (!normalizedDate) {
+          return {
+            success: false,
+            error: 'Data da declaração inválida',
+          };
+        }
+        dctfData.dataDeclaracao = normalizedDate;
+      }
+    }
+
     // Validar dados
     const validation = this.validateDCTF(dctfData);
     if (!validation.isValid) {
@@ -85,6 +291,29 @@ export class DCTF extends DatabaseService<IDCTF> {
       return {
         success: false,
         error: 'Período inválido. Use o formato YYYY-MM',
+      };
+    }
+
+    // Mock temporário se Supabase não estiver configurado
+    if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
+      const novaDeclaracao: IDCTF = {
+        id: Date.now().toString(),
+        clienteId: dctfData.clienteId!,
+        periodo: dctfData.periodo!,
+        dataDeclaracao: dctfData.dataDeclaracao || new Date(),
+        status: dctfData.status || 'pendente',
+        situacao: dctfData.situacao || dctfData.status || 'pendente',
+        arquivoOriginal: dctfData.arquivoOriginal || '',
+        dadosProcessados: dctfData.dadosProcessados,
+        debitoApurado: dctfData.debitoApurado ?? null,
+        saldoAPagar: dctfData.saldoAPagar ?? null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      return {
+        success: true,
+        data: novaDeclaracao,
       };
     }
 
@@ -110,6 +339,35 @@ export class DCTF extends DatabaseService<IDCTF> {
    * Atualizar declaração DCTF
    */
   async updateDCTF(id: string, updates: Partial<IDCTF>): Promise<ApiResponse<IDCTF>> {
+    // Normalizar período se fornecido
+    if (updates.periodo) {
+      const normalized = ValidationService.normalizePeriodo(updates.periodo);
+      if (!normalized) {
+        return {
+          success: false,
+          error: 'Período inválido. Use o formato YYYY-MM',
+        };
+      }
+      updates.periodo = normalized;
+    }
+
+    // Normalizar data de declaração se fornecida (permitir vazio)
+    if ((updates as any).dataDeclaracao !== undefined) {
+      const raw = (updates as any).dataDeclaracao;
+      if (typeof raw === 'string' && raw.trim() === '') {
+        delete (updates as any).dataDeclaracao;
+      } else {
+        const normalizedDate = ValidationService.normalizeDate(raw);
+        if (!normalizedDate) {
+          return {
+            success: false,
+            error: 'Data da declaração inválida',
+          };
+        }
+        updates.dataDeclaracao = normalizedDate;
+      }
+    }
+
     // Validar dados
     const validation = this.validateDCTF(updates);
     if (!validation.isValid) {
@@ -131,24 +389,102 @@ export class DCTF extends DatabaseService<IDCTF> {
   }
 
   /**
-   * Buscar declarações por cliente
+   * Buscar declarações por cliente (com mock temporário)
    */
   async findByCliente(clienteId: string): Promise<ApiResponse<IDCTF[]>> {
-    return this.findBy({ cliente_id: clienteId });
+    try {
+      // Mock temporário se Supabase não estiver configurado
+      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
+        const mockData = this.getMockData();
+        if (mockData.success && mockData.data) {
+          const dctfsPorCliente = mockData.data.filter(d => d.clienteId === clienteId);
+          return {
+            success: true,
+            data: dctfsPorCliente,
+          };
+        }
+      }
+
+      // Buscar registros por cliente
+      const { data, error } = await this.supabase
+        .from(this.tableName)
+        .select('*')
+        .eq('cliente_id', clienteId);
+
+      if (error) {
+        console.error('Erro ao buscar DCTF por cliente:', error);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+
+      if (!data || data.length === 0) {
+        return {
+          success: true,
+          data: [],
+        };
+      }
+
+      // Buscar dados do cliente
+      let cliente = undefined;
+      const { data: clienteData, error: clienteError } = await this.supabase
+        .from('clientes')
+        .select('id, razao_social, cnpj, cnpj_limpo')
+        .eq('id', clienteId)
+        .single();
+
+      if (!clienteError && clienteData) {
+        cliente = {
+          id: clienteData.id,
+          razao_social: clienteData.razao_social,
+          cnpj: clienteData.cnpj,
+          cnpj_limpo: clienteData.cnpj_limpo,
+        };
+      }
+
+      // Mapear resultado para camelCase e incluir dados do cliente
+      const mappedData = data.map((item: any) => ({
+        id: item.id,
+        clienteId: item.cliente_id,
+        periodo: item.periodo_apuracao || item.periodo,
+        dataDeclaracao: item.data_transmissao || item.data_declaracao || new Date(),
+        status: item.situacao || item.status,
+        situacao: item.situacao || item.status,
+        arquivoOriginal: item.arquivo_original,
+        observacoes: item.observacoes,
+        debitoApurado: item.debito_apurado != null ? Number(item.debito_apurado) : null,
+        saldoAPagar: item.saldo_a_pagar != null ? Number(item.saldo_a_pagar) : null,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+        cliente,
+      }));
+
+      return {
+        success: true,
+        data: mappedData,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+      };
+    }
   }
 
   /**
    * Buscar declarações por período
    */
   async findByPeriodo(periodo: string): Promise<ApiResponse<IDCTF[]>> {
-    if (!this.validatePeriodo(periodo)) {
+    const normalized = ValidationService.normalizePeriodo(periodo);
+    if (!normalized || !this.validatePeriodo(normalized)) {
       return {
         success: false,
         error: 'Período inválido. Use o formato YYYY-MM',
       };
     }
 
-    return this.findBy({ periodo });
+    return this.findBy({ periodo: normalized });
   }
 
   /**
@@ -170,15 +506,15 @@ export class DCTF extends DatabaseService<IDCTF> {
    * Atualizar status da declaração
    */
   async updateStatus(id: string, status: string): Promise<ApiResponse<IDCTF>> {
-    const validStatuses = ['pendente', 'processando', 'concluido', 'erro'];
-    if (!validStatuses.includes(status)) {
+    const validStatuses = ['pendente', 'processando', 'concluido', 'erro'] as const;
+    if (!validStatuses.includes(status as any)) {
       return {
         success: false,
         error: 'Status inválido',
       };
     }
 
-    return this.update(id, { status });
+    return this.update(id, { status: status as 'pendente' | 'processando' | 'concluido' | 'erro' });
   }
 
   /**
@@ -190,9 +526,43 @@ export class DCTF extends DatabaseService<IDCTF> {
     porPeriodo: Record<string, number>;
   }>> {
     try {
+      // Mock temporário se Supabase não estiver configurado
+      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
+        const mockData = this.getMockData();
+        if (mockData.success && mockData.data) {
+          const porStatus: Record<string, number> = {
+            pendente: 0,
+            processando: 0,
+            concluido: 0,
+            erro: 0,
+          };
+          
+          mockData.data.forEach(d => {
+            porStatus[d.status] = (porStatus[d.status] || 0) + 1;
+          });
+
+          const porPeriodo: Record<string, number> = {};
+          mockData.data.forEach(d => {
+            porPeriodo[d.periodo] = (porPeriodo[d.periodo] || 0) + 1;
+          });
+
+          return {
+            success: true,
+            data: {
+              total: mockData.data.length,
+              porStatus,
+              porPeriodo,
+            },
+          };
+        }
+      }
+
       const totalResult = await this.count();
       if (!totalResult.success) {
-        return totalResult;
+        return {
+          success: false,
+          error: totalResult.error,
+        };
       }
 
       // Buscar declarações por status
@@ -248,7 +618,10 @@ export class DCTF extends DatabaseService<IDCTF> {
       const result = await this.updateStatus(declaracaoId, 'processando');
       
       if (!result.success) {
-        return result;
+        return {
+          success: false,
+          error: result.error,
+        };
       }
 
       // Simular processamento
