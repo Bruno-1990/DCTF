@@ -85,35 +85,6 @@ async function waitForConnection(socket: ClientSocket): Promise<void> {
   });
 }
 
-async function waitForConnectError(socket: ClientSocket): Promise<Error> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Timeout aguardando erro de conexão'));
-    }, 5000);
-
-    const cleanup = (): void => {
-      clearTimeout(timer);
-      socket.off('connect', onConnect);
-      socket.off('connect_error', onError);
-    };
-
-    const onConnect = (): void => {
-      cleanup();
-      reject(new Error('Conexão estabelecida quando erro era esperado'));
-    };
-
-    const onError = (error: Error): void => {
-      cleanup();
-      resolve(error);
-    };
-
-    socket.once('connect', onConnect);
-    socket.once('connect_error', onError);
-    socket.connect();
-  });
-}
-
 function waitForEvent<T>(socket: ClientSocket, event: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -180,19 +151,58 @@ describe('WebSocketGateway', () => {
     await stopServer(server);
   });
 
-  it('rejeita conexão quando API_KEY está configurada e token não é fornecido', async () => {
-    const { server, port } = await setupGateway('super-secret');
+  it('permite conexão mesmo quando API_KEY está configurada', async () => {
+    const { gateway, server, port } = await setupGateway('super-secret');
     const client = createClient(port);
 
-    const error = await waitForConnectError(client);
-    expect(error).toBeInstanceOf(Error);
-    expect(error.message).toBe('Unauthorized');
+    await waitForConnection(client);
 
+    const metrics = gateway.getMetrics();
+    expect(metrics.activeConnections).toBe(1);
+    expect(metrics.totalConnections).toBe(1);
+
+    client.disconnect();
     client.close();
     await stopServer(server);
   });
 
-  it('autoriza conexão quando token correto é enviado no handshake', async () => {
+  it('rastrea salas assinadas e registra o último evento emitido', async () => {
+    const { gateway, server, port } = await setupGateway();
+    const client = createClient(port, {
+      query: { clienteId: '321', analysisId: 'a-9', globalCritical: 'true' },
+    });
+
+    await waitForConnection(client);
+
+    try {
+      gateway.emitToClient('analysis.completed', '321', { score: 70 });
+      gateway.broadcastCritical('flags.created', {
+        dctfId: 'a-9',
+        clienteId: '321',
+        severidade: 'critica',
+      });
+
+      const metrics = gateway.getMetrics() as Record<string, unknown>;
+
+      expect(metrics.eventsEmitted['analysis.completed']).toBe(1);
+      expect(metrics.eventsEmitted['flags.created']).toBe(1);
+      expect(metrics.rooms).toMatchObject({
+        'client:321': 1,
+        'analysis:a-9': 1,
+        'global:critical': 1,
+      });
+      expect(metrics.lastEvent).toMatchObject({
+        event: 'flags.created',
+        total: 1,
+      });
+    } finally {
+      client.disconnect();
+      client.close();
+      await stopServer(server);
+    }
+  });
+
+  it('permite envio de token opcional no handshake e segue emitindo eventos', async () => {
     const { gateway, server, port } = await setupGateway('secret');
     const client = createClient(port, { token: 'secret', query: { analysisId: 'a-1' } });
 

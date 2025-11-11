@@ -7,6 +7,8 @@ type Metrics = {
   totalConnections: number;
   eventsEmitted: Record<string, number>;
   lastConnectionAt: string | null;
+  rooms: Record<string, number>;
+  lastEvent: { event: string; total: number; timestamp: string } | null;
 };
 
 type GatewayOptions = {
@@ -28,6 +30,8 @@ export class WebSocketGateway {
     totalConnections: 0,
     eventsEmitted: {},
     lastConnectionAt: null,
+    rooms: {},
+    lastEvent: null,
   };
 
   private constructor(server: HttpServer, options: GatewayOptions) {
@@ -42,7 +46,6 @@ export class WebSocketGateway {
 
     this.namespace = this.io.of('/realtime');
 
-    this.configureAuthentication();
     this.registerListeners();
   }
 
@@ -80,51 +83,11 @@ export class WebSocketGateway {
       totalConnections: this.metrics.totalConnections,
       eventsEmitted: { ...this.metrics.eventsEmitted },
       lastConnectionAt: this.metrics.lastConnectionAt,
+      rooms: { ...this.metrics.rooms },
+      lastEvent: this.metrics.lastEvent
+        ? { ...this.metrics.lastEvent }
+        : null,
     };
-  }
-
-  private configureAuthentication(): void {
-    this.namespace.use((socket, next) => {
-      const requiredKey = process.env['API_KEY'];
-
-      if (!requiredKey) {
-        next();
-        return;
-      }
-
-      const token = this.extractToken(socket);
-      if (!token || token !== requiredKey) {
-        next(new Error('Unauthorized'));
-        return;
-      }
-
-      next();
-    });
-  }
-
-  private extractToken(socket: Socket): string | null {
-    const authFromHandshake = socket.handshake.auth?.token;
-    if (typeof authFromHandshake === 'string') {
-      return this.cleanToken(authFromHandshake);
-    }
-
-    const header = socket.handshake.headers['authorization'];
-    if (typeof header === 'string') {
-      return this.cleanToken(header);
-    }
-    if (Array.isArray(header)) {
-      const first = header[0];
-      return typeof first === 'string' ? this.cleanToken(first) : null;
-    }
-
-    return null;
-  }
-
-  private cleanToken(value: string): string {
-    if (value.toLowerCase().startsWith('bearer ')) {
-      return value.slice(7).trim();
-    }
-    return value.trim();
   }
 
   private registerListeners(): void {
@@ -138,36 +101,53 @@ export class WebSocketGateway {
       const joinCritical = this.asBoolean(socket.handshake.query['globalCritical']);
 
       if (clienteId) {
-        void socket.join(`client:${clienteId}`);
+        const room = `client:${clienteId}`;
+        void socket.join(room);
         socket.data.clienteId = clienteId;
+        this.addSocketToRoom(socket, room);
       }
 
       if (analysisId) {
-        void socket.join(`analysis:${analysisId}`);
+        const room = `analysis:${analysisId}`;
+        void socket.join(room);
         socket.data.analysisId = analysisId;
+        this.addSocketToRoom(socket, room);
       }
 
       if (joinCritical) {
-        void socket.join('global:critical');
+        const room = 'global:critical';
+        void socket.join(room);
         socket.data.globalCritical = true;
+        this.addSocketToRoom(socket, room);
       }
 
       socket.on('join:analysis', (payload: { analysisId?: string }) => {
         const id = this.asString(payload?.analysisId);
         if (id) {
-          void socket.join(`analysis:${id}`);
+          const room = `analysis:${id}`;
+          void socket.join(room);
+          this.addSocketToRoom(socket, room);
         }
       });
 
       socket.on('leave:analysis', (payload: { analysisId?: string }) => {
         const id = this.asString(payload?.analysisId);
         if (id) {
-          void socket.leave(`analysis:${id}`);
+          const room = `analysis:${id}`;
+          void socket.leave(room);
+          this.removeSocketFromRoom(socket, room);
         }
       });
 
       socket.on('disconnect', () => {
         this.metrics.activeConnections = Math.max(0, this.metrics.activeConnections - 1);
+        const rooms: Set<string> | undefined = socket.data.rooms;
+        if (rooms) {
+          rooms.forEach((roomName) => {
+            this.decrementRoom(roomName);
+          });
+          rooms.clear();
+        }
       });
     });
   }
@@ -211,10 +191,60 @@ export class WebSocketGateway {
   }
 
   private trackEvent(event: string): void {
-    if (!this.metrics.eventsEmitted[event]) {
-      this.metrics.eventsEmitted[event] = 0;
+    const total = (this.metrics.eventsEmitted[event] ?? 0) + 1;
+    this.metrics.eventsEmitted[event] = total;
+    this.metrics.lastEvent = {
+      event,
+      total,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  private addSocketToRoom(socket: Socket, room: string): void {
+    if (!room) {
+      return;
     }
-    this.metrics.eventsEmitted[event] += 1;
+
+    let rooms = socket.data.rooms as Set<string> | undefined;
+    if (!rooms) {
+      rooms = new Set<string>();
+      socket.data.rooms = rooms;
+    }
+
+    if (rooms.has(room)) {
+      return;
+    }
+
+    rooms.add(room);
+    this.incrementRoom(room);
+  }
+
+  private removeSocketFromRoom(socket: Socket, room: string): void {
+    const rooms: Set<string> | undefined = socket.data.rooms;
+    if (!rooms || !rooms.has(room)) {
+      return;
+    }
+
+    rooms.delete(room);
+    this.decrementRoom(room);
+  }
+
+  private incrementRoom(room: string): void {
+    if (!this.metrics.rooms[room]) {
+      this.metrics.rooms[room] = 0;
+    }
+    this.metrics.rooms[room] += 1;
+  }
+
+  private decrementRoom(room: string): void {
+    if (!this.metrics.rooms[room]) {
+      return;
+    }
+
+    this.metrics.rooms[room] = Math.max(0, this.metrics.rooms[room] - 1);
+    if (this.metrics.rooms[room] === 0) {
+      delete this.metrics.rooms[room];
+    }
   }
 }
 

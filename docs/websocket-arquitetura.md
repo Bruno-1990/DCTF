@@ -45,16 +45,26 @@ Todos os payloads seguem JSON e devem incluir `timestamp` ISO e `eventId` (UUID)
 
 ## Autenticação
 
-- Handshake Socket.IO com header `Authorization: Bearer <token>` (mesmo JWT utilizado nas APIs).
-- Middleware valida token e associa `clienteId`/`roles` ao socket (guardadas em `socket.data`).
-- Conexões rejeitadas quando token inválido ou usuário sem permissão para o namespace/room.
+- O gateway opera sem autenticação dedicada: qualquer cliente pode se conectar ao namespace `/realtime`.
+- O Socket.IO permanece configurado para aceitar tokens no futuro (via `socket.handshake.auth.token`), permitindo reintroduzir validação quando necessário.
+- Permissões e segregação continuam sendo realizadas via salas (`client:<id>`, `analysis:<id>` e `global:critical`).
 
 ## Segurança e boas práticas
 
 - Limitar taxa de eventos enviados por cliente (debounce) para evitar flooding.
-- Armazenar métricas: conexões ativas, eventos emitidos por tipo, tempo médio de sessão.
+- Armazenar métricas: conexões ativas, eventos emitidos por tipo, salas ativas e último evento emitido.
 - Logar conexões e desconexões via `AuditTrailService` com `socket.id`, IP e usuário.
 - Considerar adapter Redis para escalar múltiplas instâncias (futuro).
+
+## Monitoramento em tempo real
+
+- `GET /ws/health` devolve:
+  - `status` (`OK` | `INITIALIZING`)
+  - `metrics.activeConnections` e `metrics.totalConnections`
+  - `metrics.eventsEmitted` (contagem por evento)
+  - `metrics.rooms` (quantidade de conexões por sala)
+  - `metrics.lastEvent` (`{ event, total, timestamp }`)
+- As métricas são atualizadas automaticamente sempre que sockets entram ou saem de salas e quando novos eventos são emitidos.
 
 ## Documentação adicional
 
