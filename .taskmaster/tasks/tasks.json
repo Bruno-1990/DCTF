@@ -595,7 +595,44 @@
           9
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Mapear requisitos do painel administrativo",
+            "description": "Definir módulos, perfis de acesso sem autenticação por senha e métricas essenciais do dashboard principal",
+            "details": "",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 12
+          },
+          {
+            "id": 2,
+            "title": "Desenhar arquitetura do dashboard principal",
+            "description": "Estruturar layout, navegação e componentes (sem módulos de senha), incluindo uso do DashboardLayoutBlueprint",
+            "details": "",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 12
+          },
+          {
+            "id": 3,
+            "title": "Implementar backend do painel administrativo",
+            "description": "Criar endpoints/serviços para alimentar o dashboard principal e operações administrativas sem fluxo de senha",
+            "details": "",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 12
+          },
+          {
+            "id": 4,
+            "title": "Implementar frontend do painel administrativo",
+            "description": "Construir telas do dashboard principal (React) integrando widgets e alertas, com acesso sem senha",
+            "details": "",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 12
+          }
+        ]
       },
       {
         "id": 13,
