@@ -42,21 +42,21 @@ function mapModuleToSection(moduleId: string, availableSectionIds: string[]): st
 
 function buildRoutePath(moduleId: string): string {
   if (moduleId === 'dashboard-overview') {
-    return '/dashboard';
+    return '/dashboard#executive-overview';
   }
   if (moduleId === 'alerts-management') {
-    return '/alerts';
+    return '/dashboard#alerts-and-risk';
   }
   if (moduleId === 'obligation-tracking') {
-    return '/obligations';
+    return '/dashboard#obligation-tracking';
   }
   if (moduleId === 'financial-monitoring') {
-    return '/financial';
+    return '/dashboard#financial-monitoring';
   }
   if (moduleId === 'configuration') {
-    return '/settings';
+    return '/dashboard#configuration';
   }
-  return `/${moduleId}`;
+  return '/dashboard';
 }
 
 export function buildAdminDashboardArchitecture(): AdminDashboardArchitecture {

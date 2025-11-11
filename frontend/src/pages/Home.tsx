@@ -23,6 +23,16 @@ const Home: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4">Conferências</h2>
+          <p className="text-gray-600 mb-4">
+            Acompanhe pendências de prazos legais e priorize as declarações com maior risco de autuação.
+          </p>
+          <Link to="/conferencias" className="inline-block bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
+            Acessar
+          </Link>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-semibold mb-4">Clientes</h2>
           <p className="text-gray-600 mb-4">Gerencie os dados dos clientes e suas informações fiscais.</p>
           <Link to="/clientes" className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">

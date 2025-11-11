@@ -10,6 +10,7 @@ type NormalizedRecord = {
   identification: string;
   rawIdentification: string;
   identificationType: string;
+  businessName?: string;
   period: string;
   periodLabel: string;
   periodDate: Date;
@@ -19,6 +20,7 @@ type NormalizedRecord = {
   origins: string[];
   declarationType: string;
   situation?: string;
+  status?: string;
   debitAmount: number;
   balanceDue: number;
 };
@@ -38,12 +40,14 @@ export class DashboardMetricsService {
     const totals = this.buildTotals(normalized);
     const financial = this.buildFinancial(normalized);
     const operations = this.buildOperations(normalized);
+    const statusSummary = this.buildStatusSummary(normalized);
     const alerts = this.buildAlerts(normalized, periods);
 
     return {
       totals,
       financial,
       operations,
+      statusSummary,
       alerts,
     };
   }
@@ -79,16 +83,24 @@ export class DashboardMetricsService {
     const averageBalance = records.length === 0 ? 0 : balanceTotal / records.length;
     const balanceRatio = debitTotal === 0 ? 0 : balanceTotal / debitTotal;
 
-    const balanceByIdentificationMap = new Map<string, number>();
+    const balanceByIdentificationMap = new Map<string, { balance: number; businessName?: string }>();
     records.forEach(record => {
-      balanceByIdentificationMap.set(
-        record.rawIdentification,
-        (balanceByIdentificationMap.get(record.rawIdentification) ?? 0) + record.balanceDue
-      );
+      const current = balanceByIdentificationMap.get(record.rawIdentification);
+      if (current) {
+        current.balance += record.balanceDue;
+        if (!current.businessName && record.businessName) {
+          current.businessName = record.businessName;
+        }
+      } else {
+        balanceByIdentificationMap.set(record.rawIdentification, {
+          balance: record.balanceDue,
+          businessName: record.businessName,
+        });
+      }
     });
 
     const balanceByIdentification = Array.from(balanceByIdentificationMap.entries())
-      .map(([identification, balance]) => ({ identification, balance }))
+      .map(([identification, data]) => ({ identification, businessName: data.businessName, balance: data.balance }))
       .sort((a, b) => b.balance - a.balance);
 
     return {
@@ -97,6 +109,36 @@ export class DashboardMetricsService {
       balanceRatio,
       averageBalance,
       balanceByIdentification,
+    };
+  }
+
+  private static buildStatusSummary(records: NormalizedRecord[]) {
+    const summary = {
+      delivered: 0,
+      received: 0,
+      inProgress: 0,
+      errors: 0,
+    };
+
+    records.forEach(record => {
+      const status = (record.status ?? '').toLowerCase();
+      const situation = (record.situation ?? '').toLowerCase();
+
+      if (status === 'concluido') {
+        summary.delivered += 1;
+      } else if (status === 'erro' || situation.includes('erro')) {
+        summary.errors += 1;
+      } else {
+        summary.received += 1;
+        if (situation.includes('andamento')) {
+          summary.inProgress += 1;
+        }
+      }
+    });
+
+    return {
+      ...summary,
+      total: records.length,
     };
   }
 
@@ -144,7 +186,7 @@ export class DashboardMetricsService {
           alerts.push(
             this.createAlert('pending_balance', severity, identification, record.periodLabel, {
               balance: record.balanceDue,
-            })
+            }, record.businessName)
           );
         }
 
@@ -157,7 +199,7 @@ export class DashboardMetricsService {
             alerts.push(
               this.createAlert('zero_debit', 'medium', identification, record.periodLabel, {
                 previousDebit: prevRecord.debitAmount,
-              })
+              }, record.businessName)
             );
           }
         }
@@ -166,7 +208,7 @@ export class DashboardMetricsService {
           alerts.push(
             this.createAlert('processing', 'medium', identification, record.periodLabel, {
               situation: record.situation,
-            })
+            }, record.businessName)
           );
         }
       });
@@ -188,11 +230,18 @@ export class DashboardMetricsService {
           const severity: DashboardAlertSeverity = now > dueDate ? 'high' : 'medium';
 
           alerts.push(
-            this.createAlert('missing_period', severity, identification, this.formatPeriod(year, month, true), {
-              previousPeriod: prevRecord.periodLabel,
-              previousDebit: prevRecord.debitAmount,
-              previousBalance: prevRecord.balanceDue,
-            })
+            this.createAlert(
+              'missing_period',
+              severity,
+              identification,
+              this.formatPeriod(year, month, true),
+              {
+                previousPeriod: prevRecord.periodLabel,
+                previousDebit: prevRecord.debitAmount,
+                previousBalance: prevRecord.balanceDue,
+              },
+              prevRecord.businessName ?? ordered[ordered.length - 1]?.businessName ?? ordered[0]?.businessName
+            )
           );
         }
       });
@@ -214,10 +263,17 @@ export class DashboardMetricsService {
       if (recordsSeries.length >= 2) {
         const severity: DashboardAlertSeverity = recordsSeries.length >= 3 ? 'high' : 'medium';
         alerts.push(
-          this.createAlert('retification_series', severity, identification, recordsSeries[recordsSeries.length - 1].periodLabel, {
-            length: recordsSeries.length,
-            periods: recordsSeries.map(r => r.periodLabel),
-          })
+          this.createAlert(
+            'retification_series',
+            severity,
+            identification,
+            recordsSeries[recordsSeries.length - 1].periodLabel,
+            {
+              length: recordsSeries.length,
+              periods: recordsSeries.map(r => r.periodLabel),
+            },
+            recordsSeries[recordsSeries.length - 1].businessName ?? recordsSeries[0].businessName
+          )
         );
       }
     };
@@ -240,13 +296,15 @@ export class DashboardMetricsService {
     severity: DashboardAlertSeverity,
     identification: string,
     period?: string,
-    context?: Record<string, any>
+    context?: Record<string, any>,
+    businessName?: string
   ): DashboardAlert {
-    const message = this.buildAlertMessage(type, identification, period, context);
+    const message = this.buildAlertMessage(type, businessName ?? identification, period, context);
     return {
       type,
       severity,
       identification,
+      businessName,
       period,
       message,
       context,
@@ -255,24 +313,24 @@ export class DashboardMetricsService {
 
   private static buildAlertMessage(
     type: DashboardAlertType,
-    identification: string,
+    label: string,
     period?: string,
     context?: Record<string, any>
   ) {
-    const periodInfo = period ? ` (competência ${period})` : '';
+    const periodInfo = period ? ` (competncia ${period})` : '';
     switch (type) {
       case 'missing_period':
-        return `Possível omissão para ${identification}${periodInfo}.`;
+        return `Possvel omisso para ${label}${periodInfo}.`;
       case 'pending_balance':
-        return `Saldo a pagar pendente para ${identification}${periodInfo}.`;
+        return `Saldo a pagar pendente para ${label}${periodInfo}.`;
       case 'zero_debit':
-        return `Débito zerado ou ausente para ${identification}${periodInfo}, requer conferência.`;
+        return `Dbito zerado ou ausente para ${label}${periodInfo}, requer conferncia.`;
       case 'retification_series':
-        return `Retificações consecutivas para ${identification}${periodInfo}.`;
+        return `Retificaes consecutivas para ${label}${periodInfo}.`;
       case 'processing':
-        return `Declaração ainda em processamento para ${identification}${periodInfo}.`;
+        return `Declarao ainda em processamento para ${label}${periodInfo}.`;
       default:
-        return `Ocorrência detectada para ${identification}${periodInfo}.`;
+        return `Ocorrncia detectada para ${label}${periodInfo}.`;
     }
   }
 
@@ -286,6 +344,7 @@ export class DashboardMetricsService {
       identification: this.cleanIdentification(record.identification),
       rawIdentification: record.identification,
       identificationType: record.identificationType,
+      businessName: record.businessName,
       period: this.formatPeriod(periodInfo.year, periodInfo.month),
       periodLabel: this.formatPeriod(periodInfo.year, periodInfo.month, true),
       periodDate,
@@ -295,6 +354,7 @@ export class DashboardMetricsService {
       origins: this.normalizeOrigins(record.origin),
       declarationType: record.declarationType || 'Desconhecido',
       situation: record.situation,
+      status: record.status,
       debitAmount: this.parseCurrency(record.debitAmount),
       balanceDue: this.parseCurrency(record.balanceDue),
     };

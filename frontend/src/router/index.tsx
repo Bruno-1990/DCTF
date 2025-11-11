@@ -9,6 +9,7 @@ import UploadDCTF from '../pages/UploadDCTF';
 import DCTFList from '../pages/DCTFList';
 import DCTFDadosPage from '../pages/DCTFDadosPage';
 import AdminDashboard from '../pages/AdminDashboard';
+import Conferencias from '../pages/Conferencias';
 
 const router = createBrowserRouter([
   {
@@ -23,6 +24,10 @@ const router = createBrowserRouter([
       {
         path: 'dashboard',
         element: <AdminDashboard />,
+      },
+      {
+        path: 'conferencias',
+        element: <Conferencias />,
       },
       {
         path: 'clientes',

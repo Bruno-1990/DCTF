@@ -4,11 +4,12 @@ import { Link, useLocation } from 'react-router-dom';
 const Sidebar: React.FC = () => {
   const location = useLocation();
 
-  const menuItems = [
-    { path: '/', label: 'Início', icon: '🏠' },
-    { path: '/clientes', label: 'Clientes', icon: '👥' },
-    { path: '/dctf', label: 'DCTF', icon: '📊' },
-    { path: '/relatorios', label: 'Relatórios', icon: '📋' },
+  const navigation = [
+    { name: 'Visão Geral', href: '/' },
+    { name: 'Dashboard', href: '/dashboard' },
+    { name: 'Conferências', href: '/conferencias' },
+    { name: 'DCTF', href: '/dctf' },
+    { name: 'Clientes', href: '/clientes' },
   ];
 
   const isActive = (path: string) => {
@@ -23,18 +24,18 @@ const Sidebar: React.FC = () => {
       <div className="p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-8">DCTF ANALYZER</h2>
         <nav className="space-y-2">
-          {menuItems.map((item) => (
+          {navigation.map((item) => (
             <Link
-              key={item.path}
-              to={item.path}
+              key={item.href}
+              to={item.href}
               className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive(item.path)
+                isActive(item.href)
                   ? 'bg-blue-100 text-blue-700 font-medium'
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
-              <span className="text-xl">{item.icon}</span>
-              <span>{item.label}</span>
+              <span className="text-xl">{item.name.charAt(0)}</span>
+              <span>{item.name}</span>
             </Link>
           ))}
         </nav>

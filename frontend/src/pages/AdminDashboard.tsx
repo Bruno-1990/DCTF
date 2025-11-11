@@ -1,29 +1,146 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import type { AdminDashboardSnapshotResponse } from "../services/dashboard";
 import { fetchAdminDashboardSnapshot } from "../services/dashboard";
+import { fetchConferenceSummary, type ConferenceSummary } from "../services/conferences";
 import LoadingSpinner from "../components/UI/LoadingSpinner";
 import Alert from "../components/UI/Alert";
 
+const friendlyRouteLabels: Record<string, string> = {
+  "dashboard-overview": "Visão executiva",
+  "obligation-tracking": "Monitoramento de obrigações",
+  "financial-monitoring": "Visão financeira",
+  "alerts-management": "Gestão de alertas",
+  configuration: "Configurações e integrações",
+};
+
 const AdminDashboard: React.FC = () => {
   const [snapshot, setSnapshot] = useState<AdminDashboardSnapshotResponse | null>(null);
+  const [conferenceSummary, setConferenceSummary] = useState<ConferenceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [conferenceError, setConferenceError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const data = await fetchAdminDashboardSnapshot();
-        setSnapshot(data);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Erro ao carregar o painel";
+      const [snapshotResult, conferenceResult] = await Promise.allSettled([
+        fetchAdminDashboardSnapshot(),
+        fetchConferenceSummary(6),
+      ]);
+
+      if (snapshotResult.status === "fulfilled") {
+        setSnapshot(snapshotResult.value);
+      } else {
+        const message = snapshotResult.reason instanceof Error ? snapshotResult.reason.message : "Erro ao carregar o painel";
         setError(message);
-      } finally {
-        setLoading(false);
       }
+
+      if (conferenceResult.status === "fulfilled") {
+        setConferenceSummary(conferenceResult.value);
+      } else {
+        setConferenceError("Não foi possível carregar as conferências.");
+        console.error("Erro ao carregar conferências", conferenceResult.reason);
+      }
+
+      setLoading(false);
     };
 
     load();
   }, []);
+
+  const alerts = snapshot?.metrics.alerts ?? [];
+  const dueDateIssues = conferenceSummary?.rules.dueDate ?? [];
+
+  const alertStats = useMemo(() => {
+    const total = alerts.length;
+    const high = alerts.filter((alert) => alert.severity === "high").length;
+    const medium = alerts.filter((alert) => alert.severity === "medium").length;
+    const low = total - high - medium;
+    return { total, high, medium, low };
+  }, [alerts]);
+
+  const declarationPeriods = useMemo(
+    () => (snapshot ? Object.keys(snapshot.metrics.totals.byPeriod ?? {}) : []),
+    [snapshot]
+  );
+
+  const numberFormatter = useMemo(() => new Intl.NumberFormat("pt-BR"), []);
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }),
+    []
+  );
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat("pt-BR"), []);
+
+  const navigationRoutes = snapshot?.navigation.routes ?? [];
+
+  const statusSummary = snapshot?.metrics.statusSummary ?? {
+    delivered: 0,
+    received: 0,
+    inProgress: 0,
+    errors: 0,
+    total: 0,
+  };
+
+  const statusItems = useMemo(() => {
+    const total = statusSummary.total || statusSummary.delivered + statusSummary.received + statusSummary.errors;
+    const safeTotal = total > 0 ? total : 1;
+    return [
+      {
+        key: "delivered",
+        label: "Entregues",
+        value: statusSummary.delivered,
+        helper: "Protocoladas sem pendências",
+        color: "bg-emerald-500",
+      },
+      {
+        key: "received",
+        label: "Recebidas",
+        value: statusSummary.received,
+        helper:
+          statusSummary.inProgress > 0
+            ? `Em andamento: ${statusSummary.inProgress}`
+            : "Aguardando validação/envio",
+        color: "bg-blue-500",
+      },
+      {
+        key: "errors",
+        label: "Erros",
+        value: statusSummary.errors,
+        helper: "Necessitam correção",
+        color: "bg-rose-500",
+      },
+    ].map((item) => ({
+      ...item,
+      percentage: Math.round((item.value / safeTotal) * 100),
+    }));
+  }, [statusSummary]);
+
+  const topBalances = useMemo(() => {
+    if (!snapshot) return [];
+    return (snapshot.metrics.financial.balanceByIdentification ?? [])
+      .slice(0, 6)
+      .map((item, index) => ({
+        ...item,
+        rank: index + 1,
+      }));
+  }, [snapshot]);
+
+  const transmissionsList = useMemo(() => {
+    if (!snapshot) return [];
+    const entries = Object.entries(snapshot.metrics.operations.transmissionsByDate ?? {});
+    return entries
+      .map(([date, count]) => {
+        const parsed = new Date(date);
+        const formatted = Number.isNaN(parsed.getTime())
+          ? date
+          : parsed.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+        return { date, formatted, count };
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 8);
+  }, [snapshot]);
+
+  const topDueDateIssues = useMemo(() => dueDateIssues.slice(0, 6), [dueDateIssues]);
 
   const cards = useMemo(() => {
     if (!snapshot) {
@@ -34,32 +151,79 @@ const AdminDashboard: React.FC = () => {
       {
         id: "total-declarations",
         label: "Declarações monitoradas",
-        value: snapshot.metrics.totals.declarations,
-        format: "integer" as const,
+        helper: `${declarationPeriods.length} competências recentes` ,
+        render: () => numberFormatter.format(snapshot.metrics.totals.declarations),
       },
       {
         id: "balance-total",
-        label: "Saldo pendente",
-        value: snapshot.metrics.financial.balanceTotal,
-        format: "currency" as const,
+        label: "Saldo em aberto",
+        helper: "Somatório das declarações com valores pendentes",
+        render: () => currencyFormatter.format(snapshot.metrics.financial.balanceTotal),
       },
       {
         id: "balance-ratio",
         label: "Percentual pendente",
-        value: snapshot.metrics.financial.balanceRatio,
-        format: "percentage" as const,
+        helper: "Relação entre saldo pendente e débito apurado",
+        render: () => `${(snapshot.metrics.financial.balanceRatio * 100).toFixed(1)}%`,
+      },
+      {
+        id: "alerts-total",
+        label: "Alertas ativos",
+        helper: `${alertStats.high} críticos · ${alertStats.medium} moderados` ,
+        render: () => numberFormatter.format(alertStats.total),
       },
     ];
-  }, [snapshot]);
+  }, [snapshot, declarationPeriods.length, alertStats, numberFormatter, currencyFormatter]);
 
-  const alerts = snapshot?.metrics.alerts ?? [];
+  const renderNavigationButton = (path: string, moduleId: string) => {
+    const label = friendlyRouteLabels[moduleId] ?? moduleId.replace(/-/g, " ");
+    return (
+      <a
+        key={moduleId}
+        href={path}
+        className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded-lg border border-blue-100 transition"
+      >
+        {label}
+        <span aria-hidden>→</span>
+      </a>
+    );
+  };
+
+  const renderBusinessName = (businessName?: string, identification?: string) =>
+    businessName && businessName.trim().length > 0 ? businessName : identification ?? 'N/A';
+
+  const formatDate = (value?: string) => {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return dateFormatter.format(parsed);
+  };
+
+  const renderSeverityPill = (severity: "low" | "medium" | "high") => {
+    const map = {
+      low: "bg-green-100 text-green-700 border-green-200",
+      medium: "bg-amber-100 text-amber-700 border-amber-200",
+      high: "bg-red-100 text-red-700 border-red-200",
+    } as const;
+
+    const label = severity === "high" ? "Alta" : severity === "medium" ? "Média" : "Baixa";
+
+    return <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${map[severity]}`}>{label}</span>;
+  };
 
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Painel Administrativo</h1>
-          <p className="text-gray-600 mt-1">Resumo inteligente das declarações e alertas das últimas competências.</p>
+          <p className="text-gray-600 mt-1">
+            Panorama consolidado das declarações DCTF e indicadores de risco{' '}
+            {declarationPeriods.length > 0 && (
+              <span className="font-medium text-gray-700">(últimas {declarationPeriods.length} competências)</span>
+            )}.
+          </p>
         </div>
         {snapshot && (
           <span className="text-sm text-gray-500">
@@ -74,6 +238,12 @@ const AdminDashboard: React.FC = () => {
         </Alert>
       )}
 
+      {conferenceError && (
+        <Alert type="warning" title="Conferências indisponíveis" onClose={() => setConferenceError(null)}>
+          {conferenceError}
+        </Alert>
+      )}
+
       {loading && (
         <div className="flex justify-center py-12">
           <LoadingSpinner label="Carregando painel" />
@@ -82,68 +252,199 @@ const AdminDashboard: React.FC = () => {
 
       {!loading && snapshot && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            {cards.map((card) => (
-              <div key={card.id} className="bg-white shadow rounded-lg p-6">
-                <p className="text-sm font-medium text-gray-500">{card.label}</p>
-                <p className="mt-2 text-3xl font-semibold text-gray-900">
-                  {card.format === "currency" &&
-                    card.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  {card.format === "integer" && card.value.toLocaleString("pt-BR")}
-                  {card.format === "percentage" && `${(card.value * 100).toFixed(1)}%`}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <section className="lg:col-span-2 bg-white shadow rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Navegação rápida</h2>
-              <ul className="space-y-3">
-                {snapshot.navigation.routes.map((route) => (
-                  <li key={route.moduleId} className="flex items-center justify-between border-b pb-3">
-                    <div>
-                      <p className="font-medium text-gray-800">{route.moduleId}</p>
-                      <p className="text-sm text-gray-500">Seção: {route.sectionId}</p>
-                    </div>
-                    <a
-                      href={route.href}
-                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                    >
-                      Abrir
-                    </a>
-                  </li>
+          <section id="executive-overview" className="bg-white shadow rounded-lg p-6 mb-8">
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+                {cards.map((card) => (
+                  <div key={card.id} className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-gray-500">{card.label}</p>
+                    {card.helper && <p className="text-xs text-gray-400">{card.helper}</p>}
+                    <p className="text-3xl font-semibold text-gray-900">{card.render()}</p>
+                  </div>
                 ))}
-              </ul>
-            </section>
-
-            <section className="bg-white shadow rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Alertas recentes</h2>
-              {alerts.length === 0 ? (
-                <p className="text-sm text-gray-500">Nenhum alerta crítico no momento.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {alerts.slice(0, 5).map((alert, index) => (
-                    <li key={`${alert.identification}-${index}`} className="border-b pb-2">
-                      <p className="text-sm font-medium text-gray-800">
-                        {alert.identification} — {alert.period ?? "-"}
+              </div>
+              {statusItems.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-100 pt-4">
+                  {statusItems.map((item) => (
+                    <div key={item.key} className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-gray-700">{item.label}</span>
+                        <span className="text-gray-500">{numberFormatter.format(item.value)}</span>
+                      </div>
+                      <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                        <div className={`${item.color} h-2`} style={{ width: `${Math.min(100, item.percentage)}%` }} />
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {item.helper}
+                        {statusSummary.total > 0 ? ` · ${item.percentage}% do total` : ''}
                       </p>
-                      <p className="text-sm text-gray-600">{alert.message}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {navigationRoutes.length > 0 && (
+                <nav className="flex flex-wrap gap-3 border-t border-gray-100 pt-4">
+                  {navigationRoutes.map((route) => renderNavigationButton(route.path, route.moduleId))}
+                </nav>
+              )}
+            </div>
+          </section>
+
+          <section id="financial-monitoring" className="bg-white shadow rounded-lg p-6 mb-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Top devedores em aberto</h2>
+            {topBalances.length === 0 ? (
+              <p className="text-sm text-gray-500">Nenhuma pendência financeira encontrada.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm text-left">
+                  <thead>
+                    <tr className="text-xs uppercase text-gray-500 border-b">
+                      <th className="py-2 pr-4">#</th>
+                      <th className="py-2 pr-4">Contribuinte</th>
+                      <th className="py-2 pr-4">CNPJ</th>
+                      <th className="py-2 pr-4 text-right">Saldo pendente</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {topBalances.map((item) => (
+                      <tr key={`${item.identification}-${item.rank}`} className="hover:bg-gray-50">
+                        <td className="py-2 pr-4 text-gray-500">{item.rank}</td>
+                        <td className="py-2 pr-4 text-gray-800 font-medium">{renderBusinessName(item.businessName, item.identification)}</td>
+                        <td className="py-2 pr-4 text-gray-500">{item.identification}</td>
+                        <td className="py-2 pr-4 text-right font-semibold text-gray-900">
+                          {currencyFormatter.format(item.balance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {dueDateIssues && (
+            <section id="compliance-checks" className="bg-white shadow rounded-lg p-6 mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Conferência de prazos legais</h2>
+                  <p className="text-sm text-gray-500">
+                    Baseada na IN RFB 2.005/2021 (art. 10) para monitorar envios fora do prazo ou em risco.
+                  </p>
+                </div>
+                <Link
+                  to="/conferencias"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+                >
+                  Ver todas as pendências
+                  <span aria-hidden>→</span>
+                </Link>
+              </div>
+              {topDueDateIssues.length === 0 ? (
+                <p className="text-sm text-gray-500">Todas as competências analisadas estão dentro do prazo.</p>
+              ) : (
+                <div className="overflow-x-auto -mx-4 px-4">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Empresa</th>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">CNPJ</th>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Competência</th>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Vencimento</th>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Entrega</th>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Severidade</th>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Resumo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {topDueDateIssues.map((issue) => (
+                        <tr key={issue.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-gray-800 font-medium">{renderBusinessName(issue.businessName, issue.identification)}</td>
+                          <td className="px-3 py-2 text-gray-600">{issue.identification}</td>
+                          <td className="px-3 py-2 text-gray-600">{issue.period}</td>
+                          <td className="px-3 py-2 text-gray-600">{formatDate(issue.dueDate)}</td>
+                          <td className="px-3 py-2 text-gray-600">{formatDate(issue.transmissionDate)}</td>
+                          <td className="px-3 py-2">{renderSeverityPill(issue.severity)}</td>
+                          <td className="px-3 py-2 text-gray-600">{issue.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
+          <div id="alerts-and-risk" className="bg-white shadow rounded-lg p-6 mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-semibold text-gray-900">Central de alertas</h2>
+              {alertStats.total > 0 && (
+                <span className="text-xs text-gray-500">{alertStats.total} registros ativos</span>
+              )}
+            </div>
+            {alerts.length === 0 ? (
+              <p className="text-sm text-gray-500">Nenhum alerta ativo no momento.</p>
+            ) : (
+              <ul className="space-y-3">
+                {alerts.slice(0, 8).map((alert, index) => (
+                  <li key={`${alert.identification}-${index}`} className="border-b pb-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">
+                          {renderBusinessName(alert.businessName, alert.identification)}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {alert.identification} · {alert.period ?? "Competência não informada"}
+                        </p>
+                      </div>
                       <span
-                        className={`inline-block mt-1 text-xs font-semibold px-2 py-1 rounded ${{
+                        className={`inline-block text-xs font-semibold px-2 py-1 rounded ${{
                           low: "bg-green-100 text-green-700",
                           medium: "bg-yellow-100 text-yellow-700",
                           high: "bg-red-100 text-red-700",
                         }[alert.severity]}`}
                       >
-                        {alert.severity.toUpperCase()}
+                        {alert.severity === "high" ? "ALTO" : alert.severity === "medium" ? "MÉDIO" : "BAIXO"}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-600 leading-relaxed">{alert.message}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
+
+          <section id="obligation-tracking" className="bg-white shadow rounded-lg p-6 mb-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Linha do tempo de transmissões</h2>
+            {transmissionsList.length === 0 ? (
+              <p className="text-sm text-gray-500">Nenhuma transmissão registrada nas competências recentes.</p>
+            ) : (
+              <ul className="space-y-3">
+                {transmissionsList.map((item) => (
+                  <li key={item.date} className="flex items-center justify-between border-b pb-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{item.formatted}</p>
+                      <p className="text-xs text-gray-500">Código de competência: {item.date}</p>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-700">
+                      {item.count} {item.count === 1 ? "transmissão" : "transmissões"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section id="configuration" className="bg-white shadow rounded-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Configurações e integrações</h2>
+            <p className="text-sm text-gray-600 leading-relaxed mb-4">
+              {snapshot.meta.notes || "Ajuste as permissões e integrações conforme a política interna."}
+            </p>
+            <ul className="text-sm text-gray-600 space-y-2 list-disc list-inside">
+              <li>Modo de autenticação: {snapshot.meta.authenticationModes.join(", ")}.</li>
+              <li>Crie uma chave de API exclusiva para cada integração externa.</li>
+              <li>Mantenha auditoria das integrações críticas e revise no mínimo uma vez por trimestre.</li>
+            </ul>
+          </section>
         </>
       )}
     </div>

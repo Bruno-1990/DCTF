@@ -37,6 +37,7 @@ jest.mock('../../src/services/DashboardMetricsService', () => ({
         balanceByIdentification: [],
       },
       operations: { transmissionsByDate: {}, zeroMovementCount: 0, retificationRate: 0 },
+      statusSummary: { delivered: 6, received: 3, inProgress: 1, errors: 1, total: 10 },
       alerts: [],
     }),
   },

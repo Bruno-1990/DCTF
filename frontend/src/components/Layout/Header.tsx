@@ -1,7 +1,21 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+
+const navigation = [
+  { name: 'Início', href: '/' },
+  { name: 'Dashboard', href: '/dashboard' },
+  { name: 'Conferências', href: '/conferencias' },
+  { name: 'DCTF', href: '/dctf' },
+  { name: 'Clientes', href: '/clientes' },
+  { name: 'Relatórios', href: '/relatorios' },
+  { name: 'Upload', href: '/upload' },
+  { name: 'Configurações', href: '/configuracoes' },
+];
 
 const Header: React.FC = () => {
+  const location = useLocation();
+  const isActive = (href: string) => location.pathname === href;
+
   return (
     <header className="bg-blue-600 text-white shadow-lg">
       <div className="container mx-auto px-4 py-4">
@@ -9,25 +23,20 @@ const Header: React.FC = () => {
           <Link to="/" className="text-2xl font-bold">
             DCTF ANALYZER
           </Link>
-          <nav className="space-x-4">
-            <Link to="/dashboard" className="hover:text-blue-200">
-              Painel
-            </Link>
-            <Link to="/clientes" className="hover:text-blue-200">
-              Clientes
-            </Link>
-            <Link to="/dctf" className="hover:text-blue-200">
-              DCTF
-            </Link>
-            <Link to="/upload" className="hover:text-blue-200">
-              Upload
-            </Link>
-            <Link to="/relatorios" className="hover:text-blue-200">
-              Relatórios
-            </Link>
-            <Link to="/configuracoes" className="hover:text-blue-200">
-              Configurações
-            </Link>
+          <nav className="flex flex-wrap gap-3 text-sm font-medium">
+            {navigation.map((item) => (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={`px-3 py-1 rounded transition-colors ${
+                  isActive(item.href)
+                    ? 'bg-white text-blue-600'
+                    : 'hover:bg-blue-500'
+                }`}
+              >
+                {item.name}
+              </Link>
+            ))}
           </nav>
         </div>
       </div>

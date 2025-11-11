@@ -39,12 +39,14 @@ export interface DCTF extends BaseEntity {
 export interface DashboardDCTFRecord {
   identificationType: string;
   identification: string;
+  businessName?: string;
   period: string;
   transmissionDate?: string;
   category?: string;
   origin?: string;
   declarationType: string;
   situation?: string;
+  status?: string;
   debitAmount?: number | string | null;
   balanceDue?: number | string | null;
 }
@@ -63,6 +65,7 @@ export interface DashboardAlert {
   type: DashboardAlertType;
   severity: DashboardAlertSeverity;
   identification: string;
+  businessName?: string;
   period?: string;
   message: string;
   context?: Record<string, any>;
@@ -80,14 +83,45 @@ export interface DashboardMetrics {
     balanceTotal: number;
     balanceRatio: number;
     averageBalance: number;
-    balanceByIdentification: Array<{ identification: string; balance: number }>;
+    balanceByIdentification: Array<{ identification: string; businessName?: string; balance: number }>;
   };
   operations: {
     transmissionsByDate: Record<string, number>;
     zeroMovementCount: number;
     retificationRate: number;
   };
+  statusSummary: {
+    delivered: number;
+    received: number;
+    inProgress: number;
+    errors: number;
+    total: number;
+  };
   alerts: DashboardAlert[];
+}
+
+export type ConferenceIssueSeverity = 'low' | 'medium' | 'high';
+
+export interface DashboardConferenceIssue {
+  id: string;
+  rule: 'due_date';
+  identification: string;
+  businessName?: string;
+  period: string;
+  dueDate: string;
+  transmissionDate?: string;
+  status?: string;
+  severity: ConferenceIssueSeverity;
+  daysLate?: number;
+  message: string;
+  details?: Record<string, any>;
+}
+
+export interface DashboardConferenceSummary {
+  generatedAt: string;
+  rules: {
+    dueDate: DashboardConferenceIssue[];
+  };
 }
 
 export interface DCTFAnalysisDataset {

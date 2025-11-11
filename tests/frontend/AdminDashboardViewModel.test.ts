@@ -19,6 +19,7 @@ jest.mock('../../src/services/AdminDashboardService', () => ({
         balanceByIdentification: [],
       },
       operations: { transmissionsByDate: {}, zeroMovementCount: 0, retificationRate: 0 },
+      statusSummary: { delivered: 3, received: 1, inProgress: 1, errors: 1, total: 5 },
       alerts: [],
     },
     architecture: {

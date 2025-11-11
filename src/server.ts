@@ -18,6 +18,7 @@ import relatoriosRoutes from './routes/relatorios';
 import spreadsheetRoutes from './routes/spreadsheet';
 import flagsRoutes from './routes/flags';
 import adminDashboardRoutes from './routes/admin-dashboard';
+import adminDashboardConferenceRoutes from './routes/admin-dashboard-conferences';
 
 class Server {
   private app: express.Application;
@@ -103,6 +104,7 @@ class Server {
     this.app.use('/api/spreadsheet', spreadsheetRoutes);
     this.app.use('/api/flags', flagsRoutes);
     this.app.use('/api/dashboard/admin', adminDashboardRoutes);
+    this.app.use('/api/dashboard/admin/conferences', adminDashboardConferenceRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

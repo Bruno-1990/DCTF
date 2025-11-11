@@ -98,12 +98,14 @@ function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
   return {
     identificationType: "CNPJ",
     identification: record.cliente?.cnpj ?? record.cliente?.cnpj_limpo ?? record.clienteId,
+    businessName: record.cliente?.razao_social ?? undefined,
     period: formatPeriod(record.periodo),
     transmissionDate: formatDate(record.dataDeclaracao),
     category: "Geral",
     origin: "Plataforma",
     declarationType: record.situacao ?? record.status ?? "Desconhecido",
-    situation: record.status,
+    situation: record.situacao ?? record.status,
+    status: record.status,
     debitAmount: Number(record.debitoApurado ?? 0),
     balanceDue: Number(record.saldoAPagar ?? 0),
   };

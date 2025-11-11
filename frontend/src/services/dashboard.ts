@@ -29,17 +29,25 @@ export interface AdminDashboardSnapshotResponse {
       balanceTotal: number;
       balanceRatio: number;
       averageBalance: number;
-      balanceByIdentification: Array<{ identification: string; balance: number }>;
+      balanceByIdentification: Array<{ identification: string; businessName?: string; balance: number }>;
     };
     operations: {
       transmissionsByDate: Record<string, number>;
       zeroMovementCount: number;
       retificationRate: number;
     };
+    statusSummary: {
+      delivered: number;
+      received: number;
+      inProgress: number;
+      errors: number;
+      total: number;
+    };
     alerts: Array<{
       type: string;
       severity: "low" | "medium" | "high";
       identification: string;
+      businessName?: string;
       period?: string;
       message: string;
     }>;
