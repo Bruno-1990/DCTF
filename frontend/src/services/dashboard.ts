@@ -52,4 +52,6 @@ export async function fetchAdminDashboardSnapshot(months = 5): Promise<AdminDash
   });
   return response.data;
 }
-\nexport type AdminDashboardSnapshot = AdminDashboardSnapshotResponse;\nexport { fetchAdminDashboardSnapshot as fetchAdminDashboardSnapshotResponse };\n
+
+export type AdminDashboardSnapshot = AdminDashboardSnapshotResponse;
+export { fetchAdminDashboardSnapshot as fetchAdminDashboardSnapshotResponse };
