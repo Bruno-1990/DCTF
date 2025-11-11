@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AdminDashboardSnapshotResponse, fetchAdminDashboardSnapshotResponse } from "../services/dashboard";
+import type { AdminDashboardSnapshotResponse } from "../services/dashboard";
+import { fetchAdminDashboardSnapshot } from "../services/dashboard";
 import LoadingSpinner from "../components/UI/LoadingSpinner";
 import Alert from "../components/UI/Alert";
 
@@ -11,7 +12,7 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await fetchAdminDashboardSnapshotResponse();
+        const data = await fetchAdminDashboardSnapshot();
         setSnapshot(data);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erro ao carregar o painel";
