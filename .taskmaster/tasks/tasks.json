@@ -549,7 +549,7 @@
             "title": "Implementar gateway WebSocket no backend",
             "description": "Criar servidor Socket.IO integrado ao Express com autenticação e salas por cliente/tipo de evento.",
             "details": "- Configurar servidor Socket.IO (ou ws) com middleware de autenticação (JWT/token).\n- Criar namespaces/salas para notificações gerais e por cliente.\n- Disponibilizar endpoint de handshake e health check.\n- Exportar serviço para reutilização em análises e flags.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 11
           },
@@ -558,7 +558,7 @@
             "title": "Propagar eventos de análise e flags em tempo real",
             "description": "Integrar serviços de análise/flags para emitir eventos WebSocket quando novas análises são concluídas ou flags críticas são criadas/atualizadas.",
             "details": "- Publicar evento `analysis.completed` com resumo (riskScore, penalidades, findings).\n- Publicar evento `flags.created`/`flags.updated` com severidade, código e link.\n- Garantir agrupamento por cliente e broadcast quando crítico.\n- Registrar eventos em auditoria.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 11
           },
@@ -567,7 +567,7 @@
             "title": "Implementar cliente WebSocket no frontend",
             "description": "Criar hook/serviço React para conectar ao gateway, exibir notificações em tempo real e histórico de alertas.",
             "details": "- Adicionar configuração de endpoint WS e autenticação.\n- Exibir toasts/badges para eventos críticos/altos.\n- Manter painel com histórico e status de conexão.\n- Testar reconexão e fallback para polling.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 11
           },
@@ -576,7 +576,7 @@
             "title": "Cobrir testes, monitoramento e documentação do WebSocket",
             "description": "Adicionar testes unitários/integrados, monitoramento de saúde e documentação operacional do sistema WebSocket.",
             "details": "- Criar testes de carga/reconexão com jest/supertest ou ferramenta dedicada.\n- Expor rota de health check do WebSocket.\n- Configurar métricas básicas (conexões ativas, eventos emitidos).\n- Atualizar docs com uso do gateway e exemplos de payloads.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 11
           }
@@ -647,7 +647,35 @@
           8
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Mapear personas e perguntas-chave do dashboard",
+            "description": "Identificar perfis de usuário e prioridades de informação para o dashboard DCTF",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 15
+          },
+          {
+            "id": 2,
+            "title": "Catalogar indicadores, campos e base legal",
+            "description": "Relacionar cada KPI do dashboard às fontes de dados e dispositivos normativos (IN RFB 2.005/2021, Lei 9.430/1996 etc.)",
+            "details": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 15
+          },
+          {
+            "id": 3,
+            "title": "Desenhar protótipo de layout e interações",
+            "description": "Criar wireframes do dashboard (visão executiva, monitoração, financeiro, alertas) e mapear os componentes WebSocket",
+            "details": "",
+            "status": "in-progress",
+            "dependencies": [],
+            "parentTaskId": 15
+          }
+        ]
       },
       {
         "id": 16,
@@ -764,7 +792,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-11-10T20:25:53.048Z",
+      "updated": "2025-11-11T14:06:29.674Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF"
     }
   }

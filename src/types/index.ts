@@ -35,6 +35,61 @@ export interface DCTF extends BaseEntity {
   cliente?: Pick<Cliente, 'id' | 'nome' | 'razao_social' | 'cnpj' | 'cnpj_limpo'>;
 }
 
+// Tipos para dashboard de monitoramento
+export interface DashboardDCTFRecord {
+  identificationType: string;
+  identification: string;
+  period: string;
+  transmissionDate?: string;
+  category?: string;
+  origin?: string;
+  declarationType: string;
+  situation?: string;
+  debitAmount?: number | string | null;
+  balanceDue?: number | string | null;
+}
+
+export type DashboardAlertSeverity = 'low' | 'medium' | 'high';
+
+export type DashboardAlertType =
+  | 'missing_period'
+  | 'pending_balance'
+  | 'zero_debit'
+  | 'retification_series'
+  | 'processing'
+  | 'data_inconsistency';
+
+export interface DashboardAlert {
+  type: DashboardAlertType;
+  severity: DashboardAlertSeverity;
+  identification: string;
+  period?: string;
+  message: string;
+  context?: Record<string, any>;
+}
+
+export interface DashboardMetrics {
+  totals: {
+    declarations: number;
+    byPeriod: Record<string, number>;
+    byType: Record<string, number>;
+    byOrigin: Record<string, number>;
+  };
+  financial: {
+    debitTotal: number;
+    balanceTotal: number;
+    balanceRatio: number;
+    averageBalance: number;
+    balanceByIdentification: Array<{ identification: string; balance: number }>;
+  };
+  operations: {
+    transmissionsByDate: Record<string, number>;
+    zeroMovementCount: number;
+    retificationRate: number;
+  };
+  alerts: DashboardAlert[];
+}
+
 export interface DCTFAnalysisDataset {
   generatedAt: string;
   filters: Record<string, any>;
