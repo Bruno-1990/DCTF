@@ -1,5 +1,5 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React from "react";
+import { Link } from "react-router-dom";
 
 const Header: React.FC = () => {
   return (
@@ -10,6 +10,9 @@ const Header: React.FC = () => {
             DCTF ANALYZER
           </Link>
           <nav className="space-x-4">
+            <Link to="/dashboard" className="hover:text-blue-200">
+              Painel
+            </Link>
             <Link to="/clientes" className="hover:text-blue-200">
               Clientes
             </Link>
@@ -33,4 +36,3 @@ const Header: React.FC = () => {
 };
 
 export default Header;
-

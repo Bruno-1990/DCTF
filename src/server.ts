@@ -17,6 +17,7 @@ import dctfRoutes from './routes/dctf';
 import relatoriosRoutes from './routes/relatorios';
 import spreadsheetRoutes from './routes/spreadsheet';
 import flagsRoutes from './routes/flags';
+import adminDashboardRoutes from './routes/admin-dashboard';
 
 class Server {
   private app: express.Application;
@@ -101,6 +102,7 @@ class Server {
     this.app.use('/api/relatorios', relatoriosRoutes);
     this.app.use('/api/spreadsheet', spreadsheetRoutes);
     this.app.use('/api/flags', flagsRoutes);
+    this.app.use('/api/dashboard/admin', adminDashboardRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {
@@ -127,13 +129,13 @@ class Server {
     });
   }
 
-  public start(): void {
+    public start(): void {
     this.httpServer.listen(this.port, () => {
-      console.log(`🚀 Server running on port ${this.port}`);
-      console.log(`📊 Environment: ${config.nodeEnv}`);
-      console.log(`🔗 Health check: http://localhost:${this.port}/health`);
-      console.log(`📚 API Documentation: http://localhost:${this.port}/api/docs`);
-      console.log(`📡 WebSocket Health: http://localhost:${this.port}/ws/health`);
+      console.log(`Server running on port ${this.port}`);
+      console.log(`Environment: ${config.nodeEnv}`);
+      console.log(`Health check: http://localhost:${this.port}/health`);
+      console.log(`API Documentation: http://localhost:${this.port}/api/docs`);
+      console.log(`WebSocket Health: http://localhost:${this.port}/ws/health`);
     });
   }
 
@@ -147,3 +149,11 @@ class Server {
 }
 
 export default Server;
+
+
+
+
+
+
+
+
