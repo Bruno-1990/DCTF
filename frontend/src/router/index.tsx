@@ -8,6 +8,7 @@ import ErrorPage from '../pages/ErrorPage';
 import UploadDCTF from '../pages/UploadDCTF';
 import DCTFList from '../pages/DCTFList';
 import DCTFDadosPage from '../pages/DCTFDadosPage';
+import AdminDashboard from '../pages/AdminDashboard';
 
 const router = createBrowserRouter([
   {
@@ -18,6 +19,10 @@ const router = createBrowserRouter([
       {
         index: true,
         element: <Home />,
+      },
+      {
+        path: 'dashboard',
+        element: <AdminDashboard />,
       },
       {
         path: 'clientes',
@@ -48,5 +53,3 @@ const router = createBrowserRouter([
 ]);
 
 export const AppRouter = () => <RouterProvider router={router} />;
-
-
