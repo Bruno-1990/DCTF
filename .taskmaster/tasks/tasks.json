@@ -588,7 +588,7 @@
         "description": "Dashboard principal interativo com métricas críticas, gerenciamento de dados DCTF, configurações e monitoramento",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           6,
           8,
@@ -601,7 +601,7 @@
             "title": "Mapear requisitos do painel administrativo",
             "description": "Definir módulos, perfis de acesso sem autenticação por senha e métricas essenciais do dashboard principal",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 12
           },
@@ -610,7 +610,7 @@
             "title": "Desenhar arquitetura do dashboard principal",
             "description": "Estruturar layout, navegação e componentes (sem módulos de senha), incluindo uso do DashboardLayoutBlueprint",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 12
           },
@@ -619,7 +619,7 @@
             "title": "Implementar backend do painel administrativo",
             "description": "Criar endpoints/serviços para alimentar o dashboard principal e operações administrativas sem fluxo de senha",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 12
           },
@@ -628,7 +628,7 @@
             "title": "Implementar frontend do painel administrativo",
             "description": "Construir telas do dashboard principal (React) integrando widgets e alertas, com acesso sem senha",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 12
           }
@@ -829,7 +829,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-11-11T14:25:38.024Z",
+      "updated": "2025-11-11T14:59:06.890Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF"
     }
   }
