@@ -1,4 +1,4 @@
-import api from './api';
+import api from "./api";
 
 export interface AdminDashboardRoute {
   href: string;
@@ -6,7 +6,7 @@ export interface AdminDashboardRoute {
   sectionId: string;
 }
 
-export interface AdminDashboardSnapshot {
+export interface AdminDashboardSnapshotResponse {
   meta: {
     requiresPassword: boolean;
     authenticationModes: string[];
@@ -38,7 +38,7 @@ export interface AdminDashboardSnapshot {
     };
     alerts: Array<{
       type: string;
-      severity: 'low' | 'medium' | 'high';
+      severity: "low" | "medium" | "high";
       identification: string;
       period?: string;
       message: string;
@@ -46,8 +46,8 @@ export interface AdminDashboardSnapshot {
   };
 }
 
-export async function fetchAdminDashboardSnapshot(months = 5): Promise<AdminDashboardSnapshot> {
-  const response = await api.get<AdminDashboardSnapshot>('/dashboard/admin/snapshot', {
+export async function fetchAdminDashboardSnapshot(months = 5): Promise<AdminDashboardSnapshotResponse> {
+  const response = await api.get<AdminDashboardSnapshotResponse>("/dashboard/admin/snapshot", {
     params: { months },
   });
   return response.data;
