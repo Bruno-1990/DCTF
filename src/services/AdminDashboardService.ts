@@ -25,22 +25,46 @@ export interface BuildAdminDashboardSnapshotOptions {
 }
 
 export async function fetchAdminDashboardRecords(months = 5): Promise<DashboardDCTFRecord[]> {
-  const periods = computePeriods(months);
-  const dashboardRecords: DashboardDCTFRecord[] = [];
-
   const allDeclarations = await dctfModel.findAll();
   if (!allDeclarations.success || !allDeclarations.data) {
-    return dashboardRecords;
+    return [];
   }
 
-  const periodSet = new Set(periods);
-  allDeclarations.data
-    .filter(record => record.periodo && periodSet.has(record.periodo))
-    .forEach(record => {
-      dashboardRecords.push(mapToDashboardRecord(record));
-    });
+  const mappedRecords = allDeclarations.data
+    .map(mapToDashboardRecord)
+    .map(record => ({ record, periodInfo: parseRecordPeriod(record.period) }))
+    .filter((entry): entry is { record: DashboardDCTFRecord; periodInfo: { year: number; month: number } } =>
+      Boolean(entry.record.identification) && entry.periodInfo !== null
+    );
 
-  return dashboardRecords;
+  if (mappedRecords.length === 0) {
+    return [];
+  }
+
+  mappedRecords.sort((a, b) => {
+    const valueA = a.periodInfo.year * 12 + a.periodInfo.month;
+    const valueB = b.periodInfo.year * 12 + b.periodInfo.month;
+    return valueB - valueA;
+  });
+
+  const allowedPeriods = new Set<string>();
+  const recentRecords: DashboardDCTFRecord[] = [];
+
+  for (const entry of mappedRecords) {
+    const { record, periodInfo } = entry;
+    const periodKey = `${periodInfo.year}-${String(periodInfo.month).padStart(2, "0")}`;
+
+    if (allowedPeriods.size < months || allowedPeriods.has(periodKey)) {
+      allowedPeriods.add(periodKey);
+      recentRecords.push(record);
+    }
+
+    if (allowedPeriods.size >= months && !allowedPeriods.has(periodKey)) {
+      break;
+    }
+  }
+
+  return recentRecords;
 }
 
 export async function getAdminDashboardSnapshot(months = 5): Promise<AdminDashboardSnapshot> {
@@ -68,20 +92,6 @@ export function buildAdminDashboardSnapshot(
     architecture,
     requirements,
   };
-}
-
-function computePeriods(months: number): string[] {
-  const now = new Date();
-  const periods: string[] = [];
-
-  for (let i = 0; i < months; i += 1) {
-    const reference = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const year = reference.getFullYear();
-    const month = (reference.getMonth() + 1).toString().padStart(2, "0");
-    periods.push(`${year}-${month}`);
-  }
-
-  return periods;
 }
 
 function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
@@ -142,4 +152,3 @@ function formatDate(value: Date | string | undefined): string | undefined {
   }
   return parsed.toISOString();
 }
-
