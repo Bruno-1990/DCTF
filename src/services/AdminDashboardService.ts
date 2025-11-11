@@ -111,6 +111,26 @@ function formatPeriod(periodo: string): string {
   return periodo;
 }
 
+function parseRecordPeriod(period: string | undefined): { year: number; month: number } | null {
+  if (!period) return null;
+  const trimmed = period.trim();
+  const monthYear = /^([0-9]{2})\/([0-9]{4})$/.exec(trimmed);
+  if (monthYear) {
+    return {
+      month: Number.parseInt(monthYear[1], 10),
+      year: Number.parseInt(monthYear[2], 10),
+    };
+  }
+  const yearMonth = /^([0-9]{4})-([0-9]{2})$/.exec(trimmed);
+  if (yearMonth) {
+    return {
+      year: Number.parseInt(yearMonth[1], 10),
+      month: Number.parseInt(yearMonth[2], 10),
+    };
+  }
+  return null;
+}
+
 function formatDate(value: Date | string | undefined): string | undefined {
   if (!value) return undefined;
   if (value instanceof Date) {
@@ -122,3 +142,4 @@ function formatDate(value: Date | string | undefined): string | undefined {
   }
   return parsed.toISOString();
 }
+
