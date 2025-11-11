@@ -3,6 +3,7 @@ import { DCTF as DCTFModel } from '../models/DCTF';
 import { Flag as FlagModel } from '../models/Flag';
 import { DCTFIngestionService } from './DCTFIngestionService';
 import { ValidationService } from './ValidationService';
+import { WebSocketGateway } from './WebSocketGateway';
 
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -96,16 +97,22 @@ export class DCTFAnalysisService {
     const estimatedPenalty = findings.reduce((acc, finding) => acc + (finding.estimatedPenalty || 0), 0);
     const riskScore = this.calculateRiskScore(findings);
 
+    const analysisResult: AnalysisResult = {
+      dctfId,
+      clienteId: decl.clienteId,
+      periodo: decl.periodo,
+      findings,
+      summary,
+      riskScore,
+      estimatedPenalty,
+    };
+
+    this.emitRealtimeEvents(analysisResult);
+
     return {
       success: true,
       data: {
-        dctfId,
-        clienteId: decl.clienteId,
-        periodo: decl.periodo,
-        findings,
-        summary,
-        riskScore,
-        estimatedPenalty,
+        ...analysisResult,
       }
     };
   }
@@ -315,6 +322,51 @@ export class DCTFAnalysisService {
 
     const base = findings.reduce((acc, finding) => acc + weights[finding.severity], 0);
     return Math.min(100, base);
+  }
+
+  private emitRealtimeEvents(result: AnalysisResult): void {
+    const gateway = WebSocketGateway.getInstance();
+    if (!gateway) {
+      return;
+    }
+
+    const analysisPayload = {
+      dctfId: result.dctfId,
+      clienteId: result.clienteId,
+      periodo: result.periodo,
+      findings: result.findings,
+      summary: result.summary,
+      riskScore: result.riskScore,
+      estimatedPenalty: result.estimatedPenalty,
+    };
+
+    gateway.emitToAnalysis('analysis.completed', result.dctfId, analysisPayload);
+
+    if (result.clienteId) {
+      gateway.emitToClient('analysis.completed', result.clienteId, analysisPayload);
+    }
+
+    const criticalOrHigh = result.findings.filter(finding => finding.severity === 'critical' || finding.severity === 'high');
+    for (const finding of criticalOrHigh) {
+      const flagPayload = {
+        dctfId: result.dctfId,
+        clienteId: result.clienteId,
+        codigo: finding.code,
+        severidade: finding.severity === 'critical' ? 'critica' : 'alta',
+        mensagem: finding.message,
+        actionPlan: finding.actionPlan,
+        periodo: result.periodo,
+        riskScore: result.riskScore,
+      };
+
+      if (finding.severity === 'critical') {
+        gateway.broadcastCritical('flags.created', flagPayload);
+      } else if (result.clienteId) {
+        gateway.emitToClient('flags.created', result.clienteId, flagPayload);
+      }
+
+      gateway.emitToAnalysis('flags.updated', result.dctfId, flagPayload);
+    }
   }
 }
 

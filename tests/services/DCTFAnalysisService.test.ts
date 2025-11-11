@@ -1,4 +1,5 @@
 import { DCTFAnalysisService, AnalysisFinding } from '../../src/services/DCTFAnalysisService';
+import { WebSocketGateway } from '../../src/services/WebSocketGateway';
 
 const datasetDeclaracao = {
   id: 'd1',
@@ -56,9 +57,12 @@ jest.mock('../../src/models/DCTF', () => ({
   })),
 }));
 
+const upsertFlagMock = jest.fn().mockResolvedValue({ success: true });
+
 jest.mock('../../src/models/Flag', () => ({
   Flag: jest.fn().mockImplementation(() => ({
     criarFlagAutomatica: jest.fn().mockResolvedValue({ success: true }),
+    upsertFlag: upsertFlagMock,
   })),
 }));
 
@@ -78,6 +82,7 @@ jest.mock('../../src/services/DCTFIngestionService', () => ({
 describe('DCTFAnalysisService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    upsertFlagMock.mockClear();
   });
 
   it('deve gerar achados com risco e multa estimada', async () => {
@@ -92,8 +97,64 @@ describe('DCTFAnalysisService', () => {
 
     const codes = data.findings.map((f: AnalysisFinding) => f.code);
     expect(codes).toContain('ENTREGA_FORA_DO_PRAZO');
-    expect(codes).toContain('DEDUCAO_SUPERIOR_RECEITA');
+    expect(codes).toContain('RETENCAO_SUPERIOR_RECEITA_LIQUIDA');
     expect(codes).toContain('OMISSAO_DECLARACAO');
+  });
+
+  it('deve emitir eventos em tempo real ao concluir análise e gerar flags críticas', async () => {
+    const emitToClient = jest.fn();
+    const emitToAnalysis = jest.fn();
+    const broadcastCritical = jest.fn();
+
+    const gatewayMock = {
+      emitToClient,
+      emitToAnalysis,
+      broadcastCritical,
+      getMetrics: jest.fn(),
+    } as unknown as WebSocketGateway;
+
+    const getInstanceSpy = jest.spyOn(WebSocketGateway, 'getInstance').mockReturnValue(gatewayMock);
+
+    const service = new DCTFAnalysisService();
+    const result = await service.analyzeDeclaracao('d1');
+
+    expect(result.success).toBe(true);
+    expect(getInstanceSpy).toHaveBeenCalled();
+
+    expect(emitToClient).toHaveBeenCalledWith(
+      'analysis.completed',
+      'c1',
+      expect.objectContaining({
+        dctfId: 'd1',
+        clienteId: 'c1',
+        periodo: expect.any(String),
+        riskScore: expect.any(Number),
+        summary: expect.objectContaining({
+          critical: expect.any(Number),
+          high: expect.any(Number),
+        }),
+      }),
+    );
+
+    expect(emitToAnalysis).toHaveBeenCalledWith(
+      'analysis.completed',
+      'd1',
+      expect.objectContaining({
+        findings: expect.any(Array),
+        estimatedPenalty: expect.any(Number),
+      }),
+    );
+
+    expect(broadcastCritical).toHaveBeenCalledWith(
+      'flags.created',
+      expect.objectContaining({
+        severidade: 'critica',
+        clienteId: 'c1',
+      }),
+    );
+    expect(upsertFlagMock).toHaveBeenCalled();
+
+    getInstanceSpy.mockRestore();
   });
 });
 
