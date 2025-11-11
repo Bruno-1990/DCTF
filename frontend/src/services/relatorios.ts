@@ -18,6 +18,25 @@ export type RelatoriosListResponse = {
 
 export const relatoriosService = {
   async getAll(params?: { page?: number; limit?: number; tipoRelatorio?: string; declaracaoId?: string }): Promise<RelatoriosListResponse> {
+    try {
+      const historyResponse = await api.get<any>('/dashboard/admin/reports/history', { params });
+      const historyBody = historyResponse.data;
+      if (historyBody && Array.isArray(historyBody.data)) {
+        const mapped = (historyBody.data as Array<any>).map((item) => ({
+          id: item.id,
+          declaracaoId: item.declaracaoId ?? '-',
+          tipoRelatorio: item.tipoRelatorio ?? 'gerencial',
+          titulo: item.titulo ?? 'Relatório',
+          conteudo: item.notes ?? '',
+          arquivoPdf: item.arquivoPdf,
+          createdAt: item.createdAt,
+        }));
+        return { items: mapped, pagination: historyBody.pagination };
+      }
+    } catch (error) {
+      console.warn('Falha ao carregar histórico de relatórios gerenciais, usando endpoint legacy /relatorios', error);
+    }
+
     const response = await api.get<any>('/relatorios', { params });
     const body = response.data;
     if (Array.isArray(body)) {

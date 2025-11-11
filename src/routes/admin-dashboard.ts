@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import AdminDashboardController from '../controllers/AdminDashboardController';
+import AdminDashboardReportController from '../controllers/AdminDashboardReportController';
 
 const router = Router();
 
 router.get('/snapshot', (req, res) => AdminDashboardController.getSnapshot(req, res));
+router.get('/reports/gerencial.pdf', (req, res) => AdminDashboardReportController.downloadGerencial(req, res));
+router.get('/reports/history', (req, res) => AdminDashboardReportController.listHistory(req, res));
+router.get('/reports/history/:id/download', (req, res) => AdminDashboardReportController.downloadHistory(req, res));
 
 export default router;
