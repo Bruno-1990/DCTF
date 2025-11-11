@@ -1,17 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AdminDashboardSnapshot, fetchAdminDashboardSnapshot } from "../services/dashboard";
+import { AdminDashboardSnapshotResponse, fetchAdminDashboardSnapshotResponse } from "../services/dashboard";
 import LoadingSpinner from "../components/UI/LoadingSpinner";
 import Alert from "../components/UI/Alert";
 
 const AdminDashboard: React.FC = () => {
-  const [snapshot, setSnapshot] = useState<AdminDashboardSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<AdminDashboardSnapshotResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await fetchAdminDashboardSnapshot();
+        const data = await fetchAdminDashboardSnapshotResponse();
         setSnapshot(data);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erro ao carregar o painel";
@@ -150,3 +150,4 @@ const AdminDashboard: React.FC = () => {
 };
 
 export default AdminDashboard;
+
