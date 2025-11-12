@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ConferenceIssue } from '../services/conferences';
 import { fetchConferenceSummary } from '../services/conferences';
 import { format } from 'date-fns';
@@ -39,6 +39,7 @@ export default function Conferencias() {
   const [generatedAt, setGeneratedAt] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let mounted = true;
@@ -73,6 +74,18 @@ export default function Conferencias() {
       return severityOrder[a.severity] - severityOrder[b.severity];
     });
   }, [issues]);
+
+  const toggleActionPlan = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   if (isLoading) {
     return (
@@ -123,28 +136,54 @@ export default function Conferencias() {
                 <th className="px-4 py-3 text-left font-semibold text-slate-600">Situação</th>
                 <th className="px-4 py-3 text-left font-semibold text-slate-600">Severidade</th>
                 <th className="px-4 py-3 text-left font-semibold text-slate-600">Resumo</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Plano de ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {orderedIssues.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-sm text-slate-500">
+                  <td colSpan={9} className="px-4 py-6 text-center text-sm text-slate-500">
                     Nenhuma pendência encontrada. Todas as declarações analisadas estão dentro do prazo.
                   </td>
                 </tr>
               )}
-              {orderedIssues.map(issue => (
-                <tr key={issue.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-slate-800 font-medium">{issue.businessName ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-600">{issue.identification}</td>
-                  <td className="px-4 py-3 text-slate-600">{issue.period}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatDate(issue.dueDate)}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatDate(issue.transmissionDate)}</td>
-                  <td className="px-4 py-3 text-slate-600 capitalize">{issue.status ?? '—'}</td>
-                  <td className="px-4 py-3"><SeverityTag severity={issue.severity} /></td>
-                  <td className="px-4 py-3 text-slate-600">{issue.message}</td>
-                </tr>
-              ))}
+              {orderedIssues.map(issue => {
+                const isExpanded = expanded.has(issue.id);
+                return (
+                  <Fragment key={issue.id}>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-slate-800 font-medium">{issue.businessName ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{issue.identification}</td>
+                      <td className="px-4 py-3 text-slate-600">{issue.period}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatDate(issue.dueDate)}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatDate(issue.transmissionDate)}</td>
+                      <td className="px-4 py-3 text-slate-600 capitalize">{issue.status ?? '—'}</td>
+                      <td className="px-4 py-3"><SeverityTag severity={issue.severity} /></td>
+                      <td className="px-4 py-3 text-slate-600">{issue.message}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {issue.actionPlan ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleActionPlan(issue.id)}
+                            className="text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            {isExpanded ? 'Ocultar plano' : 'Ver plano de ação'}
+                          </button>
+                        ) : (
+                          <span className="text-slate-400">Sem plano cadastrado</span>
+                        )}
+                      </td>
+                    </tr>
+                    {issue.actionPlan && isExpanded && (
+                      <tr className="bg-slate-50">
+                        <td colSpan={9} className="px-4 py-3 text-sm text-slate-600 whitespace-pre-wrap">
+                          <strong>Plano de ação:</strong> {issue.actionPlan}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

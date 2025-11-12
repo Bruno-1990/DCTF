@@ -115,6 +115,7 @@ export interface DashboardConferenceIssue {
   daysLate?: number;
   message: string;
   details?: Record<string, any>;
+  actionPlan?: string;
 }
 
 export interface DashboardConferenceSummary {

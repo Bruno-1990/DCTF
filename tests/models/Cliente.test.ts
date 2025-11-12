@@ -22,8 +22,9 @@ jest.mock('../../src/config/database', () => ({
           single: jest.fn(() => ({
             data: {
               id: 'test-id',
-              nome: 'Cliente Teste',
-              cnpj: '12345678000195',
+              razao_social: 'Cliente Teste',
+              cnpj_limpo: '12345678000195',
+              cnpj: '12.345.678/0001-95',
               email: 'teste@exemplo.com',
               created_at: new Date(),
               updated_at: new Date(),
@@ -38,8 +39,9 @@ jest.mock('../../src/config/database', () => ({
             single: jest.fn(() => ({
               data: {
                 id: 'test-id',
-                nome: 'Cliente Atualizado',
-                cnpj: '12345678000195',
+                razao_social: 'Cliente Atualizado',
+                cnpj_limpo: '12345678000195',
+                cnpj: '12.345.678/0001-95',
                 email: 'atualizado@exemplo.com',
                 created_at: new Date(),
                 updated_at: new Date(),
@@ -87,9 +89,9 @@ describe('Cliente Model', () => {
   });
 
   describe('Formatação de CNPJ', () => {
-    it('deve formatar CNPJ corretamente', () => {
+    it('deve limpar CNPJ removendo caracteres especiais', () => {
       const cnpjFormatado = '11.222.333/0001-81';
-      const result = (clienteModel as any).formatCNPJ(cnpjFormatado);
+      const result = (clienteModel as any).cleanCNPJ(cnpjFormatado);
       expect(result).toBe('11222333000181');
     });
   });
@@ -97,8 +99,8 @@ describe('Cliente Model', () => {
   describe('Criação de Cliente', () => {
     it('deve criar cliente com dados válidos', async () => {
       const clienteData: Partial<ICliente> = {
-        nome: 'Cliente Teste',
-        cnpj: '11.222.333/0001-81',
+        razao_social: 'Cliente Teste',
+        cnpj_limpo: '11222333000181',
         email: 'teste@exemplo.com',
       };
 
@@ -108,8 +110,8 @@ describe('Cliente Model', () => {
 
     it('deve rejeitar cliente com CNPJ inválido', async () => {
       const clienteData: Partial<ICliente> = {
-        nome: 'Cliente Teste',
-        cnpj: '11.222.333/0001-82', // CNPJ inválido
+        razao_social: 'Cliente Teste',
+        cnpj_limpo: '11222333000182', // CNPJ inválido
         email: 'teste@exemplo.com',
       };
 
@@ -120,31 +122,31 @@ describe('Cliente Model', () => {
 
     it('deve rejeitar cliente sem nome', async () => {
       const clienteData: Partial<ICliente> = {
-        cnpj: '11.222.333/0001-81',
+        cnpj_limpo: '11222333000181',
         email: 'teste@exemplo.com',
       };
 
       const result = await clienteModel.createCliente(clienteData);
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Nome é obrigatório');
+      expect(result.error).toBe('Razão Social é obrigatória');
     });
 
     it('deve rejeitar cliente com email inválido', async () => {
       const clienteData: Partial<ICliente> = {
-        nome: 'Cliente Teste',
-        cnpj: '11.222.333/0001-81',
+        razao_social: 'Cliente Teste',
+        cnpj_limpo: '11222333000181',
         email: 'email-invalido',
       };
 
       const result = await clienteModel.createCliente(clienteData);
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Email deve ter um formato válido');
+      expect(result.error).toBe('Email deve ter um formato válido');
     });
   });
 
   describe('Busca por CNPJ', () => {
     it('deve buscar cliente por CNPJ', async () => {
-      const cnpj = '11.222.333/0001-81';
+      const cnpj = '12.345.678/0001-90';
       const result = await clienteModel.findByCNPJ(cnpj);
       expect(result.success).toBe(true);
     });

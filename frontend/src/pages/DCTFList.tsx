@@ -104,7 +104,6 @@ export default function DCTFList() {
         <div className="flex gap-2">
           <button onClick={() => { setPage(1); fetchList(); }} className="px-3 py-2 rounded bg-blue-600 text-white">Filtrar</button>
           <button onClick={() => { setClienteId(''); setPeriodo(''); setStatus(''); setPage(1); }} className="px-3 py-2 rounded border">Limpar</button>
-          <Link to="/upload" className="px-3 py-2 rounded bg-green-600 text-white">Upload</Link>
         </div>
       </div>
 
@@ -133,7 +132,6 @@ export default function DCTFList() {
                 <td className="p-2 border-b">{d.status}</td>
                 <td className="p-2 border-b space-x-2">
                   <Link to={`/dctf/${d.id}/dados`} className="text-blue-600 underline">Ver dados</Link>
-                  <Link to={`/upload`} className="text-green-700 underline">Upload</Link>
                 </td>
               </tr>
             ))}

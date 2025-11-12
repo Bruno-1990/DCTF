@@ -108,10 +108,7 @@ const DCTFPage: React.FC = () => {
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-900">DCTF</h1>
-        <div className="flex items-center gap-2">
-          <Link to="/upload" className="px-3 py-2 bg-green-600 text-white rounded">Upload planilhas</Link>
-          <Link to="/dctf/list" className="px-3 py-2 bg-blue-600 text-white rounded">Ver lista</Link>
-        </div>
+        <Link to="/dctf/list" className="px-3 py-2 bg-blue-600 text-white rounded">Ver lista</Link>
         <div className="flex items-center gap-2">
           <input placeholder="ClienteId (opcional)" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="px-2 py-1 border rounded" />
           <select value={situacao} onChange={(e) => setSituacao(e.target.value)} className="px-2 py-1 border rounded">

@@ -6,12 +6,19 @@ export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const client = supabase;
 
   useEffect(() => {
+    if (!client) {
+      setLoading(false);
+      setError('Supabase não configurado para autenticação.');
+      return;
+    }
+
     // Verificar se há uma sessão ativa
     const getSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await client.auth.getSession();
         setUser(session?.user ?? null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao verificar sessão');
@@ -23,7 +30,7 @@ export const useAuth = () => {
     getSession();
 
     // Escutar mudanças na autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = client.auth.onAuthStateChange(
       async (_, session) => {
         setUser(session?.user ?? null);
         setLoading(false);
@@ -31,14 +38,18 @@ export const useAuth = () => {
     );
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [client]);
 
   const signIn = async (email: string, password: string) => {
     try {
       setLoading(true);
       setError(null);
+
+      if (!client) {
+        throw new Error('Supabase não configurado para autenticação.');
+      }
       
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await client.auth.signInWithPassword({
         email,
         password,
       });
@@ -60,8 +71,12 @@ export const useAuth = () => {
     try {
       setLoading(true);
       setError(null);
+
+      if (!client) {
+        throw new Error('Supabase não configurado para autenticação.');
+      }
       
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await client.auth.signUp({
         email,
         password,
       });
@@ -83,8 +98,12 @@ export const useAuth = () => {
     try {
       setLoading(true);
       setError(null);
+
+      if (!client) {
+        throw new Error('Supabase não configurado para autenticação.');
+      }
       
-      const { error } = await supabase.auth.signOut();
+      const { error } = await client.auth.signOut();
       if (error) throw error;
       
       setUser(null);
@@ -101,8 +120,12 @@ export const useAuth = () => {
     try {
       setLoading(true);
       setError(null);
+
+      if (!client) {
+        throw new Error('Supabase não configurado para autenticação.');
+      }
       
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      const { error } = await client.auth.resetPasswordForEmail(email);
       if (error) throw error;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao resetar senha';

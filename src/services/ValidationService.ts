@@ -187,9 +187,26 @@ export class ValidationService {
   static toISOFromPtBr(str: string): string | null {
     if (!this.isPtBrDateString(str)) return null;
     const [dd, mm, yyyy] = str.trim().split('/');
+    const day = Number(dd);
+    const month = Number(mm);
+    const year = Number(yyyy);
+
+    if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) {
+      return null;
+    }
+
+    const candidate = new Date(Date.UTC(year, month - 1, day));
+    const isValidDate =
+      candidate.getUTCFullYear() === year &&
+      candidate.getUTCMonth() + 1 === month &&
+      candidate.getUTCDate() === day;
+
+    if (!isValidDate) {
+      return null;
+    }
+
     const iso = `${yyyy}-${mm}-${dd}`;
-    const d = new Date(iso);
-    return isNaN(d.getTime()) ? null : iso;
+    return iso;
   }
 
   /**

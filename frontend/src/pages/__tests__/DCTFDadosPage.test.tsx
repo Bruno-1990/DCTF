@@ -19,7 +19,7 @@ describe('DCTFDadosPage', () => {
   );
 
   it('carrega dados com filtros e mostra tabela', async () => {
-    vi.spyOn(global, 'fetch' as any).mockResolvedValueOnce({
+    vi.spyOn(globalThis, 'fetch' as any).mockResolvedValueOnce({
       json: async () => ({
         success: true,
         data: [

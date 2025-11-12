@@ -1,5 +1,6 @@
 import { describe, it, vi, beforeEach, expect } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
 import DCTFList from '../DCTFList';
 
 describe('DCTFList Page', () => {
@@ -8,7 +9,7 @@ describe('DCTFList Page', () => {
   });
 
   it('carrega lista e mostra tabela com paginação', async () => {
-    vi.spyOn(global, 'fetch' as any).mockResolvedValueOnce({
+    vi.spyOn(globalThis, 'fetch' as any).mockResolvedValueOnce({
       json: async () => ({
         success: true,
         data: [
@@ -18,7 +19,11 @@ describe('DCTFList Page', () => {
       })
     } as any);
 
-    render(<DCTFList />);
+    render(
+      <BrowserRouter>
+        <DCTFList />
+      </BrowserRouter>
+    );
 
     await waitFor(() => expect(screen.getByText('Declarações DCTF')).toBeInTheDocument());
     expect(screen.getByText('d1')).toBeInTheDocument();

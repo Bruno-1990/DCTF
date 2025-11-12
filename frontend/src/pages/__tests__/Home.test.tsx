@@ -14,7 +14,7 @@ const renderWithRouter = (component: React.ReactElement) => {
 describe('Home', () => {
   it('renders welcome message', () => {
     renderWithRouter(<Home />);
-    expect(screen.getByText('Bem-vindo ao DCTF MPC')).toBeInTheDocument();
+    expect(screen.getByText('Bem-vindo ao DCTF ANALYZER')).toBeInTheDocument();
   });
 
   it('renders navigation cards', () => {
@@ -27,10 +27,9 @@ describe('Home', () => {
   it('has working navigation links', () => {
     renderWithRouter(<Home />);
     
-    const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(3);
-    expect(links[0]).toHaveAttribute('href', '/clientes');
-    expect(links[1]).toHaveAttribute('href', '/dctf');
-    expect(links[2]).toHaveAttribute('href', '/relatorios');
+    const accessLinks = screen.getAllByRole('link', { name: /Acessar/i });
+    expect(accessLinks).toHaveLength(5);
+    const hrefs = accessLinks.map((link) => link.getAttribute('href'));
+    expect(hrefs).toEqual(['/dashboard', '/conferencias', '/clientes', '/dctf', '/relatorios']);
   });
 });

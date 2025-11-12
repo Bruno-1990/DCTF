@@ -23,25 +23,19 @@ describe('UploadDCTF Page', () => {
       warnings: [],
     };
 
-    vi.spyOn(global, 'fetch' as any).mockResolvedValueOnce({ json: async () => mockValidate } as any);
+    vi.spyOn(globalThis, 'fetch' as any).mockResolvedValueOnce({ json: async () => mockValidate } as any);
 
     render(<UploadDCTF />);
 
-    const fileInput = screen.getByRole('textbox', { hidden: true }) as HTMLInputElement | null;
-    // Fallback: select actual input by querySelector if role not found
-    const actualInput = (fileInput || (document.querySelector('input[type="file"]') as HTMLInputElement));
-
+    const actualInput = screen.getByTestId('upload-input') as HTMLInputElement;
     const file = new File(['a'], 'sample.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     Object.defineProperty(actualInput, 'files', { value: [file] });
     fireEvent.change(actualInput);
 
     fireEvent.click(screen.getByRole('button', { name: /validar/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Válidos:/)).toBeInTheDocument();
-      expect(screen.getByText(/Inválidos:/)).toBeInTheDocument();
-    });
-
+    await screen.findByText(/Válidos:/);
+    await screen.findByText(/Inválidos:/);
     expect(screen.getByText('Receita')).toBeInTheDocument();
   });
 
@@ -66,13 +60,13 @@ describe('UploadDCTF Page', () => {
       warnings: [],
     };
 
-    const fetchMock = vi.spyOn(global, 'fetch' as any);
+    const fetchMock = vi.spyOn(globalThis, 'fetch' as any);
     fetchMock.mockResolvedValueOnce({ json: async () => mockValidate } as any);
     fetchMock.mockResolvedValueOnce({ json: async () => mockImport } as any);
 
     render(<UploadDCTF />);
 
-    const actualInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const actualInput = screen.getByTestId('upload-input') as HTMLInputElement;
     const file = new File(['a'], 'sample.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     Object.defineProperty(actualInput, 'files', { value: [file] });
     fireEvent.change(actualInput);

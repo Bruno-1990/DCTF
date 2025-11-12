@@ -33,8 +33,8 @@ describe('AdminDashboardArchitecture', () => {
     const architecture = buildAdminDashboardArchitecture();
 
     expect(architecture.navigation.routes).toEqual([
-      { path: '/dashboard', moduleId: 'dashboard-overview', sectionId: 'executive-overview' },
-      { path: '/alerts', moduleId: 'alerts-management', sectionId: 'alerts-and-risk' },
+      { path: '/dashboard#executive-overview', moduleId: 'dashboard-overview', sectionId: 'executive-overview' },
+      { path: '/dashboard#alerts-and-risk', moduleId: 'alerts-management', sectionId: 'alerts-and-risk' },
     ]);
 
     expect(architecture.access.requiresPassword).toBe(false);

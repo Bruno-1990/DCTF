@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useClientes } from '../hooks/useClientes';
 import type { Cliente } from '../types';
 
@@ -144,6 +145,12 @@ const Clientes: React.FC = () => {
           >
             Novo Cliente
           </button>
+          <Link
+            to="/upload"
+            className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700"
+          >
+            Upload de planilhas
+          </Link>
         </div>
       </div>
 

@@ -179,32 +179,32 @@ export default function DCTFDadosPage() {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col">
-          <label className="text-sm">Código</label>
-          <input className="border rounded px-2 py-1" value={codigo} onChange={e => setCodigo(e.target.value)} />
+          <label className="text-sm" htmlFor="filter-codigo">Código</label>
+          <input id="filter-codigo" className="border rounded px-2 py-1" value={codigo} onChange={e => setCodigo(e.target.value)} />
         </div>
         <div className="flex flex-col">
-          <label className="text-sm">Código Receita</label>
-          <input className="border rounded px-2 py-1" value={codigoReceita} onChange={e => setCodigoReceita(e.target.value)} />
+          <label className="text-sm" htmlFor="filter-codigo-receita">Código Receita</label>
+          <input id="filter-codigo-receita" className="border rounded px-2 py-1" value={codigoReceita} onChange={e => setCodigoReceita(e.target.value)} />
         </div>
         <div className="flex flex-col">
-          <label className="text-sm">Valor min</label>
-          <input className="border rounded px-2 py-1" value={valorMin} onChange={e => setValorMin(e.target.value)} />
+          <label className="text-sm" htmlFor="filter-valor-min">Valor min</label>
+          <input id="filter-valor-min" className="border rounded px-2 py-1" value={valorMin} onChange={e => setValorMin(e.target.value)} />
         </div>
         <div className="flex flex-col">
-          <label className="text-sm">Valor max</label>
-          <input className="border rounded px-2 py-1" value={valorMax} onChange={e => setValorMax(e.target.value)} />
+          <label className="text-sm" htmlFor="filter-valor-max">Valor max</label>
+          <input id="filter-valor-max" className="border rounded px-2 py-1" value={valorMax} onChange={e => setValorMax(e.target.value)} />
         </div>
         <div className="flex flex-col">
-          <label className="text-sm">Data início (dd/mm/yyyy)</label>
-          <input className="border rounded px-2 py-1" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
+          <label className="text-sm" htmlFor="filter-data-inicio">Data início (dd/mm/yyyy)</label>
+          <input id="filter-data-inicio" className="border rounded px-2 py-1" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
         </div>
         <div className="flex flex-col">
-          <label className="text-sm">Data fim (dd/mm/yyyy)</label>
-          <input className="border rounded px-2 py-1" value={dataFim} onChange={e => setDataFim(e.target.value)} />
+          <label className="text-sm" htmlFor="filter-data-fim">Data fim (dd/mm/yyyy)</label>
+          <input id="filter-data-fim" className="border rounded px-2 py-1" value={dataFim} onChange={e => setDataFim(e.target.value)} />
         </div>
         <div className="flex flex-col">
-          <label className="text-sm">Busca</label>
-          <input className="border rounded px-2 py-1" value={search} onChange={e => setSearch(e.target.value)} placeholder="texto..." />
+          <label className="text-sm" htmlFor="filter-busca">Busca</label>
+          <input id="filter-busca" className="border rounded px-2 py-1" value={search} onChange={e => setSearch(e.target.value)} placeholder="texto..." />
         </div>
         <div className="flex flex-col">
           <label className="text-sm">Ordenar por</label>

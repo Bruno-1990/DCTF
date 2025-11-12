@@ -163,7 +163,7 @@ export default function UploadDCTF() {
       >
         <p className="mb-2">Arraste e solte o arquivo aqui, ou clique para selecionar</p>
         <p className="text-sm text-gray-500">Formatos: .xls, .xlsx, .csv</p>
-        <input ref={inputRef} type="file" accept=".xls,.xlsx,.csv" className="hidden" onChange={onSelect} />
+        <input ref={inputRef} type="file" accept=".xls,.xlsx,.csv" className="hidden" onChange={onSelect} data-testid="upload-input" />
       </div>
 
       {file && (
@@ -190,12 +190,26 @@ export default function UploadDCTF() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex flex-col">
-          <label className="text-sm">Declaracao ID</label>
-          <input className="border rounded px-2 py-1" value={declaracaoId} onChange={(e) => setDeclaracaoId(e.target.value)} placeholder="UUID da declaração" />
+          <label className="text-sm" htmlFor="upload-declaracao-id">Declaracao ID</label>
+          <input
+            id="upload-declaracao-id"
+            className="border rounded px-2 py-1"
+            value={declaracaoId}
+            onChange={(e) => setDeclaracaoId(e.target.value)}
+            placeholder="UUID da declaração"
+          />
         </div>
         <div className="flex flex-col">
-          <label className="text-sm">Chunk size</label>
-          <input className="border rounded px-2 py-1 w-28" type="number" min={1} max={5000} value={chunkSize} onChange={(e) => setChunkSize(Number(e.target.value))} />
+          <label className="text-sm" htmlFor="upload-chunk-size">Chunk size</label>
+          <input
+            id="upload-chunk-size"
+            className="border rounded px-2 py-1 w-28"
+            type="number"
+            min={1}
+            max={5000}
+            value={chunkSize}
+            onChange={(e) => setChunkSize(Number(e.target.value))}
+          />
         </div>
         <div className="flex gap-2">
           <button disabled={!file || loading} onClick={handleValidate} className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-60">Validar</button>

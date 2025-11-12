@@ -13,6 +13,7 @@ export interface ConferenceIssue {
   daysLate?: number;
   message: string;
   details?: Record<string, any>;
+  actionPlan?: string;
 }
 
 export interface ConferenceSummary {

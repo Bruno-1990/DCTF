@@ -61,6 +61,8 @@ function buildDueDateIssue(record: DashboardDCTFRecord, today: Date): DashboardC
         details: {
           deliveredAt: transmittedAt.toISOString(),
         },
+        actionPlan:
+          'Emitir DARF da multa por atraso (código 2170) e registrar eventual retificação para corrigir divergências.',
       };
     }
     return null;
@@ -91,6 +93,12 @@ function buildDueDateIssue(record: DashboardDCTFRecord, today: Date): DashboardC
       stillProcessing,
       daysUntilDue,
     },
+    actionPlan:
+      severity === 'high'
+        ? 'Transmitir a DCTF correspondente imediatamente e preparar o pagamento da multa por atraso (DARF 2170) se aplicável.'
+        : stillProcessing
+          ? 'Acompanhar o processamento da transmissão já enviada e confirmar o protocolo assim que o status for atualizado.'
+          : 'Priorizar o fechamento da competência e protocolar a DCTF antes do vencimento legal, alinhando o time fiscal.',
   };
 }
 

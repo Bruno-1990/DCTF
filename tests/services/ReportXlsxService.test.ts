@@ -98,7 +98,7 @@ describe('ReportXlsxService', () => {
       if (!cell.fill || cell.fill.type !== 'pattern') {
         throw new Error('Cabeçalho deve possuir preenchimento sólido');
       }
-      expect(cell.fill.fgColor?.argb).toBe('FFCCE0FF');
+      expect(cell.fill.fgColor?.argb).toBe('FF538DD5');
       expect(cell.alignment?.horizontal).toBe('center');
       expect(cell.alignment?.vertical).toBe('middle');
     });

@@ -8,7 +8,6 @@ const navigation = [
   { name: 'DCTF', href: '/dctf' },
   { name: 'Clientes', href: '/clientes' },
   { name: 'Relatórios', href: '/relatorios' },
-  { name: 'Upload', href: '/upload' },
   { name: 'Configurações', href: '/configuracoes' },
 ];
 

@@ -1,7 +1,7 @@
 import api from "./api";
 
 export interface AdminDashboardRoute {
-  href: string;
+  path: string;
   moduleId: string;
   sectionId: string;
 }
