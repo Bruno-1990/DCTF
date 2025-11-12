@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
 import { useDCTF } from '../hooks/useDCTF';
 import { dctfService } from '../services/dctf';
 
@@ -17,23 +16,20 @@ const DCTFPage: React.FC = () => {
   const { items, load } = useDCTF();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-  const [clienteId, setClienteId] = useState('');
   const [situacao, setSituacao] = useState('');
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [lastPageCount, setLastPageCount] = useState<number>(0);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [dadosMap, setDadosMap] = useState<Map<string, any[]>>(new Map());
-  const [orderBy, setOrderBy] = useState<string>('dataDeclaracao');
-  const [orderDirection, setOrderDirection] = useState<'asc' | 'desc'>('desc');
-  const [appliedFilters, setAppliedFilters] = useState<{ clienteId: string; situacao: string }>({ clienteId: '', situacao: '' });
+  const [orderBy, setOrderBy] = useState<string>('');
+  const [orderDirection, setOrderDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     const params: Record<string, any> = {
       page,
       limit,
-      clienteId: appliedFilters.clienteId || undefined,
-      situacao: appliedFilters.situacao || undefined,
+      situacao: situacao || undefined,
     };
     if (orderBy) {
       params.orderBy = orderBy;
@@ -47,7 +43,12 @@ const DCTFPage: React.FC = () => {
         setTotalPages(pagination?.totalPages ?? null);
       })
       .catch(() => {});
-  }, [page, limit, orderBy, orderDirection, appliedFilters, load]);
+  }, [page, limit, orderBy, orderDirection, situacao, load]);
+
+  const situacaoOptions: Array<{ value: string; label: string }> = [
+    { value: 'Ativa', label: 'Ativa' },
+    { value: 'Em andamento', label: 'Em andamento' },
+  ];
 
   const canGoNext = totalPages != null ? page < totalPages : lastPageCount === limit;
 
@@ -81,17 +82,6 @@ const DCTFPage: React.FC = () => {
     return numero.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
-  const situacoesDisponiveis = useMemo(() => {
-    const valores = new Set<string>();
-    items.forEach((item) => {
-      const situacaoItem = item.situacao || item.status;
-      if (situacaoItem) {
-        valores.add(situacaoItem);
-      }
-    });
-    return Array.from(valores).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [items]);
-
   const handleSort = (field: string) => {
     setPage(1);
     setOrderBy((prev) => {
@@ -106,29 +96,24 @@ const DCTFPage: React.FC = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-900">DCTF</h1>
-        <Link to="/dctf/list" className="px-3 py-2 bg-blue-600 text-white rounded">Ver lista</Link>
         <div className="flex items-center gap-2">
-          <input placeholder="ClienteId (opcional)" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="px-2 py-1 border rounded" />
-          <select value={situacao} onChange={(e) => setSituacao(e.target.value)} className="px-2 py-1 border rounded">
-            <option value="">Situação</option>
-            {situacoesDisponiveis.map((valor) => (
-              <option key={valor} value={valor}>{valor}</option>
+          <label htmlFor="situacao" className="text-sm text-gray-600">Situação:</label>
+          <select
+            id="situacao"
+            value={situacao}
+            onChange={(e) => {
+              setSituacao(e.target.value);
+              setPage(1);
+            }}
+            className="px-2 py-1 border rounded"
+          >
+            <option value="">Todos</option>
+            {situacaoOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
-          <button
-            onClick={() => {
-              setPage(1);
-              setAppliedFilters({
-                clienteId: clienteId.trim(),
-                situacao,
-              });
-            }}
-            className="px-3 py-2 bg-gray-100 rounded"
-          >
-            Buscar
-          </button>
         </div>
       </div>
 
@@ -151,11 +136,7 @@ const DCTFPage: React.FC = () => {
                   Período {orderBy === 'periodo' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
                 </button>
               </th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">
-                <button type="button" onClick={() => handleSort('dataDeclaracao')} className="flex items-center gap-1">
-                  Data {orderBy === 'dataDeclaracao' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
-                </button>
-              </th>
+              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">Data</th>
               <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">
                 <button type="button" onClick={() => handleSort('situacao')} className="flex items-center gap-1">
                   Situação {orderBy === 'situacao' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
