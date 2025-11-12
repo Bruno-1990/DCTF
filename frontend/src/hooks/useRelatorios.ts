@@ -1,12 +1,21 @@
 import { useState, useCallback } from 'react';
 import { relatoriosService, type RelatoriosListResponse, type RelatorioListItem } from '../services/relatorios';
 
+type LoadParams = {
+  page?: number;
+  limit?: number;
+  tipoRelatorio?: string;
+  declaracaoId?: string;
+  identification?: string;
+  period?: string;
+};
+
 export function useRelatorios() {
   const [items, setItems] = useState<RelatorioListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (params?: { page?: number; limit?: number; tipoRelatorio?: string; declaracaoId?: string }): Promise<RelatoriosListResponse> => {
+  const load = useCallback(async (params?: LoadParams): Promise<RelatoriosListResponse> => {
     try {
       setLoading(true);
       setError(null);

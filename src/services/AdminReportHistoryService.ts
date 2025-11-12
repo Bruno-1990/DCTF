@@ -2,10 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 
+export type AdminReportFormat = 'pdf' | 'xlsx';
+
 export interface AdminReportHistoryRecord {
   id: string;
   title: string;
   reportType: string;
+  format: AdminReportFormat;
+  extension: string;
+  mimeType: string;
   period?: string;
   identification?: string;
   filePath: string;
@@ -19,6 +24,9 @@ interface RegisterOptions {
   title: string;
   reportType: string;
   buffer: Buffer;
+  format: AdminReportFormat;
+  extension?: string;
+  mimeType?: string;
   period?: string;
   identification?: string;
   responsible?: string;
@@ -49,13 +57,19 @@ class AdminReportHistoryService {
 
   register(options: RegisterOptions): AdminReportHistoryRecord {
     const id = randomUUID();
-    const filePath = path.join(this.directoryPath, `${id}.pdf`);
+    const extension = options.extension ?? (options.format === 'xlsx' ? 'xlsx' : 'pdf');
+    const mimeType = options.mimeType ?? this.resolveMimeType(options.format);
+    const fileName = `${id}.${extension}`;
+    const filePath = path.join(this.directoryPath, fileName);
     fs.writeFileSync(filePath, options.buffer);
 
     const record: AdminReportHistoryRecord = {
       id,
       title: options.title,
       reportType: options.reportType,
+      format: options.format,
+      extension,
+      mimeType,
       period: options.period,
       identification: options.identification,
       filePath,
@@ -126,6 +140,19 @@ class AdminReportHistoryService {
     return fs.createReadStream(record.filePath);
   }
 
+  getDownloadFileName(record: AdminReportHistoryRecord): string {
+    const safeTitle = record.title.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/_{2,}/g, '_').replace(/^_+|_+$/g, '');
+    const base = safeTitle || 'relatorio';
+    return `${base}_${record.id}.${record.extension}`;
+  }
+
+  private resolveMimeType(format: AdminReportFormat): string {
+    if (format === 'xlsx') {
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
+    return 'application/pdf';
+  }
+
   private loadFromDisk() {
     try {
       if (!fs.existsSync(this.metadataFilePath)) {
@@ -140,9 +167,24 @@ class AdminReportHistoryService {
       }
 
       const data = JSON.parse(raw) as AdminReportHistoryRecord[];
-      this.records = Array.isArray(data)
-        ? data.filter(record => record && record.id && record.filePath && fs.existsSync(record.filePath))
+      const normalized = Array.isArray(data)
+        ? data
+            .filter(record => record && record.id && record.filePath)
+            .map(record => {
+              const format = record.format ?? 'pdf';
+              const extension = record.extension ?? (format === 'xlsx' ? 'xlsx' : 'pdf');
+              const mimeType = record.mimeType ?? this.resolveMimeType(format);
+              return {
+                ...record,
+                format,
+                extension,
+                mimeType,
+              } satisfies AdminReportHistoryRecord;
+            })
+            .filter(record => fs.existsSync(record.filePath))
         : [];
+
+      this.records = normalized;
     } catch (error) {
       console.warn('Não foi possível carregar histórico de relatórios gerenciais. Reiniciando armazenamento.', error);
       this.records = [];

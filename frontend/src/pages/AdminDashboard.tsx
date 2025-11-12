@@ -3,10 +3,8 @@ import { Link } from "react-router-dom";
 import type { AdminDashboardSnapshotResponse } from "../services/dashboard";
 import { fetchAdminDashboardSnapshot } from "../services/dashboard";
 import { fetchConferenceSummary, type ConferenceSummary } from "../services/conferences";
-import { fetchGerencialReportPdf } from "../services/reports";
 import LoadingSpinner from "../components/UI/LoadingSpinner";
 import Alert from "../components/UI/Alert";
-import { ArrowDownTrayIcon } from "@heroicons/react/24/solid";
 
 const friendlyRouteLabels: Record<string, string> = {
   "dashboard-overview": "Visão executiva",
@@ -22,8 +20,6 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [conferenceError, setConferenceError] = useState<string | null>(null);
-  const [downloadingReport, setDownloadingReport] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -217,28 +213,6 @@ const AdminDashboard: React.FC = () => {
     return <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${map[severity]}`}>{label}</span>;
   };
 
-  const handleDownloadReport = async () => {
-    setDownloadError(null);
-    setDownloadingReport(true);
-    try {
-      const blob = await fetchGerencialReportPdf();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const formattedDate = new Date().toISOString().split('T')[0];
-      link.download = `relatorio-gerencial-${formattedDate}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(err);
-      setDownloadError('Não foi possível gerar o relatório em PDF.');
-    } finally {
-      setDownloadingReport(false);
-    }
-  };
-
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-6">
@@ -252,15 +226,6 @@ const AdminDashboard: React.FC = () => {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-          <button
-            type="button"
-            onClick={handleDownloadReport}
-            disabled={downloadingReport}
-            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            <ArrowDownTrayIcon className="h-5 w-5" />
-            {downloadingReport ? 'Gerando PDF...' : 'Baixar relatório (PDF)'}
-          </button>
           {snapshot && (
             <span className="text-sm text-gray-500">
               Atualizado em {new Date(snapshot.meta.generatedAt).toLocaleString()}
@@ -278,12 +243,6 @@ const AdminDashboard: React.FC = () => {
       {conferenceError && (
         <Alert type="warning" title="Conferências indisponíveis" onClose={() => setConferenceError(null)}>
           {conferenceError}
-        </Alert>
-      )}
-
-      {downloadError && (
-        <Alert type="warning" title="Falha ao gerar PDF" onClose={() => setDownloadError(null)}>
-          {downloadError}
         </Alert>
       )}
 

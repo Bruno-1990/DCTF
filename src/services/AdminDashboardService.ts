@@ -24,7 +24,7 @@ export interface BuildAdminDashboardSnapshotOptions {
   records: DashboardDCTFRecord[];
 }
 
-export async function fetchAdminDashboardRecords(months = 5): Promise<DashboardDCTFRecord[]> {
+export async function fetchAllAdminDashboardRecords(): Promise<DashboardDCTFRecord[]> {
   const allDeclarations = await dctfModel.findAll();
   if (!allDeclarations.success || !allDeclarations.data) {
     return [];
@@ -32,6 +32,22 @@ export async function fetchAdminDashboardRecords(months = 5): Promise<DashboardD
 
   const mappedRecords = allDeclarations.data
     .map(mapToDashboardRecord)
+    .map(record => ({ record, periodInfo: parseRecordPeriod(record.period) }))
+    .filter((entry): entry is { record: DashboardDCTFRecord; periodInfo: { year: number; month: number } } =>
+      Boolean(entry.record.identification) && entry.periodInfo !== null
+    )
+    .map(entry => entry.record);
+
+  return mappedRecords;
+}
+
+export async function fetchAdminDashboardRecords(months = 5): Promise<DashboardDCTFRecord[]> {
+  const allRecords = await fetchAllAdminDashboardRecords();
+  if (months <= 0) {
+    return allRecords;
+  }
+
+  const mappedRecords = allRecords
     .map(record => ({ record, periodInfo: parseRecordPeriod(record.period) }))
     .filter((entry): entry is { record: DashboardDCTFRecord; periodInfo: { year: number; month: number } } =>
       Boolean(entry.record.identification) && entry.periodInfo !== null
@@ -94,7 +110,7 @@ export function buildAdminDashboardSnapshot(
   };
 }
 
-function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
+export function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
   return {
     identificationType: "CNPJ",
     identification: record.cliente?.cnpj ?? record.cliente?.cnpj_limpo ?? record.clienteId,
@@ -111,7 +127,7 @@ function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
   };
 }
 
-function formatPeriod(periodo: string): string {
+export function formatPeriod(periodo: string): string {
   if (!periodo) return "";
   if (/^\d{4}-\d{2}$/.test(periodo)) {
     const [year, month] = periodo.split("-");

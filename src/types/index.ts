@@ -213,3 +213,95 @@ export interface ApiResponse<T = any> {
   error?: string;
   message?: string;
 }
+
+export type ReportType = 'gerencial' | 'clientes' | 'dctf' | 'conferencia';
+
+export interface ReportFilterOptions {
+  months?: number;
+  period?: string;
+  identification?: string;
+  clientId?: string;
+}
+
+export interface ReportDataEnvelope<TData = any> {
+  type: ReportType;
+  generatedAt: string;
+  filters: ReportFilterOptions;
+  meta?: Record<string, any>;
+  data: TData;
+}
+
+export interface GerencialReportData {
+  records: DashboardDCTFRecord[];
+  metrics: DashboardMetrics;
+  conferences: DashboardConferenceSummary;
+  summary: {
+    monthsConsidered?: number | null;
+    totalRecords: number;
+  };
+}
+
+export interface ClientesReportStatusSummary {
+  concluido: number;
+  pendente: number;
+  processando: number;
+  erro: number;
+}
+
+export interface ClientesReportItem {
+  id: string;
+  businessName?: string;
+  cnpj?: string;
+  cnpjLimpo?: string;
+  email?: string;
+  telefone?: string;
+  endereco?: string;
+  totalDeclaracoes: number;
+  ultimoPeriodo?: string;
+  ultimoEnvio?: string;
+  valores: {
+    debitoTotal: number;
+    saldoTotal: number;
+  };
+  statusSummary: ClientesReportStatusSummary;
+}
+
+export interface ClientesReportData {
+  items: ClientesReportItem[];
+  totals: {
+    clientes: number;
+    declaracoes: number;
+    debitoTotal: number;
+    saldoTotal: number;
+  };
+}
+
+export interface DCTFReportItem {
+  id: string;
+  identification: string;
+  businessName?: string;
+  period: string;
+  transmissionDate?: string;
+  status?: string;
+  situation?: string | null;
+  debitAmount?: number | string | null;
+  balanceDue?: number | string | null;
+  origin?: string;
+}
+
+export interface DCTFReportData {
+  items: DCTFReportItem[];
+  totals: {
+    declaracoes: number;
+    debitoTotal: number;
+    saldoTotal: number;
+  };
+}
+
+export interface ConferenceReportData {
+  summary: DashboardConferenceSummary;
+  totals: {
+    totalIssues: number;
+    bySeverity: Record<ConferenceIssueSeverity, number>;
+  };
+}

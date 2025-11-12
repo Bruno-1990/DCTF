@@ -1,27 +1,76 @@
 import { Request, Response } from 'express';
-import { AdminReportPdfService } from '../services/AdminReportPdfService';
 import AdminReportHistoryService from '../services/AdminReportHistoryService';
+import ReportPdfService from '../services/reports/ReportPdfService';
+import ReportXlsxService from '../services/reports/ReportXlsxService';
+import type { ReportFilterOptions, ReportType } from '../types';
+
+const ALLOWED_REPORT_TYPES: ReportType[] = ['gerencial', 'clientes', 'dctf', 'conferencia'];
+const FORMAT_CONFIG = {
+  pdf: {
+    mimeType: 'application/pdf',
+    extension: 'pdf',
+  },
+  xlsx: {
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    extension: 'xlsx',
+  },
+} as const;
 
 class AdminDashboardReportController {
-  async downloadGerencial(req: Request, res: Response): Promise<void> {
+  async downloadReport(req: Request, res: Response): Promise<void> {
     try {
-      const monthsParam = req.query.months;
-      const monthsParsed = typeof monthsParam === 'string' ? Number.parseInt(monthsParam, 10) : undefined;
-      const months = Number.isFinite(monthsParsed) && monthsParsed! > 0 ? monthsParsed : undefined;
-      const period = typeof req.query.period === 'string' ? req.query.period : undefined;
-      const identification = typeof req.query.identification === 'string' ? req.query.identification : undefined;
-      const logoUrl = typeof req.query.logoUrl === 'string' ? req.query.logoUrl : undefined;
-      const responsible = typeof req.query.responsible === 'string' ? req.query.responsible : undefined;
-      const notes = typeof req.query.notes === 'string' ? req.query.notes : undefined;
+      const { reportType, format } = req.params;
+      if (!reportType || !this.isValidReportType(reportType)) {
+        res.status(400).json({ success: false, error: 'Tipo de relatório inválido.' });
+        return;
+      }
 
-      const buffer = await AdminReportPdfService.generateGerencialReport({ months, period, identification, logoUrl, responsible, notes });
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename="relatorio-gerencial.pdf"');
+      const normalizedFormat = format?.toLowerCase();
+      if (!normalizedFormat || !(normalizedFormat in FORMAT_CONFIG)) {
+        res.status(400).json({ success: false, error: 'Formato de relatório inválido.' });
+        return;
+      }
+
+      const filters = this.parseFilters(req);
+      const meta = this.parseMeta(req);
+      const config = FORMAT_CONFIG[normalizedFormat as 'pdf' | 'xlsx'];
+      const title = meta.title ?? this.getDefaultTitle(reportType);
+
+      let buffer: Buffer;
+      if (normalizedFormat === 'pdf') {
+        buffer = await ReportPdfService.generate(reportType, {
+          ...filters,
+          title,
+          logoUrl: meta.logoUrl,
+          responsible: meta.responsible,
+          notes: meta.notes,
+        });
+      } else {
+        buffer = await ReportXlsxService.generate(reportType, filters);
+      }
+
+      const record = AdminReportHistoryService.register({
+        title,
+        reportType,
+        buffer,
+        format: normalizedFormat as 'pdf' | 'xlsx',
+        extension: config.extension,
+        mimeType: config.mimeType,
+        period: filters.period,
+        identification: filters.identification,
+        responsible: meta.responsible,
+        notes: meta.notes,
+        filters: this.buildFiltersMetadata(filters),
+      });
+
+      const downloadName = AdminReportHistoryService.getDownloadFileName(record);
+      res.setHeader('Content-Type', record.mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
       res.setHeader('Content-Length', buffer.length.toString());
       res.send(buffer);
     } catch (error) {
-      console.error('Erro ao gerar relatório gerencial em PDF:', error);
-      res.status(500).json({ success: false, error: 'Não foi possível gerar o relatório em PDF.' });
+      console.error('Erro ao gerar relatório:', error);
+      res.status(500).json({ success: false, error: 'Não foi possível gerar o relatório solicitado.' });
     }
   }
 
@@ -36,18 +85,34 @@ class AdminDashboardReportController {
       period: typeof period === 'string' ? period : undefined,
     });
 
-    const items = result.items.map(record => ({
-      id: record.id,
-      titulo: record.title,
-      tipoRelatorio: record.reportType,
-      declaracaoId: record.identification ?? '-',
-      createdAt: record.createdAt,
-      arquivoPdf: `/api/dashboard/admin/reports/history/${record.id}/download`,
-      period: record.period,
-      responsible: record.responsible,
-      notes: record.notes,
-      filters: record.filters,
-    }));
+    const items = result.items.map(record => {
+      const downloadUrl = `/api/dashboard/admin/reports/history/${record.id}/download`;
+      const base = {
+        id: record.id,
+        titulo: record.title,
+        tipoRelatorio: record.reportType,
+        formato: record.format,
+        declaracaoId: record.identification ?? '-',
+        createdAt: record.createdAt,
+        downloadUrl,
+        period: record.period,
+        responsible: record.responsible,
+        notes: record.notes,
+        filters: record.filters,
+        mimeType: record.mimeType,
+        extension: record.extension,
+      };
+
+      if (record.format === 'pdf') {
+        return { ...base, arquivoPdf: downloadUrl };
+      }
+
+      if (record.format === 'xlsx') {
+        return { ...base, arquivoXlsx: downloadUrl };
+      }
+
+      return base;
+    });
 
     res.json({
       success: true,
@@ -70,10 +135,57 @@ class AdminDashboardReportController {
       return;
     }
 
-    const safeTitle = record.title.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/_{2,}/g, '_');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeTitle || 'relatorio'}_${record.id}.pdf"`);
+    const downloadName = AdminReportHistoryService.getDownloadFileName(record);
+    res.setHeader('Content-Type', record.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
     stream.pipe(res);
+  }
+
+  private parseFilters(req: Request): ReportFilterOptions {
+    const monthsParam = req.query.months;
+    const monthsParsed = typeof monthsParam === 'string' ? Number.parseInt(monthsParam, 10) : undefined;
+
+    return {
+      months: Number.isFinite(monthsParsed) && monthsParsed! > 0 ? monthsParsed : undefined,
+      period: typeof req.query.period === 'string' ? req.query.period : undefined,
+      identification: typeof req.query.identification === 'string' ? req.query.identification : undefined,
+    };
+  }
+
+  private parseMeta(req: Request) {
+    return {
+      title: typeof req.query.title === 'string' ? req.query.title : undefined,
+      logoUrl: typeof req.query.logoUrl === 'string' ? req.query.logoUrl : undefined,
+      responsible: typeof req.query.responsible === 'string' ? req.query.responsible : undefined,
+      notes: typeof req.query.notes === 'string' ? req.query.notes : undefined,
+    };
+  }
+
+  private buildFiltersMetadata(filters: ReportFilterOptions) {
+    const metadata: Record<string, unknown> = {};
+    if (filters.months) metadata.months = filters.months;
+    if (filters.period) metadata.period = filters.period;
+    if (filters.identification) metadata.identification = filters.identification;
+    return metadata;
+  }
+
+  private isValidReportType(candidate: string): candidate is ReportType {
+    return (ALLOWED_REPORT_TYPES as string[]).includes(candidate);
+  }
+
+  private getDefaultTitle(reportType: ReportType): string {
+    switch (reportType) {
+      case 'gerencial':
+        return 'Relatório Gerencial DCTF';
+      case 'clientes':
+        return 'Relatório de Clientes';
+      case 'dctf':
+        return 'Relatório de Declarações DCTF';
+      case 'conferencia':
+        return 'Relatório de Conferências Legais';
+      default:
+        return 'Relatório DCTF';
+    }
   }
 }
 
