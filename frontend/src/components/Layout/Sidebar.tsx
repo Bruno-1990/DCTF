@@ -6,6 +6,7 @@ import {
   ClipboardDocumentCheckIcon,
   DocumentTextIcon,
   UsersIcon,
+  ChartBarIcon,
 } from '@heroicons/react/24/outline';
 
 const navigation = [
@@ -14,6 +15,7 @@ const navigation = [
   { name: 'Conferências', href: '/conferencias', icon: ClipboardDocumentCheckIcon },
   { name: 'DCTF', href: '/dctf', icon: DocumentTextIcon },
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },
+  { name: 'Relatórios', href: '/relatorios', icon: ChartBarIcon },
 ];
 
 const Sidebar: React.FC = () => {

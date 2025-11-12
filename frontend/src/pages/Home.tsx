@@ -1,6 +1,34 @@
 import React from "react";
 import { Link } from "react-router-dom";
 
+const cards = [
+  {
+    title: "Painel",
+    description: "Visualize métricas críticas, alertas e distribuição das declarações em tempo real.",
+    href: "/dashboard",
+  },
+  {
+    title: "Conferências",
+    description: "Acompanhe pendências de prazos legais e priorize as declarações com maior risco de autuação.",
+    href: "/conferencias",
+  },
+  {
+    title: "Clientes",
+    description: "Gerencie os dados dos clientes e suas informações fiscais.",
+    href: "/clientes",
+  },
+  {
+    title: "DCTF",
+    description: "Processe e analise declarações de DCTF dos clientes.",
+    href: "/dctf",
+  },
+  {
+    title: "Relatórios",
+    description: "Gere relatórios detalhados e análises fiscais.",
+    href: "/relatorios",
+  },
+];
+
 const Home: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
@@ -11,50 +39,22 @@ const Home: React.FC = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-4">Painel</h2>
-          <p className="text-gray-600 mb-4">
-            Visualize métricas críticas, alertas e distribuição das declarações em tempo real.
-          </p>
-          <Link to="/dashboard" className="inline-block bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
-            Acessar
-          </Link>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-4">Conferências</h2>
-          <p className="text-gray-600 mb-4">
-            Acompanhe pendências de prazos legais e priorize as declarações com maior risco de autuação.
-          </p>
-          <Link to="/conferencias" className="inline-block bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
-            Acessar
-          </Link>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-4">Clientes</h2>
-          <p className="text-gray-600 mb-4">Gerencie os dados dos clientes e suas informações fiscais.</p>
-          <Link to="/clientes" className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            Acessar
-          </Link>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-4">DCTF</h2>
-          <p className="text-gray-600 mb-4">Processe e analise declarações de DCTF dos clientes.</p>
-          <Link to="/dctf" className="inline-block bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-            Acessar
-          </Link>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-4">Relatórios</h2>
-          <p className="text-gray-600 mb-4">Gere relatórios detalhados e análises fiscais.</p>
-          <Link to="/relatorios" className="inline-block bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">
-            Acessar
-          </Link>
-        </div>
+      <div className="flex flex-wrap justify-center gap-8">
+        {cards.map((card) => (
+          <div
+            key={card.href}
+            className="flex h-full w-full max-w-xs flex-col rounded-lg bg-white p-6 text-center shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl sm:w-[calc(50%-1rem)] xl:w-[calc(33.333%-1.5rem)] min-h-[220px]"
+          >
+            <h2 className="text-xl font-semibold mb-4 text-gray-900">{card.title}</h2>
+            <p className="text-gray-600 mb-6 leading-relaxed">{card.description}</p>
+            <Link
+              to={card.href}
+              className="mt-auto inline-flex items-center justify-center w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Acessar
+            </Link>
+          </div>
+        ))}
       </div>
     </div>
   );
