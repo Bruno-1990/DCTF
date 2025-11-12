@@ -5,13 +5,21 @@ export type DCTFListItem = {
   id: string;
   clienteId: string;
   periodo: string;
+  periodoApuracao?: string | null;
   dataDeclaracao: string | Date;
+  dataTransmissao?: string | Date | null;
   status: string;
   situacao?: string | null;
   arquivoOriginal?: string;
   cliente?: Pick<Cliente, 'id' | 'nome' | 'razao_social' | 'cnpj' | 'cnpj_limpo'>;
   debitoApurado?: number | null;
   saldoAPagar?: number | null;
+  tipoNi?: string | null;
+  numeroIdentificacao?: string | null;
+  categoria?: string | null;
+  origem?: string | null;
+  tipoDeclaracao?: string | null;
+  observacoes?: string | null;
 };
 
 export type DCTFListResponse = {
@@ -35,17 +43,17 @@ export const dctfService = {
     const response = await api.get<any>('/dctf', { params });
     const body = response.data;
     if (Array.isArray(body)) {
-      return { items: body as DCTFListItem[] };
+      return { items: body.map(normalizeItem) as DCTFListItem[] };
     }
     if (body && Array.isArray(body.data)) {
-      return { items: body.data as DCTFListItem[], pagination: body.pagination };
+      return { items: body.data.map(normalizeItem) as DCTFListItem[], pagination: body.pagination };
     }
     return { items: [] };
   },
 
   async getById(id: string): Promise<DCTF> {
     const response = await api.get<DCTF>(`/dctf/${id}`);
-    return response.data;
+    return normalizeItem(response.data) as DCTF;
   },
 
   async getByClienteId(clienteId: string): Promise<DCTF[]> {
@@ -89,4 +97,52 @@ export const dctfService = {
     return [];
   },
 };
+
+function normalizeItem(item: any): DCTFListItem {
+  const dataDeclaracao = item.dataDeclaracao || item.data_declaracao || item.data_transmissao || null;
+  const dataTransmissao = item.dataTransmissao || item.data_transmissao || null;
+
+  const debitoRaw = item.debitoApurado ?? item.debito_apurado;
+  const saldoRaw = item.saldoAPagar ?? item.saldo_a_pagar;
+  const debitoApurado = debitoRaw !== undefined && debitoRaw !== null ? Number(debitoRaw) : null;
+  const saldoAPagar = saldoRaw !== undefined && saldoRaw !== null ? Number(saldoRaw) : null;
+
+  const cliente =
+    item.cliente && typeof item.cliente === 'object'
+      ? {
+          id: item.cliente.id,
+          nome: item.cliente.nome,
+          razao_social: item.cliente.razao_social,
+          cnpj: item.cliente.cnpj,
+          cnpj_limpo: item.cliente.cnpj_limpo,
+        }
+      : undefined;
+
+  return {
+    id: item.id,
+    clienteId: item.clienteId || item.cliente_id,
+    periodo: item.periodo,
+    periodoApuracao: item.periodoApuracao || item.periodo_apuracao || item.periodo,
+    dataDeclaracao: dataDeclaracao || new Date().toISOString(),
+    dataTransmissao,
+    status: item.status,
+    situacao: item.situacao || item.status,
+    arquivoOriginal: item.arquivoOriginal || item.arquivo_original,
+    cliente,
+    debitoApurado,
+    saldoAPagar,
+    tipoNi: item.tipoNi || item.tipo_ni || (cliente?.cnpj ? 'CNPJ' : undefined),
+    numeroIdentificacao:
+      item.numeroIdentificacao ||
+      item.numero_identificacao ||
+      item.identificacao ||
+      cliente?.cnpj ||
+      cliente?.cnpj_limpo ||
+      undefined,
+    categoria: item.categoria || item.category,
+    origem: item.origem || item.source,
+    tipoDeclaracao: item.tipoDeclaracao || item.tipo || item.tipo_declaracao,
+    observacoes: item.observacoes ?? null,
+  };
+}
 

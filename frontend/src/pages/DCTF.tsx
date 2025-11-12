@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { EyeIcon } from '@heroicons/react/24/outline';
 import { useDCTF } from '../hooks/useDCTF';
 import { dctfService } from '../services/dctf';
 
@@ -12,10 +13,76 @@ const formatCNPJ = (cnpj: string | undefined) => {
     .replace(/(\d{4})(\d)/, '$1-$2');
 };
 
+const formatCPF = (cpf: string | undefined) => {
+  if (!cpf) return '-';
+  const v = cpf.replace(/\D/g, '').slice(0, 11);
+  return v
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+};
+
+const formatIdentification = (value?: string | null) => {
+  if (!value) return '—';
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 14) return formatCNPJ(digits);
+  if (digits.length === 11) return formatCPF(digits);
+  return value;
+};
+
+const formatPeriod = (period?: string | null) => {
+  if (!period) return '—';
+  if (period.includes('-')) {
+    const [year, month] = period.split('-');
+    if (year && month) {
+      return `${month.padStart(2, '0')}/${year}`;
+    }
+  }
+  if (period.includes('/')) {
+    const parts = period.split('/');
+    if (parts.length === 2 && parts[1].length === 4) {
+      return `${parts[0].padStart(2, '0')}/${parts[1]}`;
+    }
+  }
+  return period;
+};
+
+const formatDateTime = (value?: string | Date | null) => {
+  if (!value) return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+};
+
+const getSituacaoBadgeClasses = (situacao?: string | null) => {
+  const value = situacao?.toLowerCase();
+  if (value === 'ativa' || value === 'concluido' || value === 'concluída' || value === 'concluida') {
+    return 'bg-green-100 text-green-700 border-green-200';
+  }
+  if (value === 'em andamento' || value === 'processando') {
+    return 'bg-amber-100 text-amber-700 border-amber-200';
+  }
+  if (value === 'erro' || value === 'com erro') {
+    return 'bg-red-100 text-red-700 border-red-200';
+  }
+  return 'bg-slate-100 text-slate-600 border-slate-200';
+};
+
+const limitOptions = ['10', '20', '50', '100', '200'] as const;
+
 const DCTFPage: React.FC = () => {
   const { items, load } = useDCTF();
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(20);
+  const [limitSelection, setLimitSelection] =
+    useState<(typeof limitOptions)[number] | 'all'>('20');
   const [situacao, setSituacao] = useState('');
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
@@ -94,8 +161,19 @@ const DCTFPage: React.FC = () => {
     });
   };
 
+  const handleLimitChange = (value: (typeof limitOptions)[number] | 'all') => {
+    setPage(1);
+    if (value === 'all') {
+      setLimit(1000);
+      setLimitSelection('all');
+    } else {
+      setLimit(Number(value));
+      setLimitSelection(value);
+    }
+  };
+
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="mx-auto w-full max-w-[1600px] px-6 py-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-900">DCTF</h1>
         <div className="flex items-center gap-2">
@@ -117,106 +195,124 @@ const DCTFPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+      <div className="bg-white rounded-lg shadow-md overflow-auto mb-8">
+        <table className="min-w-[1200px] w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50 tracking-wide text-xs font-semibold text-slate-600 uppercase">
             <tr>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">
-                <button type="button" onClick={() => handleSort('razaoSocial')} className="flex items-center gap-1">
-                  Razão Social {orderBy === 'razaoSocial' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
+              <th className="px-4 py-3 text-left">
+                <button type="button" onClick={() => handleSort('cnpj')} className="flex items-center gap-1 uppercase">
+                  NÚMERO DE IDENTIFICAÇÃO {orderBy === 'cnpj' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
                 </button>
               </th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">
-                <button type="button" onClick={() => handleSort('cnpj')} className="flex items-center gap-1">
-                  CNPJ {orderBy === 'cnpj' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
+              <th className="px-4 py-3 text-left">
+                <button type="button" onClick={() => handleSort('periodo')} className="flex items-center gap-1 uppercase">
+                  PERÍODO DE APURAÇÃO {orderBy === 'periodo' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
                 </button>
               </th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">
-                <button type="button" onClick={() => handleSort('periodo')} className="flex items-center gap-1">
-                  Período {orderBy === 'periodo' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
+              <th className="px-4 py-3 text-left">
+                <button type="button" onClick={() => handleSort('dataDeclaracao')} className="flex items-center gap-1 uppercase">
+                  DATA TRANSMISSÃO {orderBy === 'dataDeclaracao' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
                 </button>
               </th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">Data</th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">
-                <button type="button" onClick={() => handleSort('situacao')} className="flex items-center gap-1">
-                  Situação {orderBy === 'situacao' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
+              <th className="px-4 py-3 text-left">
+                <span className="uppercase block">CATEGORIA</span>
+              </th>
+              <th className="px-4 py-3 text-left">
+                <span className="uppercase block">ORIGEM</span>
+              </th>
+              <th className="px-4 py-3 text-left">
+                <span className="uppercase block">TIPO</span>
+              </th>
+              <th className="px-4 py-3 text-left">
+                <button type="button" onClick={() => handleSort('situacao')} className="flex items-center gap-1 uppercase">
+                  SITUAÇÃO {orderBy === 'situacao' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
                 </button>
               </th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">
-                <button type="button" onClick={() => handleSort('debitoApurado')} className="flex items-center gap-1">
-                  Débito Apurado {orderBy === 'debitoApurado' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
+              <th className="px-4 py-3 text-left">
+                <button type="button" onClick={() => handleSort('debitoApurado')} className="flex items-center gap-1 uppercase">
+                  DÉBITO APURADO {orderBy === 'debitoApurado' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
                 </button>
               </th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">
-                <button type="button" onClick={() => handleSort('saldoAPagar')} className="flex items-center gap-1">
-                  Saldo a Pagar {orderBy === 'saldoAPagar' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
+              <th className="px-4 py-3 text-left">
+                <button type="button" onClick={() => handleSort('saldoAPagar')} className="flex items-center gap-1 uppercase">
+                  SALDO A PAGAR {orderBy === 'saldoAPagar' && <span>{orderDirection === 'asc' ? '▲' : '▼'}</span>}
                 </button>
               </th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {items.map((d) => {
-              const dados = dadosMap.get(d.id) || [];
-              const isExpanded = expandedRows.has(d.id);
-              
+              const numeroIdentificacao =
+                d.numeroIdentificacao ||
+                d.cliente?.cnpj ||
+                d.cliente?.cnpj_limpo ||
+                undefined;
+              const numeroLimpo = numeroIdentificacao?.replace(/\D/g, '');
+              let tipoNi =
+                d.tipoNi ||
+                (numeroLimpo
+                  ? numeroLimpo.length === 11
+                    ? 'CPF'
+                    : 'CNPJ'
+                  : undefined);
+              tipoNi = tipoNi ? tipoNi.toUpperCase() : undefined;
+              const situacaoLabel = d.situacao || d.status || '—';
+              const saldoValue = d.saldoAPagar ?? 0;
+              const saldoClass =
+                saldoValue > 0 ? 'text-red-600 font-semibold' : saldoValue < 0 ? 'text-emerald-600 font-semibold' : 'text-slate-700';
+
               return (
-                <React.Fragment key={d.id}>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{d.cliente?.razao_social || d.cliente?.nome || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCNPJ(d.cliente?.cnpj_limpo || d.cliente?.cnpj)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{d.periodo}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(d.dataDeclaracao).toLocaleDateString('pt-BR')}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{d.situacao || d.status || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">R$ {formatCurrency(d.debitoApurado)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">R$ {formatCurrency(d.saldoAPagar)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button 
-                        onClick={() => handleToggleExpand(d.id)}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        {isExpanded ? 'Recolher' : 'Expandir'}
-                      </button>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr>
-                      <td colSpan={8} className="px-6 py-4 bg-gray-50">
-                        <div className="space-y-4">
-                          <h4 className="font-semibold text-gray-900 mb-2">Detalhes da Declaração</h4>
-                          {dados.length > 0 ? (
-                            <div className="overflow-x-auto">
-                              <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-100">
-                                  <tr>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Linha</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Código</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Descrição</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Valor</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Data Ocorrência</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                  {dados.map((item: any, idx: number) => (
-                                    <tr key={idx}>
-                                      <td className="px-4 py-2 text-sm text-gray-900">{item.linha || '-'}</td>
-                                      <td className="px-4 py-2 text-sm text-gray-900">{item.codigo || '-'}</td>
-                                      <td className="px-4 py-2 text-sm text-gray-700">{item.descricao || '-'}</td>
-                                      <td className="px-4 py-2 text-sm font-medium text-gray-900">R$ {item.valor ? Number(item.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0,00'}</td>
-                                      <td className="px-4 py-2 text-sm text-gray-700">{item.data_ocorrencia ? new Date(item.data_ocorrencia).toLocaleDateString('pt-BR') : '-'}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <div className="text-sm text-gray-500 italic">Carregando dados...</div>
+                  <tr key={d.id} className="transition hover:bg-slate-50">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                      <div className="flex flex-col gap-1">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="font-medium text-slate-900">
+                            {formatIdentification(numeroIdentificacao)}
+                          </span>
+                          {tipoNi && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-600 border border-slate-200">
+                              {tipoNi}
+                            </span>
                           )}
                         </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
+                        {d.cliente?.razao_social && (
+                          <span className="text-xs uppercase text-slate-500">
+                            {d.cliente.razao_social}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">
+                      {formatPeriod(d.periodoApuracao || d.periodo)}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">
+                      {formatDateTime(d.dataTransmissao || d.dataDeclaracao)}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                      {d.categoria || 'Geral'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                      {d.origem || '—'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                      {d.tipoDeclaracao || 'Original'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${getSituacaoBadgeClasses(
+                          situacaoLabel,
+                        )}`}
+                      >
+                        {situacaoLabel}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-slate-700">
+                      R$ {formatCurrency(d.debitoApurado)}
+                    </td>
+                    <td className={`px-4 py-3 whitespace-nowrap text-sm ${saldoClass}`}>
+                      R$ {formatCurrency(d.saldoAPagar)}
+                    </td>
+                  </tr>
               );
             })}
           </tbody>
@@ -228,10 +324,17 @@ const DCTFPage: React.FC = () => {
           <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200">Anterior</button>
           <span className="text-sm px-4">{page}{totalPages != null ? ` de ${totalPages}` : ''}</span>
           <button disabled={!canGoNext} onClick={() => setPage((p) => p + 1)} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200">Próxima</button>
-          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="ml-4 px-3 py-2 border rounded">
-            <option value={5}>5</option>
-            <option value={10}>10</option>
-            <option value={20}>20</option>
+          <select
+            value={limitSelection}
+            onChange={(e) => handleLimitChange(e.target.value as typeof limitSelection)}
+            className="ml-4 px-3 py-2 border rounded"
+          >
+            {limitOptions.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+            <option value="all">Todos</option>
           </select>
         </div>
         <div className="text-sm text-gray-600 mt-2">
