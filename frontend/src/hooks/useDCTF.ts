@@ -10,6 +10,7 @@ type LoadParams = {
   situacao?: string;
   orderBy?: string;
   order?: 'asc' | 'desc';
+  search?: string;
 };
 
 export function useDCTF() {

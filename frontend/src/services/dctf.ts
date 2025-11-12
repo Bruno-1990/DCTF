@@ -36,6 +36,7 @@ type ListParams = {
   situacao?: string;
   orderBy?: string;
   order?: 'asc' | 'desc';
+  search?: string;
 };
 
 export const dctfService = {

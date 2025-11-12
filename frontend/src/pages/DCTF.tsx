@@ -91,6 +91,18 @@ const DCTFPage: React.FC = () => {
   const [dadosMap, setDadosMap] = useState<Map<string, any[]>>(new Map());
   const [orderBy, setOrderBy] = useState<string>('');
   const [orderDirection, setOrderDirection] = useState<'asc' | 'desc'>('asc');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
+
+  // Debounce do termo de busca
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setPage(1); // Reset página quando o termo de busca muda
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
     const params: Record<string, any> = {
@@ -98,6 +110,12 @@ const DCTFPage: React.FC = () => {
       limit,
       situacao: situacao || undefined,
     };
+    
+    // Adicionar search apenas se houver valor
+    if (debouncedSearchTerm && debouncedSearchTerm.trim()) {
+      params.search = debouncedSearchTerm.trim();
+    }
+    
     if (orderBy) {
       params.orderBy = orderBy;
       params.order = orderDirection;
@@ -110,7 +128,7 @@ const DCTFPage: React.FC = () => {
         setTotalPages(pagination?.totalPages ?? null);
       })
       .catch(() => {});
-  }, [page, limit, orderBy, orderDirection, situacao, load]);
+  }, [page, limit, orderBy, orderDirection, situacao, debouncedSearchTerm, load]);
 
   const situacaoOptions: Array<{ value: string; label: string }> = [
     { value: 'Ativa', label: 'Ativa' },
@@ -174,24 +192,38 @@ const DCTFPage: React.FC = () => {
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-6 py-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">DCTF</h1>
+      <div className="flex flex-col gap-4 mb-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <h1 className="text-3xl font-bold text-gray-900">DCTF</h1>
+          <div className="flex items-center gap-2">
+            <label htmlFor="situacao" className="text-sm text-gray-600">Situação:</label>
+            <select
+              id="situacao"
+              value={situacao}
+              onChange={(e) => {
+                setSituacao(e.target.value);
+                setPage(1);
+              }}
+              className="px-2 py-1 border rounded"
+            >
+              <option value="">Todos</option>
+              {situacaoOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
-          <label htmlFor="situacao" className="text-sm text-gray-600">Situação:</label>
-          <select
-            id="situacao"
-            value={situacao}
+          <input
+            type="text"
+            id="search"
+            placeholder="CNPJ"
+            value={searchTerm}
             onChange={(e) => {
-              setSituacao(e.target.value);
-              setPage(1);
+              setSearchTerm(e.target.value);
             }}
-            className="px-2 py-1 border rounded"
-          >
-            <option value="">Todos</option>
-            {situacaoOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
+            className="flex-1 max-w-md px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
         </div>
       </div>
 
