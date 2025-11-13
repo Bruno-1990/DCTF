@@ -243,7 +243,14 @@ const Clientes: React.FC = () => {
               <p className="text-sm text-gray-600 text-center mb-6 leading-relaxed">
                 Tem certeza que deseja excluir o cliente 
                 <br />
-                <strong className="text-gray-900 font-semibold">{deleteConfirmModal.cliente.razao_social || deleteConfirmModal.cliente.nome}</strong>?
+                <strong className="text-gray-900 font-semibold">{deleteConfirmModal.cliente.razao_social || deleteConfirmModal.cliente.nome}</strong>
+                {deleteConfirmModal.cliente.cnpj_limpo && (
+                  <>
+                    <br />
+                    <span className="text-gray-500 text-xs">CNPJ: {displayCNPJ(deleteConfirmModal.cliente.cnpj_limpo)}</span>
+                  </>
+                )}
+                ?
                 <br />
                 <span className="text-red-600 font-medium">Esta ação não pode ser desfeita.</span>
               </p>
