@@ -15,13 +15,9 @@ const Clientes: React.FC = () => {
   const [lastPageCount, setLastPageCount] = useState<number>(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
-  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{ show: boolean; cliente: Cliente | null }>({ show: false, cliente: null });
-  const [isClosing, setIsClosing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
-  const [deleteCountdown, setDeleteCountdown] = useState<number | null>(null);
-  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
 
   // Debounce do search
   useEffect(() => {
@@ -93,72 +89,30 @@ const Clientes: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleDeleteClick = (cliente: Cliente) => {
-    setIsClosing(false);
-    setDeleteConfirmModal({ show: true, cliente });
-    // Iniciar contagem regressiva de 5 segundos
-    setDeleteCountdown(5);
+  const handleDeleteClick = async (cliente: Cliente) => {
+    if (!cliente.id) return;
     
-    // Limpar timer anterior se existir
-    if (deleteTimer) {
-      clearInterval(deleteTimer);
-    }
+    const clienteNome = cliente.razao_social || cliente.nome || 'Cliente';
     
-    // Criar novo timer - capturar cliente no closure
-    const clienteToDelete = cliente;
-    let countdown = 5;
-    const timer = setInterval(() => {
-      countdown -= 1;
-      setDeleteCountdown(countdown);
+    try {
+      await deleteClienteById(cliente.id);
       
-      if (countdown <= 0) {
-        clearInterval(timer);
-        setDeleteTimer(null);
-        // Executar exclusão automaticamente após 5 segundos
-        deleteClienteById(clienteToDelete.id!).then(() => {
-          handleDeleteCancel();
-        });
-      }
-    }, 1000);
-    
-    setDeleteTimer(timer);
-  };
-
-  const handleDeleteConfirm = async () => {
-    // Limpar timer se existir
-    if (deleteTimer) {
-      clearInterval(deleteTimer);
-      setDeleteTimer(null);
-    }
-    
-    if (deleteConfirmModal.cliente) {
-      await deleteClienteById(deleteConfirmModal.cliente.id!);
-      handleDeleteCancel();
+      // Mostrar mensagem de sucesso
+      setSuccessMessage(`Cliente "${clienteNome}" excluído com sucesso!`);
+      setShowSuccess(true);
+      
+      // Ocultar mensagem após 5 segundos
+      setTimeout(() => {
+        setShowSuccess(false);
+      }, 5000);
+      
+      // Recarregar lista de clientes
+      loadClientes();
+    } catch (error) {
+      // Erro já é tratado pelo hook useClientes
+      setShowError(true);
     }
   };
-
-  const handleDeleteCancel = () => {
-    // Limpar timer se existir
-    if (deleteTimer) {
-      clearInterval(deleteTimer);
-      setDeleteTimer(null);
-    }
-    setDeleteCountdown(null);
-    setIsClosing(true);
-    setTimeout(() => {
-      setDeleteConfirmModal({ show: false, cliente: null });
-      setIsClosing(false);
-    }, 300); // Match animation duration
-  };
-  
-  // Limpar timer ao desmontar componente
-  useEffect(() => {
-    return () => {
-      if (deleteTimer) {
-        clearInterval(deleteTimer);
-      }
-    };
-  }, [deleteTimer]);
 
   const formatCNPJ = (value: string) => {
     const v = (value || '').replace(/\D/g, '').slice(0, 14);
@@ -268,80 +222,6 @@ const Clientes: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal de confirmação de exclusão */}
-      {deleteConfirmModal.show && deleteConfirmModal.cliente && (
-        <div 
-          className="fixed inset-0 bg-gradient-to-br from-blue-900/60 via-blue-800/60 to-blue-900/60 backdrop-blur-sm flex items-center justify-center z-50"
-          style={{ animation: `${isClosing ? 'fadeOut' : 'fadeIn'} 0.3s ease-out` }}
-        >
-          <div 
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 transform transition-all"
-            style={{ animation: `${isClosing ? 'slideDown' : 'slideUp'} 0.3s ease-out` }}
-          >
-            <div className="p-6">
-              <div className="flex items-center mb-4">
-                <div className="flex-shrink-0 w-12 h-12 mx-auto bg-gradient-to-br from-red-50 to-red-100 rounded-full flex items-center justify-center shadow-lg">
-                  <svg className="w-7 h-7 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 text-center mb-3">
-                Confirmar Exclusão
-              </h3>
-              <p className="text-sm text-gray-600 text-center mb-4 leading-relaxed">
-                Tem certeza que deseja excluir o cliente 
-                <br />
-                <strong className="text-gray-900 font-semibold">{deleteConfirmModal.cliente.razao_social || deleteConfirmModal.cliente.nome}</strong>
-                {deleteConfirmModal.cliente.cnpj_limpo && (
-                  <>
-                    <br />
-                    <span className="text-gray-500 text-xs">CNPJ: {displayCNPJ(deleteConfirmModal.cliente.cnpj_limpo)}</span>
-                  </>
-                )}
-                ?
-                <br />
-                <span className="text-red-600 font-medium">Esta ação não pode ser desfeita.</span>
-              </p>
-              
-              {/* Notificação com contagem regressiva */}
-              {deleteCountdown !== null && deleteCountdown > 0 && (
-                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-yellow-800">
-                      Exclusão automática em {deleteCountdown} segundo{deleteCountdown !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  {/* Barra de progresso */}
-                  <div className="w-full bg-yellow-200 rounded-full h-2">
-                    <div 
-                      className="bg-yellow-600 h-2 rounded-full transition-all duration-1000 ease-linear"
-                      style={{ width: `${(deleteCountdown / 5) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={handleDeleteCancel}
-                  className="flex-1 px-4 py-2.5 border-2 border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleDeleteConfirm}
-                  disabled={loading}
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 shadow-lg hover:shadow-xl transition-all duration-200 font-medium"
-                >
-                  {loading ? 'Excluindo...' : 'Excluir Agora'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
       {/* Toast de sucesso */}
       {showSuccess && successMessage && (
         <div className="fixed top-4 right-4 z-50 animate-toast-slide-in">
