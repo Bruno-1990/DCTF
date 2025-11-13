@@ -20,6 +20,8 @@ const Clientes: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [deleteCountdown, setDeleteCountdown] = useState<number | null>(null);
+  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
 
   // Debounce do search
   useEffect(() => {
@@ -94,9 +96,41 @@ const Clientes: React.FC = () => {
   const handleDeleteClick = (cliente: Cliente) => {
     setIsClosing(false);
     setDeleteConfirmModal({ show: true, cliente });
+    // Iniciar contagem regressiva de 5 segundos
+    setDeleteCountdown(5);
+    
+    // Limpar timer anterior se existir
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+    }
+    
+    // Criar novo timer - capturar cliente no closure
+    const clienteToDelete = cliente;
+    let countdown = 5;
+    const timer = setInterval(() => {
+      countdown -= 1;
+      setDeleteCountdown(countdown);
+      
+      if (countdown <= 0) {
+        clearInterval(timer);
+        setDeleteTimer(null);
+        // Executar exclusão automaticamente após 5 segundos
+        deleteClienteById(clienteToDelete.id!).then(() => {
+          handleDeleteCancel();
+        });
+      }
+    }, 1000);
+    
+    setDeleteTimer(timer);
   };
 
   const handleDeleteConfirm = async () => {
+    // Limpar timer se existir
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+      setDeleteTimer(null);
+    }
+    
     if (deleteConfirmModal.cliente) {
       await deleteClienteById(deleteConfirmModal.cliente.id!);
       handleDeleteCancel();
@@ -104,12 +138,27 @@ const Clientes: React.FC = () => {
   };
 
   const handleDeleteCancel = () => {
+    // Limpar timer se existir
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+      setDeleteTimer(null);
+    }
+    setDeleteCountdown(null);
     setIsClosing(true);
     setTimeout(() => {
       setDeleteConfirmModal({ show: false, cliente: null });
       setIsClosing(false);
     }, 300); // Match animation duration
   };
+  
+  // Limpar timer ao desmontar componente
+  useEffect(() => {
+    return () => {
+      if (deleteTimer) {
+        clearInterval(deleteTimer);
+      }
+    };
+  }, [deleteTimer]);
 
   const formatCNPJ = (value: string) => {
     const v = (value || '').replace(/\D/g, '').slice(0, 14);
@@ -240,7 +289,7 @@ const Clientes: React.FC = () => {
               <h3 className="text-xl font-bold text-gray-900 text-center mb-3">
                 Confirmar Exclusão
               </h3>
-              <p className="text-sm text-gray-600 text-center mb-6 leading-relaxed">
+              <p className="text-sm text-gray-600 text-center mb-4 leading-relaxed">
                 Tem certeza que deseja excluir o cliente 
                 <br />
                 <strong className="text-gray-900 font-semibold">{deleteConfirmModal.cliente.razao_social || deleteConfirmModal.cliente.nome}</strong>
@@ -254,6 +303,25 @@ const Clientes: React.FC = () => {
                 <br />
                 <span className="text-red-600 font-medium">Esta ação não pode ser desfeita.</span>
               </p>
+              
+              {/* Notificação com contagem regressiva */}
+              {deleteCountdown !== null && deleteCountdown > 0 && (
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-yellow-800">
+                      Exclusão automática em {deleteCountdown} segundo{deleteCountdown !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  {/* Barra de progresso */}
+                  <div className="w-full bg-yellow-200 rounded-full h-2">
+                    <div 
+                      className="bg-yellow-600 h-2 rounded-full transition-all duration-1000 ease-linear"
+                      style={{ width: `${(deleteCountdown / 5) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              
               <div className="flex gap-3">
                 <button
                   onClick={handleDeleteCancel}
@@ -266,7 +334,7 @@ const Clientes: React.FC = () => {
                   disabled={loading}
                   className="flex-1 px-4 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 shadow-lg hover:shadow-xl transition-all duration-200 font-medium"
                 >
-                  {loading ? 'Excluindo...' : 'Excluir'}
+                  {loading ? 'Excluindo...' : 'Excluir Agora'}
                 </button>
               </div>
             </div>
