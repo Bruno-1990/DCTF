@@ -216,7 +216,7 @@ const Clientes: React.FC = () => {
             to="/clientes/upload"
             className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700"
           >
-            Upload de planilhas
+            Upload em Lote
           </Link>
         </div>
       </div>

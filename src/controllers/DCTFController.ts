@@ -104,6 +104,50 @@ export class DCTFController {
   }
 
   /**
+   * Limpar todas as declarações DCTF (operação administrativa)
+   * Requer confirmação explícita via body: { confirm: true, confirmationCode: "LIMPAR_TODAS_DECLARACOES" }
+   */
+  async limparTodasDeclaracoes(req: Request, res: Response): Promise<void> {
+    try {
+      const { confirm, confirmationCode } = req.body;
+
+      // Validação de confirmação
+      if (!confirm || confirmationCode !== 'LIMPAR_TODAS_DECLARACOES') {
+        res.status(400).json({
+          success: false,
+          error: 'Confirmação inválida. É necessário confirmar explicitamente com o código correto.',
+        });
+        return;
+      }
+
+      // Log da operação
+      console.log(`[ADMIN] Limpeza de todas as declarações DCTF iniciada por: ${req.ip} em ${new Date().toISOString()}`);
+
+      const result = await this.dctfModel.clearAll();
+
+      if (!result.success) {
+        res.status(500).json(result);
+        return;
+      }
+
+      // Log de sucesso
+      console.log(`[ADMIN] Limpeza concluída: ${result.data?.deletedDeclarations} declarações e ${result.data?.deletedData} registros de dados deletados`);
+
+      res.json({
+        success: true,
+        message: result.message,
+        data: result.data,
+      });
+    } catch (error) {
+      console.error('Erro ao limpar declarações DCTF:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor ao limpar declarações',
+      });
+    }
+  }
+
+  /**
    * Analisar declaração DCTF e retornar achados com plano de ação
    */
   async analisarDeclaracao(req: Request, res: Response): Promise<void> {

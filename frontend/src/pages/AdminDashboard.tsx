@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import type { AdminDashboardSnapshotResponse } from "../services/dashboard";
 import { fetchAdminDashboardSnapshot } from "../services/dashboard";
 import { fetchConferenceSummary, type ConferenceSummary } from "../services/conferences";
+import { dctfService } from "../services/dctf";
+import { relatoriosService } from "../services/relatorios";
 import LoadingSpinner from "../components/UI/LoadingSpinner";
 import Alert from "../components/UI/Alert";
 
@@ -534,7 +536,7 @@ const AdminDashboard: React.FC = () => {
             )}
           </section>
 
-          <section id="configuration" className="bg-white shadow rounded-lg p-6">
+          <section id="configuration" className="bg-white shadow rounded-lg p-6 mb-8">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Configurações e integrações</h2>
             <p className="text-sm text-gray-600 leading-relaxed mb-4">
               {snapshot.meta.notes || "Ajuste as permissões e integrações conforme a política interna."}
@@ -547,6 +549,7 @@ const AdminDashboard: React.FC = () => {
           </section>
         </>
       )}
+
     </div>
   );
 };

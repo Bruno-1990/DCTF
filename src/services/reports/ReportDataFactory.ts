@@ -466,19 +466,33 @@ export class ReportDataFactory {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Filtrar declarações pendentes com prazo vigente (mesma lógica do dashboard)
+    console.log('[ReportDataFactory] Total de issues encontradas:', conferenceSummary.rules.dueDate.length);
+
+    // Filtrar declarações pendentes com prazo vigente ou vencidas
+    // Inclui: medium (próximo do vencimento) e high (vencidas)
     const pendentes: DashboardConferenceIssue[] = conferenceSummary.rules.dueDate.filter((issue) => {
+      // Não estão concluídas (status não é 'concluido')
       const status = (issue.status ?? '').toLowerCase();
       const notCompleted = status !== 'concluido';
       
-      const dueDate = new Date(issue.dueDate);
-      dueDate.setHours(0, 0, 0, 0);
-      const stillValid = dueDate >= today;
+      // Incluir todas as severidades (medium e high) - medium = próximo do vencimento, high = vencido
+      const isPending = issue.severity === 'medium' || issue.severity === 'high';
       
-      const hasValidDueDate = issue.severity === 'medium';
+      const matches = notCompleted && isPending;
       
-      return notCompleted && stillValid && hasValidDueDate;
+      if (matches) {
+        console.log('[ReportDataFactory] Issue pendente encontrada:', {
+          identification: issue.identification,
+          status,
+          dueDate: issue.dueDate,
+          severity: issue.severity,
+        });
+      }
+      
+      return matches;
     });
+
+    console.log('[ReportDataFactory] Total de pendentes filtradas:', pendentes.length);
 
     // Buscar todos os registros DCTF para poder filtrar por CNPJ
     const dctfResponse = await dctfModel.findAll();

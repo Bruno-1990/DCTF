@@ -11,6 +11,7 @@ import DCTFList from '../pages/DCTFList';
 import DCTFDadosPage from '../pages/DCTFDadosPage';
 import AdminDashboard from '../pages/AdminDashboard';
 import Conferencias from '../pages/Conferencias';
+import Administracao from '../pages/Administracao';
 
 const router = createBrowserRouter([
   {
@@ -53,6 +54,10 @@ const router = createBrowserRouter([
       {
         path: 'relatorios',
         element: <Relatorios />,
+      },
+      {
+        path: 'administracao',
+        element: <Administracao />,
       },
       {
         path: 'upload',

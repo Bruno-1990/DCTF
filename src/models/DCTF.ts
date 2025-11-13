@@ -681,6 +681,79 @@ export class DCTF extends DatabaseService<IDCTF> {
   }
 
   /**
+   * Limpar todas as declarações DCTF (operação administrativa)
+   * ATENÇÃO: Esta operação é irreversível e deve ser usada com cuidado
+   * Retorna o número de registros deletados
+   */
+  async clearAll(): Promise<ApiResponse<{ deletedDeclarations: number; deletedData: number }>> {
+    try {
+      // Mock temporário se Supabase não estiver configurado
+      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
+        return {
+          success: true,
+          data: {
+            deletedDeclarations: 0,
+            deletedData: 0,
+          },
+          message: 'Operação simulada (Supabase não configurado)',
+        };
+      }
+
+      // Primeiro, contar os registros antes de deletar
+      const { count: dadosCount } = await this.supabase
+        .from('dctf_dados')
+        .select('*', { count: 'exact', head: true });
+
+      const { count: declaracoesCount } = await this.supabase
+        .from(this.tableName)
+        .select('*', { count: 'exact', head: true });
+
+      // Deletar todos os dados relacionados (dctf_dados)
+      const { error: dadosError } = await this.supabase
+        .from('dctf_dados')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // Condição sempre verdadeira para deletar tudo
+
+      if (dadosError) {
+        console.error('Erro ao limpar dados DCTF:', dadosError);
+        return {
+          success: false,
+          error: `Erro ao limpar dados DCTF: ${dadosError.message}`,
+        };
+      }
+
+      // Deletar todas as declarações
+      const { error: declaracoesError } = await this.supabase
+        .from(this.tableName)
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // Condição sempre verdadeira para deletar tudo
+
+      if (declaracoesError) {
+        console.error('Erro ao limpar declarações DCTF:', declaracoesError);
+        return {
+          success: false,
+          error: `Erro ao limpar declarações DCTF: ${declaracoesError.message}`,
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          deletedDeclarations: declaracoesCount ?? 0,
+          deletedData: dadosCount ?? 0,
+        },
+        message: `Limpeza concluída: ${declaracoesCount ?? 0} declarações e ${dadosCount ?? 0} registros de dados deletados`,
+      };
+    } catch (error) {
+      console.error('Erro ao limpar declarações DCTF:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido ao limpar declarações',
+      };
+    }
+  }
+
+  /**
    * Processar arquivo DCTF (placeholder para implementação futura)
    */
   async processarArquivo(declaracaoId: string, arquivoPath: string): Promise<ApiResponse<boolean>> {

@@ -8,6 +8,7 @@ const navigation = [
   { name: 'DCTF', href: '/dctf' },
   { name: 'Clientes', href: '/clientes' },
   { name: 'Relatórios', href: '/relatorios' },
+  { name: 'Administração', href: '/administracao' },
 ];
 
 const Header: React.FC = () => {

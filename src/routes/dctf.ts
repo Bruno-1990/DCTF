@@ -49,6 +49,11 @@ router.post('/:id/cleanup', validateParams(dctfSchemas.params), (req, res) => {
   dctfController.limparDuplicados(req, res);
 });
 
+// POST /api/dctf/admin/clear - Limpar todas as declarações (operação administrativa)
+router.post('/admin/clear', (req, res) => {
+  dctfController.limparTodasDeclaracoes(req, res);
+});
+
 // POST /api/dctf - Criar declaração
 router.post('/', validate(dctfSchemas.create), (req, res) => {
   dctfController.criarDeclaracao(req, res);

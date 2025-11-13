@@ -81,6 +81,14 @@ export const dctfService = {
     await api.delete(`/dctf/${id}`);
   },
 
+  async clearAll(): Promise<{ success: boolean; message: string; data?: { deletedDeclarations: number; deletedData: number } }> {
+    const response = await api.post('/dctf/admin/clear', {
+      confirm: true,
+      confirmationCode: 'LIMPAR_TODAS_DECLARACOES',
+    });
+    return response.data;
+  },
+
   async processSpreadsheet(file: File): Promise<{ dctfId: string; message: string }> {
     const formData = new FormData();
     formData.append('file', file);

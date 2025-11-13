@@ -7,6 +7,7 @@ import {
   DocumentTextIcon,
   UsersIcon,
   ChartBarIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
 
 const navigation = [
@@ -16,6 +17,7 @@ const navigation = [
   { name: 'DCTF', href: '/dctf', icon: DocumentTextIcon },
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },
   { name: 'Relatórios', href: '/relatorios', icon: ChartBarIcon },
+  { name: 'Administração', href: '/administracao', icon: Cog6ToothIcon },
 ];
 
 const Sidebar: React.FC = () => {
