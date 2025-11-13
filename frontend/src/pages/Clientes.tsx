@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useClientes } from '../hooks/useClientes';
 import type { Cliente } from '../types';
+import { ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/24/outline';
 
 const Clientes: React.FC = () => {
   const { clientes, loadClientes, createCliente, updateClienteById, deleteClienteById, loading, error, clearError } = useClientes();
@@ -18,6 +19,7 @@ const Clientes: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [copiedCnpj, setCopiedCnpj] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
 
@@ -32,7 +34,7 @@ const Clientes: React.FC = () => {
 
   // Load clientes when debounced search, page or limit changes
   useEffect(() => {
-    loadClientes({ page, limit, nome: debouncedSearch }).then(({ items, pagination }) => {
+    loadClientes({ page, limit, search: debouncedSearch }).then(({ items, pagination }) => {
       setLastPageCount(items.length);
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
@@ -164,6 +166,18 @@ const Clientes: React.FC = () => {
     };
   }, [deleteTimer]);
 
+  const copyToClipboard = async (text: string, cnpj: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCnpj(cnpj);
+      setTimeout(() => {
+        setCopiedCnpj(null);
+      }, 2000);
+    } catch (err) {
+      console.error('Erro ao copiar para área de transferência:', err);
+    }
+  };
+
   const formatCNPJ = (value: string) => {
     const v = (value || '').replace(/\D/g, '').slice(0, 14);
     return v
@@ -240,16 +254,36 @@ const Clientes: React.FC = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {clientes.map((cliente) => (
+            {clientes.map((cliente) => {
+              const cnpjDisplay = displayCNPJ(cliente.cnpj_limpo || cliente.cnpj);
+              const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
+              const cnpjKey = `${cliente.id}-${cnpjValue}`;
+              return (
               <tr key={cliente.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{cliente.razao_social || cliente.nome || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{displayCNPJ(cliente.cnpj_limpo || cliente.cnpj)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <div className="flex items-center gap-2">
+                    <span>{cnpjDisplay}</span>
+                    <button
+                      onClick={() => copyToClipboard(cnpjValue, cnpjKey)}
+                      className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                      title="Copiar CNPJ"
+                    >
+                      {copiedCnpj === cnpjKey ? (
+                        <CheckIcon className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <ClipboardDocumentIcon className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <button onClick={() => handleEdit(cliente)} className="text-blue-600 hover:text-blue-900 mr-3">Editar</button>
                   <button onClick={() => handleDeleteClick(cliente)} className="text-red-600 hover:text-red-900">Excluir</button>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>

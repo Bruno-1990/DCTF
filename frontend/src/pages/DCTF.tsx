@@ -112,7 +112,12 @@ const DCTFPage: React.FC = () => {
       params.search = debouncedSearchTerm.trim();
     }
     
-    if (orderBy) {
+    // Se houver filtro e não houver ordenação manual, ordenar por data de transmissão (mais recentes primeiro)
+    const hasFilter = (situacao && situacao !== 'Todos') || (debouncedSearchTerm && debouncedSearchTerm.trim());
+    if (hasFilter && !orderBy) {
+      params.orderBy = 'dataTransmissao';
+      params.order = 'desc';
+    } else if (orderBy) {
       params.orderBy = orderBy;
       params.order = orderDirection;
     }

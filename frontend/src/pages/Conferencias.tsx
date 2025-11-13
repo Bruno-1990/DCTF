@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ConferenceIssue } from '../services/conferences';
 import { fetchConferenceSummary } from '../services/conferences';
 import { format } from 'date-fns';
+import { ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/24/outline';
 
 function formatDate(value?: string) {
   if (!value) return '—';
@@ -40,6 +41,7 @@ export default function Conferencias() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -85,6 +87,18 @@ export default function Conferencias() {
       }
       return next;
     });
+  };
+
+  const copyToClipboard = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => {
+        setCopiedId(null);
+      }, 2000);
+    } catch (err) {
+      console.error('Erro ao copiar para área de transferência:', err);
+    }
   };
 
   if (isLoading) {
@@ -153,7 +167,22 @@ export default function Conferencias() {
                   <Fragment key={issue.id}>
                     <tr className="hover:bg-slate-50">
                       <td className="px-4 py-3 text-slate-800 font-medium">{issue.businessName ?? '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{issue.identification}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <span>{issue.identification}</span>
+                          <button
+                            onClick={() => copyToClipboard(issue.identification, issue.id)}
+                            className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                            title="Copiar CNPJ"
+                          >
+                            {copiedId === issue.id ? (
+                              <CheckIcon className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <ClipboardDocumentIcon className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-slate-600">{issue.period}</td>
                       <td className="px-4 py-3 text-slate-600">{formatDate(issue.dueDate)}</td>
                       <td className="px-4 py-3 text-slate-600">{formatDate(issue.transmissionDate)}</td>

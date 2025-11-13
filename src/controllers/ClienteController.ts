@@ -60,19 +60,39 @@ export class ClienteController {
       let data = result.data || [];
 
       // Filtros (compatível com 'search' legado e novos 'nome'/'cnpj')
-      const q = (nome as string) || (search as string) || '';
-      if (q) {
-        const qLower = q.toLowerCase();
-        data = data.filter((c: any) => 
-          (c.razao_social || c.nome || '').toLowerCase().includes(qLower)
-        );
-      }
+      // Se 'search' for fornecido, busca tanto em razão social quanto em CNPJ
+      if (search && typeof search === 'string' && search.trim()) {
+        const searchTerm = search.trim();
+        const searchDigits = searchTerm.replace(/\D/g, '');
+        const searchLower = searchTerm.toLowerCase();
+        
+        data = data.filter((c: any) => {
+          // Buscar por razão social (case-insensitive)
+          const razaoSocial = (c.razao_social || c.nome || '').toLowerCase();
+          const matchRazaoSocial = razaoSocial.includes(searchLower);
+          
+          // Buscar por CNPJ (apenas dígitos)
+          const cnpjLimpo = String(c.cnpj_limpo || '').replace(/\D/g, '');
+          const matchCNPJ = searchDigits && cnpjLimpo.includes(searchDigits);
+          
+          return matchRazaoSocial || matchCNPJ;
+        });
+      } else {
+        // Filtros específicos (mantidos para compatibilidade)
+        const q = (nome as string) || '';
+        if (q) {
+          const qLower = q.toLowerCase();
+          data = data.filter((c: any) => 
+            (c.razao_social || c.nome || '').toLowerCase().includes(qLower)
+          );
+        }
 
-      if (cnpj) {
-        const cnpjStr = String(cnpj).replace(/\D/g, '');
-        data = data.filter((c: any) => 
-          String(c.cnpj_limpo || '').replace(/\D/g, '').includes(cnpjStr)
-        );
+        if (cnpj) {
+          const cnpjStr = String(cnpj).replace(/\D/g, '');
+          data = data.filter((c: any) => 
+            String(c.cnpj_limpo || '').replace(/\D/g, '').includes(cnpjStr)
+          );
+        }
       }
 
       // Paginação

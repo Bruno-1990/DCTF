@@ -7,7 +7,7 @@ export type ClientesListResponse = {
 };
 
 export const clientesService = {
-  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string }): Promise<ClientesListResponse> {
+  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string }): Promise<ClientesListResponse> {
     const response = await api.get<any>('/clientes', { params });
     const body = response.data;
     if (Array.isArray(body)) {

@@ -137,7 +137,7 @@ export const dctfSchemas = {
     situacao: Joi.string().max(100).optional().allow(''),
     search: Joi.string().allow('').optional(),
     orderBy: Joi.string()
-      .valid('razaoSocial', 'cnpj', 'periodo', 'dataDeclaracao', 'situacao', 'debitoApurado', 'saldoAPagar')
+      .valid('razaoSocial', 'cnpj', 'periodo', 'dataDeclaracao', 'dataTransmissao', 'situacao', 'debitoApurado', 'saldoAPagar')
       .optional(),
     order: Joi.string()
       .valid('asc', 'desc')

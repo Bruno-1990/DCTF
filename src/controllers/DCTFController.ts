@@ -289,37 +289,41 @@ export class DCTFController {
       if (search && typeof search === 'string' && search.trim()) {
         const searchDigits = search.replace(/\D/g, ''); // Remove caracteres não numéricos para busca de CNPJ
         
-        filteredData = filteredData.filter((d: any) => {
-          // Buscar CNPJ/CPF em vários campos possíveis
-          const cnpj = (
-            d.cliente?.cnpj_limpo || 
-            d.cnpj_limpo || 
-            ''
-          ).replace(/\D/g, '');
-          
-          const numeroIdentificacao = (
-            d.numeroIdentificacao || 
-            d.numero_identificacao || 
-            d.identificacao || 
-            ''
-          ).replace(/\D/g, '');
-          
-          // Busca por CNPJ/CPF (apenas dígitos)
-          if (searchDigits) {
+        if (searchDigits) {
+          filteredData = filteredData.filter((d: any) => {
+            // Buscar CNPJ/CPF em vários campos possíveis
+            const cnpj = (
+              d.cliente?.cnpj_limpo || 
+              d.cnpj_limpo || 
+              ''
+            ).replace(/\D/g, '');
+            
+            const numeroIdentificacao = (
+              d.numeroIdentificacao || 
+              d.numero_identificacao || 
+              d.identificacao || 
+              ''
+            ).replace(/\D/g, '');
+            
+            // Busca por CNPJ/CPF (apenas dígitos)
             const matchCnpj = cnpj && cnpj.includes(searchDigits);
             const matchNumero = numeroIdentificacao && numeroIdentificacao.includes(searchDigits);
             
-            if (matchCnpj || matchNumero) {
-              return true;
-            }
-          }
-          
-          return false;
-        });
+            return matchCnpj || matchNumero;
+          });
+        }
       }
 
-      const orderKey = typeof orderBy === 'string' ? orderBy : undefined;
-      const orderDir = String(order).toLowerCase() === 'desc' ? -1 : 1;
+      // Se houver filtro (search ou situacao) e não houver orderBy, ordenar por data de transmissão (mais recentes primeiro)
+      const hasFilter = (search && typeof search === 'string' && search.trim()) || (situacao && situacao !== 'Todos');
+      let orderKey = typeof orderBy === 'string' ? orderBy : undefined;
+      let orderToUse = order;
+      if (hasFilter && !orderKey) {
+        orderKey = 'dataTransmissao';
+        orderToUse = 'desc'; // Mais recentes primeiro
+      }
+      
+      const orderDir = String(orderToUse).toLowerCase() === 'desc' ? -1 : 1;
       if (orderKey) {
         const orderMap: Record<string, (item: any) => any> = {
           razaoSocial: (item: any) => (item.cliente?.razao_social || item.cliente?.nome || '').toString(),
@@ -327,6 +331,12 @@ export class DCTFController {
           periodo: (item: any) => item.periodo || '',
           dataDeclaracao: (item: any) => {
             const value = item.dataDeclaracao || item.data_declaracao || item.data_transmissao;
+            const date = value ? new Date(value) : null;
+            return date ? date.getTime() : null;
+          },
+          dataTransmissao: (item: any) => {
+            // Priorizar dataTransmissao, depois data_declaracao
+            const value = item.dataTransmissao || item.data_transmissao || item.dataDeclaracao || item.data_declaracao;
             const date = value ? new Date(value) : null;
             return date ? date.getTime() : null;
           },
