@@ -67,11 +67,21 @@ export default function UploadClientes() {
         body: form,
       });
       
-      const json: UploadResponse = await res.json();
+      // Verificar se a resposta é JSON válido
+      let json: UploadResponse;
+      try {
+        json = await res.json();
+      } catch (parseError) {
+        const errorText = await res.text();
+        setError(`Erro ao processar resposta do servidor: ${errorText || 'Resposta inválida'}`);
+        setToast({ type: 'error', msg: `Erro ao processar resposta: ${errorText || 'Resposta inválida'}` });
+        return;
+      }
       
-      if (!json.success) {
-        setError(json.error || 'Falha ao processar planilha');
-        setToast({ type: 'error', msg: json.error || 'Falha ao processar planilha' });
+      if (!res.ok || !json.success) {
+        const errorMsg = json.error || json.message || `Erro ${res.status}: ${res.statusText}`;
+        setError(errorMsg);
+        setToast({ type: 'error', msg: errorMsg });
       } else {
         const d = json.data;
         const resumo = d

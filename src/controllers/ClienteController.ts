@@ -327,32 +327,80 @@ export class ClienteController {
       const { buffer, originalname } = req.file;
       const ext = originalname.split('.').pop()?.toLowerCase();
 
+      if (!ext || !['xlsx', 'xls', 'csv'].includes(ext)) {
+        res.status(400).json({ 
+          success: false, 
+          error: `Formato de arquivo não suportado: ${ext || 'desconhecido'}. Use .xlsx, .xls ou .csv` 
+        });
+        return;
+      }
+
       let dados: any[] = [];
 
-      // Processar arquivo Excel ou CSV
-      if (ext === 'xlsx' || ext === 'xls') {
-        const workbook = XLSX.read(buffer, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        dados = XLSX.utils.sheet_to_json(worksheet);
-      } else if (ext === 'csv') {
-        const csvString = buffer.toString('utf-8');
-        const workbook = XLSX.read(csvString, { type: 'string' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        dados = XLSX.utils.sheet_to_json(worksheet);
-      } else {
-        res.status(400).json({ success: false, error: 'Formato de arquivo não suportado. Use .xlsx, .xls ou .csv' });
+      try {
+        // Processar arquivo Excel ou CSV
+        if (ext === 'xlsx' || ext === 'xls') {
+          const workbook = XLSX.read(buffer, { type: 'buffer' });
+          
+          if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+            res.status(400).json({ success: false, error: 'Arquivo Excel não contém planilhas válidas' });
+            return;
+          }
+          
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          
+          if (!worksheet) {
+            res.status(400).json({ success: false, error: 'Não foi possível ler a planilha do arquivo' });
+            return;
+          }
+          
+          dados = XLSX.utils.sheet_to_json(worksheet, { 
+            defval: '', // Valor padrão para células vazias
+            raw: false // Retornar valores como strings
+          });
+        } else if (ext === 'csv') {
+          const csvString = buffer.toString('utf-8');
+          
+          if (!csvString || csvString.trim().length === 0) {
+            res.status(400).json({ success: false, error: 'Arquivo CSV está vazio' });
+            return;
+          }
+          
+          const workbook = XLSX.read(csvString, { type: 'string' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          dados = XLSX.utils.sheet_to_json(worksheet, { 
+            defval: '',
+            raw: false 
+          });
+        }
+      } catch (parseError: any) {
+        console.error('Erro ao processar arquivo:', parseError);
+        res.status(400).json({ 
+          success: false, 
+          error: `Erro ao processar arquivo: ${parseError?.message || 'Formato de arquivo inválido'}` 
+        });
         return;
       }
 
       if (!dados || dados.length === 0) {
-        res.status(400).json({ success: false, error: 'Planilha vazia ou sem dados válidos' });
+        res.status(400).json({ 
+          success: false, 
+          error: 'Planilha vazia ou sem dados válidos. Verifique se a planilha contém dados além do cabeçalho.' 
+        });
         return;
       }
 
+      // Debug: Log das primeiras linhas para diagnóstico
+      console.log('Total de linhas lidas da planilha:', dados.length);
+      if (dados.length > 0) {
+        console.log('Primeira linha (exemplo):', JSON.stringify(dados[0], null, 2));
+        console.log('Chaves disponíveis na primeira linha:', Object.keys(dados[0]));
+      }
+
       // Normalizar dados da planilha
-      const clientesNormalizados = dados.map((item: any) => {
+      const clientesNormalizados = dados.map((item: any, index: number) => {
         // Tentar encontrar CNPJ em diferentes colunas possíveis
         const cnpj = item.cnpj || item.CNPJ || item.cnpj_limpo || item.CNPJ_LIMPO || item['CNPJ'] || '';
         // SEMPRE limpar caracteres especiais do CNPJ
@@ -363,10 +411,12 @@ export class ClienteController {
         
         // Validar campos obrigatórios: CNPJ (14 dígitos) e Razão Social
         if (!cnpjLimpo || cnpjLimpo.length !== 14) {
+          console.log(`Linha ${index + 1}: CNPJ inválido - valor: "${cnpj}", limpo: "${cnpjLimpo}", tamanho: ${cnpjLimpo.length}`);
           return null; // CNPJ inválido
         }
         
         if (!razaoSocial || razaoSocial.length === 0) {
+          console.log(`Linha ${index + 1}: Razão Social vazia`);
           return null; // Razão Social obrigatória
         }
         
@@ -380,10 +430,12 @@ export class ClienteController {
         };
       }).filter((item: any) => item !== null); // Filtrar apenas registros válidos
 
+      console.log('Clientes normalizados válidos:', clientesNormalizados.length, 'de', dados.length);
+
       if (clientesNormalizados.length === 0) {
         res.status(400).json({ 
           success: false, 
-          error: 'Nenhum cliente válido encontrado na planilha. Campos obrigatórios: CNPJ (14 dígitos, com ou sem formatação) e Razão Social. Email, Telefone e Endereço são opcionais.' 
+          error: `Nenhum cliente válido encontrado na planilha. Total de linhas processadas: ${dados.length}. Campos obrigatórios: CNPJ (14 dígitos, com ou sem formatação) e Razão Social. Email, Telefone e Endereço são opcionais. Verifique se a planilha contém dados além do cabeçalho e se os campos estão nomeados corretamente.` 
         });
         return;
       }
@@ -444,7 +496,12 @@ export class ClienteController {
         message: `Processados: ${resultados.totalProcessados} | Já existentes: ${resultados.jaExistentes} | Criados: ${resultados.criados} | Falhas: ${resultados.fail}`
       });
     } catch (error) {
-      res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
+      console.error('Erro no upload de planilha:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        message: error instanceof Error ? error.message : 'Erro ao processar upload da planilha'
+      });
     }
   }
 
