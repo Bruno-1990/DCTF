@@ -141,7 +141,7 @@ export class ReportXlsxService {
       { key: 'balanceTotal', header: 'Saldo Total' },
       { key: 'lastPeriod', header: 'Último Período' },
       { key: 'lastSubmission', header: 'Último Envio' },
-      { key: 'statusSummary', header: 'Status (C/P/Proc/Erro)' },
+      { key: 'statusSummary', header: 'Conc. / Pend. / Proc. / Erro' },
     ];
 
     const rows = envelope.data.items.map(item => ({

@@ -246,7 +246,7 @@ export class ReportPdfService {
         { label: 'Saldo total', value: currencyFormatter.format(item.valores.saldoTotal) },
         { label: 'Último período', value: item.ultimoPeriodo ?? '—' },
         { label: 'Último envio', value: this.formatDate(item.ultimoEnvio) },
-        { label: 'Status (C/P/Proc/Erro)', value: `${item.statusSummary.concluido}/${item.statusSummary.pendente}/${item.statusSummary.processando}/${item.statusSummary.erro}` },
+        { label: 'Conc. / Pend. / Proc. / Erro', value: `${item.statusSummary.concluido}/${item.statusSummary.pendente}/${item.statusSummary.processando}/${item.statusSummary.erro}` },
       ]);
     });
   }
