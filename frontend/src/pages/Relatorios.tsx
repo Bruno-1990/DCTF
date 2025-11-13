@@ -7,9 +7,6 @@ const RelatoriosPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [tipoRelatorio, setTipoRelatorio] = useState('');
-  const [declaracaoId, setDeclaracaoId] = useState('');
-  const [identification, setIdentification] = useState('');
-  const [periodFilter, setPeriodFilter] = useState('');
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [generatingTarget, setGeneratingTarget] = useState<string | null>(null);
@@ -18,9 +15,6 @@ const RelatoriosPage: React.FC = () => {
     load({
       ...params,
       tipoRelatorio: tipoRelatorio || undefined,
-      declaracaoId: declaracaoId || undefined,
-      identification: identification || undefined,
-      period: periodFilter || undefined,
     })
       .then(({ pagination }) => {
         setTotal(pagination?.total ?? null);
@@ -117,7 +111,7 @@ const RelatoriosPage: React.FC = () => {
 
       <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-800 mb-3">Filtros</h2>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
           <label className="flex flex-col text-sm text-gray-600">
             Tipo de relatório
             <select
@@ -132,44 +126,6 @@ const RelatoriosPage: React.FC = () => {
               <option value="dctf">Relatório DCTF</option>
             </select>
           </label>
-          <label className="flex flex-col text-sm text-gray-600">
-            Declaração ID
-            <input
-              placeholder="ID da declaração"
-              value={declaracaoId}
-              onChange={(e) => setDeclaracaoId(e.target.value)}
-              className="mt-1 px-2 py-1 border rounded"
-            />
-          </label>
-          <label className="flex flex-col text-sm text-gray-600">
-            Identificação / CNPJ
-            <input
-              placeholder="00.111.222/0001-33"
-              value={identification}
-              onChange={(e) => setIdentification(e.target.value)}
-              className="mt-1 px-2 py-1 border rounded"
-            />
-          </label>
-          <label className="flex flex-col text-sm text-gray-600">
-            Competência
-            <input
-              placeholder="MM/AAAA"
-              value={periodFilter}
-              onChange={(e) => setPeriodFilter(e.target.value)}
-              className="mt-1 px-2 py-1 border rounded"
-            />
-          </label>
-          <div className="flex items-end">
-            <button
-              onClick={() => {
-                setPage(1);
-                fetchData({ page: 1, limit });
-              }}
-              className="w-full px-3 py-2 bg-gray-100 rounded"
-            >
-              Aplicar filtros
-            </button>
-          </div>
         </div>
       </div>
 
