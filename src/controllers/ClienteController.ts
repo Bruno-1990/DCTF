@@ -476,18 +476,39 @@ export class ClienteController {
       // Criar apenas os clientes novos
       for (const item of clientesNovos) {
         try {
+          console.log(`[Upload] Tentando criar: CNPJ=${item.cnpj_limpo}, Razão Social="${item.razao_social}"`);
           const resp = await this.clienteModel.createCliente(item);
           if (resp.success) {
             resultados.ok += 1;
             resultados.criados += 1;
+            console.log(`[Upload] ✅ Sucesso: CNPJ=${item.cnpj_limpo}`);
           } else {
             resultados.fail += 1;
-            if (resp.error) resultados.erros.push(`CNPJ ${item.cnpj_limpo}: ${resp.error}`);
+            const errorMsg = resp.error || 'Erro desconhecido';
+            resultados.erros.push(`CNPJ ${item.cnpj_limpo}: ${errorMsg}`);
+            console.error(`[Upload] ❌ Falha: CNPJ=${item.cnpj_limpo}, Erro="${errorMsg}"`);
           }
         } catch (e: any) {
           resultados.fail += 1;
-          resultados.erros.push(`CNPJ ${item.cnpj_limpo || 'desconhecido'}: ${e?.message || 'Erro desconhecido'}`);
+          const errorMsg = e?.message || 'Erro desconhecido';
+          resultados.erros.push(`CNPJ ${item.cnpj_limpo || 'desconhecido'}: ${errorMsg}`);
+          console.error(`[Upload] ❌ Exceção: CNPJ=${item.cnpj_limpo}, Erro="${errorMsg}"`, e);
         }
+      }
+      
+      console.log('[Upload] Resumo final:', {
+        totalProcessados: resultados.totalProcessados,
+        jaExistentes: resultados.jaExistentes,
+        criados: resultados.criados,
+        falhas: resultados.fail,
+        primeirosErros: resultados.erros.slice(0, 5)
+      });
+      
+      // Limitar número de erros retornados
+      if (resultados.erros.length > 20) {
+        const errosLimitados = resultados.erros.slice(0, 20);
+        errosLimitados.push(`... e mais ${resultados.fail - 20} erros (total: ${resultados.fail} falhas)`);
+        resultados.erros = errosLimitados;
       }
 
       res.json({ 
