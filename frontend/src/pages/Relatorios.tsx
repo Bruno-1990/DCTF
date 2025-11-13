@@ -88,16 +88,16 @@ const RelatoriosPage: React.FC = () => {
           { key: 'clientes', title: 'Relatório de Clientes', description: 'Resumo por contribuinte com saldos e status.' },
           { key: 'dctf', title: 'Relatório DCTF', description: 'Lista detalhada das declarações transmitidas.' },
         ].map(card => (
-          <div key={card.key} className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col gap-3">
+          <div key={card.key} className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col gap-3 items-center justify-center text-center">
             <div>
-              <h2 className="text-xl font-semibold text-gray-800">{card.title}</h2>
-              <p className="text-sm text-gray-500">{card.description}</p>
+              <h2 className="text-xl font-semibold text-gray-800 text-center">{card.title}</h2>
+              <p className="text-sm text-gray-500 text-center mt-2">{card.description}</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 justify-center w-full">
               <button
                 onClick={() => handleGenerate(card.key as any, 'xlsx')}
                 disabled={generatingTarget === `${card.key}-xlsx`}
-                className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50"
+                className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-center"
               >
                 {generatingTarget === `${card.key}-xlsx` ? 'Gerando…' : 'Gerar XLSX'}
               </button>
