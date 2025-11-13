@@ -78,9 +78,9 @@ const limitOptions = ['10', '20', '50', '100', '200'] as const;
 const DCTFPage: React.FC = () => {
   const { items, load } = useDCTF();
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(10);
   const [limitSelection, setLimitSelection] =
-    useState<(typeof limitOptions)[number] | 'all'>('20');
+    useState<(typeof limitOptions)[number] | 'all'>('10');
   const [situacao, setSituacao] = useState('');
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
