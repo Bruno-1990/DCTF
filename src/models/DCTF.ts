@@ -446,7 +446,7 @@ export class DCTF extends DatabaseService<IDCTF> {
       let cliente = undefined;
       const { data: clienteData, error: clienteError } = await this.supabase
         .from('clientes')
-        .select('id, razao_social, cnpj, cnpj_limpo')
+        .select('id, razao_social, cnpj_limpo')
         .eq('id', clienteId)
         .single();
 

@@ -113,7 +113,6 @@ export class DCTFIngestionService {
         clienteInfo = {
           id: cliente.id,
           razaoSocial: cliente.razao_social || cliente.nome,
-          cnpj: cliente.cnpj,
           cnpjLimpo: cliente.cnpj_limpo,
           regime: cliente.regime_tributario || null,
           cnaes: cliente.cnaes || [],

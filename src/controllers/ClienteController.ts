@@ -71,7 +71,7 @@ export class ClienteController {
       if (cnpj) {
         const cnpjStr = String(cnpj).replace(/\D/g, '');
         data = data.filter((c: any) => 
-          String(c.cnpj_limpo || c.cnpj || '').replace(/\D/g, '').includes(cnpjStr)
+          String(c.cnpj_limpo || '').replace(/\D/g, '').includes(cnpjStr)
         );
       }
 

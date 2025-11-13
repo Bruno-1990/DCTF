@@ -78,13 +78,12 @@ export class DCTFController {
       clone.tipoNi ||
       clone.tipo_ni ||
       clone.identificacao_tipo ||
-      (clone.numeroIdentificacao || clone.numero_identificacao || clone.cliente?.cnpj ? 'CNPJ' : null);
+      (clone.numeroIdentificacao || clone.numero_identificacao || clone.cliente?.cnpj_limpo ? 'CNPJ' : null);
 
     clone.numeroIdentificacao =
       clone.numeroIdentificacao ||
       clone.numero_identificacao ||
       clone.identificacao ||
-      clone.cliente?.cnpj ||
       clone.cliente?.cnpj_limpo ||
       null;
 
@@ -293,9 +292,7 @@ export class DCTFController {
         filteredData = filteredData.filter((d: any) => {
           // Buscar CNPJ/CPF em vários campos possíveis
           const cnpj = (
-            d.cliente?.cnpj || 
             d.cliente?.cnpj_limpo || 
-            d.cnpj || 
             d.cnpj_limpo || 
             ''
           ).replace(/\D/g, '');
@@ -326,7 +323,7 @@ export class DCTFController {
       if (orderKey) {
         const orderMap: Record<string, (item: any) => any> = {
           razaoSocial: (item: any) => (item.cliente?.razao_social || item.cliente?.nome || '').toString(),
-          cnpj: (item: any) => (item.cliente?.cnpj_limpo || item.cliente?.cnpj || '').toString(),
+          cnpj: (item: any) => (item.cliente?.cnpj_limpo || '').toString(),
           periodo: (item: any) => item.periodo || '',
           dataDeclaracao: (item: any) => {
             const value = item.dataDeclaracao || item.data_declaracao || item.data_transmissao;

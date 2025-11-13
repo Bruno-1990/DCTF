@@ -296,7 +296,7 @@ export class PerformanceMonitoringService {
     return [
       'SELECT * FROM dctf_declaracoes WHERE periodo = ?',
       'SELECT * FROM dctf_dados WHERE codigo = ? AND valor > ?',
-      'SELECT * FROM clientes WHERE cnpj = ?',
+      'SELECT * FROM clientes WHERE cnpj_limpo = ?',
       'SELECT * FROM analises WHERE dctf_id = ?'
     ];
   }
