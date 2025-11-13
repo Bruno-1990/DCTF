@@ -18,6 +18,8 @@ const Clientes: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
+  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
 
   // Debounce do search
   useEffect(() => {
@@ -89,10 +91,49 @@ const Clientes: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleDeleteClick = async (cliente: Cliente) => {
+  const handleDeleteClick = (cliente: Cliente) => {
+    if (!cliente.id) return;
+    
+    // Limpar timer anterior se existir
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+      setDeleteTimer(null);
+    }
+    
+    // Iniciar contagem regressiva de 5 segundos
+    setPendingDelete({ cliente, countdown: 5 });
+    
+    let countdown = 5;
+    const timer = setInterval(() => {
+      countdown -= 1;
+      setPendingDelete(prev => ({ ...prev, countdown }));
+      
+      if (countdown <= 0) {
+        clearInterval(timer);
+        setDeleteTimer(null);
+        // Executar exclusão automaticamente
+        executeDelete(cliente);
+      }
+    }, 1000);
+    
+    setDeleteTimer(timer);
+  };
+
+  const cancelDelete = () => {
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+      setDeleteTimer(null);
+    }
+    setPendingDelete({ cliente: null, countdown: 0 });
+  };
+
+  const executeDelete = async (cliente: Cliente) => {
     if (!cliente.id) return;
     
     const clienteNome = cliente.razao_social || cliente.nome || 'Cliente';
+    
+    // Limpar estado de exclusão pendente
+    setPendingDelete({ cliente: null, countdown: 0 });
     
     try {
       await deleteClienteById(cliente.id);
@@ -113,6 +154,15 @@ const Clientes: React.FC = () => {
       setShowError(true);
     }
   };
+
+  // Limpar timer ao desmontar componente
+  useEffect(() => {
+    return () => {
+      if (deleteTimer) {
+        clearInterval(deleteTimer);
+      }
+    };
+  }, [deleteTimer]);
 
   const formatCNPJ = (value: string) => {
     const v = (value || '').replace(/\D/g, '').slice(0, 14);
