@@ -25,6 +25,7 @@ export type DCTFListItem = {
 export type DCTFListResponse = {
   items: DCTFListItem[];
   pagination?: { total: number; totalPages: number; page: number; limit: number };
+  lastUpdate?: string | null;
 };
 
 type ListParams = {
@@ -44,12 +45,16 @@ export const dctfService = {
     const response = await api.get<any>('/dctf', { params });
     const body = response.data;
     if (Array.isArray(body)) {
-      return { items: body.map(normalizeItem) as DCTFListItem[] };
+      return { items: body.map(normalizeItem) as DCTFListItem[], lastUpdate: null };
     }
     if (body && Array.isArray(body.data)) {
-      return { items: body.data.map(normalizeItem) as DCTFListItem[], pagination: body.pagination };
+      return { 
+        items: body.data.map(normalizeItem) as DCTFListItem[], 
+        pagination: body.pagination,
+        lastUpdate: body.lastUpdate || null,
+      };
     }
-    return { items: [] };
+    return { items: [], lastUpdate: null };
   },
 
   async getById(id: string): Promise<DCTF> {

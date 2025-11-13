@@ -372,6 +372,35 @@ export class DCTFController {
         }
       }
 
+      // Calcular última atualização (createdAt mais recente de TODOS os registros, não apenas filtrados)
+      // Isso mostra quando foi a última vez que um novo registro foi criado no banco
+      let lastUpdate: Date | null = null;
+      if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+        const allCreatedAts = result.data
+          .map((d: any) => {
+            // Os dados já vêm mapeados do modelo, então usar createdAt (camelCase) primeiro
+            // Mas também verificar created_at (snake_case) como fallback
+            const createdAt = d.createdAt || d.created_at;
+            if (createdAt) {
+              // Se já for uma Date, usar diretamente; senão, converter
+              const date = createdAt instanceof Date ? createdAt : new Date(createdAt);
+              if (!isNaN(date.getTime())) {
+                return date;
+              }
+            }
+            return null;
+          })
+          .filter((date: Date | null) => date !== null);
+        
+        if (allCreatedAts.length > 0) {
+          lastUpdate = new Date(Math.max(...allCreatedAts.map((d: Date) => d.getTime())));
+          console.log('[DCTF Controller] Última atualização calculada (createdAt):', lastUpdate.toISOString());
+          console.log('[DCTF Controller] Total de registros processados:', result.data.length);
+          console.log('[DCTF Controller] Primeiro registro createdAt:', result.data[0]?.createdAt);
+          console.log('[DCTF Controller] Primeiro registro updatedAt:', result.data[0]?.updatedAt);
+        }
+      }
+
       // Paginação
       const startIndex = (Number(page) - 1) * Number(limit);
       const endIndex = startIndex + Number(limit);
@@ -386,6 +415,7 @@ export class DCTFController {
           total: filteredData.length,
           totalPages: Math.ceil(filteredData.length / Number(limit)),
         },
+        lastUpdate: lastUpdate ? lastUpdate.toISOString() : null,
       });
     } catch (error) {
       res.status(500).json({

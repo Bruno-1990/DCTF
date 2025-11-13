@@ -89,6 +89,7 @@ const DCTFPage: React.FC = () => {
   const [orderDirection, setOrderDirection] = useState<'asc' | 'desc'>('asc');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   // Debounce do termo de busca
   useEffect(() => {
@@ -123,10 +124,13 @@ const DCTFPage: React.FC = () => {
     }
 
     load(params)
-      .then(({ items, pagination }) => {
+      .then(({ items, pagination, lastUpdate }) => {
         setLastPageCount(items.length);
         setTotal(pagination?.total ?? null);
         setTotalPages(pagination?.totalPages ?? null);
+        if (lastUpdate) {
+          setLastUpdate(new Date(lastUpdate));
+        }
       })
       .catch(() => {});
   }, [page, limit, orderBy, orderDirection, situacao, debouncedSearchTerm, load]);
@@ -176,7 +180,14 @@ const DCTFPage: React.FC = () => {
     <div className="mx-auto w-full max-w-[1600px] px-6 py-8">
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">DCTF</h1>
+          <div className="flex flex-col gap-1">
+            <h1 className="text-3xl font-bold text-gray-900">DCTF</h1>
+            {lastUpdate && (
+              <p className="text-sm text-gray-500">
+                Última atualização: {formatDateTime(lastUpdate)}
+              </p>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <label htmlFor="situacao" className="text-sm text-gray-600">Situação:</label>
             <select
