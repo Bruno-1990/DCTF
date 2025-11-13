@@ -142,7 +142,7 @@ export class DCTF extends DatabaseService<IDCTF> {
       if (clienteIds.length > 0) {
         const { data: clientesData, error: clientesError } = await this.supabase
           .from('clientes')
-          .select('id, razao_social, cnpj, cnpj_limpo')
+          .select('id, razao_social, cnpj_limpo')
           .in('id', clienteIds);
         
         if (!clientesError && clientesData) {
@@ -218,7 +218,7 @@ export class DCTF extends DatabaseService<IDCTF> {
       if (data.cliente_id) {
         const { data: clienteData } = await this.supabase
           .from('clientes')
-          .select('id, razao_social, nome, cnpj, cnpj_limpo')
+          .select('id, razao_social, nome, cnpj_limpo')
           .eq('id', data.cliente_id)
           .single();
         clienteRecord = clienteData || undefined;
