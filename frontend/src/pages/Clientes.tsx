@@ -100,10 +100,10 @@ const Clientes: React.FC = () => {
       setDeleteTimer(null);
     }
     
-    // Iniciar contagem regressiva de 5 segundos
-    setPendingDelete({ cliente, countdown: 5 });
+    // Iniciar contagem regressiva de 3 segundos
+    setPendingDelete({ cliente, countdown: 3 });
     
-    let countdown = 5;
+    let countdown = 3;
     const timer = setInterval(() => {
       countdown -= 1;
       setPendingDelete(prev => ({ ...prev, countdown }));
@@ -296,7 +296,7 @@ const Clientes: React.FC = () => {
             <div className="w-full bg-yellow-200/30 rounded-full h-2 mb-3">
               <div 
                 className="bg-white h-2 rounded-full transition-all duration-1000 ease-linear"
-                style={{ width: `${(pendingDelete.countdown / 5) * 100}%` }}
+                style={{ width: `${(pendingDelete.countdown / 3) * 100}%` }}
               />
             </div>
             
