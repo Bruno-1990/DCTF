@@ -547,13 +547,10 @@ export class ClienteController {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Clientes');
 
-      // Definir cabeçalhos
+      // Definir cabeçalhos - apenas CNPJ e Razão Social
       worksheet.columns = [
         { header: 'CNPJ', key: 'cnpj', width: 20 },
-        { header: 'Razão Social', key: 'razao_social', width: 40 },
-        { header: 'Email', key: 'email', width: 30 },
-        { header: 'Telefone', key: 'telefone', width: 20 },
-        { header: 'Endereço', key: 'endereco', width: 50 },
+        { header: 'Razão Social', key: 'razao_social', width: 50 },
       ];
 
       // Estilizar cabeçalho
@@ -570,9 +567,6 @@ export class ClienteController {
       worksheet.addRow({
         cnpj: '12.345.678/0001-90',
         razao_social: 'Empresa Exemplo Ltda',
-        email: 'contato@exemplo.com.br',
-        telefone: '(11) 99999-9999',
-        endereco: 'Rua Exemplo, 123 - São Paulo/SP',
       });
 
       // Estilizar linha de exemplo (cinza claro)

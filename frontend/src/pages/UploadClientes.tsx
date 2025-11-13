@@ -156,9 +156,6 @@ export default function UploadClientes() {
               <p className="text-xs text-blue-600 mt-2">
                 <strong>Campos obrigatórios:</strong> <span className="font-semibold text-blue-800">CNPJ</span> (14 dígitos, aceita com ou sem formatação) e <span className="font-semibold text-blue-800">Razão Social</span>
               </p>
-              <p className="text-xs text-blue-600 mt-1">
-                <strong>Campos opcionais:</strong> Email, Telefone, Endereço
-              </p>
             </div>
           </div>
         </div>
