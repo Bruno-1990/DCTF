@@ -102,10 +102,10 @@ export default function UploadClientes() {
         setToast({ type: 'success', msg: resumo });
         setUploadResult(d || null);
         
-        // Redirecionar para a página de clientes após 2 segundos
-        setTimeout(() => {
-          navigate('/clientes');
-        }, 2000);
+        // Limpar arquivo selecionado para permitir novo upload
+        setFile(null);
+        
+        // Não redirecionar - manter usuário na página para ver os resultados
       }
     } catch (err: any) {
       setError(err?.message || 'Erro inesperado');
