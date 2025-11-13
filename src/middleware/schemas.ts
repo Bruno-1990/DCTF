@@ -135,6 +135,7 @@ export const dctfSchemas = {
       .valid('pendente', 'processando', 'concluido', 'erro')
       .optional(),
     situacao: Joi.string().max(100).optional().allow(''),
+    search: Joi.string().allow('').optional(),
     orderBy: Joi.string()
       .valid('razaoSocial', 'cnpj', 'periodo', 'dataDeclaracao', 'situacao', 'debitoApurado', 'saldoAPagar')
       .optional(),

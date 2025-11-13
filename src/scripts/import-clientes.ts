@@ -88,10 +88,13 @@ async function importClientes(): Promise<void> {
         continue;
       }
 
+      // Limpar CNPJ antes de salvar
+      const cnpjLimpo = cnpj.replace(/\D/g, '');
+      
       // Criar cliente
       const result = await clienteModel.createCliente({
-        nome: razaoSocial,
-        cnpj: cnpj,
+        razao_social: razaoSocial,
+        cnpj_limpo: cnpjLimpo,
       });
 
       if (result.success) {

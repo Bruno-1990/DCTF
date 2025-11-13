@@ -111,7 +111,7 @@ export class ReportDataFactory {
       const aggregation: ClientesAggregation = {
         id: cliente.id,
         businessName: cliente.razao_social ?? cliente.nome ?? undefined,
-        cnpj: cliente.cnpj ?? undefined,
+        // cnpj formatado não existe mais, apenas cnpj_limpo
         cnpjLimpo: cliente.cnpj_limpo ?? undefined,
         email: cliente.email ?? undefined,
         telefone: cliente.telefone ?? undefined,

@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { EyeIcon } from '@heroicons/react/24/outline';
 import { useDCTF } from '../hooks/useDCTF';
-import { dctfService } from '../services/dctf';
 
 const formatCNPJ = (cnpj: string | undefined) => {
   if (!cnpj) return '-';
@@ -87,8 +85,6 @@ const DCTFPage: React.FC = () => {
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [lastPageCount, setLastPageCount] = useState<number>(0);
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [dadosMap, setDadosMap] = useState<Map<string, any[]>>(new Map());
   const [orderBy, setOrderBy] = useState<string>('');
   const [orderDirection, setOrderDirection] = useState<'asc' | 'desc'>('asc');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -136,25 +132,6 @@ const DCTFPage: React.FC = () => {
   ];
 
   const canGoNext = totalPages != null ? page < totalPages : lastPageCount === limit;
-
-  const handleToggleExpand = async (dctfId: string) => {
-    const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(dctfId)) {
-      newExpanded.delete(dctfId);
-    } else {
-      newExpanded.add(dctfId);
-      // Buscar dados se ainda não foram carregados
-      if (!dadosMap.has(dctfId)) {
-        try {
-          const dados = await dctfService.getDadosByDeclaracao(dctfId);
-          setDadosMap(prev => new Map(prev.set(dctfId, dados)));
-        } catch (err) {
-          console.error('Erro ao carregar dados da declaração:', err);
-        }
-      }
-    }
-    setExpandedRows(newExpanded);
-  };
 
   const formatCurrency = (valor?: number | string | null) => {
     if (valor === null || valor === undefined) {

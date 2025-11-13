@@ -113,7 +113,7 @@ export function buildAdminDashboardSnapshot(
 export function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
   return {
     identificationType: "CNPJ",
-    identification: record.cliente?.cnpj ?? record.cliente?.cnpj_limpo ?? record.clienteId,
+    identification: record.cliente?.cnpj_limpo ?? record.clienteId,
     businessName: record.cliente?.razao_social ?? undefined,
     period: formatPeriod(record.periodo),
     transmissionDate: formatDate(record.dataDeclaracao),

@@ -27,11 +27,18 @@ export class DCTFController {
     return normalized.toISOString().slice(0, 10);
   }
 
+  private formatDateTimeISO(dateValue: unknown): string | undefined {
+    const normalized = ValidationService.normalizeDate(dateValue as any);
+    if (!normalized) return undefined;
+    return normalized.toISOString();
+  }
+
   private formatDctfForResponse(item: any) {
     if (!item) return item;
     const clone = { ...item };
 
-    const dataDeclaracaoISO = this.formatDateISO(clone.dataDeclaracao);
+    const dataDeclaracaoISO = this.formatDateISO(clone.dataDeclaracao ?? clone.data_declaracao);
+    const dataTransmissaoISO = this.formatDateTimeISO(clone.dataTransmissao ?? clone.data_transmissao);
     const createdAtISO = this.formatDateISO(clone.createdAt);
     const updatedAtISO = this.formatDateISO(clone.updatedAt);
 
@@ -43,6 +50,9 @@ export class DCTFController {
     }
     if (updatedAtISO) {
       clone.updatedAt = updatedAtISO;
+    }
+    if (dataTransmissaoISO) {
+      clone.dataTransmissao = dataTransmissaoISO;
     }
 
     const debitoRaw = clone.debitoApurado ?? clone.debito_apurado;
@@ -63,8 +73,33 @@ export class DCTFController {
       clone.situacao = clone.status;
     }
 
+    clone.periodoApuracao = clone.periodoApuracao || clone.periodo_apuracao || clone.periodo || null;
+    clone.tipoNi =
+      clone.tipoNi ||
+      clone.tipo_ni ||
+      clone.identificacao_tipo ||
+      (clone.numeroIdentificacao || clone.numero_identificacao || clone.cliente?.cnpj ? 'CNPJ' : null);
+
+    clone.numeroIdentificacao =
+      clone.numeroIdentificacao ||
+      clone.numero_identificacao ||
+      clone.identificacao ||
+      clone.cliente?.cnpj ||
+      clone.cliente?.cnpj_limpo ||
+      null;
+
+    clone.categoria = clone.categoria || clone.category || null;
+    clone.origem = clone.origem || clone.source || clone.origens || null;
+    clone.tipoDeclaracao = clone.tipoDeclaracao || clone.tipo || clone.tipo_declaracao || null;
+
     delete clone.debito_apurado;
     delete clone.saldo_a_pagar;
+    delete clone.data_transmissao;
+    delete clone.periodo_apuracao;
+    delete clone.tipo_ni;
+    delete clone.numero_identificacao;
+    delete clone.tipo_declaracao;
+    delete clone.identificacao_tipo;
 
     return clone;
   }
@@ -219,6 +254,7 @@ export class DCTFController {
         situacao,
         orderBy,
         order = 'desc',
+        search,
       } = req.query;
       
       let result: ApiResponse<any>;
@@ -248,6 +284,41 @@ export class DCTFController {
 
       if (situacao) {
         filteredData = filteredData.filter((d: any) => (d.situacao || d.status) === situacao);
+      }
+
+      // Filtro de busca por CNPJ/CPF
+      if (search && typeof search === 'string' && search.trim()) {
+        const searchDigits = search.replace(/\D/g, ''); // Remove caracteres não numéricos para busca de CNPJ
+        
+        filteredData = filteredData.filter((d: any) => {
+          // Buscar CNPJ/CPF em vários campos possíveis
+          const cnpj = (
+            d.cliente?.cnpj || 
+            d.cliente?.cnpj_limpo || 
+            d.cnpj || 
+            d.cnpj_limpo || 
+            ''
+          ).replace(/\D/g, '');
+          
+          const numeroIdentificacao = (
+            d.numeroIdentificacao || 
+            d.numero_identificacao || 
+            d.identificacao || 
+            ''
+          ).replace(/\D/g, '');
+          
+          // Busca por CNPJ/CPF (apenas dígitos)
+          if (searchDigits) {
+            const matchCnpj = cnpj && cnpj.includes(searchDigits);
+            const matchNumero = numeroIdentificacao && numeroIdentificacao.includes(searchDigits);
+            
+            if (matchCnpj || matchNumero) {
+              return true;
+            }
+          }
+          
+          return false;
+        });
       }
 
       const orderKey = typeof orderBy === 'string' ? orderBy : undefined;

@@ -6,12 +6,41 @@
 import { Request, Response } from 'express';
 import { Cliente } from '../models/Cliente';
 import { ApiResponse } from '../types';
+import * as XLSX from 'xlsx';
+import multer from 'multer';
+import path from 'path';
+import ExcelJS from 'exceljs';
+
+// Configuração do multer para upload de arquivos de clientes
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['.xls', '.xlsx', '.csv'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    
+    if (allowedTypes.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Tipo de arquivo não permitido. Use: ${allowedTypes.join(', ')}`));
+    }
+  }
+});
 
 export class ClienteController {
   private clienteModel: Cliente;
 
   constructor() {
     this.clienteModel = new Cliente();
+  }
+
+  // Middleware de upload para exportar
+  static get uploadMiddleware() {
+    return upload.single('arquivo');
   }
 
   /**
@@ -199,6 +228,7 @@ export class ClienteController {
   /**
    * Importar clientes em lote via JSON
    * Body esperado: { clientes: [{ nome: string, cnpj: string, email?, telefone?, endereco? }, ...] }
+   * Verifica duplicatas por CNPJ e processa apenas os registros que ainda não existem
    */
   async importarClientesJson(req: Request, res: Response): Promise<void> {
     try {
@@ -208,25 +238,301 @@ export class ClienteController {
         return;
       }
 
-      const resultados: { ok: number; fail: number; erros: string[] } = { ok: 0, fail: 0, erros: [] };
-      for (const item of clientes) {
+      // Normalizar CNPJ e preparar dados
+      const clientesNormalizados = clientes.map((item: any) => {
+        const cnpjLimpo = (item.cnpj_limpo || item.cnpj || '').replace(/\D/g, '');
+        return {
+          ...item,
+          cnpj_limpo: cnpjLimpo,
+          razao_social: item.razao_social || item.nome || '',
+        };
+      }).filter((item: any) => item.cnpj_limpo && item.cnpj_limpo.length === 14);
+
+      if (clientesNormalizados.length === 0) {
+        res.status(400).json({ success: false, error: 'Nenhum cliente válido encontrado. Verifique os CNPJs.' });
+        return;
+      }
+
+      // Buscar todos os CNPJs existentes
+      const cnpjsParaVerificar = clientesNormalizados.map((c: any) => c.cnpj_limpo);
+      const clientesExistentes = new Set<string>();
+      
+      // Verificar quais CNPJs já existem
+      for (const cnpj of cnpjsParaVerificar) {
+        const result = await this.clienteModel.findByCNPJ(cnpj);
+        if (result.success && result.data) {
+          clientesExistentes.add(cnpj);
+        }
+      }
+
+      // Filtrar apenas os clientes que não existem
+      const clientesNovos = clientesNormalizados.filter((c: any) => !clientesExistentes.has(c.cnpj_limpo));
+      const totalExistentes = clientesExistentes.size;
+      const totalNovos = clientesNovos.length;
+
+      const resultados: { 
+        ok: number; 
+        fail: number; 
+        erros: string[];
+        totalProcessados: number;
+        jaExistentes: number;
+        criados: number;
+      } = { 
+        ok: 0, 
+        fail: 0, 
+        erros: [],
+        totalProcessados: clientesNormalizados.length,
+        jaExistentes: totalExistentes,
+        criados: 0,
+      };
+
+      // Criar apenas os clientes novos
+      for (const item of clientesNovos) {
         try {
           const resp = await this.clienteModel.createCliente(item);
           if (resp.success) {
             resultados.ok += 1;
+            resultados.criados += 1;
           } else {
             resultados.fail += 1;
-            if (resp.error) resultados.erros.push(resp.error);
+            if (resp.error) resultados.erros.push(`CNPJ ${item.cnpj_limpo}: ${resp.error}`);
           }
         } catch (e: any) {
           resultados.fail += 1;
-          resultados.erros.push(e?.message || 'Erro desconhecido');
+          resultados.erros.push(`CNPJ ${item.cnpj_limpo || 'desconhecido'}: ${e?.message || 'Erro desconhecido'}`);
         }
       }
 
-      res.json({ success: resultados.fail === 0, data: resultados });
+      res.json({ 
+        success: resultados.fail === 0, 
+        data: resultados,
+        message: `Processados: ${resultados.totalProcessados} | Já existentes: ${resultados.jaExistentes} | Criados: ${resultados.criados} | Falhas: ${resultados.fail}`
+      });
     } catch (error) {
       res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
+    }
+  }
+
+  /**
+   * Upload e processamento de planilha de clientes
+   * Verifica duplicatas por CNPJ e processa apenas os registros que ainda não existem
+   */
+  async uploadPlanilhaClientes(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.file) {
+        res.status(400).json({ success: false, error: 'Arquivo é obrigatório' });
+        return;
+      }
+
+      const { buffer, originalname } = req.file;
+      const ext = originalname.split('.').pop()?.toLowerCase();
+
+      let dados: any[] = [];
+
+      // Processar arquivo Excel ou CSV
+      if (ext === 'xlsx' || ext === 'xls') {
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        dados = XLSX.utils.sheet_to_json(worksheet);
+      } else if (ext === 'csv') {
+        const csvString = buffer.toString('utf-8');
+        const workbook = XLSX.read(csvString, { type: 'string' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        dados = XLSX.utils.sheet_to_json(worksheet);
+      } else {
+        res.status(400).json({ success: false, error: 'Formato de arquivo não suportado. Use .xlsx, .xls ou .csv' });
+        return;
+      }
+
+      if (!dados || dados.length === 0) {
+        res.status(400).json({ success: false, error: 'Planilha vazia ou sem dados válidos' });
+        return;
+      }
+
+      // Normalizar dados da planilha
+      const clientesNormalizados = dados.map((item: any) => {
+        // Tentar encontrar CNPJ em diferentes colunas possíveis
+        const cnpj = item.cnpj || item.CNPJ || item.cnpj_limpo || item.CNPJ_LIMPO || item['CNPJ'] || '';
+        // SEMPRE limpar caracteres especiais do CNPJ
+        const cnpjLimpo = String(cnpj).replace(/\D/g, '');
+        
+        // Tentar encontrar razão social em diferentes colunas
+        const razaoSocial = (item.razao_social || item.RAZAO_SOCIAL || item.nome || item.NOME || item['Razão Social'] || item['Nome'] || '').trim();
+        
+        // Validar campos obrigatórios: CNPJ (14 dígitos) e Razão Social
+        if (!cnpjLimpo || cnpjLimpo.length !== 14) {
+          return null; // CNPJ inválido
+        }
+        
+        if (!razaoSocial || razaoSocial.length === 0) {
+          return null; // Razão Social obrigatória
+        }
+        
+        return {
+          cnpj_limpo: cnpjLimpo, // Sempre salvar limpo no banco
+          razao_social: razaoSocial,
+          // Não salvar cnpj formatado, apenas gerar na exibição
+          email: (item.email || item.EMAIL || item['Email'] || '').trim() || undefined,
+          telefone: (item.telefone || item.TELEFONE || item['Telefone'] || '').trim() || undefined,
+          endereco: (item.endereco || item.ENDERECO || item['Endereço'] || item['Endereco'] || '').trim() || undefined,
+        };
+      }).filter((item: any) => item !== null); // Filtrar apenas registros válidos
+
+      if (clientesNormalizados.length === 0) {
+        res.status(400).json({ 
+          success: false, 
+          error: 'Nenhum cliente válido encontrado na planilha. Campos obrigatórios: CNPJ (14 dígitos, com ou sem formatação) e Razão Social. Email, Telefone e Endereço são opcionais.' 
+        });
+        return;
+      }
+
+      // Buscar todos os CNPJs existentes
+      const cnpjsParaVerificar = [...new Set(clientesNormalizados.map((c: any) => c.cnpj_limpo))];
+      const clientesExistentes = new Set<string>();
+      
+      // Verificar quais CNPJs já existem
+      for (const cnpj of cnpjsParaVerificar) {
+        const result = await this.clienteModel.findByCNPJ(cnpj);
+        if (result.success && result.data) {
+          clientesExistentes.add(cnpj);
+        }
+      }
+
+      // Filtrar apenas os clientes que não existem
+      const clientesNovos = clientesNormalizados.filter((c: any) => !clientesExistentes.has(c.cnpj_limpo));
+      const totalExistentes = clientesExistentes.size;
+      const totalNovos = clientesNovos.length;
+
+      const resultados: { 
+        ok: number; 
+        fail: number; 
+        erros: string[];
+        totalProcessados: number;
+        jaExistentes: number;
+        criados: number;
+      } = { 
+        ok: 0, 
+        fail: 0, 
+        erros: [],
+        totalProcessados: clientesNormalizados.length,
+        jaExistentes: totalExistentes,
+        criados: 0,
+      };
+
+      // Criar apenas os clientes novos
+      for (const item of clientesNovos) {
+        try {
+          const resp = await this.clienteModel.createCliente(item);
+          if (resp.success) {
+            resultados.ok += 1;
+            resultados.criados += 1;
+          } else {
+            resultados.fail += 1;
+            if (resp.error) resultados.erros.push(`CNPJ ${item.cnpj_limpo}: ${resp.error}`);
+          }
+        } catch (e: any) {
+          resultados.fail += 1;
+          resultados.erros.push(`CNPJ ${item.cnpj_limpo || 'desconhecido'}: ${e?.message || 'Erro desconhecido'}`);
+        }
+      }
+
+      res.json({ 
+        success: resultados.fail === 0, 
+        data: resultados,
+        message: `Processados: ${resultados.totalProcessados} | Já existentes: ${resultados.jaExistentes} | Criados: ${resultados.criados} | Falhas: ${resultados.fail}`
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
+    }
+  }
+
+  /**
+   * Formatar CNPJ para exibição
+   */
+  private formatCNPJ(cnpj: string): string {
+    const clean = cnpj.replace(/\D/g, '');
+    return clean
+      .replace(/(\d{2})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1/$2')
+      .replace(/(\d{4})(\d)/, '$1-$2');
+  }
+
+  /**
+   * Gerar modelo de planilha para upload de clientes
+   */
+  async downloadModelo(req: Request, res: Response): Promise<void> {
+    try {
+      // Criar workbook com ExcelJS
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Clientes');
+
+      // Definir cabeçalhos
+      worksheet.columns = [
+        { header: 'CNPJ', key: 'cnpj', width: 20 },
+        { header: 'Razão Social', key: 'razao_social', width: 40 },
+        { header: 'Email', key: 'email', width: 30 },
+        { header: 'Telefone', key: 'telefone', width: 20 },
+        { header: 'Endereço', key: 'endereco', width: 50 },
+      ];
+
+      // Estilizar cabeçalho
+      worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF538DD5' }, // Azul claro
+      };
+      worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+      worksheet.getRow(1).height = 22;
+
+      // Adicionar linha de exemplo
+      worksheet.addRow({
+        cnpj: '12.345.678/0001-90',
+        razao_social: 'Empresa Exemplo Ltda',
+        email: 'contato@exemplo.com.br',
+        telefone: '(11) 99999-9999',
+        endereco: 'Rua Exemplo, 123 - São Paulo/SP',
+      });
+
+      // Estilizar linha de exemplo (cinza claro)
+      const exampleRow = worksheet.getRow(2);
+      exampleRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF0F0F0' },
+      };
+      exampleRow.font = { italic: true, color: { argb: 'FF666666' } };
+
+      // Configurar altura das linhas
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber > 1) {
+          row.height = 18;
+        }
+        row.alignment = { vertical: 'middle', horizontal: 'left' };
+      });
+
+      // Gerar buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      // Configurar headers para download
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="modelo-clientes.xlsx"');
+      
+      // Converter ArrayBuffer para Buffer do Node.js
+      const nodeBuffer = Buffer.from(buffer);
+      res.setHeader('Content-Length', nodeBuffer.length);
+      
+      // Enviar o buffer
+      res.end(nodeBuffer);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao gerar modelo',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
     }
   }
 

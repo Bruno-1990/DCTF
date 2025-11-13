@@ -53,17 +53,23 @@ export class DCTF extends DatabaseService<IDCTF> {
         id: '1',
         clienteId: '1',
         periodo: '2024-01',
+        periodoApuracao: '2024-01',
         dataDeclaracao: new Date('2024-01-15'),
+        dataTransmissao: new Date('2024-01-15T18:52:47Z'),
         status: 'concluido',
         arquivoOriginal: 'http://example.com/dctf-2024-01.xlsx',
         debitoApurado: 1500.75,
         saldoAPagar: 950.5,
+        tipoNi: 'CNPJ',
+        numeroIdentificacao: '12.345.678/0001-90',
+        categoria: 'Geral',
+        origem: 'MIT',
+        tipoDeclaracao: 'Original',
         createdAt: new Date(),
         updatedAt: new Date(),
         cliente: {
           id: '1',
           razao_social: 'Empresa Exemplo Ltda',
-          cnpj: '12.345.678/0001-90',
           cnpj_limpo: '12345678000190',
         },
       },
@@ -71,17 +77,23 @@ export class DCTF extends DatabaseService<IDCTF> {
         id: '2',
         clienteId: '2',
         periodo: '2024-02',
+        periodoApuracao: '2024-02',
         dataDeclaracao: new Date('2024-02-15'),
+        dataTransmissao: new Date('2024-02-15T14:00:00Z'),
         status: 'pendente',
         arquivoOriginal: 'http://example.com/dctf-2024-02.xlsx',
         debitoApurado: 3200.1,
         saldoAPagar: 0,
+        tipoNi: 'CNPJ',
+        numeroIdentificacao: '98.765.432/0001-10',
+        categoria: 'Geral',
+        origem: 'eSocial',
+        tipoDeclaracao: 'Retificadora',
         createdAt: new Date(),
         updatedAt: new Date(),
         cliente: {
           id: '2',
           razao_social: 'Comércio Teste S.A.',
-          cnpj: '98.765.432/0001-10',
           cnpj_limpo: '98765432000110',
         },
       },
@@ -140,39 +152,10 @@ export class DCTF extends DatabaseService<IDCTF> {
 
       // Mapear resultado para camelCase e incluir dados do cliente
       const mappedData = data.map((item: any) => {
-        const statusRaw = item.status || item.situacao;
-        let statusNormalized = 'pendente';
-        if (statusRaw) {
-          const statusLower = statusRaw.toLowerCase();
-          if (statusLower === 'ativa' || statusLower === 'concluido' || statusLower === 'concluída') {
-            statusNormalized = 'concluido';
-          } else if (statusLower === 'processando') {
-            statusNormalized = 'processando';
-          } else if (statusLower === 'erro' || statusLower === 'erros') {
-            statusNormalized = 'erro';
-          }
-        }
-        
-        return {
-          id: item.id,
-          clienteId: item.cliente_id,
-          periodo: item.periodo || item.periodo_apuracao,
-          dataDeclaracao: item.data_declaracao || item.data_transmissao || new Date(),
-          status: statusNormalized as 'pendente' | 'processando' | 'concluido' | 'erro',
-        situacao: item.situacao || item.status || statusNormalized,
-          arquivoOriginal: item.arquivo_original,
-          observacoes: item.observacoes,
-          debitoApurado: item.debito_apurado != null ? Number(item.debito_apurado) : null,
-          saldoAPagar: item.saldo_a_pagar != null ? Number(item.saldo_a_pagar) : null,
-          createdAt: item.created_at,
-          updatedAt: item.updated_at,
-          cliente: item.cliente_id && clientesMap.has(item.cliente_id) ? {
-            id: clientesMap.get(item.cliente_id).id,
-            razao_social: clientesMap.get(item.cliente_id).razao_social,
-            cnpj: clientesMap.get(item.cliente_id).cnpj,
-            cnpj_limpo: clientesMap.get(item.cliente_id).cnpj_limpo,
-          } : undefined,
-        };
+        const clienteRecord = item.cliente_id && clientesMap.has(item.cliente_id)
+          ? clientesMap.get(item.cliente_id)
+          : undefined;
+        return this.mapSupabaseRow(item, clienteRecord);
       });
 
       return {
@@ -211,7 +194,40 @@ export class DCTF extends DatabaseService<IDCTF> {
         }
       }
 
-      return super.findById(id);
+      const { data, error } = await this.supabase
+        .from(this.tableName)
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+
+      if (!data) {
+        return {
+          success: false,
+          error: 'Declaração DCTF não encontrada',
+        };
+      }
+
+      let clienteRecord = undefined;
+      if (data.cliente_id) {
+        const { data: clienteData } = await this.supabase
+          .from('clientes')
+          .select('id, razao_social, nome, cnpj, cnpj_limpo')
+          .eq('id', data.cliente_id)
+          .single();
+        clienteRecord = clienteData || undefined;
+      }
+
+      return {
+        success: true,
+        data: this.mapSupabaseRow(data, clienteRecord),
+      };
     } catch (error) {
       return {
         success: false,
@@ -438,27 +454,12 @@ export class DCTF extends DatabaseService<IDCTF> {
         cliente = {
           id: clienteData.id,
           razao_social: clienteData.razao_social,
-          cnpj: clienteData.cnpj,
           cnpj_limpo: clienteData.cnpj_limpo,
         };
       }
 
       // Mapear resultado para camelCase e incluir dados do cliente
-      const mappedData = data.map((item: any) => ({
-        id: item.id,
-        clienteId: item.cliente_id,
-        periodo: item.periodo_apuracao || item.periodo,
-        dataDeclaracao: item.data_transmissao || item.data_declaracao || new Date(),
-        status: item.situacao || item.status,
-        situacao: item.situacao || item.status,
-        arquivoOriginal: item.arquivo_original,
-        observacoes: item.observacoes,
-        debitoApurado: item.debito_apurado != null ? Number(item.debito_apurado) : null,
-        saldoAPagar: item.saldo_a_pagar != null ? Number(item.saldo_a_pagar) : null,
-        createdAt: item.created_at,
-        updatedAt: item.updated_at,
-        cliente,
-      }));
+      const mappedData = data.map((item: any) => this.mapSupabaseRow(item, cliente));
 
       return {
         success: true,
@@ -600,6 +601,83 @@ export class DCTF extends DatabaseService<IDCTF> {
         error: error instanceof Error ? error.message : 'Erro desconhecido',
       };
     }
+  }
+
+  private normalizeStatus(statusRaw: any): 'pendente' | 'processando' | 'concluido' | 'erro' {
+    if (!statusRaw) return 'pendente';
+    const value = String(statusRaw).toLowerCase();
+    if (['ativa', 'ativo', 'concluido', 'concluída', 'concluida', 'entregue'].includes(value)) {
+      return 'concluido';
+    }
+    if (['processando', 'em andamento', 'em_andamento', 'andamento', 'em_andamento'].includes(value)) {
+      return 'processando';
+    }
+    if (['erro', 'erros', 'com erro', 'falha'].includes(value)) {
+      return 'erro';
+    }
+    return 'pendente';
+  }
+
+  private mapSupabaseRow(item: any, clienteRecord?: any): IDCTF {
+    const statusNormalized = this.normalizeStatus(item.status || item.situacao);
+    const periodo = item.periodo || item.periodo_apuracao || item.periodoApuracao;
+    const dataDeclaracaoRaw = item.data_declaracao || item.dataDeclaracao || item.data_transmissao || item.dataTransmissao;
+    const dataTransmissaoRaw = item.data_transmissao || item.dataTransmissao || null;
+
+    const dataDeclaracao = dataDeclaracaoRaw ? new Date(dataDeclaracaoRaw) : new Date();
+    const dataTransmissao = dataTransmissaoRaw ? new Date(dataTransmissaoRaw) : null;
+
+    const tipoNi =
+      item.tipo_ni ||
+      item.identificacao_tipo ||
+      item.identification_type ||
+      (clienteRecord?.cnpj_limpo ? 'CNPJ' : null);
+
+    let numeroIdentificacao =
+      item.numero_identificacao ||
+      item.identificacao ||
+      item.identification ||
+      item.numeroIdentificacao;
+
+    if (!numeroIdentificacao && clienteRecord) {
+      numeroIdentificacao = clienteRecord.cnpj_limpo || null;
+    }
+
+    const debitoApuradoRaw = item.debitoApurado ?? item.debito_apurado;
+    const saldoAPagarRaw = item.saldoAPagar ?? item.saldo_a_pagar;
+
+    const cliente =
+      clienteRecord && typeof clienteRecord === 'object'
+        ? {
+            id: clienteRecord.id,
+            razao_social: clienteRecord.razao_social || clienteRecord.nome,
+            cnpj_limpo: clienteRecord.cnpj_limpo,
+          }
+        : item.cliente;
+
+    return {
+      id: item.id,
+      clienteId: item.cliente_id || item.clienteId,
+      periodo: periodo,
+      periodoApuracao: item.periodo_apuracao || item.periodoApuracao || periodo,
+      dataDeclaracao,
+      dataTransmissao,
+      status: statusNormalized,
+      situacao: item.situacao || item.status || statusNormalized,
+      tipoNi: tipoNi || null,
+      numeroIdentificacao: numeroIdentificacao || null,
+      categoria: item.categoria || item.category || null,
+      origem: item.origem || item.source || null,
+      tipoDeclaracao: item.tipo_declaracao || item.tipo || item.tipoDeclaracao || null,
+      arquivoOriginal: item.arquivo_original,
+      dadosProcessados: item.dados_processados || item.dadosProcessados,
+      debitoApurado: debitoApuradoRaw != null ? Number(debitoApuradoRaw) : null,
+      saldoAPagar: saldoAPagarRaw != null ? Number(saldoAPagarRaw) : null,
+      observacoes: item.observacoes ?? null,
+      createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+      updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
+      cliente,
+    };
   }
 
   /**

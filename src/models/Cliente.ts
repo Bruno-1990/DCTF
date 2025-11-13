@@ -9,24 +9,18 @@ import { supabase } from '../config/database';
 import Joi from 'joi';
 
 // Schema de validação para Cliente
+// IMPORTANTE: Apenas cnpj_limpo é salvo no banco. CNPJ formatado é gerado apenas na exibição.
 const clienteSchema = Joi.object({
   razao_social: Joi.string().min(2).max(255).required().messages({
     'string.min': 'Razão Social deve ter pelo menos 2 caracteres',
     'string.max': 'Razão Social deve ter no máximo 255 caracteres',
     'any.required': 'Razão Social é obrigatória',
   }),
-  cnpj: Joi.string()
-    .pattern(/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/)
-    .optional()
-    .allow('')
-    .messages({
-      'string.pattern.base': 'CNPJ deve estar no formato 00.000.000/0000-00',
-    }),
   cnpj_limpo: Joi.string()
     .pattern(/^\d{14}$/)
     .required()
     .messages({
-      'string.pattern.base': 'CNPJ Limpo deve conter 14 dígitos',
+      'string.pattern.base': 'CNPJ deve conter exatamente 14 dígitos (sem formatação)',
       'any.required': 'CNPJ é obrigatório',
     }),
   email: Joi.string().email().optional().allow('').messages({
@@ -59,7 +53,6 @@ export class Cliente extends DatabaseService<ICliente> {
         id: '1',
         razao_social: 'Empresa Exemplo Ltda',
         cnpj_limpo: '12345678000190',
-        cnpj: '12.345.678/0001-90',
         email: 'contato@empresaexemplo.com.br',
         telefone: '(11) 99999-9999',
         endereco: 'Rua das Flores, 123 - São Paulo/SP',
@@ -70,7 +63,6 @@ export class Cliente extends DatabaseService<ICliente> {
         id: '2',
         razao_social: 'Comércio Teste S.A.',
         cnpj_limpo: '98765432000110',
-        cnpj: '98.765.432/0001-10',
         email: 'vendas@comercioteste.com.br',
         telefone: '(21) 88888-8888',
         endereco: 'Av. Principal, 456 - Rio de Janeiro/RJ',
@@ -97,7 +89,19 @@ export class Cliente extends DatabaseService<ICliente> {
         return this.getMockData();
       }
 
-      return super.findAll();
+      const result = await super.findAll();
+      
+      if (!result.success || !result.data) {
+        return result;
+      }
+
+      // Mapear dados do Supabase (snake_case) para camelCase
+      const mappedData = result.data.map((item: any) => this.mapSupabaseRow(item));
+
+      return {
+        success: true,
+        data: mappedData,
+      };
     } catch (error) {
       return {
         success: false,
@@ -130,7 +134,17 @@ export class Cliente extends DatabaseService<ICliente> {
         }
       }
 
-      return super.findById(id);
+      const result = await super.findById(id);
+      
+      if (!result.success || !result.data) {
+        return result;
+      }
+
+      // Mapear dados do Supabase (snake_case) para camelCase
+      return {
+        success: true,
+        data: this.mapSupabaseRow(result.data),
+      };
     } catch (error) {
       return {
         success: false,
@@ -172,9 +186,12 @@ export class Cliente extends DatabaseService<ICliente> {
         };
       }
 
+      // Mapear dados do Supabase (snake_case) para camelCase
+      const mappedData = (data || []).map((item: any) => this.mapSupabaseRow(item));
+
       return {
         success: true,
-        data: data || [],
+        data: mappedData,
       };
     } catch (error) {
       return {
@@ -239,6 +256,22 @@ export class Cliente extends DatabaseService<ICliente> {
   }
 
   /**
+   * Mapear dados do Supabase (snake_case) para camelCase
+   */
+  private mapSupabaseRow(row: any): ICliente {
+    return {
+      id: row.id,
+      razao_social: row.razao_social || row.nome || '',
+      cnpj_limpo: row.cnpj_limpo || (row.cnpj ? this.cleanCNPJ(row.cnpj) : ''),
+      email: row.email || undefined,
+      telefone: row.telefone || undefined,
+      endereco: row.endereco || undefined,
+      createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+      updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
+    };
+  }
+
+  /**
    * Limpar CNPJ removendo formatação
    */
   private cleanCNPJ(cnpj: string): string {
@@ -295,6 +328,11 @@ export class Cliente extends DatabaseService<ICliente> {
    * Criar cliente com validações
    */
   async createCliente(clienteData: Partial<ICliente>): Promise<ApiResponse<ICliente>> {
+    // SEMPRE limpar CNPJ antes de processar (aceita formatado ou limpo)
+    if (clienteData.cnpj_limpo) {
+      clienteData.cnpj_limpo = String(clienteData.cnpj_limpo).replace(/\D/g, '');
+    }
+    
     // Validar dados
     const validation = this.validateCliente(clienteData);
     if (!validation.isValid) {
@@ -318,7 +356,7 @@ export class Cliente extends DatabaseService<ICliente> {
         id: Date.now().toString(),
         razao_social: clienteData.razao_social!,
         cnpj_limpo: clienteData.cnpj_limpo!,
-        cnpj: this.formatCNPJDisplay(clienteData.cnpj_limpo!),
+        // cnpj formatado não é salvo, apenas gerado na exibição
         email: clienteData.email || '',
         telefone: clienteData.telefone || '',
         endereco: clienteData.endereco || '',
@@ -347,22 +385,38 @@ export class Cliente extends DatabaseService<ICliente> {
     }
 
     // Preparar dados para inserção
-    const dataToInsert = {
+    // IMPORTANTE: Salvar apenas cnpj_limpo no banco, cnpj formatado é gerado apenas na exibição
+    const dataToInsert: any = {
       razao_social: clienteData.razao_social,
-      cnpj_limpo: clienteData.cnpj_limpo,
-      cnpj: clienteData.cnpj_limpo ? this.formatCNPJDisplay(clienteData.cnpj_limpo) : undefined,
-      email: clienteData.email,
-      telefone: clienteData.telefone,
-      endereco: clienteData.endereco,
+      cnpj_limpo: clienteData.cnpj_limpo, // Sempre limpo
+      // Não salvar cnpj formatado no banco, será gerado na exibição
+      email: clienteData.email || undefined,
+      telefone: clienteData.telefone || undefined,
+      endereco: clienteData.endereco || undefined,
     };
 
-    return this.create(dataToInsert);
+    const result = await this.create(dataToInsert);
+    
+    if (!result.success || !result.data) {
+      return result;
+    }
+
+    // Mapear dados do Supabase (snake_case) para camelCase
+    return {
+      success: true,
+      data: this.mapSupabaseRow(result.data),
+    };
   }
 
   /**
    * Atualizar cliente com validações
    */
   async updateCliente(id: string, updates: Partial<ICliente>): Promise<ApiResponse<ICliente>> {
+    // SEMPRE limpar CNPJ antes de processar (aceita formatado ou limpo)
+    if (updates.cnpj_limpo) {
+      updates.cnpj_limpo = String(updates.cnpj_limpo).replace(/\D/g, '');
+    }
+    
     // Validar dados
     const validation = this.validateCliente(updates);
     if (!validation.isValid) {
@@ -395,12 +449,27 @@ export class Cliente extends DatabaseService<ICliente> {
     }
 
     // Preparar dados para atualização
-    const dataToUpdate = {
+    // IMPORTANTE: Não salvar cnpj formatado no banco, apenas cnpj_limpo
+    const dataToUpdate: any = {
       ...updates,
-      cnpj: updates.cnpj_limpo ? this.formatCNPJDisplay(updates.cnpj_limpo) : updates.cnpj,
+      cnpj_limpo: updates.cnpj_limpo, // Sempre limpo
+      // Não incluir cnpj formatado, será gerado na exibição
     };
+    
+    // Remover cnpj se estiver presente (não salvar formatado)
+    delete dataToUpdate.cnpj;
 
-    return this.update(id, dataToUpdate);
+    const result = await this.update(id, dataToUpdate);
+    
+    if (!result.success || !result.data) {
+      return result;
+    }
+
+    // Mapear dados do Supabase (snake_case) para camelCase
+    return {
+      success: true,
+      data: this.mapSupabaseRow(result.data),
+    };
   }
 
   /**
@@ -413,7 +482,7 @@ export class Cliente extends DatabaseService<ICliente> {
     if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
       const mockData = this.getMockData();
       if (mockData.success && mockData.data) {
-        const cliente = mockData.data.find(c => this.cleanCNPJ(c.cnpj || '') === cleanCNPJ);
+        const cliente = mockData.data.find(c => c.cnpj_limpo === cleanCNPJ);
         if (cliente) {
           return { success: true, data: cliente };
         }
@@ -425,9 +494,10 @@ export class Cliente extends DatabaseService<ICliente> {
     const result = await this.findBy({ cnpj_limpo: cleanCNPJ });
     
     if (result.success && result.data!.length > 0) {
+      // Mapear dados do Supabase (snake_case) para camelCase
       return {
         success: true,
-        data: result.data![0],
+        data: this.mapSupabaseRow(result.data![0]),
       };
     }
     

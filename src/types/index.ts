@@ -13,9 +13,9 @@ export interface BaseEntity {
 // Tipos para Cliente
 export interface Cliente extends BaseEntity {
   nome?: string; // Mantido para compatibilidade com código existente
-  razao_social?: string; // Campo real no banco
-  cnpj?: string; // CNPJ formatado
-  cnpj_limpo?: string; // CNPJ sem formatação
+  razao_social: string; // Campo obrigatório no banco
+  cnpj_limpo: string; // CNPJ sem formatação (14 dígitos) - ÚNICA coluna no banco
+  // cnpj formatado é gerado apenas na exibição, não é salvo no banco
   email?: string;
   telefone?: string;
   endereco?: string;
@@ -28,11 +28,19 @@ export interface DCTF extends BaseEntity {
   dataDeclaracao: Date;
   status: 'pendente' | 'processando' | 'concluido' | 'erro';
   situacao?: string | null;
+  periodoApuracao?: string | null;
+  dataTransmissao?: Date | string | null;
+  tipoNi?: string | null;
+  numeroIdentificacao?: string | null;
+  categoria?: string | null;
+  origem?: string | null;
+  tipoDeclaracao?: string | null;
   arquivoOriginal: string;
   dadosProcessados?: any;
   debitoApurado?: number | null;
   saldoAPagar?: number | null;
-  cliente?: Pick<Cliente, 'id' | 'nome' | 'razao_social' | 'cnpj' | 'cnpj_limpo'>;
+  observacoes?: string | null;
+  cliente?: Pick<Cliente, 'id' | 'nome' | 'razao_social' | 'cnpj_limpo'>;
 }
 
 // Tipos para dashboard de monitoramento

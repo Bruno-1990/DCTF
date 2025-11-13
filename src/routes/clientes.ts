@@ -28,6 +28,11 @@ router.get('/cnpj/:cnpj', (req, res) => {
   clienteController.buscarPorCNPJ(req, res);
 });
 
+// GET /api/clientes/modelo - Download do modelo de planilha (DEVE vir antes de /:id)
+router.get('/modelo', (req, res) => {
+  clienteController.downloadModelo(req, res);
+});
+
 // GET /api/clientes/:id - Obter cliente por ID
 router.get('/:id', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.obterCliente(req, res);
@@ -41,6 +46,11 @@ router.post('/', validate(clienteSchemas.create), (req, res) => {
 // POST /api/clientes/import-json - Importar clientes em lote via JSON
 router.post('/import-json', (req, res) => {
   clienteController.importarClientesJson(req, res);
+});
+
+// POST /api/clientes/upload - Upload e processamento de planilha de clientes
+router.post('/upload', ClienteController.uploadMiddleware, (req, res) => {
+  clienteController.uploadPlanilhaClientes(req, res);
 });
 
 // PUT /api/clientes/:id - Atualizar cliente

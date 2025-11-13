@@ -146,7 +146,7 @@ const Clientes: React.FC = () => {
             Novo Cliente
           </button>
           <Link
-            to="/upload"
+            to="/clientes/upload"
             className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700"
           >
             Upload de planilhas
