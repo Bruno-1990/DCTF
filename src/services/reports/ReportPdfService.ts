@@ -12,6 +12,7 @@ import {
   ClientesReportData,
   DCTFReportData,
   ConferenceReportData,
+  PendentesReportData,
   DashboardConferenceIssue,
 } from '../../types';
 
@@ -37,6 +38,7 @@ export class ReportPdfService {
     clientes: 'Relatório de Clientes',
     dctf: 'Relatório de Declarações DCTF',
     conferencia: 'Relatório de Conferências Legais',
+    pendentes: 'Relatório de Declarações Pendentes',
   };
 
   private static readonly RENDERERS: Record<ReportType, ReportRenderer<any>> = {
@@ -44,6 +46,7 @@ export class ReportPdfService {
     clientes: (context, envelope) => this.renderClientes(context, envelope),
     dctf: (context, envelope) => this.renderDctf(context, envelope),
     conferencia: (context, envelope) => this.renderConference(context, envelope),
+    pendentes: (context, envelope) => this.renderPendentes(context, envelope),
   };
 
   static async generate(type: ReportType, options: PdfReportOptions = {}): Promise<Buffer> {
@@ -315,6 +318,57 @@ export class ReportPdfService {
         { label: 'Severidade', value: this.translateSeverity(issue.severity) },
       ]);
       builder.addParagraph(issue.message, { small: true, align: 'left' });
+    });
+  }
+
+  private static renderPendentes(
+    { builder }: GenerateContext,
+    envelope: ReportDataEnvelope<PendentesReportData>,
+  ) {
+    const numberFormatter = new Intl.NumberFormat('pt-BR');
+    const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    builder.addSection('Resumo');
+    builder.addKeyValueList([
+      { label: 'Declarações pendentes', value: numberFormatter.format(envelope.data.totals.totalPendentes) },
+      { label: 'Total de registros relacionados', value: numberFormatter.format(envelope.data.totals.totalRegistros) },
+    ]);
+
+    if (envelope.data.items.length === 0) {
+      builder.addParagraph('Nenhuma declaração pendente encontrada.');
+      return;
+    }
+
+    builder.addSection('Declarações Pendentes com Últimos Registros');
+    envelope.data.items.forEach((item, index) => {
+      const business = item.businessName ? `${item.businessName} (${item.identification})` : item.identification;
+      builder.addParagraph(`${index + 1}. ${business}`, { align: 'left' });
+      builder.addKeyValueList([
+        { label: 'Competência pendente', value: item.period },
+        { label: 'Prazo de vencimento', value: this.formatDate(item.dueDate) },
+        { label: 'Dias restantes', value: `${item.daysUntilDue} ${item.daysUntilDue === 1 ? 'dia' : 'dias'}` },
+        { label: 'Severidade', value: this.translateSeverity(item.severity) },
+        { label: 'Mensagem', value: item.message },
+      ]);
+
+      if (item.ultimosRegistros.length > 0) {
+        builder.addParagraph('Últimos registros DCTF:', { small: true, align: 'left' });
+        item.ultimosRegistros.forEach((registro, regIndex) => {
+          builder.addParagraph(`  ${regIndex + 1}. Competência: ${registro.period}`, { small: true, align: 'left' });
+          builder.addKeyValueList([
+            { label: 'Data de transmissão', value: this.formatDate(registro.transmissionDate) },
+            { label: 'Status', value: registro.status ?? '—' },
+            { label: 'Situação', value: registro.situation ?? '—' },
+            { label: 'Débito apurado', value: currencyFormatter.format(this.toNumber(registro.debitAmount)) },
+            { label: 'Saldo em aberto', value: currencyFormatter.format(this.toNumber(registro.balanceDue)) },
+          ]);
+        });
+      } else {
+        builder.addParagraph('Nenhum registro DCTF encontrado para este CNPJ.', { small: true, align: 'left' });
+      }
+      
+      // Adicionar espaçamento entre itens
+      builder.addParagraph('');
     });
   }
 

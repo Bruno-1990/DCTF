@@ -223,7 +223,7 @@ export interface ApiResponse<T = any> {
   message?: string;
 }
 
-export type ReportType = 'gerencial' | 'clientes' | 'dctf' | 'conferencia';
+export type ReportType = 'gerencial' | 'clientes' | 'dctf' | 'conferencia' | 'pendentes';
 
 export interface ReportFilterOptions {
   months?: number;
@@ -312,5 +312,27 @@ export interface ConferenceReportData {
   totals: {
     totalIssues: number;
     bySeverity: Record<ConferenceIssueSeverity, number>;
+  };
+}
+
+export interface PendentesReportItem {
+  // Informações da declaração pendente
+  id: string;
+  identification: string;
+  businessName?: string;
+  period: string;
+  dueDate: string;
+  daysUntilDue: number;
+  severity: ConferenceIssueSeverity;
+  message: string;
+  // Últimos registros DCTF deste CNPJ
+  ultimosRegistros: DCTFReportItem[];
+}
+
+export interface PendentesReportData {
+  items: PendentesReportItem[];
+  totals: {
+    totalPendentes: number;
+    totalRegistros: number;
   };
 }

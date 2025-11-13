@@ -8,6 +8,7 @@ import {
   ClientesReportData,
   DCTFReportData,
   ConferenceReportData,
+  PendentesReportData,
 } from '../../types';
 
 export interface XlsxReportOptions extends ReportFilterOptions {}
@@ -88,6 +89,8 @@ export class ReportXlsxService {
         return this.buildDctfSchema(envelope as ReportDataEnvelope<DCTFReportData>);
       case 'conferencia':
         return this.buildConferenceSchema(envelope as ReportDataEnvelope<ConferenceReportData>);
+      case 'pendentes':
+        return this.buildPendentesSchema(envelope as ReportDataEnvelope<PendentesReportData>);
       default:
         throw new Error(`Tipo de relatório não suportado: ${type satisfies never}`);
     }
@@ -240,6 +243,119 @@ export class ReportXlsxService {
       return 0;
     }
     return Number(value) || 0;
+  }
+
+  private static buildPendentesSchema(envelope: ReportDataEnvelope<PendentesReportData>): SheetSchema {
+    const columns: SheetColumn[] = [
+      { key: 'tipo', header: 'Tipo' },
+      { key: 'identification', header: 'CNPJ' },
+      { key: 'businessName', header: 'Contribuinte' },
+      { key: 'period', header: 'Competência' },
+      { key: 'dueDate', header: 'Prazo de Vencimento' },
+      { key: 'transmissionDate', header: 'Data Transmissão' },
+      { key: 'daysUntilDue', header: 'Dias Restantes' },
+      { key: 'severity', header: 'Severidade' },
+      { key: 'status', header: 'Status' },
+      { key: 'situation', header: 'Situação' },
+      { key: 'debitAmount', header: 'Débito Apurado' },
+      { key: 'balanceDue', header: 'Saldo a Pagar' },
+      { key: 'message', header: 'Mensagem' },
+    ];
+
+    const rows: Record<string, string>[] = [];
+
+    envelope.data.items.forEach((item, itemIndex) => {
+      // Linha do registro pendente
+      rows.push({
+        tipo: 'PENDENTE',
+        identification: item.identification,
+        businessName: item.businessName || '—',
+        period: item.period,
+        dueDate: this.formatDate(item.dueDate),
+        transmissionDate: '—',
+        daysUntilDue: `${item.daysUntilDue} ${item.daysUntilDue === 1 ? 'dia' : 'dias'}`,
+        severity: this.translateSeverity(item.severity),
+        status: '—',
+        situation: '—',
+        debitAmount: '—',
+        balanceDue: '—',
+        message: item.message,
+      });
+
+      // Linhas dos últimos registros DCTF
+      if (item.ultimosRegistros.length > 0) {
+        item.ultimosRegistros.forEach((registro) => {
+          rows.push({
+            tipo: 'REGISTRO',
+            identification: registro.identification,
+            businessName: registro.businessName || '—',
+            period: registro.period,
+            dueDate: '—',
+            transmissionDate: this.formatDate(registro.transmissionDate),
+            daysUntilDue: '—',
+            severity: '—',
+            status: registro.status || '—',
+            situation: registro.situation || '—',
+            debitAmount: this.formatCurrency(registro.debitAmount),
+            balanceDue: this.formatCurrency(registro.balanceDue),
+            message: '—',
+          });
+        });
+      } else {
+        // Se não houver registros, adicionar uma linha indicando isso
+        rows.push({
+          tipo: 'REGISTRO',
+          identification: item.identification,
+          businessName: 'Nenhum registro DCTF encontrado',
+          period: '—',
+          dueDate: '—',
+          transmissionDate: '—',
+          daysUntilDue: '—',
+          severity: '—',
+          status: '—',
+          situation: '—',
+          debitAmount: '—',
+          balanceDue: '—',
+          message: '—',
+        });
+      }
+
+      // Adicionar 2 linhas vazias entre grupos (exceto no último item)
+      if (itemIndex < envelope.data.items.length - 1) {
+        rows.push({
+          tipo: '',
+          identification: '',
+          businessName: '',
+          period: '',
+          dueDate: '',
+          transmissionDate: '',
+          daysUntilDue: '',
+          severity: '',
+          status: '',
+          situation: '',
+          debitAmount: '',
+          balanceDue: '',
+          message: '',
+        });
+        rows.push({
+          tipo: '',
+          identification: '',
+          businessName: '',
+          period: '',
+          dueDate: '',
+          transmissionDate: '',
+          daysUntilDue: '',
+          severity: '',
+          status: '',
+          situation: '',
+          debitAmount: '',
+          balanceDue: '',
+          message: '',
+        });
+      }
+    });
+
+    return { columns, rows };
   }
 
   private static translateSeverity(value: string): string {

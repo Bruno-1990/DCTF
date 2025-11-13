@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { AdminDashboardSnapshotResponse } from "../services/dashboard";
 import { fetchAdminDashboardSnapshot } from "../services/dashboard";
 import { fetchConferenceSummary, type ConferenceSummary } from "../services/conferences";
@@ -15,11 +15,21 @@ const friendlyRouteLabels: Record<string, string> = {
 };
 
 const AdminDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [snapshot, setSnapshot] = useState<AdminDashboardSnapshotResponse | null>(null);
   const [conferenceSummary, setConferenceSummary] = useState<ConferenceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [conferenceError, setConferenceError] = useState<string | null>(null);
+  const [openDeclarationsPage, setOpenDeclarationsPage] = useState(1);
+  const itemsPerPage = 10;
+
+  // Função para visualizar todos os registros de um CNPJ na página DCTF
+  const handleVisualize = (cnpj: string) => {
+    // Limpar o CNPJ (remover formatação) e navegar para DCTF com o filtro
+    const cnpjLimpo = cnpj.replace(/\D/g, '');
+    navigate(`/dctf?search=${cnpjLimpo}`);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -115,15 +125,50 @@ const AdminDashboard: React.FC = () => {
     }));
   }, [statusSummary]);
 
-  const topBalances = useMemo(() => {
-    if (!snapshot) return [];
-    return (snapshot.metrics.financial.balanceByIdentification ?? [])
-      .slice(0, 6)
-      .map((item, index) => ({
-        ...item,
-        rank: index + 1,
+  // Filtrar declarações em aberto com prazo vigente
+  const openWithValidDueDateData = useMemo(() => {
+    if (!conferenceSummary) return { items: [], total: 0, totalPages: 0 };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const allFiltered = dueDateIssues.filter((issue) => {
+      // Não estão concluídas (status não é 'concluido')
+      const status = (issue.status ?? '').toLowerCase();
+      const notCompleted = status !== 'concluido';
+      
+      // E que ainda estão dentro do prazo (dueDate ainda não passou)
+      const dueDate = new Date(issue.dueDate);
+      dueDate.setHours(0, 0, 0, 0);
+      const stillValid = dueDate >= today;
+      
+      // Severity 'medium' = dentro do prazo mas próximo do vencimento (até 5 dias)
+      // Severity 'high' = já vencida (daysUntilDue < 0)
+      // Queremos apenas as que ainda têm prazo válido (severity 'medium')
+      const hasValidDueDate = issue.severity === 'medium';
+      
+      return notCompleted && stillValid && hasValidDueDate;
+    });
+    
+    const total = allFiltered.length;
+    const totalPages = Math.ceil(total / itemsPerPage);
+    const startIndex = (openDeclarationsPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    
+    const paginatedItems = allFiltered
+      .slice(startIndex, endIndex)
+      .map((issue, index) => ({
+        ...issue,
+        rank: startIndex + index + 1,
       }));
-  }, [snapshot]);
+    
+    return {
+      items: paginatedItems,
+      total,
+      totalPages,
+    };
+  }, [conferenceSummary, dueDateIssues, openDeclarationsPage, itemsPerPage]);
+
+  const openWithValidDueDate = openWithValidDueDateData.items;
 
   const transmissionsList = useMemo(() => {
     if (!snapshot) return [];
@@ -293,9 +338,9 @@ const AdminDashboard: React.FC = () => {
           </section>
 
           <section id="financial-monitoring" className="bg-white shadow rounded-lg p-6 mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Top devedores em aberto</h2>
-            {topBalances.length === 0 ? (
-              <p className="text-sm text-gray-500">Nenhuma pendência financeira encontrada.</p>
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Declarações em aberto com prazo vigente</h2>
+            {openWithValidDueDateData.total === 0 ? (
+              <p className="text-sm text-gray-500">Nenhuma declaração em aberto com prazo vigente encontrada.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm text-left">
@@ -304,22 +349,75 @@ const AdminDashboard: React.FC = () => {
                       <th className="py-2 pr-4">#</th>
                       <th className="py-2 pr-4">Contribuinte</th>
                       <th className="py-2 pr-4">CNPJ</th>
-                      <th className="py-2 pr-4 text-right">Saldo pendente</th>
+                      <th className="py-2 pr-4">Competência</th>
+                      <th className="py-2 pr-4">Prazo de vencimento</th>
+                      <th className="py-2 pr-4">Status</th>
+                      <th className="py-2 pr-4">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {topBalances.map((item) => (
-                      <tr key={`${item.identification}-${item.rank}`} className="hover:bg-gray-50">
-                        <td className="py-2 pr-4 text-gray-500">{item.rank}</td>
-                        <td className="py-2 pr-4 text-gray-800 font-medium">{renderBusinessName(item.businessName, item.identification)}</td>
-                        <td className="py-2 pr-4 text-gray-500">{item.identification}</td>
-                        <td className="py-2 pr-4 text-right font-semibold text-gray-900">
-                          {currencyFormatter.format(item.balance)}
-                        </td>
-                      </tr>
-                    ))}
+                    {openWithValidDueDate.map((item) => {
+                      const dueDate = new Date(item.dueDate);
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      dueDate.setHours(0, 0, 0, 0);
+                      const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                      
+                      return (
+                        <tr key={item.id} className="hover:bg-gray-50">
+                          <td className="py-2 pr-4 text-gray-500">{item.rank}</td>
+                          <td className="py-2 pr-4 text-gray-800 font-medium">{renderBusinessName(item.businessName, item.identification)}</td>
+                          <td className="py-2 pr-4 text-gray-500">{item.identification}</td>
+                          <td className="py-2 pr-4 text-gray-600">{item.period}</td>
+                          <td className="py-2 pr-4 text-gray-600">
+                            {formatDate(item.dueDate)}
+                            {daysUntilDue > 0 && (
+                              <span className="ml-2 text-xs text-gray-500">
+                                ({daysUntilDue} {daysUntilDue === 1 ? 'dia' : 'dias'})
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-4">{renderSeverityPill(item.severity)}</td>
+                          <td className="py-2 pr-4">
+                            <button
+                              onClick={() => handleVisualize(item.identification)}
+                              className="px-4 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg border border-blue-200 hover:bg-blue-100 hover:border-blue-300 hover:text-blue-800 transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1 shadow-sm hover:shadow"
+                              title="Visualizar todos os registros deste CNPJ na página DCTF"
+                            >
+                              Visualizar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+                {openWithValidDueDateData.totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                    <div className="text-sm text-gray-600">
+                      Mostrando {((openDeclarationsPage - 1) * itemsPerPage) + 1} a {Math.min(openDeclarationsPage * itemsPerPage, openWithValidDueDateData.total)} de {openWithValidDueDateData.total} declarações
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setOpenDeclarationsPage((p) => Math.max(1, p - 1))}
+                        disabled={openDeclarationsPage <= 1}
+                        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Anterior
+                      </button>
+                      <span className="text-sm text-gray-700 px-3">
+                        Página {openDeclarationsPage} de {openWithValidDueDateData.totalPages}
+                      </span>
+                      <button
+                        onClick={() => setOpenDeclarationsPage((p) => Math.min(openWithValidDueDateData.totalPages, p + 1))}
+                        disabled={openDeclarationsPage >= openWithValidDueDateData.totalPages}
+                        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>

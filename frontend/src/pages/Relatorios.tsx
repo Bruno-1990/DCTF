@@ -56,7 +56,7 @@ const RelatoriosPage: React.FC = () => {
     }
   };
 
-  const handleGenerate = async (reportType: 'gerencial' | 'clientes' | 'dctf' | 'conferencia', format: 'pdf' | 'xlsx') => {
+  const handleGenerate = async (reportType: 'gerencial' | 'clientes' | 'dctf' | 'conferencia' | 'pendentes', format: 'pdf' | 'xlsx') => {
     try {
       setGeneratingTarget(`${reportType}-${format}`);
       const blob = await relatoriosService.generateAndDownload({ reportType, format });
@@ -90,6 +90,7 @@ const RelatoriosPage: React.FC = () => {
           { key: 'conferencia', title: 'Relatório de Conferências', description: 'Pendências legais e conferência de prazos.' },
           { key: 'clientes', title: 'Relatório de Clientes', description: 'Resumo por contribuinte com saldos e status.' },
           { key: 'dctf', title: 'Relatório DCTF', description: 'Lista detalhada das declarações transmitidas.' },
+          { key: 'pendentes', title: 'Relatório de Pendentes', description: 'Declarações pendentes com prazo vigente e últimos registros DCTF.' },
         ].map(card => (
           <div key={card.key} className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col gap-3 items-center justify-center text-center">
             <div>
@@ -124,6 +125,7 @@ const RelatoriosPage: React.FC = () => {
               <option value="conferencia">Relatório de Conferências</option>
               <option value="clientes">Relatório de Clientes</option>
               <option value="dctf">Relatório DCTF</option>
+              <option value="pendentes">Relatório de Pendentes</option>
             </select>
           </label>
         </div>

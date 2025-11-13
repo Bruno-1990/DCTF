@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useDCTF } from '../hooks/useDCTF';
 
 const formatCNPJ = (cnpj: string | undefined) => {
@@ -76,6 +77,7 @@ const getSituacaoBadgeClasses = (situacao?: string | null) => {
 const limitOptions = ['10', '20', '50', '100', '200'] as const;
 
 const DCTFPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const { items, load } = useDCTF();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
@@ -87,9 +89,17 @@ const DCTFPage: React.FC = () => {
   const [lastPageCount, setLastPageCount] = useState<number>(0);
   const [orderBy, setOrderBy] = useState<string>('');
   const [orderDirection, setOrderDirection] = useState<'asc' | 'desc'>('asc');
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>(searchParams.get('search') || '');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+  // Ler parâmetro de busca da URL ao carregar a página (vindo do Dashboard)
+  useEffect(() => {
+    const searchFromUrl = searchParams.get('search');
+    if (searchFromUrl) {
+      setSearchTerm(searchFromUrl);
+    }
+  }, [searchParams]);
 
   // Debounce do termo de busca
   useEffect(() => {

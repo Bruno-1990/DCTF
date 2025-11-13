@@ -4,7 +4,7 @@ import ReportPdfService from '../services/reports/ReportPdfService';
 import ReportXlsxService from '../services/reports/ReportXlsxService';
 import type { ReportFilterOptions, ReportType } from '../types';
 
-const ALLOWED_REPORT_TYPES: ReportType[] = ['gerencial', 'clientes', 'dctf', 'conferencia'];
+const ALLOWED_REPORT_TYPES: ReportType[] = ['gerencial', 'clientes', 'dctf', 'conferencia', 'pendentes'];
 const FORMAT_CONFIG = {
   pdf: {
     mimeType: 'application/pdf',
@@ -183,6 +183,8 @@ class AdminDashboardReportController {
         return 'Relatório de Declarações DCTF';
       case 'conferencia':
         return 'Relatório de Conferências Legais';
+      case 'pendentes':
+        return 'Relatório de Declarações Pendentes';
       default:
         return 'Relatório DCTF';
     }

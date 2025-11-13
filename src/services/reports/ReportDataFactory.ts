@@ -9,8 +9,11 @@ import {
   DCTFReportData,
   DCTFReportItem,
   ConferenceReportData,
+  PendentesReportData,
+  PendentesReportItem,
   DashboardConferenceSummary,
   DashboardDCTFRecord,
+  DashboardConferenceIssue,
   DCTF as IDCTF,
 } from '../../types';
 import {
@@ -58,6 +61,8 @@ export class ReportDataFactory {
         return this.buildDctfData(filters);
       case 'conferencia':
         return this.buildConferenceData(filters);
+      case 'pendentes':
+        return this.buildPendentesData(filters);
       default:
         throw new Error(`Tipo de relatório não suportado: ${type satisfies never}`);
     }
@@ -453,6 +458,112 @@ export class ReportDataFactory {
         .replace(/(\d{4})(\d)/, '$1-$2');
     }
     return value;
+  }
+
+  private static async buildPendentesData(filters: ReportFilterOptions): Promise<ReportDataEnvelope<PendentesReportData>> {
+    const months = filters.months && filters.months > 0 ? filters.months : 6;
+    const conferenceSummary = await getConferenceSummary(months);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Filtrar declarações pendentes com prazo vigente (mesma lógica do dashboard)
+    const pendentes: DashboardConferenceIssue[] = conferenceSummary.rules.dueDate.filter((issue) => {
+      const status = (issue.status ?? '').toLowerCase();
+      const notCompleted = status !== 'concluido';
+      
+      const dueDate = new Date(issue.dueDate);
+      dueDate.setHours(0, 0, 0, 0);
+      const stillValid = dueDate >= today;
+      
+      const hasValidDueDate = issue.severity === 'medium';
+      
+      return notCompleted && stillValid && hasValidDueDate;
+    });
+
+    // Buscar todos os registros DCTF para poder filtrar por CNPJ
+    const dctfResponse = await dctfModel.findAll();
+    const allDctfRecords = dctfResponse.success && dctfResponse.data ? dctfResponse.data : [];
+
+    // Para cada declaração pendente, buscar os últimos registros DCTF do CNPJ
+    const items: PendentesReportItem[] = await Promise.all(
+      pendentes.map(async (pendente) => {
+        const cnpjLimpo = this.cleanIdentification(pendente.identification);
+        
+        // Buscar cliente pelo CNPJ
+        const clientesResponse = await clienteModel.findAll();
+        const clientes = clientesResponse.success && clientesResponse.data ? clientesResponse.data : [];
+        const cliente = clientes.find(c => c.cnpj_limpo === cnpjLimpo);
+
+        // Buscar registros DCTF deste CNPJ (através do cliente ou pelo identification)
+        let registrosDctf: IDCTF[] = [];
+        if (cliente) {
+          const dctfPorCliente = await dctfModel.findByCliente(cliente.id);
+          if (dctfPorCliente.success && dctfPorCliente.data) {
+            registrosDctf = dctfPorCliente.data;
+          }
+        } else {
+          // Se não encontrou cliente, buscar por identification nos registros
+          registrosDctf = allDctfRecords.filter(record => {
+            const dashboardRecord = mapToDashboardRecord(record);
+            const recordId = this.cleanIdentification(dashboardRecord.identification ?? '');
+            return recordId === cnpjLimpo;
+          });
+        }
+
+        // Ordenar por data de transmissão (mais recentes primeiro) e pegar os últimos 5
+        const ultimosRegistros = registrosDctf
+          .map(record => this.normalizeDctfRecord(record))
+          .sort((a, b) => {
+            const aDate = a.transmissionDate ? Date.parse(a.transmissionDate) : 0;
+            const bDate = b.transmissionDate ? Date.parse(b.transmissionDate) : 0;
+            return bDate - aDate;
+          })
+          .slice(0, 5)
+          .map(record => ({
+            id: record.id,
+            identification: this.formatIdentifier(record.identification),
+            businessName: record.businessName,
+            period: record.period ?? '',
+            transmissionDate: record.transmissionDate,
+            status: record.status,
+            situation: record.situation ?? undefined,
+            debitAmount: record.debitAmount,
+            balanceDue: record.balanceDue,
+            origin: 'Plataforma',
+          }));
+
+        const dueDate = new Date(pendente.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+        return {
+          id: pendente.id,
+          identification: pendente.identification,
+          businessName: pendente.businessName || cliente?.razao_social,
+          period: pendente.period,
+          dueDate: pendente.dueDate,
+          daysUntilDue,
+          severity: pendente.severity,
+          message: pendente.message,
+          ultimosRegistros,
+        };
+      })
+    );
+
+    const totals = {
+      totalPendentes: items.length,
+      totalRegistros: items.reduce((acc, item) => acc + item.ultimosRegistros.length, 0),
+    };
+
+    return {
+      type: 'pendentes',
+      generatedAt: new Date().toISOString(),
+      filters,
+      data: {
+        items,
+        totals,
+      },
+    };
   }
 
   private static toNumber(value: unknown): number {
