@@ -326,8 +326,13 @@ export class Cliente extends DatabaseService<ICliente> {
 
   /**
    * Criar cliente com validações
+   * @param clienteData Dados do cliente
+   * @param options Opções adicionais (skipCNPJValidation: pular validação do dígito verificador para uploads em massa)
    */
-  async createCliente(clienteData: Partial<ICliente>): Promise<ApiResponse<ICliente>> {
+  async createCliente(
+    clienteData: Partial<ICliente>, 
+    options?: { skipCNPJValidation?: boolean }
+  ): Promise<ApiResponse<ICliente>> {
     // SEMPRE limpar CNPJ antes de processar (aceita formatado ou limpo)
     if (clienteData.cnpj_limpo) {
       clienteData.cnpj_limpo = String(clienteData.cnpj_limpo).replace(/\D/g, '');
@@ -337,7 +342,8 @@ export class Cliente extends DatabaseService<ICliente> {
       cnpj_limpo: clienteData.cnpj_limpo,
       razao_social: clienteData.razao_social,
       email: clienteData.email,
-      telefone: clienteData.telefone
+      telefone: clienteData.telefone,
+      skipCNPJValidation: options?.skipCNPJValidation
     });
     
     // Validar dados
@@ -350,13 +356,15 @@ export class Cliente extends DatabaseService<ICliente> {
       };
     }
 
-    // Validar CNPJ usando cnpj_limpo
-    if (clienteData.cnpj_limpo && !this.validateCNPJ(clienteData.cnpj_limpo)) {
+    // Validar CNPJ usando cnpj_limpo (pode ser pulado para uploads em massa)
+    if (!options?.skipCNPJValidation && clienteData.cnpj_limpo && !this.validateCNPJ(clienteData.cnpj_limpo)) {
       console.error(`[Cliente.createCliente] ❌ CNPJ inválido (dígito verificador): ${clienteData.cnpj_limpo}`);
       return {
         success: false,
         error: 'CNPJ inválido (dígito verificador incorreto)',
       };
+    } else if (options?.skipCNPJValidation) {
+      console.log(`[Cliente.createCliente] ⚠️ Validação do dígito verificador do CNPJ pulada (upload em massa)`);
     }
 
     // Mock temporário se Supabase não estiver configurado

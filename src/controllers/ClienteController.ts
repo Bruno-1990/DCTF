@@ -474,10 +474,12 @@ export class ClienteController {
       };
 
       // Criar apenas os clientes novos
+      // Para uploads em massa, pulamos a validação rigorosa do dígito verificador do CNPJ
+      // para permitir persistir dados mesmo se alguns CNPJs não passarem na validação
       for (const item of clientesNovos) {
         try {
           console.log(`[Upload] Tentando criar: CNPJ=${item.cnpj_limpo}, Razão Social="${item.razao_social}"`);
-          const resp = await this.clienteModel.createCliente(item);
+          const resp = await this.clienteModel.createCliente(item, { skipCNPJValidation: true });
           if (resp.success) {
             resultados.ok += 1;
             resultados.criados += 1;
