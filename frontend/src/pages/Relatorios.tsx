@@ -33,6 +33,15 @@ const RelatoriosPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit]);
 
+  // Buscar automaticamente quando o tipo de relatório mudar
+  useEffect(() => {
+    if (tipoRelatorio || !tipoRelatorio) {
+      setPage(1);
+      fetchData({ page: 1, limit });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipoRelatorio]);
+
   const filtered = useMemo(() => items, [items]);
   const canGoNext = totalPages != null ? page < totalPages : filtered.length === limit;
 
@@ -111,12 +120,17 @@ const RelatoriosPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
           <label className="flex flex-col text-sm text-gray-600">
             Tipo de relatório
-            <input
-              placeholder="Gerencial, Clientes..."
+            <select
               value={tipoRelatorio}
               onChange={(e) => setTipoRelatorio(e.target.value)}
               className="mt-1 px-2 py-1 border rounded"
-            />
+            >
+              <option value="">Todos</option>
+              <option value="gerencial">Relatório Gerencial</option>
+              <option value="conferencia">Relatório de Conferências</option>
+              <option value="clientes">Relatório de Clientes</option>
+              <option value="dctf">Relatório DCTF</option>
+            </select>
           </label>
           <label className="flex flex-col text-sm text-gray-600">
             Declaração ID
