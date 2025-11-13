@@ -333,9 +333,17 @@ export class Cliente extends DatabaseService<ICliente> {
       clienteData.cnpj_limpo = String(clienteData.cnpj_limpo).replace(/\D/g, '');
     }
     
+    console.log(`[Cliente.createCliente] Dados recebidos:`, {
+      cnpj_limpo: clienteData.cnpj_limpo,
+      razao_social: clienteData.razao_social,
+      email: clienteData.email,
+      telefone: clienteData.telefone
+    });
+    
     // Validar dados
     const validation = this.validateCliente(clienteData);
     if (!validation.isValid) {
+      console.error(`[Cliente.createCliente] ❌ Validação falhou:`, validation.error);
       return {
         success: false,
         error: validation.error,
@@ -344,9 +352,10 @@ export class Cliente extends DatabaseService<ICliente> {
 
     // Validar CNPJ usando cnpj_limpo
     if (clienteData.cnpj_limpo && !this.validateCNPJ(clienteData.cnpj_limpo)) {
+      console.error(`[Cliente.createCliente] ❌ CNPJ inválido (dígito verificador): ${clienteData.cnpj_limpo}`);
       return {
         success: false,
-        error: 'CNPJ inválido',
+        error: 'CNPJ inválido (dígito verificador incorreto)',
       };
     }
 
