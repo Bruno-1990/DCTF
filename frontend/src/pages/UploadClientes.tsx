@@ -67,17 +67,29 @@ export default function UploadClientes() {
         body: form,
       });
       
-      // Verificar se a resposta é JSON válido
+      // Ler o body apenas uma vez - verificar content-type primeiro
+      const contentType = res.headers.get('content-type') || '';
       let json: UploadResponse;
-      try {
-        json = await res.json();
-      } catch (parseError) {
+      
+      if (contentType.includes('application/json')) {
+        // Tentar ler como JSON
+        try {
+          json = await res.json();
+        } catch (parseError) {
+          // Se falhar ao parsear JSON, mostrar erro genérico
+          setError(`Erro ${res.status}: ${res.statusText || 'Erro ao processar resposta'}`);
+          setToast({ type: 'error', msg: `Erro ${res.status}: Resposta inválida do servidor` });
+          return;
+        }
+      } else {
+        // Se não for JSON, ler como texto (mas só uma vez)
         const errorText = await res.text();
-        setError(`Erro ao processar resposta do servidor: ${errorText || 'Resposta inválida'}`);
-        setToast({ type: 'error', msg: `Erro ao processar resposta: ${errorText || 'Resposta inválida'}` });
+        setError(`Erro do servidor: ${errorText || `Erro ${res.status}: ${res.statusText}`}`);
+        setToast({ type: 'error', msg: errorText || `Erro ${res.status}` });
         return;
       }
       
+      // Processar resposta JSON
       if (!res.ok || !json.success) {
         const errorMsg = json.error || json.message || `Erro ${res.status}: ${res.statusText}`;
         setError(errorMsg);
