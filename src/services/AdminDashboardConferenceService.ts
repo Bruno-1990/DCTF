@@ -69,12 +69,24 @@ function buildDueDateIssue(record: DashboardDCTFRecord, today: Date): DashboardC
   }
 
   const stillProcessing = situation.includes('andamento');
-  if (severity === 'low') {
+  
+  // Criar issue para declarações "em andamento" mesmo com severity 'low',
+  // pois elas precisam ser monitoradas na seção "Declarações em aberto com prazo vigente"
+  // Mas só se ainda estiverem dentro do prazo (daysUntilDue >= 0)
+  if (severity === 'low' && !stillProcessing) {
+    // Se não está em andamento e tem muito tempo (severity 'low'), não precisa criar issue
     return null;
   }
 
+  // Se está vencida (severity 'high'), sempre criar issue
+  // Se está próxima do vencimento (severity 'medium'), sempre criar issue
+  // Se está em andamento mesmo com severity 'low', criar issue para monitoramento
   const message = severity === 'high'
     ? 'Competência vencida sem entrega registrada.'
+    : severity === 'medium'
+    ? `Prazo final em ${daysUntilDue} dia${Math.abs(daysUntilDue) === 1 ? '' : 's'} (necessário transmitir).`
+    : stillProcessing
+    ? `Declaração em andamento - Prazo final em ${daysUntilDue} dia${Math.abs(daysUntilDue) === 1 ? '' : 's'}.`
     : `Prazo final em ${daysUntilDue} dia${Math.abs(daysUntilDue) === 1 ? '' : 's'} (necessário transmitir).`;
 
   return {
@@ -96,9 +108,13 @@ function buildDueDateIssue(record: DashboardDCTFRecord, today: Date): DashboardC
     actionPlan:
       severity === 'high'
         ? 'Transmitir a DCTF correspondente imediatamente e preparar o pagamento da multa por atraso (DARF 2170) se aplicável.'
-        : stillProcessing
+        : severity === 'medium'
+        ? stillProcessing
           ? 'Acompanhar o processamento da transmissão já enviada e confirmar o protocolo assim que o status for atualizado.'
-          : 'Priorizar o fechamento da competência e protocolar a DCTF antes do vencimento legal, alinhando o time fiscal.',
+          : 'Priorizar o fechamento da competência e protocolar a DCTF antes do vencimento legal, alinhando o time fiscal.'
+        : stillProcessing
+        ? 'Acompanhar o processamento da transmissão já enviada. Monitorar o status e confirmar quando concluída.'
+        : 'Monitorar e preparar a transmissão da DCTF antes do vencimento legal.',
   };
 }
 

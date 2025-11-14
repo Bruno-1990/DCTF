@@ -172,6 +172,8 @@ const AdminDashboard: React.FC = () => {
   }, [statusSummary]);
 
   // Filtrar declarações em aberto com prazo vigente
+  // Inclui todas as declarações "em andamento" que ainda estão dentro do prazo,
+  // não apenas as próximas ao vencimento (severity 'medium')
   const openWithValidDueDateData = useMemo(() => {
     if (!conferenceSummary) return { items: [], total: 0, totalPages: 0 };
     const today = new Date();
@@ -187,20 +189,29 @@ const AdminDashboard: React.FC = () => {
       dueDate.setHours(0, 0, 0, 0);
       const stillValid = dueDate >= today;
       
-      // Severity 'medium' = dentro do prazo mas próximo do vencimento (até 5 dias)
-      // Severity 'high' = já vencida (daysUntilDue < 0)
-      // Queremos apenas as que ainda têm prazo válido (severity 'medium')
-      const hasValidDueDate = issue.severity === 'medium';
+      // Incluir declarações com severity 'medium' (próximas ao vencimento - até 5 dias)
+      // E também severity 'low' (ainda têm tempo, mas são "em andamento" e precisam ser monitoradas)
+      // Excluir severity 'high' apenas se já vencidas (já tratadas na seção de conferência de prazos)
+      const hasValidDueDate = issue.severity === 'medium' || issue.severity === 'low';
       
       return notCompleted && stillValid && hasValidDueDate;
     });
     
-    const total = allFiltered.length;
+    // Ordenar por severidade (medium primeiro, pois são mais urgentes) e depois por data de vencimento
+    const sorted = [...allFiltered].sort((a, b) => {
+      const severityRank = { medium: 0, low: 1, high: 2 };
+      if (severityRank[a.severity] !== severityRank[b.severity]) {
+        return severityRank[a.severity] - severityRank[b.severity];
+      }
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+    
+    const total = sorted.length;
     const totalPages = Math.ceil(total / itemsPerPage);
     const startIndex = (openDeclarationsPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
     
-    const paginatedItems = allFiltered
+    const paginatedItems = sorted
       .slice(startIndex, endIndex)
       .map((issue, index) => ({
         ...issue,
