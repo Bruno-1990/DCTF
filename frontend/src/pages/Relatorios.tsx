@@ -81,7 +81,7 @@ const RelatoriosPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Relatórios</h1>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
@@ -94,8 +94,8 @@ const RelatoriosPage: React.FC = () => {
         ].map(card => (
           <div key={card.key} className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col gap-3 items-center justify-center text-center">
             <div>
-              <h2 className="text-xl font-semibold text-gray-800 text-center">{card.title}</h2>
-              <p className="text-sm text-gray-500 text-center mt-2">{card.description}</p>
+              <h2 className="text-base font-medium text-gray-800 text-center">{card.title}</h2>
+              <p className="text-xs text-gray-500 text-center mt-2">{card.description}</p>
             </div>
             <div className="flex gap-3 justify-center w-full">
               <button
@@ -111,9 +111,9 @@ const RelatoriosPage: React.FC = () => {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800 mb-3">Filtros</h2>
+        <h2 className="text-base font-medium text-gray-800 mb-3">Filtros</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-          <label className="flex flex-col text-sm text-gray-600">
+          <label className="flex flex-col text-xs text-gray-600">
             Tipo de relatório
             <select
               value={tipoRelatorio}
@@ -141,29 +141,29 @@ const RelatoriosPage: React.FC = () => {
       )}
 
       <div className="flex items-center justify-between mb-4">
-        <div className="text-sm text-gray-600">
+        <div className="text-xs text-gray-600">
           {loading ? 'Carregando…' : total != null && totalPages != null ? `Página ${page} de ${totalPages} — Total: ${total}` : `Total exibido: ${filtered.length}`}
         </div>
         <div className="flex items-center gap-2">
           <button
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50"
+            className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50 text-xs"
           >
             Anterior
           </button>
-          <span className="text-sm">
+          <span className="text-xs">
             Página {page}
             {totalPages != null ? ` de ${totalPages}` : ''}
           </span>
           <button
             disabled={!canGoNext}
             onClick={() => setPage((p) => p + 1)}
-            className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50"
+            className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50 text-xs"
           >
             Próxima
           </button>
-          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="ml-2 px-2 py-1 border rounded">
+          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="ml-2 px-2 py-1 border rounded text-xs">
             <option value={5}>5</option>
             <option value={10}>10</option>
             <option value={20}>20</option>
@@ -186,7 +186,7 @@ const RelatoriosPage: React.FC = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {filtered.map((r) => (
               <tr key={r.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-900">
                   <div className="flex flex-col">
                     <span>{r.titulo}</span>
                     {r.notes && <span className="text-xs text-gray-500">{r.notes}</span>}
@@ -194,11 +194,11 @@ const RelatoriosPage: React.FC = () => {
                     {r.responsible && <span className="text-xs text-gray-500">Responsável: {r.responsible}</span>}
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.tipoRelatorio}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.formato?.toUpperCase() ?? (r.arquivoPdf ? 'PDF' : '—')}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.declaracaoId}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR') : '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm flex flex-col md:flex-row md:items-center md:gap-3 gap-2">
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{r.tipoRelatorio}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{r.formato?.toUpperCase() ?? (r.arquivoPdf ? 'PDF' : '—')}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{r.declaracaoId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR') : '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-xs flex flex-col md:flex-row md:items-center md:gap-3 gap-2">
                   {r.downloadUrl ? (
                     <button
                       onClick={() => handleDownload(r.id, r.titulo, r.formato ?? 'pdf')}

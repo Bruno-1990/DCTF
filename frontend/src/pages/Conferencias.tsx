@@ -120,8 +120,8 @@ export default function Conferencias() {
   return (
     <div className="p-8 space-y-6">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold text-slate-900">Conferências e Alertas Legais</h1>
-        <p className="text-sm text-slate-500 max-w-3xl">
+        <h1 className="text-xl font-semibold text-slate-900">Conferências e Alertas Legais</h1>
+        <p className="text-xs text-slate-500 max-w-3xl">
           Monitoramos automaticamente o cumprimento dos prazos legais estabelecidos pela IN RFB 2.005/2021 e outras normas. Revise os itens abaixo para evitar autuações e multas.
         </p>
         {generatedAt && (
@@ -132,31 +132,31 @@ export default function Conferencias() {
       <section className="bg-white shadow-sm border border-slate-200 rounded-lg overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
           <div>
-            <h2 className="text-lg font-medium text-slate-800">Entrega dentro do prazo legal</h2>
-            <p className="text-sm text-slate-500">Classificamos o risco considerando atrasos e proximidade do vencimento (art. 10, IN RFB 2.005/2021).</p>
+            <h2 className="text-base font-medium text-slate-800">Entrega dentro do prazo legal</h2>
+            <p className="text-xs text-slate-500">Classificamos o risco considerando atrasos e proximidade do vencimento (art. 10, IN RFB 2.005/2021).</p>
           </div>
-          <div className="text-sm text-slate-500">Total: {orderedIssues.length}</div>
+          <div className="text-xs text-slate-500">Total: {orderedIssues.length}</div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-xs">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Empresa</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">CNPJ</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Competência</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Vencimento Legal</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Data de Envio</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Situação</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Severidade</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Resumo</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Plano de ação</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Empresa</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">CNPJ</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Competência</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Vencimento Legal</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Data de Envio</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Situação</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Severidade</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Resumo</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Plano de ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {orderedIssues.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-6 text-center text-sm text-slate-500">
+                  <td colSpan={9} className="px-4 py-6 text-center text-xs text-slate-500">
                     Nenhuma pendência encontrada. Todas as declarações analisadas estão dentro do prazo.
                   </td>
                 </tr>
@@ -166,8 +166,8 @@ export default function Conferencias() {
                 return (
                   <Fragment key={issue.id}>
                     <tr className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-slate-800 font-medium">{issue.businessName ?? '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">
+                      <td className="px-4 py-3 text-slate-800 font-medium text-xs">{issue.businessName ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">
                         <div className="flex items-center gap-2">
                           <span>{issue.identification}</span>
                           <button
@@ -176,20 +176,20 @@ export default function Conferencias() {
                             title="Copiar CNPJ"
                           >
                             {copiedId === issue.id ? (
-                              <CheckIcon className="w-4 h-4 text-green-600" />
+                              <CheckIcon className="w-3.5 h-3.5 text-green-600" />
                             ) : (
-                              <ClipboardDocumentIcon className="w-4 h-4" />
+                              <ClipboardDocumentIcon className="w-3.5 h-3.5" />
                             )}
                           </button>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{issue.period}</td>
-                      <td className="px-4 py-3 text-slate-600">{formatDate(issue.dueDate)}</td>
-                      <td className="px-4 py-3 text-slate-600">{formatDate(issue.transmissionDate)}</td>
-                      <td className="px-4 py-3 text-slate-600 capitalize">{issue.status ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{issue.period}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{formatDate(issue.dueDate)}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{formatDate(issue.transmissionDate)}</td>
+                      <td className="px-4 py-3 text-slate-600 capitalize text-xs">{issue.status ?? '—'}</td>
                       <td className="px-4 py-3"><SeverityTag severity={issue.severity} /></td>
-                      <td className="px-4 py-3 text-slate-600">{issue.message}</td>
-                      <td className="px-4 py-3 text-slate-600">
+                      <td className="px-4 py-3 text-slate-600 text-xs">{issue.message}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">
                         {issue.actionPlan ? (
                           <button
                             type="button"
@@ -205,7 +205,7 @@ export default function Conferencias() {
                     </tr>
                     {issue.actionPlan && isExpanded && (
                       <tr className="bg-slate-50">
-                        <td colSpan={9} className="px-4 py-3 text-sm text-slate-600 whitespace-pre-wrap">
+                        <td colSpan={9} className="px-4 py-3 text-xs text-slate-600 whitespace-pre-wrap">
                           <strong>Plano de ação:</strong> {issue.actionPlan}
                         </td>
                       </tr>

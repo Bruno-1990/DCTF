@@ -197,7 +197,7 @@ const Clientes: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Clientes</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Clientes</h1>
         <div className="flex gap-3">
           <input
             type="text"
@@ -224,15 +224,15 @@ const Clientes: React.FC = () => {
 
       {showForm && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">{editingCliente ? 'Editar Cliente' : 'Novo Cliente'}</h2>
+          <h2 className="text-base font-medium mb-4">{editingCliente ? 'Editar Cliente' : 'Novo Cliente'}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Razão Social</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Razão Social</label>
                 <input type="text" value={formData.razao_social || formData.nome || ''} onChange={(e) => setFormData({ ...formData, razao_social: e.target.value, nome: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">CNPJ</label>
                 <input type="text" placeholder="00.000.000/0000-00" value={formData.cnpj || ''} onChange={(e) => { const formatted = formatCNPJ(e.target.value); setFormData({ ...formData, cnpj_limpo: formatted.replace(/\D/g, ''), cnpj: formatted }); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required />
               </div>
             </div>
@@ -248,9 +248,9 @@ const Clientes: React.FC = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">Razão Social</th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
-              <th className="px-6 py-3 text-left text-base font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Razão Social</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">CNPJ</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Ações</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -260,8 +260,8 @@ const Clientes: React.FC = () => {
               const cnpjKey = `${cliente.id}-${cnpjValue}`;
               return (
               <tr key={cliente.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{cliente.razao_social || cliente.nome || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-6 py-4 whitespace-nowrap text-xs font-medium text-gray-900">{cliente.razao_social || cliente.nome || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
                   <div className="flex items-center gap-2">
                     <span>{cnpjDisplay}</span>
                     <button
@@ -270,14 +270,14 @@ const Clientes: React.FC = () => {
                       title="Copiar CNPJ"
                     >
                       {copiedCnpj === cnpjKey ? (
-                        <CheckIcon className="w-4 h-4 text-green-600" />
+                        <CheckIcon className="w-3.5 h-3.5 text-green-600" />
                       ) : (
-                        <ClipboardDocumentIcon className="w-4 h-4" />
+                        <ClipboardDocumentIcon className="w-3.5 h-3.5" />
                       )}
                     </button>
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <td className="px-6 py-4 whitespace-nowrap text-xs font-medium">
                   <button onClick={() => handleEdit(cliente)} className="text-blue-600 hover:text-blue-900 mr-3">Editar</button>
                   <button onClick={() => handleDeleteClick(cliente)} className="text-red-600 hover:text-red-900">Excluir</button>
                 </td>
@@ -291,15 +291,15 @@ const Clientes: React.FC = () => {
       <div className="flex flex-col items-center justify-center mt-8 mb-6">
         <div className="flex items-center gap-2">
           <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200">Anterior</button>
-          <span className="text-sm px-4">{page}{totalPages != null ? ` de ${totalPages}` : ''}</span>
-          <button disabled={!canGoNext} onClick={() => setPage((p) => p + 1)} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200">Próxima</button>
-          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="ml-4 px-3 py-2 border rounded">
+          <span className="text-xs px-4">{page}{totalPages != null ? ` de ${totalPages}` : ''}</span>
+          <button disabled={!canGoNext} onClick={() => setPage((p) => p + 1)} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200 text-xs">Próxima</button>
+          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="ml-4 px-3 py-2 border rounded text-xs">
             <option value={5}>5</option>
             <option value={10}>10</option>
             <option value={20}>20</option>
           </select>
         </div>
-        <div className="text-sm text-gray-600 mt-2">
+        <div className="text-xs text-gray-600 mt-2">
           {total != null && totalPages != null
             ? `Total: ${total} clientes`
             : `Mostrando ${clientes.length} clientes`}

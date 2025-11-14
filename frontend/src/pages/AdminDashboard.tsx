@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { AdminDashboardSnapshotResponse } from "../services/dashboard";
 import { fetchAdminDashboardSnapshot } from "../services/dashboard";
 import { fetchConferenceSummary, type ConferenceSummary } from "../services/conferences";
@@ -25,6 +26,7 @@ const AdminDashboard: React.FC = () => {
   const [conferenceError, setConferenceError] = useState<string | null>(null);
   const [openDeclarationsPage, setOpenDeclarationsPage] = useState(1);
   const itemsPerPage = 10;
+  const [showTransmissionDetails, setShowTransmissionDetails] = useState(false);
 
   // Função para visualizar todos os registros de um CNPJ na página DCTF
   const handleVisualize = (cnpj: string) => {
@@ -70,6 +72,48 @@ const AdminDashboard: React.FC = () => {
     const low = total - high - medium;
     return { total, high, medium, low };
   }, [alerts]);
+
+  // Agrupar alertas por tipo e priorizar por severidade
+  const organizedAlerts = useMemo(() => {
+    // Filtrar apenas alertas críticos (high e medium) e excluir "processing" que é apenas informativo
+    const criticalAlerts = alerts.filter(
+      (alert) => 
+        (alert.severity === "high" || alert.severity === "medium") &&
+        alert.type !== "processing"
+    );
+
+    // Ordenar por severidade (high primeiro) e depois por tipo
+    const sorted = [...criticalAlerts].sort((a, b) => {
+      if (a.severity !== b.severity) {
+        return a.severity === "high" ? -1 : 1;
+      }
+      return a.type.localeCompare(b.type);
+    });
+
+    // Agrupar por tipo
+    const grouped = sorted.reduce((acc, alert) => {
+      const type = alert.type;
+      if (!acc[type]) {
+        acc[type] = [];
+      }
+      acc[type].push(alert);
+      return acc;
+    }, {} as Record<string, typeof alerts>);
+
+    return { sorted, grouped, total: criticalAlerts.length };
+  }, [alerts]);
+
+  const getAlertTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      missing_period: "Período Faltante",
+      pending_balance: "Saldo Pendente",
+      zero_debit: "Débito Zerado",
+      retification_series: "Série de Retificações",
+      processing: "Em Processamento",
+      data_inconsistency: "Inconsistência de Dados",
+    };
+    return labels[type] || type;
+  };
 
   const declarationPeriods = useMemo(
     () => (snapshot ? Object.keys(snapshot.metrics.totals.byPeriod ?? {}) : []),
@@ -181,10 +225,13 @@ const AdminDashboard: React.FC = () => {
         const formatted = Number.isNaN(parsed.getTime())
           ? date
           : parsed.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
-        return { date, formatted, count };
+        const shortDate = Number.isNaN(parsed.getTime())
+          ? date
+          : parsed.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+        return { date, formatted, shortDate, count };
       })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 8);
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(-12); // Últimos 12 registros para o gráfico
   }, [snapshot]);
 
   const topDueDateIssues = useMemo(() => dueDateIssues.slice(0, 6), [dueDateIssues]);
@@ -477,41 +524,94 @@ const AdminDashboard: React.FC = () => {
           )}
 
           <div id="alerts-and-risk" className="bg-white shadow rounded-lg p-6 mb-8">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xl font-semibold text-gray-900">Central de alertas</h2>
-              {alertStats.total > 0 && (
-                <span className="text-xs text-gray-500">{alertStats.total} registros ativos</span>
-              )}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Central de Alertas</h2>
+                {organizedAlerts.total > 0 && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    {organizedAlerts.total} alerta{organizedAlerts.total !== 1 ? 's' : ''} crítico{organizedAlerts.total !== 1 ? 's' : ''} 
+                    {alertStats.high > 0 && ` · ${alertStats.high} de alta prioridade`}
+                  </p>
+                )}
+              </div>
             </div>
-            {alerts.length === 0 ? (
-              <p className="text-sm text-gray-500">Nenhum alerta ativo no momento.</p>
+
+            {organizedAlerts.total === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-500 mb-2">Nenhum alerta crítico no momento.</p>
+                <p className="text-xs text-gray-400">
+                  {alerts.length > 0 && `${alerts.length} alerta${alerts.length !== 1 ? 's' : ''} informativo${alerts.length !== 1 ? 's' : ''} foram filtrados.`}
+                </p>
+              </div>
             ) : (
-              <ul className="space-y-3">
-                {alerts.slice(0, 8).map((alert, index) => (
-                  <li key={`${alert.identification}-${index}`} className="border-b pb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-800">
-                          {renderBusinessName(alert.businessName, alert.identification)}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {alert.identification} · {alert.period ?? "Competência não informada"}
-                        </p>
-                      </div>
-                      <span
-                        className={`inline-block text-xs font-semibold px-2 py-1 rounded ${{
-                          low: "bg-green-100 text-green-700",
-                          medium: "bg-yellow-100 text-yellow-700",
-                          high: "bg-red-100 text-red-700",
-                        }[alert.severity]}`}
-                      >
-                        {alert.severity === "high" ? "ALTO" : alert.severity === "medium" ? "MÉDIO" : "BAIXO"}
+              <div className="space-y-6">
+                {Object.entries(organizedAlerts.grouped).map(([type, typeAlerts]) => (
+                  <div key={type} className="border-l-4 border-gray-200 pl-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-semibold text-gray-700">
+                        {getAlertTypeLabel(type)}
+                      </h3>
+                      <span className="text-xs text-gray-500">
+                        {typeAlerts.length} {typeAlerts.length === 1 ? 'ocorrência' : 'ocorrências'}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm text-gray-600 leading-relaxed">{alert.message}</p>
-                  </li>
+                    <ul className="space-y-3">
+                      {typeAlerts.slice(0, 5).map((alert, index) => (
+                        <li key={`${alert.identification}-${alert.period}-${index}`} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-sm font-semibold text-gray-800 truncate">
+                                  {renderBusinessName(alert.businessName, alert.identification)}
+                                </p>
+                                <span
+                                  className={`inline-block text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0 ${
+                                    {
+                                      low: "bg-green-100 text-green-700",
+                                      medium: "bg-yellow-100 text-yellow-700",
+                                      high: "bg-red-100 text-red-700",
+                                    }[alert.severity]
+                                  }`}
+                                >
+                                  {alert.severity === "high" ? "ALTO" : "MÉDIO"}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500 mb-1">
+                                {alert.identification} {alert.period && `· ${alert.period}`}
+                              </p>
+                              <p className="text-sm text-gray-700 leading-relaxed">{alert.message}</p>
+                              {alert.context && (
+                                <div className="mt-2 text-xs text-gray-600">
+                                  {alert.context.balance && (
+                                    <span className="inline-block mr-3">
+                                      Saldo: <strong>{currencyFormatter.format(alert.context.balance)}</strong>
+                                    </span>
+                                  )}
+                                  {alert.context.previousDebit && (
+                                    <span className="inline-block mr-3">
+                                      Débito anterior: <strong>{currencyFormatter.format(alert.context.previousDebit)}</strong>
+                                    </span>
+                                  )}
+                                  {alert.context.length && (
+                                    <span className="inline-block">
+                                      {alert.context.length} retificação{alert.context.length !== 1 ? 'ões' : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                      {typeAlerts.length > 5 && (
+                        <li className="text-xs text-gray-500 text-center py-2">
+                          + {typeAlerts.length - 5} {typeAlerts.length - 5 === 1 ? 'outro alerta' : 'outros alertas'} deste tipo
+                        </li>
+                      )}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
 
@@ -520,19 +620,132 @@ const AdminDashboard: React.FC = () => {
             {transmissionsList.length === 0 ? (
               <p className="text-sm text-gray-500">Nenhuma transmissão registrada nas competências recentes.</p>
             ) : (
-              <ul className="space-y-3">
-                {transmissionsList.map((item) => (
-                  <li key={item.date} className="flex items-center justify-between border-b pb-2">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">{item.formatted}</p>
-                      <p className="text-xs text-gray-500">Código de competência: {item.date}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-gray-700">
-                      {item.count} {item.count === 1 ? "transmissão" : "transmissões"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-4">
+                <div className="h-80 w-full relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart 
+                      data={transmissionsList} 
+                      margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
+                    >
+                      <defs>
+                        <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid 
+                        strokeDasharray="3 3" 
+                        stroke="#e5e7eb" 
+                        vertical={false}
+                        opacity={0.5}
+                      />
+                      <XAxis 
+                        dataKey="shortDate" 
+                        stroke="#9ca3af"
+                        style={{ fontSize: '11px', fontWeight: 500 }}
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={10}
+                      />
+                      <YAxis 
+                        stroke="#9ca3af"
+                        style={{ fontSize: '11px', fontWeight: 500 }}
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={10}
+                        width={40}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)', 
+                          backdropFilter: 'blur(10px)',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontSize: '13px',
+                          padding: '12px 16px',
+                          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+                        }}
+                        labelStyle={{ 
+                          fontWeight: 600, 
+                          color: '#111827',
+                          marginBottom: '8px'
+                        }}
+                        itemStyle={{ 
+                          color: '#3b82f6',
+                          fontWeight: 600
+                        }}
+                        labelFormatter={(value) => {
+                          const item = transmissionsList.find(t => t.shortDate === value);
+                          return item ? item.formatted : value;
+                        }}
+                        formatter={(value: number) => [`${value} ${value === 1 ? 'transmissão' : 'transmissões'}`, '']}
+                        cursor={{ stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '5 5' }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="count" 
+                        stroke="#3b82f6" 
+                        strokeWidth={3}
+                        dot={{ 
+                          fill: '#3b82f6', 
+                          r: 5,
+                          strokeWidth: 2,
+                          stroke: '#fff',
+                          className: 'drop-shadow-sm'
+                        }}
+                        activeDot={{ 
+                          r: 8, 
+                          stroke: '#fff',
+                          strokeWidth: 3,
+                          fill: '#2563eb',
+                          className: 'drop-shadow-md'
+                        }}
+                        animationDuration={1000}
+                        animationEasing="ease-out"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="count"
+                        stroke="none"
+                        fill="url(#colorGradient)"
+                        animationDuration={1000}
+                        animationEasing="ease-out"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex justify-center mt-4">
+                  <button
+                    onClick={() => setShowTransmissionDetails(!showTransmissionDetails)}
+                    className="px-6 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200 flex items-center gap-2"
+                  >
+                    <span>Detalhes</span>
+                    <svg
+                      className={`w-4 h-4 transition-transform duration-200 ${showTransmissionDetails ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+                {showTransmissionDetails && (
+                  <div className="mt-4 pt-4 border-t border-gray-200 animate-in slide-in-from-top-2 duration-200">
+                    <p className="text-xs text-gray-500 mb-3 font-medium">Detalhes por data:</p>
+                    <ul className="space-y-2">
+                      {transmissionsList.slice().reverse().map((item) => (
+                        <li key={item.date} className="flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-gray-50 transition-colors">
+                          <span className="text-gray-700">{item.formatted}</span>
+                          <span className="font-semibold text-gray-900">
+                            {item.count} {item.count === 1 ? "transmissão" : "transmissões"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             )}
           </section>
 

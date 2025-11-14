@@ -227,6 +227,13 @@ export class DashboardMetricsService {
         if (prevRecord.debitAmount > 0 || prevRecord.balanceDue > 0) {
           const { year, month } = this.parsePeriod(period);
           const dueDate = this.computeDueDate(year, month);
+          
+          // Só cria alerta se o prazo já passou ou está próximo (7 dias antes)
+          const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysUntilDue > 7) {
+            return; // Período ainda não é considerado faltante
+          }
+          
           const severity: DashboardAlertSeverity = now > dueDate ? 'high' : 'medium';
 
           alerts.push(
@@ -317,20 +324,20 @@ export class DashboardMetricsService {
     period?: string,
     context?: Record<string, any>
   ) {
-    const periodInfo = period ? ` (competncia ${period})` : '';
+    const periodInfo = period ? ` (competência ${period})` : '';
     switch (type) {
       case 'missing_period':
-        return `Possvel omisso para ${label}${periodInfo}.`;
+        return `Possível omissão para ${label}${periodInfo}.`;
       case 'pending_balance':
         return `Saldo a pagar pendente para ${label}${periodInfo}.`;
       case 'zero_debit':
-        return `Dbito zerado ou ausente para ${label}${periodInfo}, requer conferncia.`;
+        return `Débito zerado ou ausente para ${label}${periodInfo}, requer conferência.`;
       case 'retification_series':
-        return `Retificaes consecutivas para ${label}${periodInfo}.`;
+        return `Retificações consecutivas para ${label}${periodInfo}.`;
       case 'processing':
-        return `Declarao ainda em processamento para ${label}${periodInfo}.`;
+        return `Declaração ainda em processamento para ${label}${periodInfo}.`;
       default:
-        return `Ocorrncia detectada para ${label}${periodInfo}.`;
+        return `Ocorrência detectada para ${label}${periodInfo}.`;
     }
   }
 

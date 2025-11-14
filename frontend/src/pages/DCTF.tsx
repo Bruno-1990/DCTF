@@ -191,15 +191,15 @@ const DCTFPage: React.FC = () => {
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col gap-1">
-            <h1 className="text-3xl font-bold text-gray-900">DCTF</h1>
+            <h1 className="text-xl font-semibold text-gray-900">DCTF</h1>
             {lastUpdate && (
-              <p className="text-sm text-gray-500">
+              <p className="text-xs text-gray-500">
                 Última atualização: {formatDateTime(lastUpdate)}
               </p>
             )}
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="situacao" className="text-sm text-gray-600">Situação:</label>
+            <label htmlFor="situacao" className="text-xs text-gray-600">Situação:</label>
             <select
               id="situacao"
               value={situacao}
@@ -232,7 +232,7 @@ const DCTFPage: React.FC = () => {
 
       <div className="bg-white rounded-lg shadow-md overflow-auto mb-8">
         <table className="min-w-[1200px] w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50 tracking-wide text-xs font-semibold text-slate-600 uppercase">
+          <thead className="bg-gray-50 tracking-wide text-xs font-medium text-slate-600 uppercase">
             <tr>
               <th className="px-4 py-3 text-left">
                 <button type="button" onClick={() => handleSort('cnpj')} className="flex items-center gap-1 uppercase">
@@ -298,7 +298,7 @@ const DCTFPage: React.FC = () => {
 
               return (
                   <tr key={d.id} className="transition hover:bg-slate-50">
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-700">
                       <div className="flex flex-col gap-1">
                         <div className="inline-flex items-center gap-2">
                           <span className="font-medium text-slate-900">
@@ -317,22 +317,22 @@ const DCTFPage: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">
                       {formatPeriod(d.periodoApuracao || d.periodo)}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">
                       {formatDateTime(d.dataTransmissao || d.dataDeclaracao)}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-700">
                       {d.categoria || 'Geral'}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-700">
                       {d.origem || '—'}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-700">
                       {d.tipoDeclaracao || 'Original'}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-700">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${getSituacaoBadgeClasses(
                           situacaoLabel,
@@ -341,10 +341,10 @@ const DCTFPage: React.FC = () => {
                         {situacaoLabel}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-slate-700">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs font-semibold text-slate-700">
                       R$ {formatCurrency(d.debitoApurado)}
                     </td>
-                    <td className={`px-4 py-3 whitespace-nowrap text-sm ${saldoClass}`}>
+                    <td className={`px-4 py-3 whitespace-nowrap text-xs ${saldoClass}`}>
                       R$ {formatCurrency(d.saldoAPagar)}
                     </td>
                   </tr>
@@ -357,12 +357,12 @@ const DCTFPage: React.FC = () => {
       <div className="flex flex-col items-center justify-center mt-8 mb-6">
         <div className="flex items-center gap-2">
           <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200">Anterior</button>
-          <span className="text-sm px-4">{page}{totalPages != null ? ` de ${totalPages}` : ''}</span>
-          <button disabled={!canGoNext} onClick={() => setPage((p) => p + 1)} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200">Próxima</button>
+          <span className="text-xs px-4">{page}{totalPages != null ? ` de ${totalPages}` : ''}</span>
+          <button disabled={!canGoNext} onClick={() => setPage((p) => p + 1)} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200 text-xs">Próxima</button>
           <select
             value={limitSelection}
             onChange={(e) => handleLimitChange(e.target.value as typeof limitSelection)}
-            className="ml-4 px-3 py-2 border rounded"
+            className="ml-4 px-3 py-2 border rounded text-xs"
           >
             {limitOptions.map((value) => (
               <option key={value} value={value}>
@@ -372,7 +372,7 @@ const DCTFPage: React.FC = () => {
             <option value="all">Todos</option>
           </select>
         </div>
-        <div className="text-sm text-gray-600 mt-2">
+        <div className="text-xs text-gray-600 mt-2">
           {total != null && totalPages != null
             ? `Total: ${total} declarações`
             : `Mostrando ${items.length} declarações`}
