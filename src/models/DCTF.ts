@@ -115,10 +115,10 @@ export class DCTF extends DatabaseService<IDCTF> {
         return this.getMockData();
       }
 
-      // Buscar registros
+      // Buscar registros - garantir que periodo_apuracao e hora_transmissao sejam incluídos
       const { data, error } = await this.supabase
         .from(this.tableName)
-        .select('*');
+        .select('*, periodo_apuracao, hora_transmissao');
 
       if (error) {
         console.error('Erro ao buscar DCTF:', error);
@@ -622,7 +622,44 @@ export class DCTF extends DatabaseService<IDCTF> {
     const statusNormalized = this.normalizeStatus(item.status || item.situacao);
     const periodo = item.periodo || item.periodo_apuracao || item.periodoApuracao;
     const dataDeclaracaoRaw = item.data_declaracao || item.dataDeclaracao || item.data_transmissao || item.dataTransmissao;
-    const dataTransmissaoRaw = item.data_transmissao || item.dataTransmissao || null;
+    
+    // Combinar data_transmissao com hora_transmissao se ambos existirem
+    let dataTransmissaoRaw = item.data_transmissao || item.dataTransmissao || null;
+    const horaTransmissaoRaw = item.hora_transmissao || item.horaTransmissao || null;
+    
+    // Se temos data e hora separados, concatenar
+    if (dataTransmissaoRaw && horaTransmissaoRaw) {
+      // Extrair apenas a data (sem hora) do campo data_transmissao
+      let dataStr: string | null = null;
+      if (typeof dataTransmissaoRaw === 'string') {
+        // Se já tem hora, remover; se não, usar como está
+        dataStr = dataTransmissaoRaw.includes('T') 
+          ? dataTransmissaoRaw.split('T')[0]
+          : dataTransmissaoRaw.split(' ')[0];
+      } else if (dataTransmissaoRaw instanceof Date) {
+        dataStr = dataTransmissaoRaw.toISOString().split('T')[0];
+      }
+      
+      // Garantir formato correto da hora (HH:MM:SS)
+      let horaStr: string | null = null;
+      if (typeof horaTransmissaoRaw === 'string') {
+        const horaTrimmed = horaTransmissaoRaw.trim();
+        // Se já está no formato HH:MM:SS, usar; se não, tentar parsear
+        if (/^\d{2}:\d{2}:\d{2}/.test(horaTrimmed)) {
+          horaStr = horaTrimmed;
+        } else {
+          // Tentar outros formatos
+          horaStr = horaTrimmed;
+        }
+      } else if (horaTransmissaoRaw instanceof Date) {
+        horaStr = horaTransmissaoRaw.toTimeString().split(' ')[0];
+      }
+      
+      if (dataStr && horaStr) {
+        // Criar timestamp completo: YYYY-MM-DDTHH:MM:SS
+        dataTransmissaoRaw = `${dataStr}T${horaStr}`;
+      }
+    }
 
     const dataDeclaracao = dataDeclaracaoRaw ? new Date(dataDeclaracaoRaw) : new Date();
     const dataTransmissao = dataTransmissaoRaw ? new Date(dataTransmissaoRaw) : null;
@@ -659,7 +696,11 @@ export class DCTF extends DatabaseService<IDCTF> {
       id: item.id,
       clienteId: item.cliente_id || item.clienteId,
       periodo: periodo,
-      periodoApuracao: item.periodo_apuracao || item.periodoApuracao || periodo,
+      periodoApuracao: (item.periodo_apuracao && item.periodo_apuracao.trim() !== '') 
+        ? item.periodo_apuracao.trim() 
+        : (item.periodoApuracao && item.periodoApuracao.trim() !== '') 
+          ? item.periodoApuracao.trim() 
+          : null,
       dataDeclaracao,
       dataTransmissao,
       status: statusNormalized,

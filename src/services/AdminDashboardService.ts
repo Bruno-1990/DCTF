@@ -111,11 +111,40 @@ export function buildAdminDashboardSnapshot(
 }
 
 export function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
+  // Formatar período de apuração se existir, garantindo formato MM/YYYY
+  let periodApuracaoFormatted: string | null = null;
+  if (record.periodoApuracao && record.periodoApuracao.trim() !== '') {
+    const rawPeriodoApuracao = record.periodoApuracao.trim();
+    
+    // Verificar se já está no formato MM/YYYY
+    if (/^\d{2}\/\d{4}$/.test(rawPeriodoApuracao)) {
+      periodApuracaoFormatted = rawPeriodoApuracao;
+    } else if (/^\d{4}-\d{2}$/.test(rawPeriodoApuracao)) {
+      // Converter de YYYY-MM para MM/YYYY
+      const [year, month] = rawPeriodoApuracao.split('-');
+      periodApuracaoFormatted = `${month}/${year}`;
+    } else {
+      // Tentar formatar usando a função formatPeriod
+      periodApuracaoFormatted = formatPeriod(rawPeriodoApuracao);
+    }
+    
+    // Log para debug (remover depois)
+    if (periodApuracaoFormatted === formatPeriod(record.periodo)) {
+      console.log('DEBUG: Período de apuração igual ao período:', {
+        periodo: record.periodo,
+        periodoApuracao: record.periodoApuracao,
+        periodoFormatted: formatPeriod(record.periodo),
+        periodApuracaoFormatted
+      });
+    }
+  }
+
   return {
     identificationType: "CNPJ",
     identification: record.cliente?.cnpj_limpo ?? record.clienteId,
     businessName: record.cliente?.razao_social ?? undefined,
     period: formatPeriod(record.periodo),
+    periodApuracao: periodApuracaoFormatted,
     transmissionDate: formatDate(record.dataDeclaracao),
     category: "Geral",
     origin: "Plataforma",

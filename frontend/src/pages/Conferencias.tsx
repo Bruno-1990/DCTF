@@ -11,6 +11,19 @@ function formatDate(value?: string) {
   return format(parsed, 'dd/MM/yyyy');
 }
 
+function formatCNPJ(cnpj?: string | null) {
+  if (!cnpj) return '—';
+  const digits = cnpj.replace(/\D/g, '');
+  if (digits.length === 14) {
+    return digits
+      .replace(/(\d{2})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1/$2')
+      .replace(/(\d{4})(\d)/, '$1-$2');
+  }
+  return cnpj;
+}
+
 type SeverityTagProps = {
   severity: ConferenceIssue['severity'];
 };
@@ -169,7 +182,7 @@ export default function Conferencias() {
                       <td className="px-4 py-3 text-slate-800 font-medium text-xs">{issue.businessName ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">
                         <div className="flex items-center gap-2">
-                          <span>{issue.identification}</span>
+                          <span>{formatCNPJ(issue.identification)}</span>
                           <button
                             onClick={() => copyToClipboard(issue.identification, issue.id)}
                             className="p-1 text-slate-400 hover:text-slate-600 transition-colors"

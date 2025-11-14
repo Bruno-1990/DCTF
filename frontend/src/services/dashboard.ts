@@ -21,6 +21,7 @@ export interface AdminDashboardSnapshotResponse {
     totals: {
       declarations: number;
       byPeriod: Record<string, number>;
+      byPeriodApuracao?: Record<string, number>;
       byType: Record<string, number>;
       byOrigin: Record<string, number>;
     };

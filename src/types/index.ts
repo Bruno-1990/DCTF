@@ -49,6 +49,7 @@ export interface DashboardDCTFRecord {
   identification: string;
   businessName?: string;
   period: string;
+  periodApuracao?: string | null;
   transmissionDate?: string;
   category?: string;
   origin?: string;
@@ -83,6 +84,7 @@ export interface DashboardMetrics {
   totals: {
     declarations: number;
     byPeriod: Record<string, number>;
+    byPeriodApuracao?: Record<string, number>;
     byType: Record<string, number>;
     byOrigin: Record<string, number>;
   };

@@ -136,6 +136,39 @@ const AdminDashboard: React.FC = () => {
     [snapshot]
   );
 
+  // Calcular período inicial e final dinamicamente (competência)
+  const periodRange = useMemo(() => {
+    if (declarationPeriods.length === 0) return null;
+    
+    // Ordenar períodos (formato MM/YYYY)
+    const sortedPeriods = [...declarationPeriods].sort((a, b) => {
+      const [monthA, yearA] = a.split('/').map(Number);
+      const [monthB, yearB] = b.split('/').map(Number);
+      
+      if (yearA !== yearB) return yearA - yearB;
+      return monthA - monthB;
+    });
+    
+    const firstPeriod = sortedPeriods[0];
+    const lastPeriod = sortedPeriods[sortedPeriods.length - 1];
+    
+    // Formatar intervalo de períodos
+    let rangeText = '';
+    if (firstPeriod === lastPeriod) {
+      rangeText = `Competência ${firstPeriod}`;
+    } else {
+      rangeText = `${firstPeriod} a ${lastPeriod}`;
+    }
+    
+    return { 
+      firstPeriod, 
+      lastPeriod, 
+      total: sortedPeriods.length,
+      rangeText
+    };
+  }, [declarationPeriods]);
+
+
   const numberFormatter = useMemo(() => new Intl.NumberFormat("pt-BR"), []);
   const currencyFormatter = useMemo(
     () => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }),
@@ -325,7 +358,9 @@ const AdminDashboard: React.FC = () => {
       {
         id: "total-declarations",
         label: "Declarações monitoradas",
-        helper: `${declarationPeriods.length} competências recentes` ,
+        helper: periodRange 
+          ? `${periodRange.total} competência${periodRange.total > 1 ? 's' : ''}: ${periodRange.rangeText}`
+          : 'Carregando...',
         render: () => numberFormatter.format(snapshot.metrics.totals.declarations),
       },
       {
@@ -347,7 +382,7 @@ const AdminDashboard: React.FC = () => {
         render: () => numberFormatter.format(alertStats.total),
       },
     ];
-  }, [snapshot, declarationPeriods.length, alertStats, numberFormatter, currencyFormatter]);
+  }, [snapshot, periodRange, alertStats, numberFormatter, currencyFormatter]);
 
   const renderNavigationButton = (path: string, moduleId: string) => {
     const label = friendlyRouteLabels[moduleId] ?? moduleId.replace(/-/g, " ");
@@ -365,6 +400,20 @@ const AdminDashboard: React.FC = () => {
 
   const renderBusinessName = (businessName?: string, identification?: string) =>
     businessName && businessName.trim().length > 0 ? businessName : identification ?? 'N/A';
+
+  // Formatar CNPJ com máscara
+  const formatCNPJ = (cnpj?: string | null) => {
+    if (!cnpj) return '—';
+    const digits = cnpj.replace(/\D/g, '');
+    if (digits.length === 14) {
+      return digits
+        .replace(/(\d{2})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1/$2')
+        .replace(/(\d{4})(\d)/, '$1-$2');
+    }
+    return cnpj;
+  };
 
   const formatDate = (value?: string) => {
     if (!value) return '—';
@@ -394,8 +443,10 @@ const AdminDashboard: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900">Painel Administrativo</h1>
           <p className="text-gray-600 mt-1">
             Panorama consolidado das declarações DCTF e indicadores de risco{' '}
-            {declarationPeriods.length > 0 && (
-              <span className="font-medium text-gray-700">(últimas {declarationPeriods.length} competências)</span>
+            {periodRange && (
+              <span className="font-medium text-gray-700">
+                ({periodRange.total} competência{periodRange.total > 1 ? 's' : ''}: {periodRange.rangeText})
+              </span>
             )}.
           </p>
         </div>
@@ -428,42 +479,66 @@ const AdminDashboard: React.FC = () => {
 
       {!loading && snapshot && (
         <>
-          <section id="executive-overview" className="bg-white shadow rounded-lg p-6 mb-8">
-            <div className="flex flex-col gap-4">
+          {/* Seção de Visão Geral - Reorganizada */}
+          <section id="executive-overview" className="space-y-6 mb-8">
+            {/* Cards Principais - Métricas Gerais */}
+            <div className="bg-white shadow rounded-lg p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Visão Geral</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
                 {cards.map((card) => (
-                  <div key={card.id} className="flex flex-col gap-1">
-                    <p className="text-sm font-medium text-gray-500">{card.label}</p>
-                    {card.helper && <p className="text-xs text-gray-400">{card.helper}</p>}
-                    <p className="text-3xl font-semibold text-gray-900">{card.render()}</p>
+                  <div key={card.id} className="flex flex-col gap-2 p-4 bg-gray-50 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-600 mb-1">{card.label}</p>
+                        {card.helper && <p className="text-xs text-gray-500">{card.helper}</p>}
+                      </div>
+                    </div>
+                    <p className="text-2xl font-bold text-gray-900 mt-2">{card.render()}</p>
                   </div>
                 ))}
               </div>
-              {statusItems.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-100 pt-4">
+            </div>
+
+            {/* Status das Declarações - Visualização Melhorada */}
+            {statusItems.length > 0 && (
+              <div className="bg-white shadow rounded-lg p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Status das Declarações</h2>
+                <div className="space-y-4">
                   {statusItems.map((item) => (
                     <div key={item.key} className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium text-gray-700">{item.label}</span>
-                        <span className="text-gray-500">{numberFormatter.format(item.value)}</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium text-gray-900 text-sm">{item.label}</span>
+                          <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
+                            {numberFormatter.format(item.value)}
+                          </span>
+                        </div>
+                        {statusSummary.total > 0 && (
+                          <span className="text-xs text-gray-500">{item.percentage}% do total</span>
+                        )}
                       </div>
-                      <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-                        <div className={`${item.color} h-2`} style={{ width: `${Math.min(100, item.percentage)}%` }} />
+                      <div className="relative h-3 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div 
+                          className={`${item.color} h-3 rounded-full transition-all duration-500 ease-out`} 
+                          style={{ width: `${Math.min(100, item.percentage)}%` }}
+                        />
                       </div>
-                      <p className="text-xs text-gray-500">
-                        {item.helper}
-                        {statusSummary.total > 0 ? ` · ${item.percentage}% do total` : ''}
-                      </p>
+                      <p className="text-xs text-gray-500 mt-1">{item.helper}</p>
                     </div>
                   ))}
                 </div>
-              )}
-              {navigationRoutes.length > 0 && (
-                <nav className="flex flex-wrap gap-3 border-t border-gray-100 pt-4">
+              </div>
+            )}
+
+            {/* Navegação Rápida */}
+            {navigationRoutes.length > 0 && (
+              <div className="bg-white shadow rounded-lg p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Navegação Rápida</h2>
+                <nav className="flex flex-wrap gap-3">
                   {navigationRoutes.map((route) => renderNavigationButton(route.path, route.moduleId))}
                 </nav>
-              )}
-            </div>
+              </div>
+            )}
           </section>
 
           <section id="financial-monitoring" className="bg-white shadow rounded-lg p-6 mb-8">
@@ -496,7 +571,7 @@ const AdminDashboard: React.FC = () => {
                         <tr key={item.id} className="hover:bg-gray-50">
                           <td className="py-2 pr-4 text-gray-500">{item.rank}</td>
                           <td className="py-2 pr-4 text-gray-800 font-medium">{renderBusinessName(item.businessName, item.identification)}</td>
-                          <td className="py-2 pr-4 text-gray-500">{item.identification}</td>
+                          <td className="py-2 pr-4 text-gray-500">{formatCNPJ(item.identification)}</td>
                           <td className="py-2 pr-4 text-gray-600">{item.period}</td>
                           <td className="py-2 pr-4 text-gray-600">
                             {formatDate(item.dueDate)}
@@ -588,7 +663,7 @@ const AdminDashboard: React.FC = () => {
                       {topDueDateIssues.map((issue) => (
                         <tr key={issue.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2 text-gray-800 font-medium">{renderBusinessName(issue.businessName, issue.identification)}</td>
-                          <td className="px-3 py-2 text-gray-600">{issue.identification}</td>
+                          <td className="px-3 py-2 text-gray-600">{formatCNPJ(issue.identification)}</td>
                           <td className="px-3 py-2 text-gray-600">{issue.period}</td>
                           <td className="px-3 py-2 text-gray-600">{formatDate(issue.dueDate)}</td>
                           <td className="px-3 py-2 text-gray-600">{formatDate(issue.transmissionDate)}</td>
@@ -657,7 +732,7 @@ const AdminDashboard: React.FC = () => {
                                 </span>
                               </div>
                               <p className="text-xs text-gray-500 mb-1">
-                                {alert.identification} {alert.period && `· ${alert.period}`}
+                                {formatCNPJ(alert.identification)} {alert.period && `· ${alert.period}`}
                               </p>
                               <p className="text-sm text-gray-700 leading-relaxed">{alert.message}</p>
                               {alert.context && (
@@ -695,8 +770,8 @@ const AdminDashboard: React.FC = () => {
             )}
           </div>
 
-          <section id="obligation-tracking" className="bg-white shadow rounded-lg p-6 mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Linha do tempo de transmissões</h2>
+          <section id="obligation-tracking" className="bg-white shadow rounded-lg p-6 mb-8 transition-all duration-300 ease-out hover:shadow-xl">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4 transition-colors duration-300">Linha do tempo de transmissões</h2>
             {transmissionsList.length === 0 ? (
               <p className="text-sm text-gray-500">Nenhuma transmissão registrada nas competências recentes.</p>
             ) : (
@@ -841,8 +916,8 @@ const AdminDashboard: React.FC = () => {
           <section id="visualizations" className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             {/* Gráfico de Pizza - Status das Declarações */}
             {statusChartData.length > 0 && (
-              <div className="bg-white shadow rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Status das Declarações</h2>
+              <div className="bg-white shadow rounded-lg p-6 transition-all duration-300 ease-out hover:shadow-xl hover:scale-[1.02] cursor-pointer">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4 transition-colors duration-300">Status das Declarações</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -855,6 +930,8 @@ const AdminDashboard: React.FC = () => {
                         outerRadius={100}
                         fill="#8884d8"
                         dataKey="value"
+                        animationDuration={500}
+                        animationEasing="ease-out"
                       >
                         {statusChartData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
@@ -877,8 +954,8 @@ const AdminDashboard: React.FC = () => {
 
             {/* Gráfico de Barras - Declarações por Período */}
             {periodChartData.length > 0 && (
-              <div className="bg-white shadow rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Declarações por Período</h2>
+              <div className="bg-white shadow rounded-lg p-6 transition-all duration-300 ease-out hover:shadow-xl hover:scale-[1.02] cursor-pointer">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4 transition-colors duration-300">Declarações por Período</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={periodChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -922,10 +999,7 @@ const AdminDashboard: React.FC = () => {
                         }}
                       >
                         {periodChartData.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={COLORS[index % COLORS.length]}
-                          />
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                         <LabelList 
                           dataKey="count" 
@@ -949,8 +1023,8 @@ const AdminDashboard: React.FC = () => {
 
             {/* Gráfico de Barras Horizontais - Top Empresas por Saldo */}
             {topCompaniesData.length > 0 && (
-              <div className="bg-white shadow rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Top 10 Empresas - Saldo em Aberto</h2>
+              <div className="bg-white shadow rounded-lg p-6 transition-all duration-300 ease-out hover:shadow-xl hover:scale-[1.02] cursor-pointer">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4 transition-colors duration-300">Top 10 Empresas - Saldo em Aberto</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
@@ -1002,10 +1076,7 @@ const AdminDashboard: React.FC = () => {
                             key={`cell-${index}`} 
                             fill={COLORS[index % COLORS.length]}
                             onClick={() => handleVisualize(entry.identification)}
-                            style={{ 
-                              cursor: 'pointer',
-                              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-                            }}
+                            style={{ cursor: 'pointer' }}
                           />
                         ))}
                       </Bar>
@@ -1018,8 +1089,8 @@ const AdminDashboard: React.FC = () => {
 
             {/* Gráfico de Rosca - Tipos de Declaração */}
             {typeChartData.length > 0 && (
-              <div className="bg-white shadow rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Tipos de Declaração</h2>
+              <div className="bg-white shadow rounded-lg p-6 transition-all duration-300 ease-out hover:shadow-xl hover:scale-[1.02] cursor-pointer">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4 transition-colors duration-300">Tipos de Declaração</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -1032,6 +1103,8 @@ const AdminDashboard: React.FC = () => {
                         paddingAngle={5}
                         dataKey="value"
                         label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
+                        animationDuration={500}
+                        animationEasing="ease-out"
                       >
                         {typeChartData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />

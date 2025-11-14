@@ -73,7 +73,7 @@ export class DCTFController {
       clone.situacao = clone.status;
     }
 
-    clone.periodoApuracao = clone.periodoApuracao || clone.periodo_apuracao || clone.periodo || null;
+    clone.periodoApuracao = clone.periodoApuracao || clone.periodo_apuracao || null;
     clone.tipoNi =
       clone.tipoNi ||
       clone.tipo_ni ||

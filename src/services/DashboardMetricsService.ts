@@ -14,6 +14,8 @@ type NormalizedRecord = {
   period: string;
   periodLabel: string;
   periodDate: Date;
+  periodApuracao?: string | null;
+  periodApuracaoLabel?: string;
   dueDate: Date;
   transmissionDate?: Date;
   category?: string;
@@ -54,11 +56,26 @@ export class DashboardMetricsService {
 
   private static buildTotals(records: NormalizedRecord[]) {
     const byPeriod = new Map<string, number>();
+    const byPeriodApuracao = new Map<string, number>();
     const byType = new Map<string, number>();
     const byOrigin = new Map<string, number>();
 
     records.forEach(record => {
       byPeriod.set(record.periodLabel, (byPeriod.get(record.periodLabel) ?? 0) + 1);
+      
+      // Contar por período de apuração também
+      if (record.periodApuracaoLabel) {
+        byPeriodApuracao.set(record.periodApuracaoLabel, (byPeriodApuracao.get(record.periodApuracaoLabel) ?? 0) + 1);
+      } else if (record.periodApuracao) {
+        // Se não tem label mas tem o período de apuração raw, usar ele diretamente
+        // Garantir formato MM/YYYY
+        let periodApuracaoKey = record.periodApuracao;
+        if (/^\d{4}-\d{2}$/.test(periodApuracaoKey)) {
+          const [year, month] = periodApuracaoKey.split('-');
+          periodApuracaoKey = `${month}/${year}`;
+        }
+        byPeriodApuracao.set(periodApuracaoKey, (byPeriodApuracao.get(periodApuracaoKey) ?? 0) + 1);
+      }
 
       const typeKey = record.declarationType.toLowerCase();
       byType.set(typeKey, (byType.get(typeKey) ?? 0) + 1);
@@ -72,6 +89,7 @@ export class DashboardMetricsService {
     return {
       declarations: records.length,
       byPeriod: Object.fromEntries(byPeriod),
+      byPeriodApuracao: Object.fromEntries(byPeriodApuracao),
       byType: Object.fromEntries(byType),
       byOrigin: Object.fromEntries(byOrigin),
     };
@@ -347,6 +365,23 @@ export class DashboardMetricsService {
     const dueDate = this.computeDueDate(periodInfo.year, periodInfo.month);
     const transmissionDate = record.transmissionDate ? this.parseDateTime(record.transmissionDate) : undefined;
 
+    // Processar período de apuração se disponível
+    let periodApuracaoLabel: string | undefined;
+    if (record.periodApuracao) {
+      try {
+        // Tentar parsear o período de apuração
+        const apuracaoInfo = this.parsePeriod(record.periodApuracao);
+        if (apuracaoInfo) {
+          periodApuracaoLabel = this.formatPeriod(apuracaoInfo.year, apuracaoInfo.month, true);
+        }
+      } catch (error) {
+        // Se falhar o parse, usar o valor raw se já estiver no formato MM/YYYY
+        if (/^\d{2}\/\d{4}$/.test(record.periodApuracao)) {
+          periodApuracaoLabel = record.periodApuracao;
+        }
+      }
+    }
+
     return {
       identification: this.cleanIdentification(record.identification),
       rawIdentification: record.identification,
@@ -355,6 +390,8 @@ export class DashboardMetricsService {
       period: this.formatPeriod(periodInfo.year, periodInfo.month),
       periodLabel: this.formatPeriod(periodInfo.year, periodInfo.month, true),
       periodDate,
+      periodApuracao: record.periodApuracao || null,
+      periodApuracaoLabel,
       dueDate,
       transmissionDate,
       category: record.category,
