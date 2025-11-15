@@ -13,13 +13,6 @@ import AdminDashboard from '../pages/AdminDashboard';
 import Conferencias from '../pages/Conferencias';
 import Administracao from '../pages/Administracao';
 
-// Usa o base path do Vite (import.meta.env.BASE_URL)
-// Para GitHub Pages: /DCTF/ -> basename: /DCTF
-// Para desenvolvimento: / -> basename: undefined (usa /)
-const basename = import.meta.env.BASE_URL !== '/' 
-  ? import.meta.env.BASE_URL.replace(/\/$/, '') // Remove trailing slash
-  : undefined;
-
 const router = createBrowserRouter([
   {
     path: '/',
@@ -72,8 +65,6 @@ const router = createBrowserRouter([
       },
     ],
   },
-], {
-  basename,
-});
+]);
 
 export const AppRouter = () => <RouterProvider router={router} />;
