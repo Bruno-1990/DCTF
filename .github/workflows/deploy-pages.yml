@@ -42,6 +42,14 @@ jobs:
         run: |
           echo "Building frontend..."
           npx vite build --mode production
+          echo "Build completed!"
+
+      - name: Verify build output
+        run: |
+          echo "Checking if dist folder exists..."
+          ls -la frontend/dist || echo "ERROR: dist folder not found!"
+          echo "Listing dist contents..."
+          ls -la frontend/dist/ || echo "ERROR: Cannot list dist contents!"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
