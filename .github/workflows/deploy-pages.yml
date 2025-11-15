@@ -46,10 +46,26 @@ jobs:
 
       - name: Verify build output
         run: |
-          echo "Checking if dist folder exists..."
-          ls -la frontend/dist || echo "ERROR: dist folder not found!"
-          echo "Listing dist contents..."
-          ls -la frontend/dist/ || echo "ERROR: Cannot list dist contents!"
+          echo "Current directory:"
+          pwd
+          echo "Checking if dist folder exists in frontend..."
+          if [ -d "frontend/dist" ]; then
+            echo "✅ dist folder found!"
+            echo "Contents of frontend/dist:"
+            ls -la frontend/dist/
+            echo "Checking for index.html..."
+            if [ -f "frontend/dist/index.html" ]; then
+              echo "✅ index.html found!"
+            else
+              echo "❌ ERROR: index.html not found in frontend/dist/"
+              echo "Looking for HTML files..."
+              find frontend/dist -name "*.html" || echo "No HTML files found!"
+            fi
+          else
+            echo "❌ ERROR: frontend/dist folder not found!"
+            echo "Checking if frontend folder exists..."
+            ls -la frontend/ || echo "Frontend folder not found!"
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
