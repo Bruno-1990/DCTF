@@ -20,6 +20,8 @@ import flagsRoutes from './routes/flags';
 import adminDashboardRoutes from './routes/admin-dashboard';
 import adminDashboardConferenceRoutes from './routes/admin-dashboard-conferences';
 import pagamentosRoutes from './routes/pagamentos';
+import receitaPagamentosRoutes from './routes/receita-pagamentos';
+import receitaRoutes from './routes/receita';
 
 class Server {
   private app: express.Application;
@@ -122,6 +124,8 @@ class Server {
     this.app.use('/api/dashboard/admin', adminDashboardRoutes);
     this.app.use('/api/dashboard/admin/conferences', adminDashboardConferenceRoutes);
     this.app.use('/api/pagamentos', pagamentosRoutes);
+    this.app.use('/api/receita-pagamentos', receitaPagamentosRoutes);
+    this.app.use('/api/receita', receitaRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

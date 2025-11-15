@@ -230,6 +230,8 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
+  details?: string; // Detalhes adicionais do erro para debug
+  stack?: string; // Stack trace (apenas em desenvolvimento)
 }
 
 export type ReportType = 'gerencial' | 'clientes' | 'dctf' | 'conferencia' | 'pendentes';

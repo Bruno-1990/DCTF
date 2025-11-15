@@ -8,6 +8,7 @@ import {
   UsersIcon,
   ChartBarIcon,
   Cog6ToothIcon,
+  CreditCardIcon,
 } from '@heroicons/react/24/outline';
 
 const navigation = [
@@ -16,6 +17,7 @@ const navigation = [
   { name: 'Conferências', href: '/conferencias', icon: ClipboardDocumentCheckIcon },
   { name: 'DCTF', href: '/dctf', icon: DocumentTextIcon },
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },
+  { name: 'Pagamentos', href: '/pagamentos', icon: CreditCardIcon },
   { name: 'Relatórios', href: '/relatorios', icon: ChartBarIcon },
   { name: 'Administração', href: '/administracao', icon: Cog6ToothIcon },
 ];
