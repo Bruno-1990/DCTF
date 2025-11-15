@@ -39,7 +39,9 @@ jobs:
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://your-backend-url.com/api' }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: tsc -b --skipLibCheck || true && vite build
+        run: |
+          echo "Building frontend..."
+          npx vite build --mode production
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
