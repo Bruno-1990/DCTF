@@ -40,6 +40,13 @@ export interface DCTF extends BaseEntity {
   debitoApurado?: number | null;
   saldoAPagar?: number | null;
   observacoes?: string | null;
+  // Campos de pagamento
+  statusPagamento?: 'pendente' | 'pago' | 'parcelado' | 'cancelado' | 'em_analise' | null;
+  dataPagamento?: Date | string | null;
+  comprovantePagamento?: string | null;
+  observacoesPagamento?: string | null;
+  usuarioQueAtualizou?: string | null;
+  dataAtualizacaoPagamento?: Date | string | null;
   cliente?: Pick<Cliente, 'id' | 'nome' | 'razao_social' | 'cnpj_limpo'>;
 }
 
