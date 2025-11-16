@@ -130,7 +130,7 @@ export class ConsultaReceitaController {
    */
   async consultarLote(req: Request, res: Response): Promise<void> {
     try {
-      const { dataInicial, dataFinal, limiteCNPJs } = req.body;
+      const { dataInicial, dataFinal, limiteCNPJs, apenasFaltantes, waitMs } = req.body;
 
       if (!dataInicial || !dataFinal) {
         const response: ApiResponse = {
@@ -147,11 +147,17 @@ export class ConsultaReceitaController {
       // Limitar por padrão para evitar sobrecarga
       const limite = limiteCNPJs || 50;
 
+      // Criar progresso inicial ANTES de retornar resposta para evitar 404 no polling
+      // O total será atualizado quando os CNPJs forem contados
+      consultaProgressService.criarProgresso(progressId, 0);
+
       // Retornar imediatamente com ID de progresso
       const response: ApiResponse = {
         success: true,
         data: { progressId },
-        message: 'Consulta em lote iniciada. Use o ID de progresso para acompanhar o status.',
+        message: apenasFaltantes 
+          ? 'Consulta em lote iniciada (apenas CNPJs faltantes). Use o ID de progresso para acompanhar o status.'
+          : 'Consulta em lote iniciada. Use o ID de progresso para acompanhar o status.',
       };
 
       res.json(response);
@@ -161,7 +167,9 @@ export class ConsultaReceitaController {
         dataInicial,
         dataFinal,
         limite,
-        progressId
+        progressId,
+        apenasFaltantes === true, // Converter para boolean explícito
+        typeof waitMs === 'number' ? waitMs : undefined
       ).catch((error) => {
         console.error('[ConsultaReceitaController] Erro na consulta em lote assíncrona:', error);
         consultaProgressService.atualizarProgresso(progressId, {
@@ -196,6 +204,14 @@ export class ConsultaReceitaController {
         return;
       }
 
+      // Desabilitar cache para este endpoint de polling
+      // É crítico que cada requisição retorne dados atualizados
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      });
+
       const progresso = consultaProgressService.obterProgresso(progressId);
 
       if (!progresso) {
@@ -217,6 +233,9 @@ export class ConsultaReceitaController {
         data: {
           ...progresso,
           porcentagem,
+          // Garantir que os campos novos sempre existam no payload
+          currentTotalItens: progresso.currentTotalItens || 0,
+          currentProcessados: progresso.currentProcessados || 0,
         },
       };
 
@@ -273,6 +292,30 @@ export class ConsultaReceitaController {
       };
 
       res.status(500).json(response);
+    }
+  }
+
+  /**
+   * GET /api/receita/validar-token
+   * Valida o token de acesso configurado (e opcionalmente a autorização para um CNPJ)
+   * Query params:
+   *  - cnpj?: string (opcional, para validar se há autorização para este contribuinte)
+   */
+  async validarToken(req: Request, res: Response): Promise<void> {
+    try {
+      const { cnpj } = req.query as { cnpj?: string };
+      const result = await this.consultaService.validarAcesso(cnpj);
+      const response: ApiResponse = {
+        success: result.ok,
+        message: result.mensagem,
+      };
+      res.status(result.ok ? 200 : 401).json(response);
+    } catch (error) {
+      const response: ApiResponse = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao validar token/acesso',
+      };
+      res.status(500).send(response);
     }
   }
 }

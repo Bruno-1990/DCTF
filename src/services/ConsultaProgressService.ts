@@ -7,6 +7,13 @@ export interface ConsultaProgress {
   id: string;
   totalCNPJs: number;
   processados: number;
+  // Progresso granular do CNPJ atual (itens do upsert)
+  currentTotalItens?: number;
+  currentProcessados?: number;
+  encontrados?: number; // qtd de pagamentos retornados (soma)
+  salvos?: number;      // inserts feitos
+  atualizados?: number; // updates feitos
+  pulados?: number;     // CNPJs sem novos dados
   cnpjAtual?: string;
   status: 'em_andamento' | 'concluida' | 'cancelada' | 'erro';
   iniciadoEm: Date;
@@ -26,6 +33,10 @@ class ConsultaProgressService {
       id,
       totalCNPJs,
       processados: 0,
+      encontrados: 0,
+      salvos: 0,
+      atualizados: 0,
+      pulados: 0,
       status: 'em_andamento',
       iniciadoEm: new Date(),
     };
@@ -39,13 +50,38 @@ class ConsultaProgressService {
    */
   atualizarProgresso(
     id: string,
-    atualizacoes: Partial<Pick<ConsultaProgress, 'processados' | 'cnpjAtual' | 'status' | 'resultado' | 'erro'>>
+    atualizacoes: Partial<Pick<ConsultaProgress,
+      'totalCNPJs' | 'processados' |
+      'currentTotalItens' | 'currentProcessados' |
+      'encontrados' | 'salvos' | 'atualizados' | 'pulados' |
+      'cnpjAtual' | 'status' | 'resultado' | 'erro'>>
   ): ConsultaProgress | null {
     const progresso = this.progressos.get(id);
     if (!progresso) return null;
 
+    if (atualizacoes.totalCNPJs !== undefined) {
+      progresso.totalCNPJs = atualizacoes.totalCNPJs;
+    }
     if (atualizacoes.processados !== undefined) {
       progresso.processados = atualizacoes.processados;
+    }
+    if (atualizacoes.currentTotalItens !== undefined) {
+      progresso.currentTotalItens = atualizacoes.currentTotalItens;
+    }
+    if (atualizacoes.currentProcessados !== undefined) {
+      progresso.currentProcessados = atualizacoes.currentProcessados;
+    }
+    if (atualizacoes.encontrados !== undefined) {
+      progresso.encontrados = atualizacoes.encontrados;
+    }
+    if (atualizacoes.salvos !== undefined) {
+      progresso.salvos = atualizacoes.salvos;
+    }
+    if (atualizacoes.atualizados !== undefined) {
+      progresso.atualizados = atualizacoes.atualizados;
+    }
+    if (atualizacoes.pulados !== undefined) {
+      progresso.pulados = atualizacoes.pulados;
     }
     if (atualizacoes.cnpjAtual !== undefined) {
       progresso.cnpjAtual = atualizacoes.cnpjAtual;

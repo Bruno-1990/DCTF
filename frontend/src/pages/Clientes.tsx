@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useClientes } from '../hooks/useClientes';
 import type { Cliente } from '../types';
-import { ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { Pagination } from '../components/Pagination';
+import { ClipboardDocumentIcon, CheckIcon, PlusIcon } from '@heroicons/react/24/outline';
 
 const Clientes: React.FC = () => {
   const { clientes, loadClientes, createCliente, updateClienteById, deleteClienteById, loading, error, clearError } = useClientes();
@@ -16,6 +17,7 @@ const Clientes: React.FC = () => {
   const [lastPageCount, setLastPageCount] = useState<number>(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
+  const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // mantido para compat, mas sem uso
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
@@ -32,7 +34,7 @@ const Clientes: React.FC = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Load clientes when debounced search, page or limit changes
+  // Load clientes when filters/pagination change (server-side for payments filter)
   useEffect(() => {
     loadClientes({ page, limit, search: debouncedSearch }).then(({ items, pagination }) => {
       setLastPageCount(items.length);
@@ -198,7 +200,7 @@ const Clientes: React.FC = () => {
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-semibold text-gray-900">Clientes</h1>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
           <input
             type="text"
             placeholder="Buscar por Razão Social ou CNPJ"
@@ -206,6 +208,7 @@ const Clientes: React.FC = () => {
             onChange={(e) => setSearch(e.target.value)}
             className="w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+          
           <button
             onClick={() => setShowForm(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
@@ -250,6 +253,7 @@ const Clientes: React.FC = () => {
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Razão Social</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">CNPJ</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Inf. Financeiras</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Ações</th>
             </tr>
           </thead>
@@ -260,7 +264,9 @@ const Clientes: React.FC = () => {
               const cnpjKey = `${cliente.id}-${cnpjValue}`;
               return (
               <tr key={cliente.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-xs font-medium text-gray-900">{cliente.razao_social || cliente.nome || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-xs font-medium text-gray-900">
+                  {cliente.razao_social || cliente.nome || '-'}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
                   <div className="flex items-center gap-2">
                     <span>{cnpjDisplay}</span>
@@ -277,6 +283,23 @@ const Clientes: React.FC = () => {
                     </button>
                   </div>
                 </td>
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-700">
+                  {cliente.hasPayments === true ? (
+                    <div className="flex items-center gap-2">
+                      <CheckIcon className="w-4 h-4 text-emerald-600" title="Possui pagamentos" />
+                      <span className="text-gray-600">Pagamentos</span>
+                    </div>
+                  ) : (
+                    <Link
+                      to={`/pagamentos?cnpj=${encodeURIComponent(cnpjValue)}`}
+                      className="text-emerald-600 hover:text-emerald-700 font-medium inline-flex items-center gap-1"
+                      title="Adicionar pagamentos para este CNPJ"
+                    >
+                      <PlusIcon className="w-4 h-4" />
+                      <span>Adicionar</span>
+                    </Link>
+                  )}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-xs font-medium">
                   <button onClick={() => handleEdit(cliente)} className="text-blue-600 hover:text-blue-900 mr-3">Editar</button>
                   <button onClick={() => handleDeleteClick(cliente)} className="text-red-600 hover:text-red-900">Excluir</button>
@@ -288,23 +311,32 @@ const Clientes: React.FC = () => {
         </table>
       </div>
 
-      <div className="flex flex-col items-center justify-center mt-8 mb-6">
-        <div className="flex items-center gap-2">
-          <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200">Anterior</button>
-          <span className="text-xs px-4">{page}{totalPages != null ? ` de ${totalPages}` : ''}</span>
-          <button disabled={!canGoNext} onClick={() => setPage((p) => p + 1)} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200 text-xs">Próxima</button>
-          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="ml-4 px-3 py-2 border rounded text-xs">
-            <option value={5}>5</option>
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-          </select>
-        </div>
-        <div className="text-xs text-gray-600 mt-2">
-          {total != null && totalPages != null
-            ? `Total: ${total} clientes`
-            : `Mostrando ${clientes.length} clientes`}
-        </div>
-      </div>
+      {clientes.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-gray-600">
+              {total != null && totalPages != null
+                ? `Total: ${total} clientes`
+                : `Mostrando ${clientes.length} clientes`}
+            </div>
+            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+              <option value={5}>5 por página</option>
+              <option value={10}>10 por página</option>
+              <option value={20}>20 por página</option>
+            </select>
+          </div>
+          {totalPages != null && total != null && (
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={total}
+              itemsPerPage={limit}
+              onPageChange={setPage}
+              itemLabel="cliente"
+            />
+          )}
+        </>
+      )}
 
       {/* Notificação de exclusão pendente com contagem regressiva */}
       {pendingDelete.cliente && pendingDelete.countdown > 0 && (

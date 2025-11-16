@@ -95,12 +95,57 @@ export class ClienteController {
         }
       }
 
-      // Paginação
+      // Paginação simples (sem contagens para performance)
       const pageNum = Number(page);
       const limitNum = Number(limit);
       const startIndex = (pageNum - 1) * limitNum;
       const endIndex = startIndex + limitNum;
-      const paginatedData = data.slice(startIndex, endIndex);
+      let paginatedData = data.slice(startIndex, endIndex);
+
+      // Enriquecimento LEVE: apenas boolean `hasPayments` por página (1 query IN)
+      // Não retornamos contagens para manter performance.
+      try {
+        if (process.env['SUPABASE_URL']) {
+          const { supabase: supabaseClient } = this.clienteModel as any;
+          const cnpjsPagina: string[] = paginatedData
+            .map((c: any) => {
+              const bruto = String(c.cnpj_limpo || c.cnpj || '');
+              return bruto.replace(/\D/g, '');
+            })
+            .filter((v: string) => v.length === 14);
+
+          if (cnpjsPagina.length > 0) {
+            // Consulta individual por CNPJ para evitar falsos negativos
+            // (IN pode falhar em edge cases de formatação/tipagem)
+            const resultados: Record<string, boolean> = {};
+            for (const cnpj of cnpjsPagina) {
+              try {
+                const { count, error } = await supabaseClient
+                  .from('receita_pagamentos')
+                  .select('*', { head: true, count: 'exact' })
+                  .eq('cnpj_contribuinte', cnpj)
+                  .limit(1);
+                if (!error) {
+                  resultados[cnpj] = (count || 0) > 0;
+                } else {
+                  resultados[cnpj] = false;
+                }
+              } catch {
+                resultados[cnpj] = false;
+              }
+            }
+
+            paginatedData = paginatedData.map((c: any) => {
+              const cnpjLimpo = String(c.cnpj_limpo || c.cnpj || '').replace(/\D/g, '');
+              const has = cnpjLimpo.length === 14 ? Boolean(resultados[cnpjLimpo]) : false;
+              return { ...c, hasPayments: has };
+            });
+          }
+        }
+      } catch (enrichErr) {
+        // Silencioso para não impactar UX
+        console.warn('[ClienteController] Enriquecimento leve (hasPayments) falhou:', enrichErr);
+      }
 
       res.json({
         success: true,

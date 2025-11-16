@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useDCTF } from '../hooks/useDCTF';
+import { Pagination } from '../components/Pagination';
 
 const formatCNPJ = (cnpj: string | undefined) => {
   if (!cnpj) return '-';
@@ -86,7 +87,6 @@ const DCTFPage: React.FC = () => {
   const [situacao, setSituacao] = useState('');
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
-  const [lastPageCount, setLastPageCount] = useState<number>(0);
   const [orderBy, setOrderBy] = useState<string>('');
   const [orderDirection, setOrderDirection] = useState<'asc' | 'desc'>('asc');
   const [searchTerm, setSearchTerm] = useState<string>(searchParams.get('search') || '');
@@ -135,7 +135,6 @@ const DCTFPage: React.FC = () => {
 
     load(params)
       .then(({ items, pagination, lastUpdate }) => {
-        setLastPageCount(items.length);
         setTotal(pagination?.total ?? null);
         setTotalPages(pagination?.totalPages ?? null);
         if (lastUpdate) {
@@ -150,7 +149,6 @@ const DCTFPage: React.FC = () => {
     { value: 'Em andamento', label: 'Em andamento' },
   ];
 
-  const canGoNext = totalPages != null ? page < totalPages : lastPageCount === limit;
 
   const formatCurrency = (valor?: number | string | null) => {
     if (valor === null || valor === undefined) {
@@ -354,30 +352,39 @@ const DCTFPage: React.FC = () => {
         </table>
       </div>
 
-      <div className="flex flex-col items-center justify-center mt-8 mb-6">
-        <div className="flex items-center gap-2">
-          <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200">Anterior</button>
-          <span className="text-xs px-4">{page}{totalPages != null ? ` de ${totalPages}` : ''}</span>
-          <button disabled={!canGoNext} onClick={() => setPage((p) => p + 1)} className="px-4 py-2 bg-gray-100 rounded disabled:opacity-50 hover:bg-gray-200 text-xs">Próxima</button>
-          <select
-            value={limitSelection}
-            onChange={(e) => handleLimitChange(e.target.value as typeof limitSelection)}
-            className="ml-4 px-3 py-2 border rounded text-xs"
-          >
-            {limitOptions.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-            <option value="all">Todos</option>
-          </select>
-        </div>
-        <div className="text-xs text-gray-600 mt-2">
-          {total != null && totalPages != null
-            ? `Total: ${total} declarações`
-            : `Mostrando ${items.length} declarações`}
-        </div>
-      </div>
+      {items.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-gray-600">
+              {total != null && totalPages != null
+                ? `Total: ${total} declarações`
+                : `Mostrando ${items.length} declarações`}
+            </div>
+            <select
+              value={limitSelection}
+              onChange={(e) => handleLimitChange(e.target.value as typeof limitSelection)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              {limitOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value} por página
+                </option>
+              ))}
+              <option value="all">Todos</option>
+            </select>
+          </div>
+          {totalPages != null && total != null && limitSelection !== 'all' && (
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={total}
+              itemsPerPage={limit}
+              onPageChange={setPage}
+              itemLabel="declaração"
+            />
+          )}
+        </>
+      )}
     </div>
   );
 };

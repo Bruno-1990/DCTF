@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Pagination } from '../components/Pagination';
 
 type Dctf = {
   id: string;
@@ -139,19 +140,26 @@ export default function DCTFList() {
         </table>
       </div>
 
-      <div className="flex items-center gap-3 text-sm">
-        <div>Total: {total}</div>
-        <div className="ml-auto flex items-center gap-2">
-          <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="px-2 py-1 border rounded disabled:opacity-60">Anterior</button>
-          <span>Página {page}</span>
-          <button disabled={(page * limit) >= total} onClick={() => setPage(p => p + 1)} className="px-2 py-1 border rounded disabled:opacity-60">Próxima</button>
-          <select value={limit} onChange={e => setLimit(Number(e.target.value))} className="border rounded px-2 py-1">
-            <option value={5}>5</option>
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-          </select>
-        </div>
-      </div>
+      {!loading && items.length > 0 && total > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-gray-600">Total: {total} declarações</div>
+            <select value={limit} onChange={e => setLimit(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value={5}>5 por página</option>
+              <option value={10}>10 por página</option>
+              <option value={20}>20 por página</option>
+            </select>
+          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={Math.ceil(total / limit)}
+            totalItems={total}
+            itemsPerPage={limit}
+            onPageChange={setPage}
+            itemLabel="declaração"
+          />
+        </>
+      )}
     </div>
   );
 }

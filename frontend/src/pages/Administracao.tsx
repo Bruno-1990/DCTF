@@ -11,7 +11,8 @@ const ADMIN_CREDENTIALS = {
 };
 
 const STORAGE_KEY = 'dctf_admin_authenticated';
-const AUTH_TIMEOUT = 30 * 60 * 1000; // 30 minutos em milissegundos
+const STORAGE_PROGRESS_KEY = 'dctf_consulta_progress_id';
+// AUTH_TIMEOUT removido - não expira automaticamente na aba admin para não atrapalhar consultas em lote
 
 const Administracao: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -34,6 +35,8 @@ const Administracao: React.FC = () => {
   const [consultaResultado, setConsultaResultado] = useState<any>(null);
   const [consultaError, setConsultaError] = useState<string | null>(null);
   const [limiteCNPJs, setLimiteCNPJs] = useState<number>(50);
+  const [apenasFaltantes, setApenasFaltantes] = useState<boolean>(false);
+  const [waitMs, setWaitMs] = useState<number>(2000);
   
   // Estados para progresso da consulta em lote
   const [progressId, setProgressId] = useState<string | null>(null);
@@ -41,40 +44,47 @@ const Administracao: React.FC = () => {
     totalCNPJs: number;
     processados: number;
     porcentagem: number;
+    currentTotalItens?: number;
+    currentProcessados?: number;
+    encontrados?: number;
+    salvos?: number;
+    atualizados?: number;
+    pulados?: number;
     cnpjAtual?: string;
     status: 'em_andamento' | 'concluida' | 'cancelada' | 'erro';
   } | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Verificar autenticação ao carregar
+  // Não expira automaticamente - logout apenas manual para não atrapalhar consultas em lote
   useEffect(() => {
     const authData = sessionStorage.getItem(STORAGE_KEY);
     if (authData) {
       try {
-        const { timestamp } = JSON.parse(authData);
-        const now = Date.now();
-        const elapsed = now - timestamp;
-        
-        // Verificar se ainda está dentro do timeout
-        if (elapsed < AUTH_TIMEOUT) {
-          setIsAuthenticated(true);
-          setShowLoginModal(false);
-          
-          // Configurar timeout para expirar quando o tempo restante acabar
-          const remainingTime = AUTH_TIMEOUT - elapsed;
-          const timeoutId = setTimeout(() => {
-            handleLogout();
-          }, remainingTime);
-          
-          return () => clearTimeout(timeoutId);
-        } else {
-          // Timeout expirado, remover autenticação
-          sessionStorage.removeItem(STORAGE_KEY);
-        }
+        // Verificar se há dados de autenticação (formato antigo ou novo)
+        const parsed = JSON.parse(authData);
+        // Se existe autenticação, permitir acesso independente do timestamp
+        setIsAuthenticated(true);
+        setShowLoginModal(false);
       } catch {
-        // Formato antigo ou inválido, remover
+        // Formato inválido, remover
         sessionStorage.removeItem(STORAGE_KEY);
       }
+    }
+    // Tentar retomar uma consulta em andamento (sem recarregar a página)
+    const savedProgressId = sessionStorage.getItem(STORAGE_PROGRESS_KEY);
+    if (savedProgressId) {
+      setConsultando(true);
+      setProgressId(savedProgressId);
+      // Iniciar/retomar polling
+      if (!pollingIntervalRef.current) {
+        const interval = setInterval(() => {
+          verificarProgresso(savedProgressId);
+        }, 2000);
+        pollingIntervalRef.current = interval;
+      }
+      // Primeira verificação imediata
+      verificarProgresso(savedProgressId);
     }
   }, []);
 
@@ -85,15 +95,11 @@ const Administracao: React.FC = () => {
     if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
       setIsAuthenticated(true);
       setShowLoginModal(false);
-      // Armazenar timestamp da autenticação
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ timestamp: Date.now() }));
+      // Armazenar autenticação sem timeout - logout apenas manual
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ authenticated: true, timestamp: Date.now() }));
       setUsername('');
       setPassword('');
-      
-      // Configurar timeout para expirar após 30 minutos
-      setTimeout(() => {
-        handleLogout();
-      }, AUTH_TIMEOUT);
+      // Não configurar timeout automático - não expira durante consultas em lote
     } else {
       setLoginError('Usuário ou senha incorretos');
     }
@@ -175,9 +181,24 @@ const Administracao: React.FC = () => {
           totalCNPJs: progressoData.totalCNPJs,
           processados: progressoData.processados,
           porcentagem: progressoData.porcentagem || 0,
+          currentTotalItens: progressoData.currentTotalItens ?? 0,
+          currentProcessados: progressoData.currentProcessados ?? 0,
+          encontrados: progressoData.encontrados ?? 0,
+          salvos: progressoData.salvos ?? 0,
+          atualizados: progressoData.atualizados ?? 0,
+          pulados: progressoData.pulados ?? 0,
           cnpjAtual: progressoData.cnpjAtual,
           status: progressoData.status,
         });
+
+        // Se não há CNPJs a processar, encerrar polling imediatamente
+        if (progressoData.totalCNPJs === 0 && (progressoData.status === 'concluida' || progressoData.status === 'em_andamento')) {
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          setConsultando(false);
+        }
 
         // Se a consulta foi concluída, cancelada ou teve erro, parar o polling
         if (progressoData.status === 'concluida' || progressoData.status === 'cancelada' || progressoData.status === 'erro') {
@@ -186,6 +207,7 @@ const Administracao: React.FC = () => {
             pollingIntervalRef.current = null;
           }
           setConsultando(false);
+          sessionStorage.removeItem(STORAGE_PROGRESS_KEY);
           
           if (progressoData.status === 'concluida' && progressoData.resultado) {
             setConsultaResultado(progressoData.resultado);
@@ -201,8 +223,25 @@ const Administracao: React.FC = () => {
         }
       }
     } catch (err: any) {
-      console.error('Erro ao verificar progresso:', err);
-      // Continuar tentando mesmo em caso de erro temporário
+      // Em caso de rate limit (429), reduzir frequência do polling temporariamente
+      const status = err?.response?.status;
+      if (status === 429) {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        // Tenta novamente com backoff leve
+        setTimeout(() => {
+          if (progressId && !pollingIntervalRef.current) {
+            const interval = setInterval(() => {
+              verificarProgresso(progressId);
+            }, 3000); // 3s após receber 429
+            pollingIntervalRef.current = interval;
+          }
+        }, 1500);
+        return;
+      }
+      // Para outros erros, apenas silenciar (polling segue no próximo tick)
     }
   };
 
@@ -245,11 +284,16 @@ const Administracao: React.FC = () => {
       return;
     }
 
-    // Limpar estados anteriores
+    // Limpar estados anteriores e iniciar visualização imediatamente
     setConsultando(true);
     setConsultaError(null);
     setConsultaResultado(null);
-    setProgresso(null);
+    setProgresso({
+      totalCNPJs: 0,
+      processados: 0,
+      porcentagem: 0,
+      status: 'em_andamento',
+    } as any);
     setProgressId(null);
     
     // Limpar polling anterior se existir
@@ -269,17 +313,20 @@ const Administracao: React.FC = () => {
           dataInicial: dataInicialFormatada,
           dataFinal: dataFinalFormatada,
           limiteCNPJs: limiteCNPJs || undefined,
+          apenasFaltantes: apenasFaltantes,
+          waitMs: waitMs || 0,
         }
       );
 
       if (response.data.success && response.data.data?.progressId) {
         const id = response.data.data.progressId;
         setProgressId(id);
+        sessionStorage.setItem(STORAGE_PROGRESS_KEY, id);
         
-        // Iniciar polling para verificar progresso a cada 1 segundo
+        // Iniciar polling para verificar progresso (2s para reduzir risco de 429)
         const interval = setInterval(() => {
           verificarProgresso(id);
-        }, 1000);
+        }, 2000);
         pollingIntervalRef.current = interval;
         
         // Primeira verificação imediata
@@ -291,6 +338,7 @@ const Administracao: React.FC = () => {
       const errorMessage = err.response?.data?.error || err.message || 'Erro ao consultar pagamentos em lote';
       setConsultaError(errorMessage);
       setConsultando(false);
+      sessionStorage.removeItem(STORAGE_PROGRESS_KEY);
       
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
@@ -549,15 +597,15 @@ const Administracao: React.FC = () => {
           <div className="flex-1">
             <h2 className="text-xl font-semibold text-blue-900 mb-2">Consulta em Lote - Receita Federal</h2>
             <p className="text-sm text-blue-700 mb-4">
-              Consulta pagamentos na Receita Federal para <strong>todos os CNPJs</strong> cadastrados no sistema.
-              O sistema irá iterar sobre cada CNPJ da tabela de clientes, fazer requisições na Receita Federal
+              Consulta pagamentos na Receita Federal para CNPJs cadastrados no sistema.
+              O sistema irá iterar sobre cada CNPJ, fazer requisições na Receita Federal
               e salvar/atualizar os pagamentos encontrados na tabela <code className="bg-blue-100 px-1 rounded">receita_pagamentos</code>.
             </p>
 
             <div className="bg-white rounded-lg p-4 border border-blue-300 mb-4">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">Informações da Consulta</h3>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label htmlFor="dataInicialConsulta" className="block text-sm font-medium text-gray-700 mb-2">
                     Data Inicial <span className="text-red-500">*</span>
@@ -600,14 +648,77 @@ const Administracao: React.FC = () => {
                   />
                   <p className="text-xs text-gray-500 mt-1">Padrão: 50 (máximo: 200)</p>
                 </div>
+
+                <div>
+                  <label htmlFor="waitMs" className="block text-sm font-medium text-gray-700 mb-2">
+                    Atraso entre requisições (ms)
+                  </label>
+                  <input
+                    type="number"
+                    id="waitMs"
+                    min="0"
+                    step="100"
+                    value={waitMs}
+                    onChange={(e) => setWaitMs(parseInt(e.target.value) || 0)}
+                    placeholder="2000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Sugestão: 2000 ms</p>
+                </div>
+              </div>
+
+              {/* Opção de busca: Todos ou Apenas Faltantes */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Tipo de Consulta:
+                </label>
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="tipoConsulta"
+                      value="todos"
+                      checked={!apenasFaltantes}
+                      onChange={() => setApenasFaltantes(false)}
+                      className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">
+                      <strong>Todos os CNPJs</strong>
+                      <span className="block text-xs text-gray-500 mt-1">
+                        Consulta todos os CNPJs cadastrados (atualiza registros existentes)
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="tipoConsulta"
+                      value="faltantes"
+                      checked={apenasFaltantes}
+                      onChange={() => setApenasFaltantes(true)}
+                      className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">
+                      <strong>Apenas CNPJs Faltantes</strong>
+                      <span className="block text-xs text-gray-500 mt-1">
+                        Consulta apenas CNPJs que ainda não têm registros no período (evita requisições desnecessárias)
+                      </span>
+                    </span>
+                  </label>
+                </div>
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
                 <p className="text-sm text-blue-800">
-                  <strong>Como funciona:</strong> O sistema irá buscar todos os CNPJs da tabela <code className="bg-blue-100 px-1 rounded">clientes</code>,
+                  <strong>Como funciona:</strong> O sistema irá buscar {apenasFaltantes ? 'apenas os CNPJs que ainda não têm registros de pagamento' : 'todos os CNPJs'} da tabela <code className="bg-blue-100 px-1 rounded">clientes</code>,
                   fazer uma requisição na Receita Federal para cada CNPJ (no período informado), e salvar/atualizar
                   os pagamentos encontrados na tabela <code className="bg-blue-100 px-1 rounded">receita_pagamentos</code>.
                   Se um pagamento já existir (verificado por número do documento), ele será atualizado; caso contrário, será criado.
+                  {apenasFaltantes && (
+                    <span className="block mt-2 font-semibold text-green-700">
+                      ✓ Modo "Apenas Faltantes" ativado: Evita consultar CNPJs que já possuem dados no período, economizando requisições.
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -684,14 +795,16 @@ const Administracao: React.FC = () => {
               )}
 
               {/* Barra de Progresso */}
-              {consultando && progresso && (
+              {(consultando || progressId) && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm font-medium text-blue-900">
-                      Processando consulta em lote...
+                      {(progresso?.totalCNPJs ?? 0) === 0
+                        ? 'Nenhum CNPJ a processar neste período (modo Apenas Faltantes).'
+                        : 'Processando consulta em lote...'}
                     </div>
                     <div className="text-sm font-semibold text-blue-700">
-                      {progresso.processados} de {progresso.totalCNPJs} CNPJs ({progresso.porcentagem}%)
+                      {(progresso?.processados ?? 0)} de {(progresso?.totalCNPJs ?? 0)} CNPJs ({progresso?.porcentagem ?? 0}%)
                     </div>
                   </div>
                   
@@ -699,17 +812,60 @@ const Administracao: React.FC = () => {
                   <div className="w-full bg-blue-200 rounded-full h-4 mb-2 overflow-hidden">
                     <div
                       className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${progresso.porcentagem}%` }}
+                      style={{ width: `${progresso?.porcentagem ?? 0}%` }}
                     />
                   </div>
                   
-                  {progresso.cnpjAtual && (
+                  {/* Barra secundária: progresso da gravação do CNPJ atual */}
+                  {((progresso?.currentTotalItens ?? 0) > 0) && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="text-xs text-blue-900">
+                          Gravando itens do CNPJ atual
+                        </div>
+                        <div className="text-xs font-semibold text-blue-700">
+                          {(progresso?.currentProcessados ?? 0)} / {(progresso?.currentTotalItens ?? 0)}
+                        </div>
+                      </div>
+                      <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-blue-500 h-full rounded-full transition-all duration-300 ease-out"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              Math.round(
+                                (((progresso?.currentProcessados ?? 0) / (progresso?.currentTotalItens || 1)) * 100)
+                              )
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Métricas em tempo real */}
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 text-slate-700">
+                      Encontrados: <strong>{progresso?.encontrados ?? 0}</strong>
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700">
+                      Salvos: <strong>{progresso?.salvos ?? 0}</strong>
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-indigo-100 text-indigo-700">
+                      Atualizados: <strong>{progresso?.atualizados ?? 0}</strong>
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-100 text-amber-700">
+                      Pulados: <strong>{progresso?.pulados ?? 0}</strong>
+                    </span>
+                  </div>
+                  
+                  {progresso?.cnpjAtual && (
                     <div className="text-xs text-blue-600 mt-2">
-                      Processando CNPJ: <span className="font-mono font-semibold">{progresso.cnpjAtual}</span>
+                      Processando CNPJ: <span className="font-mono font-semibold">{progresso?.cnpjAtual}</span>
                     </div>
                   )}
                   
-                  {progresso.status === 'em_andamento' && (
+                  {(progresso?.status ?? 'em_andamento') === 'em_andamento' && (
                     <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={handleCancelarConsulta}

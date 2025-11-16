@@ -1,7 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import Alert from '../components/UI/Alert';
+import { Pagination } from '../components/Pagination';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 
 interface ReceitaPagamentoItem {
@@ -59,6 +61,7 @@ interface ClienteAgrupado {
 }
 
 const Pagamentos: React.FC = () => {
+  const location = useLocation();
   const [cnpj, setCnpj] = useState('');
   const [dataInicial, setDataInicial] = useState('');
   const [dataFinal, setDataFinal] = useState('');
@@ -66,10 +69,29 @@ const Pagamentos: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showError, setShowError] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
   const [expandedClientes, setExpandedClientes] = useState<Set<string>>(new Set());
   const [filtroNumeroDocumento, setFiltroNumeroDocumento] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'pendente' | 'pago'>('todos');
+  const [filtroCliente, setFiltroCliente] = useState(''); // Filtro por Razão Social ou CNPJ
   const [consultandoReceita, setConsultandoReceita] = useState(false);
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const itensPorPagina = 10;
+  const filtroClienteInputRef = useRef<HTMLInputElement>(null);
+  const cnpjFromQuery = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const raw = params.get('cnpj') || '';
+    return raw.replace(/\D/g, '');
+  }, [location.search]);
+
+  // Preencher CNPJ a partir da query string (?cnpj=) ao entrar via "Adicionar"
+  useEffect(() => {
+    if (cnpjFromQuery && cnpjFromQuery.length === 14) {
+      setCnpj(formatCNPJ(cnpjFromQuery));
+    }
+  }, [cnpjFromQuery]);
 
   // Função para aplicar máscara de CNPJ
   const formatCNPJ = (value: string) => {
@@ -101,16 +123,19 @@ const Pagamentos: React.FC = () => {
     }
   };
 
-  // Agrupar pagamentos por cliente, depois por documento (com filtro por número de documento)
+  // Agrupar pagamentos por cliente, depois por documento (com filtros por número de documento e status)
   const clientesAgrupados = useMemo(() => {
     // Filtrar pagamentos pelo número de documento se houver filtro
-    const pagamentosFiltrados = filtroNumeroDocumento
+    let pagamentosFiltrados = filtroNumeroDocumento
       ? pagamentos.filter(item =>
           item.numeroDocumento
             .toLowerCase()
             .includes(filtroNumeroDocumento.toLowerCase().trim())
         )
       : pagamentos;
+    
+    // Aplicar filtro de status nos pagamentos (não nos documentos finais, pois precisamos agrupar primeiro)
+    // O filtro de status será aplicado nos documentos após o agrupamento
 
     // Primeiro, agrupar por cliente (CNPJ)
     const clientesMap = new Map<string, ClienteAgrupado>();
@@ -240,11 +265,65 @@ const Pagamentos: React.FC = () => {
       });
     });
 
-    const clientesArray = Array.from(clientesMap.values());
+    let clientesArray = Array.from(clientesMap.values());
+    
+    // Aplicar filtro de status nos documentos
+    if (filtroStatus !== 'todos') {
+      clientesArray = clientesArray.map(cliente => {
+        const documentosFiltrados = cliente.documentos.filter(doc => {
+          if (filtroStatus === 'pago') {
+            return doc.valorSaldoDocumento === 0;
+          } else if (filtroStatus === 'pendente') {
+            return doc.valorSaldoDocumento > 0;
+          }
+          return true;
+        });
+        
+        // Recalcular totais do cliente baseado nos documentos filtrados
+        const totalDocumentos = documentosFiltrados.length;
+        const totalLinhas = documentosFiltrados.reduce((sum, doc) => sum + 1 + doc.filhos.length, 0);
+        const valorTotal = documentosFiltrados.reduce((sum, doc) => sum + doc.valorDocumento, 0);
+        const valorSaldoTotal = documentosFiltrados.reduce((sum, doc) => sum + doc.valorSaldoDocumento, 0);
+        
+        return {
+          ...cliente,
+          documentos: documentosFiltrados,
+          totalDocumentos,
+          totalLinhas,
+          valorTotal,
+          valorSaldoTotal,
+        };
+      }).filter(cliente => cliente.totalDocumentos > 0); // Remover clientes sem documentos após filtro
+    }
+    
     console.log('[Pagamentos] Clientes agrupados:', clientesArray.length, clientesArray.map(c => ({ cnpj: c.cnpj, nome: c.nome, documentos: c.totalDocumentos })));
     
     return clientesArray;
-  }, [pagamentos, filtroNumeroDocumento]);
+  }, [pagamentos, filtroNumeroDocumento, filtroStatus]);
+
+  // Resetar para página 1 quando filtros mudarem
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtroNumeroDocumento, filtroStatus, filtroCliente, pagamentos.length]);
+
+  // Buscar automaticamente ao digitar no filtro de Cliente (com debounce)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Buscar sempre que houver mudança no filtro de cliente
+      carregarPagamentosDoBanco();
+    }, 500); // Debounce de 500ms para evitar muitas requisições
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroCliente]); // Executa quando o filtro de cliente muda
+
+  // Calcular paginação
+  const totalPaginas = Math.ceil(clientesAgrupados.length / itensPorPagina);
+  const indiceInicio = (paginaAtual - 1) * itensPorPagina;
+  const indiceFim = indiceInicio + itensPorPagina;
+  const clientesPaginados = useMemo(() => {
+    return clientesAgrupados.slice(indiceInicio, indiceFim);
+  }, [clientesAgrupados, indiceInicio, indiceFim]);
 
   // Calcular totais (baseado em clientes agrupados)
   const totais = useMemo(() => {
@@ -298,8 +377,48 @@ const Pagamentos: React.FC = () => {
   };
 
   const handleCnpjChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatCNPJ(e.target.value);
+    const value = e.target.value;
+    // Aplicar máscara de CNPJ sempre (campo usado apenas para consultar Receita)
+    const formatted = formatCNPJ(value);
     setCnpj(formatted);
+  };
+
+  const handleFiltroClienteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Verificar se parece ser um CNPJ (tem apenas dígitos e alguns caracteres de formatação)
+    const cnpjLimpo = value.replace(/\D/g, '');
+    
+    // Se tem 14 ou mais dígitos ou parece estar digitando um CNPJ, aplicar máscara
+    // Se parece ser nome (tem letras), não aplicar máscara
+    const pareceCNPJ = /^[\d.\s/-]*$/.test(value) && (cnpjLimpo.length > 0 || value.length > 0 && /[\d./-]/.test(value));
+    
+    if (pareceCNPJ) {
+      const formatted = formatCNPJ(value);
+      setFiltroCliente(formatted);
+    } else {
+      // Se não parece CNPJ (tem letras), permitir digitar normalmente (nome do cliente)
+      setFiltroCliente(value);
+    }
+  };
+
+  // Ao clicar no CNPJ listado, preencher o filtro e focar o campo
+  const handleSelecionarCNPJNoFiltro = (cnpjLimpo: string) => {
+    const masked = formatCNPJ(cnpjLimpo);
+    setFiltroCliente(masked);
+    setPaginaAtual(1);
+    // Colapsar quaisquer expansões para evitar confusão visual
+    setExpandedClientes(new Set());
+    setExpandedDocs(new Set());
+    // Focar o campo após atualização do estado
+    setTimeout(() => {
+      filtroClienteInputRef.current?.focus();
+      // Colocar o cursor no fim
+      const input = filtroClienteInputRef.current;
+      if (input) {
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
+      }
+    }, 0);
   };
 
   // Buscar pagamentos salvos do banco ao carregar a página
@@ -312,10 +431,17 @@ const Pagamentos: React.FC = () => {
       // Construir query string com filtros opcionais
       const params = new URLSearchParams();
       
-      if (cnpj) {
-        const cnpjLimpo = cnpj.replace(/\D/g, '');
-        if (cnpjLimpo.length === 14) {
-          params.append('cnpj', cnpjLimpo);
+      // Verificar se o filtroCliente parece ser um CNPJ (tem 14 dígitos) ou nome
+      if (filtroCliente.trim()) {
+        const cnpjLimpoFiltro = filtroCliente.replace(/\D/g, '');
+        const pareceCNPJ = cnpjLimpoFiltro.length === 14;
+        
+        if (pareceCNPJ) {
+          // Se parece CNPJ, enviar como CNPJ
+          params.append('cnpj', cnpjLimpoFiltro);
+        } else {
+          // Se não parece CNPJ, enviar como nome do cliente
+          params.append('nomeCliente', filtroCliente.trim());
         }
       }
 
@@ -347,8 +473,24 @@ const Pagamentos: React.FC = () => {
           setShowError(false);
           
           // Verificar quantos clientes únicos temos
-          const cnpjsUnicos = [...new Set(pagamentosRetornados.map((p: any) => p.cnpj).filter(Boolean))];
-          console.log('[Pagamentos] CNPJs únicos nos pagamentos:', cnpjsUnicos.length, cnpjsUnicos.slice(0, 5));
+          const cnpjsUnicos = [...new Set(pagamentosRetornados.map((p: any) => {
+            const cnpjOriginal = p.cnpj || p.cnpj_contribuinte || '';
+            return cnpjOriginal.replace(/\D/g, '');
+          }).filter((cnpj: string) => cnpj.length === 14))];
+          console.log('[Pagamentos] Total de pagamentos:', pagamentosRetornados.length);
+          console.log('[Pagamentos] CNPJs únicos nos pagamentos:', cnpjsUnicos.length);
+          console.log('[Pagamentos] Lista de CNPJs únicos:', cnpjsUnicos);
+          
+          // Log de quantos pagamentos por CNPJ
+          const pagamentosPorCNPJ = new Map<string, number>();
+          pagamentosRetornados.forEach((p: any) => {
+            const cnpjOriginal = p.cnpj || p.cnpj_contribuinte || '';
+            const cnpjLimpo = cnpjOriginal.replace(/\D/g, '');
+            if (cnpjLimpo.length === 14) {
+              pagamentosPorCNPJ.set(cnpjLimpo, (pagamentosPorCNPJ.get(cnpjLimpo) || 0) + 1);
+            }
+          });
+          console.log('[Pagamentos] Pagamentos por CNPJ:', Array.from(pagamentosPorCNPJ.entries()).map(([cnpj, count]) => ({ cnpj, count })));
         }
       } else {
         throw new Error(pagamentosResponse.data.error || 'Erro ao buscar pagamentos');
@@ -369,8 +511,7 @@ const Pagamentos: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Executa apenas uma vez ao montar
 
-  // Nota: Removemos o useEffect automático para filtrar ao digitar
-  // O usuário deve clicar em "Filtrar" para aplicar os filtros
+  // Nota: Removemos a busca automática do CNPJ pois agora ele é usado apenas para consultar Receita
 
   // Consultar Receita Federal e atualizar banco de dados
   const handleConsultarReceita = async () => {
@@ -388,12 +529,24 @@ const Pagamentos: React.FC = () => {
       return;
     }
 
-    setConsultandoReceita(true);
     setLoading(true);
     setError(null);
     setShowError(false);
+    setSuccessMessage(null);
+    setShowSuccess(false);
 
     try {
+      // Pré-validação: checar token (e autorização para o CNPJ) antes de consultar
+      const validResp = await axios.get('/api/receita/validar-token', { params: { cnpj: cnpjLimpo } });
+      if (!validResp.data?.success) {
+        throw new Error(validResp.data?.error || validResp.data?.message || 'Falha ao validar token/acesso na Receita');
+      }
+
+      // Exibir confirmação e iniciar processamento
+      setSuccessMessage('Access Token válido. Iniciando consulta...');
+      setShowSuccess(true);
+      setConsultandoReceita(true);
+
       // Converter datas para formato YYYY-MM-DD
       const dataInicialFormatada = new Date(dataInicial).toISOString().split('T')[0];
       const dataFinalFormatada = new Date(dataFinal).toISOString().split('T')[0];
@@ -419,6 +572,12 @@ const Pagamentos: React.FC = () => {
       // Mostrar mensagem de sucesso
       const resultado = consultaResponse.data.data;
       console.log('Consulta à Receita Federal realizada:', resultado);
+      setSuccessMessage('Consulta concluída com sucesso.');
+      setShowSuccess(true);
+      // Limpar campos de pesquisa após sucesso
+      setCnpj('');
+      setDataInicial('');
+      setDataFinal('');
         } catch (err: any) {
           console.error('[Pagamentos] Erro ao consultar Receita Federal:', err);
           
@@ -426,7 +585,12 @@ const Pagamentos: React.FC = () => {
           let errorMessage = 'Erro ao consultar pagamentos na Receita Federal';
           let errorDetails: string | undefined;
 
-          if (err.response?.data) {
+          const status = err.response?.status;
+          if (status === 401) {
+            errorMessage = 'Erro de autenticação: Token inválido ou expirado. Valide o acesso e tente novamente.';
+          } else if (status === 403) {
+            errorMessage = 'Erro de autorização: Acesso negado pela Receita Federal (verifique a procuração do CNPJ).';
+          } else if (err.response?.data) {
             // Erro do backend
             errorMessage = err.response.data.error || errorMessage;
             errorDetails = err.response.data.details;
@@ -450,27 +614,30 @@ const Pagamentos: React.FC = () => {
 
           setError(errorMessage);
           setShowError(true);
+      // Limpar campos de pesquisa após erro
+      setCnpj('');
+      setDataInicial('');
+      setDataFinal('');
         } finally {
           setConsultandoReceita(false);
           setLoading(false);
         }
   };
 
-  // Filtrar dados do banco (sem consultar Receita Federal)
-  const handleFiltrar = () => {
-    carregarPagamentosDoBanco();
-  };
+  // Verificar apenas o acesso (token/procuração) sem consultar pagamentos
+  // (A validação de token/procuração é feita automaticamente dentro do fluxo de consulta)
 
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden">
+      {/* Seção de Consulta à Receita Federal */}
       <div className="bg-white shadow rounded-lg p-6 w-full max-w-full">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Consulta de Pagamentos - Receita Federal</h1>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Consultar Receita Federal</h2>
         
-        {/* Formulário de Pesquisa */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        {/* Formulário de Consulta */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label htmlFor="cnpj" className="block text-sm font-medium text-gray-700 mb-2">
-              CNPJ <span className="text-gray-400 text-xs">(opcional para filtrar)</span>
+              CNPJ <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -485,7 +652,7 @@ const Pagamentos: React.FC = () => {
 
           <div>
             <label htmlFor="dataInicial" className="block text-sm font-medium text-gray-700 mb-2">
-              Data Inicial <span className="text-gray-400 text-xs">(opcional para filtrar)</span>
+              Data Inicial <span className="text-red-500">*</span>
             </label>
             <input
               type="date"
@@ -498,7 +665,7 @@ const Pagamentos: React.FC = () => {
 
           <div>
             <label htmlFor="dataFinal" className="block text-sm font-medium text-gray-700 mb-2">
-              Data Final <span className="text-gray-400 text-xs">(opcional para filtrar)</span>
+              Data Final <span className="text-red-500">*</span>
             </label>
             <input
               type="date"
@@ -509,78 +676,138 @@ const Pagamentos: React.FC = () => {
             />
           </div>
 
-              <div className="flex items-end gap-2">
-                <button
-                  onClick={handleFiltrar}
-                  disabled={loading}
-                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {loading && !consultandoReceita ? (
-                    <span className="flex items-center justify-center">
-                      <LoadingSpinner size="sm" />
-                      <span className="ml-2">Carregando...</span>
-                    </span>
-                  ) : (
-                    'Filtrar'
-                  )}
-                </button>
-                <button
-                  onClick={handleConsultarReceita}
-                  disabled={loading || !cnpj || !dataInicial || !dataFinal}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title={!cnpj || !dataInicial || !dataFinal ? 'Preencha CNPJ, Data Inicial e Data Final para consultar a Receita Federal' : 'Consultar dados atualizados na Receita Federal'}
-                >
-                  {consultandoReceita ? (
-                    <span className="flex items-center justify-center">
-                      <LoadingSpinner size="sm" />
-                      <span className="ml-2">Consultando...</span>
-                    </span>
-                  ) : (
-                    'Consultar Receita'
-                  )}
-                </button>
-              </div>
+          <div className="flex items-end">
+            <button
+              onClick={handleConsultarReceita}
+              disabled={loading || !cnpj || !dataInicial || !dataFinal}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title={!cnpj || !dataInicial || !dataFinal ? 'Preencha CNPJ, Data Inicial e Data Final para consultar a Receita Federal' : 'Consultar dados atualizados na Receita Federal'}
+            >
+              {consultandoReceita ? (
+                <span className="flex items-center justify-center">
+                  <span className="mr-2"><LoadingSpinner size="sm" /></span>
+                  Buscando...
+                </span>
+              ) : (
+                'Buscar na Receita'
+              )}
+            </button>
+          </div>
         </div>
 
-            {/* Alert de Erro */}
-            {showError && error && (
-              <div className="mb-4">
-                <Alert type="error" onClose={() => setShowError(false)}>
-                  <div className="whitespace-pre-wrap break-words">
-                    {error}
-                  </div>
-                </Alert>
-              </div>
-            )}
+        {/* Alertas */}
+        {showSuccess && successMessage && (
+          <div className="mt-4">
+            <Alert type="success" onClose={() => setShowSuccess(false)}>
+              <div className="line-clamp-6 whitespace-pre-wrap">{successMessage}</div>
+            </Alert>
+          </div>
+        )}
+
+        {/* Alert de Erro */}
+        {showError && error && (
+          <div className="mt-4">
+            <Alert type="error" onClose={() => setShowError(false)}>
+              <div className="whitespace-pre-wrap break-words">{error}</div>
+            </Alert>
+          </div>
+        )}
       </div>
 
-      {/* Filtro por Número de Documento */}
+      {/* Seção de Filtros */}
       {pagamentos.length > 0 && (
         <div className="bg-white shadow rounded-lg p-4 w-full max-w-full">
-          <div className="flex items-center gap-4">
-            <label htmlFor="filtroNumeroDocumento" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-              Filtrar por Nº Documento:
-            </label>
-            <input
-              type="text"
-              id="filtroNumeroDocumento"
-              placeholder="Digite o número do documento..."
-              value={filtroNumeroDocumento}
-              onChange={(e) => setFiltroNumeroDocumento(e.target.value)}
-              className="flex-1 max-w-md px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            {filtroNumeroDocumento && (
-              <button
-                onClick={() => setFiltroNumeroDocumento('')}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 focus:outline-none"
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Filtros</h2>
+          <div className="flex items-center gap-4 flex-wrap">
+            {/* Filtro por Razão Social / CNPJ */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="filtroCliente" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                Razão Social / CNPJ:
+              </label>
+              <input
+                type="text"
+                id="filtroCliente"
+                placeholder="00.000.000/0000-00 ou nome do cliente"
+                value={filtroCliente}
+                onChange={handleFiltroClienteChange}
+                ref={filtroClienteInputRef}
+                className="w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              {filtroCliente && (
+                <button
+                  onClick={() => setFiltroCliente('')}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 focus:outline-none"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+
+            {/* Filtro por Número de Documento */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="filtroNumeroDocumento" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                Nº Documento:
+              </label>
+              <input
+                type="text"
+                id="filtroNumeroDocumento"
+                placeholder="Digite o número do documento..."
+                value={filtroNumeroDocumento}
+                onChange={(e) => setFiltroNumeroDocumento(e.target.value)}
+                className="w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              {filtroNumeroDocumento && (
+                <button
+                  onClick={() => setFiltroNumeroDocumento('')}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 focus:outline-none"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+
+            {/* Filtro por Status */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="filtroStatus" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                Status:
+              </label>
+              <select
+                id="filtroStatus"
+                value={filtroStatus}
+                onChange={(e) => setFiltroStatus(e.target.value as 'todos' | 'pendente' | 'pago')}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                Limpar filtro
-              </button>
-            )}
+                <option value="todos">Todos</option>
+                <option value="pendente">Pendente</option>
+                <option value="pago">Pago</option>
+              </select>
+            </div>
           </div>
-          {filtroNumeroDocumento && (
+          
+          {/* Botão para limpar todos os filtros */}
+          {(filtroCliente || filtroNumeroDocumento || filtroStatus !== 'todos') && (
+            <div className="mt-4">
+              <button
+                onClick={() => {
+                  setFiltroCliente('');
+                  setFiltroNumeroDocumento('');
+                  setFiltroStatus('todos');
+                }}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 focus:outline-none border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Limpar Todos os Filtros
+              </button>
+            </div>
+          )}
+          
+          {(filtroCliente || filtroNumeroDocumento || filtroStatus !== 'todos') && (
             <p className="mt-2 text-sm text-gray-500">
               Mostrando {totais.totalClientes} cliente(s) de {totais.totalClientesOriginal} | {totais.totalDocumentos} documento(s) de {totais.totalDocumentosOriginal} | {totais.totalLinhas} linha(s) de {totais.totalLinhasOriginal}
+              {filtroStatus !== 'todos' && (
+                <span className="ml-2 text-blue-600 font-medium">
+                  • Filtro: {filtroStatus === 'pendente' ? 'Pendente' : 'Pago'}
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -589,50 +816,50 @@ const Pagamentos: React.FC = () => {
       {/* Totais */}
       {pagamentos.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-8 gap-4 w-full max-w-full">
-          <div className="bg-white shadow rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">
+          <div className="bg-white shadow rounded-lg p-4 min-w-0">
+            <div className="text-sm font-medium text-gray-500 truncate">
               Clientes
-              {filtroNumeroDocumento && <span className="text-xs text-gray-400 ml-1">(filtrado)</span>}
+              {(filtroNumeroDocumento || filtroStatus !== 'todos') && <span className="text-xs text-gray-400 ml-1">(filtrado)</span>}
             </div>
-            <div className="text-2xl font-bold text-purple-600 mt-1">{totais.totalClientes}</div>
+            <div className="text-xl font-bold text-purple-600 mt-1 truncate">{totais.totalClientes}</div>
           </div>
 
-          <div className="bg-white shadow rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">
+          <div className="bg-white shadow rounded-lg p-4 min-w-0">
+            <div className="text-sm font-medium text-gray-500 truncate">
               Documentos Únicos
-              {filtroNumeroDocumento && <span className="text-xs text-gray-400 ml-1">(filtrado)</span>}
+              {(filtroNumeroDocumento || filtroStatus !== 'todos') && <span className="text-xs text-gray-400 ml-1">(filtrado)</span>}
             </div>
-            <div className="text-2xl font-bold text-gray-900 mt-1">{totais.totalDocumentos}</div>
+            <div className="text-xl font-bold text-gray-900 mt-1 truncate">{totais.totalDocumentos}</div>
           </div>
 
-          <div className="bg-white shadow rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Total de Linhas</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">{totais.totalLinhas}</div>
+          <div className="bg-white shadow rounded-lg p-4 min-w-0">
+            <div className="text-sm font-medium text-gray-500 truncate">Total de Linhas</div>
+            <div className="text-xl font-bold text-blue-600 mt-1 truncate">{totais.totalLinhas}</div>
           </div>
 
-          <div className="bg-white shadow rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Valor Total</div>
-            <div className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(totais.valorTotalDocumentos)}</div>
+          <div className="bg-white shadow rounded-lg p-4 min-w-0">
+            <div className="text-sm font-medium text-gray-500 truncate">Valor Total</div>
+            <div className="text-lg font-bold text-gray-900 mt-1 break-words overflow-wrap-anywhere">{formatCurrency(totais.valorTotalDocumentos)}</div>
           </div>
 
-          <div className="bg-white shadow rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Valor Pago</div>
-            <div className="text-2xl font-bold text-green-600 mt-1">{formatCurrency(totais.valorTotalPago)}</div>
+          <div className="bg-white shadow rounded-lg p-4 min-w-0">
+            <div className="text-sm font-medium text-gray-500 truncate">Valor Pago</div>
+            <div className="text-lg font-bold text-green-600 mt-1 break-words overflow-wrap-anywhere">{formatCurrency(totais.valorTotalPago)}</div>
           </div>
 
-          <div className="bg-white shadow rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Saldo Pendente</div>
-            <div className="text-2xl font-bold text-red-600 mt-1">{formatCurrency(totais.valorTotalSaldo)}</div>
+          <div className="bg-white shadow rounded-lg p-4 min-w-0">
+            <div className="text-sm font-medium text-gray-500 truncate">Saldo Pendente</div>
+            <div className="text-lg font-bold text-red-600 mt-1 break-words overflow-wrap-anywhere">{formatCurrency(totais.valorTotalSaldo)}</div>
           </div>
 
-          <div className="bg-white shadow rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Documentos Pagos</div>
-            <div className="text-2xl font-bold text-green-600 mt-1">{totais.documentosPagos}</div>
+          <div className="bg-white shadow rounded-lg p-4 min-w-0">
+            <div className="text-sm font-medium text-gray-500 truncate">Documentos Pagos</div>
+            <div className="text-xl font-bold text-green-600 mt-1 truncate">{totais.documentosPagos}</div>
           </div>
 
-          <div className="bg-white shadow rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Documentos Pendentes</div>
-            <div className="text-2xl font-bold text-red-600 mt-1">{totais.documentosPendentes}</div>
+          <div className="bg-white shadow rounded-lg p-4 min-w-0">
+            <div className="text-sm font-medium text-gray-500 truncate">Documentos Pendentes</div>
+            <div className="text-xl font-bold text-red-600 mt-1 truncate">{totais.documentosPendentes}</div>
           </div>
         </div>
       )}
@@ -685,7 +912,7 @@ const Pagamentos: React.FC = () => {
                 </thead>
               )}
               <tbody className="bg-white divide-y divide-gray-200">
-                {clientesAgrupados.map((cliente) => {
+                {clientesPaginados.map((cliente) => {
                   const clienteExpandido = expandedClientes.has(cliente.cnpj);
                   const temAlgumExpandido = expandedClientes.size > 0;
                   const deveOcultar = temAlgumExpandido && !clienteExpandido;
@@ -727,9 +954,17 @@ const Pagamentos: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            <span className="text-xs font-normal text-blue-600 mt-1">
+                            <button
+                              type="button"
+                              className="text-left text-xs font-normal text-blue-600 mt-1 hover:underline"
+                              title="Filtrar por este CNPJ"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelecionarCNPJNoFiltro(cliente.cnpj);
+                              }}
+                            >
                               CNPJ: {formatCNPJ(cliente.cnpj)}
-                            </span>
+                            </button>
                             <span className="text-xs font-normal text-gray-500 mt-1">
                               ({cliente.totalDocumentos} documento{cliente.totalDocumentos > 1 ? 's' : ''}, {cliente.totalLinhas} linha{cliente.totalLinhas > 1 ? 's' : ''})
                             </span>
@@ -896,9 +1131,7 @@ const Pagamentos: React.FC = () => {
       {!loading && pagamentos.length === 0 && (
         <div className="bg-white shadow rounded-lg p-6 text-center">
           <p className="text-gray-500">
-            {cnpj || dataInicial || dataFinal
-              ? 'Nenhum pagamento encontrado para os filtros informados.'
-              : 'Nenhum pagamento encontrado no banco de dados. Use os filtros acima ou clique em "Consultar Receita" para buscar novos pagamentos.'}
+            Nenhum pagamento encontrado no banco de dados. Use a seção "Consultar Receita Federal" acima para buscar novos pagamentos.
           </p>
         </div>
       )}
@@ -911,6 +1144,18 @@ const Pagamentos: React.FC = () => {
             Verifique o console para mais detalhes.
           </p>
         </div>
+      )}
+
+      {/* Paginação */}
+      {!loading && pagamentos.length > 0 && clientesAgrupados.length > 0 && (
+        <Pagination
+          currentPage={paginaAtual}
+          totalPages={totalPaginas}
+          totalItems={clientesAgrupados.length}
+          itemsPerPage={itensPorPagina}
+          onPageChange={setPaginaAtual}
+          itemLabel="cliente"
+        />
       )}
     </div>
   );

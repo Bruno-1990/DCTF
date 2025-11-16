@@ -14,12 +14,22 @@ export class ReceitaPagamentoController {
   }
 
   /**
+   * Formata CNPJ com máscara: XX.XXX.XXX/XXXX-XX
+   */
+  private formatCNPJ(cnpj: string): string {
+    const digits = String(cnpj).replace(/\D/g, '');
+    if (digits.length !== 14) return cnpj; // Retornar original se inválido
+    
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
+  }
+
+  /**
    * GET /api/receita-pagamentos
    * Lista pagamentos salvos na tabela receita_pagamentos
    */
   async listarPagamentos(req: Request, res: Response): Promise<void> {
     try {
-      const { cnpj, dataInicial, dataFinal, competencia, statusProcessamento } = req.query;
+      const { cnpj, nomeCliente, dataInicial, dataFinal, competencia, statusProcessamento } = req.query;
 
       if (!process.env['SUPABASE_URL']) {
         const response: ApiResponse = {
@@ -32,22 +42,80 @@ export class ReceitaPagamentoController {
 
       // Usar método do modelo para buscar pagamentos
       let pagamentosSalvos: any[] = [];
+      let cnpjsParaBuscar: string[] = [];
+      
+      // Se fornecido nomeCliente, buscar CNPJs correspondentes primeiro
+      if (nomeCliente && typeof nomeCliente === 'string' && nomeCliente.trim()) {
+        const { supabase: supabaseClient } = this.receitaPagamentoModel as any;
+        const nomeBusca = nomeCliente.trim().toLowerCase();
+        
+        // Buscar clientes por razao_social (ilike para busca parcial case-insensitive)
+        const { data: clientesEncontrados, error: clientesError } = await supabaseClient
+          .from('clientes')
+          .select('cnpj_limpo')
+          .ilike('razao_social', `%${nomeBusca}%`);
+        
+        if (clientesError) {
+          console.warn('[ReceitaPagamentoController] Erro ao buscar clientes por nome:', clientesError);
+        } else if (clientesEncontrados && clientesEncontrados.length > 0) {
+          cnpjsParaBuscar = clientesEncontrados
+            .map((c: any) => String(c.cnpj_limpo || '').replace(/\D/g, '').trim())
+            .filter((cnpj: string) => cnpj.length === 14);
+          console.log(`[ReceitaPagamentoController] Encontrados ${cnpjsParaBuscar.length} CNPJ(s) para o nome "${nomeBusca}"`);
+        }
+      }
       
       // Buscar por CNPJ e competência se fornecido
       if (cnpj && typeof cnpj === 'string') {
         const cnpjLimpo = cnpj.replace(/\D/g, '');
         
+        // Se já há CNPJs da busca por nome, adicionar este também (se válido)
+        if (cnpjLimpo.length === 14) {
+          if (cnpjsParaBuscar.length > 0) {
+            // Se já há CNPJs da busca por nome, adicionar este também (evitar duplicatas)
+            if (!cnpjsParaBuscar.includes(cnpjLimpo)) {
+              cnpjsParaBuscar.push(cnpjLimpo);
+            }
+          } else {
+            cnpjsParaBuscar = [cnpjLimpo];
+          }
+        }
+        
         if (competencia && typeof competencia === 'string') {
-          pagamentosSalvos = await this.receitaPagamentoModel.buscarPorCNPJCompetencia(cnpjLimpo, competencia);
+          // Se há múltiplos CNPJs da busca por nome, buscar todos
+          if (cnpjsParaBuscar.length > 1) {
+            const { supabase: supabaseClient } = this.receitaPagamentoModel as any;
+            const { data, error } = await supabaseClient
+              .from('receita_pagamentos')
+              .select('*')
+              .in('cnpj_contribuinte', cnpjsParaBuscar)
+              .eq('competencia', competencia)
+              .order('data_sincronizacao', { ascending: false });
+            
+            if (error) {
+              throw new Error(`Erro ao buscar pagamentos: ${error.message}`);
+            }
+            pagamentosSalvos = data || [];
+          } else {
+            pagamentosSalvos = await this.receitaPagamentoModel.buscarPorCNPJCompetencia(cnpjsParaBuscar[0] || cnpjLimpo, competencia);
+          }
         } else {
-          // Buscar todos do CNPJ e filtrar manualmente por datas se necessário
-          // Acessar supabase através de método público ou criar método na classe
+          // Buscar todos do(s) CNPJ(s) e filtrar manualmente por datas se necessário
           const { supabase: supabaseClient } = this.receitaPagamentoModel as any;
           let query = supabaseClient
             .from('receita_pagamentos')
-            .select('*')
-            .eq('cnpj_contribuinte', cnpjLimpo)
-            .order('data_sincronizacao', { ascending: false });
+            .select('*');
+          
+          // Usar .in() se há múltiplos CNPJs, senão usar .eq()
+          if (cnpjsParaBuscar.length > 1) {
+            query = query.in('cnpj_contribuinte', cnpjsParaBuscar);
+          } else if (cnpjsParaBuscar.length === 1) {
+            query = query.eq('cnpj_contribuinte', cnpjsParaBuscar[0]);
+          } else if (cnpjLimpo.length === 14) {
+            query = query.eq('cnpj_contribuinte', cnpjLimpo);
+          }
+          
+          query = query.order('data_sincronizacao', { ascending: false });
 
           // Filtrar por data inicial
           if (dataInicial && typeof dataInicial === 'string') {
@@ -72,21 +140,21 @@ export class ReceitaPagamentoController {
           
           pagamentosSalvos = data || [];
         }
-      } else {
-        // Buscar todos (aumentar limite ou remover para buscar todos)
+      } else if (cnpjsParaBuscar.length > 0) {
+        // Buscar por CNPJs encontrados pelo nome do cliente (sem CNPJ direto no query)
         const { supabase: supabaseClient } = this.receitaPagamentoModel as any;
         let query = supabaseClient
           .from('receita_pagamentos')
           .select('*')
-          .order('data_sincronizacao', { ascending: false })
-          .limit(1000); // Aumentar limite para 1000
+          .in('cnpj_contribuinte', cnpjsParaBuscar)
+          .order('data_sincronizacao', { ascending: false });
 
-        // Filtrar por data inicial se fornecido
+        // Filtrar por data inicial
         if (dataInicial && typeof dataInicial === 'string') {
           query = query.gte('periodo_consulta_inicial', dataInicial);
         }
 
-        // Filtrar por data final se fornecido
+        // Filtrar por data final
         if (dataFinal && typeof dataFinal === 'string') {
           query = query.lte('periodo_consulta_final', dataFinal);
         }
@@ -103,7 +171,59 @@ export class ReceitaPagamentoController {
         }
         
         pagamentosSalvos = data || [];
-        console.log(`[ReceitaPagamentoController] Buscados ${pagamentosSalvos.length} pagamentos sem filtro de CNPJ`);
+      } else {
+        // Buscar todos (usar paginação para buscar todos os registros)
+        const { supabase: supabaseClient } = this.receitaPagamentoModel as any;
+        
+        // Construir query base
+        let baseQuery = supabaseClient
+          .from('receita_pagamentos')
+          .select('*')
+          .order('data_sincronizacao', { ascending: false });
+
+        // Filtrar por data inicial se fornecido
+        if (dataInicial && typeof dataInicial === 'string') {
+          baseQuery = baseQuery.gte('periodo_consulta_inicial', dataInicial);
+        }
+
+        // Filtrar por data final se fornecido
+        if (dataFinal && typeof dataFinal === 'string') {
+          baseQuery = baseQuery.lte('periodo_consulta_final', dataFinal);
+        }
+
+        // Filtrar por status de processamento
+        if (statusProcessamento && typeof statusProcessamento === 'string') {
+          baseQuery = baseQuery.eq('status_processamento', statusProcessamento);
+        }
+
+        // Buscar todos os registros em batches (Supabase limita a 1000 por padrão)
+        pagamentosSalvos = [];
+        const batchSize = 1000;
+        let offset = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          const query = baseQuery.range(offset, offset + batchSize - 1);
+          const { data, error } = await query;
+          
+          if (error) {
+            throw new Error(`Erro ao buscar pagamentos: ${error.message}`);
+          }
+          
+          if (!data || data.length === 0) {
+            hasMore = false;
+          } else {
+            pagamentosSalvos.push(...data);
+            offset += batchSize;
+            
+            // Se retornou menos que o batch size, chegamos ao fim
+            if (data.length < batchSize) {
+              hasMore = false;
+            }
+          }
+        }
+        
+        console.log(`[ReceitaPagamentoController] Buscados ${pagamentosSalvos.length} pagamentos sem filtro de CNPJ (em ${Math.ceil(pagamentosSalvos.length / batchSize)} batch[es])`);
       }
 
       // Buscar dados dos clientes baseado nos CNPJs únicos dos pagamentos
@@ -112,13 +232,25 @@ export class ReceitaPagamentoController {
         pagamentosSalvos
           .map((p: any) => {
             if (!p.cnpj_contribuinte) return null;
-            const cnpjLimpo = String(p.cnpj_contribuinte).replace(/\D/g, '');
-            return cnpjLimpo.length === 14 ? cnpjLimpo : null;
+            // Limpar e normalizar CNPJ: remover todos os caracteres não numéricos
+            const cnpjOriginal = String(p.cnpj_contribuinte).trim();
+            const cnpjLimpo = cnpjOriginal.replace(/\D/g, '').trim();
+            
+            if (cnpjLimpo.length !== 14) {
+              console.warn(`[ReceitaPagamentoController] CNPJ inválido encontrado nos pagamentos: "${cnpjOriginal}" -> "${cnpjLimpo}" (${cnpjLimpo.length} dígitos)`);
+              return null;
+            }
+            
+            // Garantir que é string
+            return String(cnpjLimpo);
           })
           .filter((cnpj: string | null): cnpj is string => Boolean(cnpj))
-      )];
+      )].sort(); // Ordenar para facilitar debug
       
       console.log(`[ReceitaPagamentoController] Total de pagamentos: ${pagamentosSalvos.length}, CNPJs únicos: ${cnpjsUnicos.length}`);
+      if (cnpjsUnicos.length > 0) {
+        console.log('[ReceitaPagamentoController] Primeiros CNPJs únicos:', cnpjsUnicos.slice(0, 5));
+      }
       
       const clientesMap = new Map<string, any>();
 
@@ -135,64 +267,168 @@ export class ReceitaPagamentoController {
         }
         
         for (const chunk of chunks) {
+          console.log(`[ReceitaPagamentoController] Buscando chunk de ${chunk.length} CNPJs...`);
+          console.log(`[ReceitaPagamentoController] Primeiros CNPJs do chunk (tipo e valor):`, chunk.slice(0, 3).map(cnpj => ({ tipo: typeof cnpj, valor: cnpj, length: String(cnpj).length })));
+          
+          // Garantir que todos os CNPJs do chunk sejam strings e estejam limpos
+          const chunkLimpo = chunk.map(cnpj => String(cnpj).replace(/\D/g, '').trim()).filter(c => c.length === 14);
+          
+          if (chunkLimpo.length === 0) {
+            console.warn(`[ReceitaPagamentoController] ⚠ Chunk sem CNPJs válidos após limpeza`);
+            continue;
+          }
+          
+          console.log(`[ReceitaPagamentoController] CNPJs limpos para busca (${chunkLimpo.length}):`, chunkLimpo.slice(0, 3));
+          
           const { data: clientesData, error: clientesError } = await supabaseClient
             .from('clientes')
-            .select('id, razao_social, nome, cnpj_limpo')
-            .in('cnpj_limpo', chunk);
+            .select('id, razao_social, cnpj_limpo')
+            .in('cnpj_limpo', chunkLimpo);
 
           if (clientesError) {
             console.error('[ReceitaPagamentoController] Erro ao buscar clientes:', clientesError);
+            console.error('[ReceitaPagamentoController] CNPJs que causaram erro:', chunkLimpo.slice(0, 5));
+            
+            // Tentar busca individual para debug
+            console.log('[ReceitaPagamentoController] Tentando busca individual para debug...');
+            for (const cnpjTest of chunkLimpo.slice(0, 3)) {
+              const { data: testData, error: testError } = await supabaseClient
+                .from('clientes')
+                .select('id, razao_social, cnpj_limpo')
+                .eq('cnpj_limpo', cnpjTest)
+                .maybeSingle();
+              
+              if (testError) {
+                console.error(`[ReceitaPagamentoController] Erro ao buscar CNPJ individual ${cnpjTest}:`, testError);
+              } else if (testData) {
+                console.log(`[ReceitaPagamentoController] ✓ CNPJ individual encontrado: ${cnpjTest} -> "${testData.razao_social || 'SEM NOME'}"`);
+              } else {
+                console.warn(`[ReceitaPagamentoController] ✗ CNPJ individual não encontrado: ${cnpjTest}`);
+              }
+            }
           } else if (clientesData) {
-            console.log(`[ReceitaPagamentoController] Clientes encontrados neste chunk: ${clientesData.length}`);
+            console.log(`[ReceitaPagamentoController] Clientes encontrados neste chunk: ${clientesData.length} de ${chunkLimpo.length} CNPJs`);
+            
+            // Log detalhado dos dados retornados
+            if (clientesData.length > 0) {
+              console.log(`[ReceitaPagamentoController] Primeiro cliente retornado:`, {
+                id: clientesData[0].id,
+                razao_social: clientesData[0].razao_social,
+                cnpj_limpo: clientesData[0].cnpj_limpo,
+                cnpj_limpo_tipo: typeof clientesData[0].cnpj_limpo,
+                cnpj_limpo_length: String(clientesData[0].cnpj_limpo).length,
+              });
+            }
+            
+            // Log dos CNPJs encontrados vs não encontrados
+            const cnpjsEncontrados = new Set<string>();
+            
             clientesData.forEach((cliente: any) => {
               // Garantir que o CNPJ do cliente também esteja limpo para comparação
-              const cnpjLimpo = String(cliente.cnpj_limpo || '').replace(/\D/g, '');
-              if (cnpjLimpo.length === 14) {
-                clientesMap.set(cnpjLimpo, {
+              const cnpjLimpoCliente = String(cliente.cnpj_limpo || '').replace(/\D/g, '').trim();
+              
+              if (cnpjLimpoCliente.length === 14) {
+                clientesMap.set(cnpjLimpoCliente, {
                   ...cliente,
-                  nome: cliente.razao_social || cliente.nome || 'SEM NOME',
+                  nome: cliente.razao_social || 'SEM NOME', // Apenas razao_social existe na tabela
                 });
-                console.log(`[ReceitaPagamentoController] Cliente mapeado: ${cnpjLimpo} -> ${cliente.razao_social || cliente.nome || 'SEM NOME'}`);
+                cnpjsEncontrados.add(cnpjLimpoCliente);
+                console.log(`[ReceitaPagamentoController] ✓ Cliente encontrado: ${cnpjLimpoCliente} -> "${cliente.razao_social || 'SEM NOME'}"`);
+              } else {
+                console.warn(`[ReceitaPagamentoController] ⚠ CNPJ inválido do cliente na resposta: "${cliente.cnpj_limpo}" (tipo: ${typeof cliente.cnpj_limpo}) -> "${cnpjLimpoCliente}" (${cnpjLimpoCliente.length} dígitos)`);
               }
             });
+            
+            // Log dos CNPJs não encontrados neste chunk
+            const cnpjsNaoEncontrados = chunkLimpo.filter(cnpj => !cnpjsEncontrados.has(cnpj));
+            if (cnpjsNaoEncontrados.length > 0) {
+              console.warn(`[ReceitaPagamentoController] ✗ CNPJs não encontrados neste chunk (${cnpjsNaoEncontrados.length}):`, cnpjsNaoEncontrados.slice(0, 10));
+              
+              // Tentar busca individual para os não encontrados
+              console.log('[ReceitaPagamentoController] Tentando busca individual para CNPJs não encontrados...');
+              for (const cnpjMissing of cnpjsNaoEncontrados.slice(0, 5)) {
+                const { data: missingData, error: missingError } = await supabaseClient
+                  .from('clientes')
+                  .select('id, razao_social, cnpj_limpo')
+                  .eq('cnpj_limpo', cnpjMissing)
+                  .maybeSingle();
+                
+                if (missingError) {
+                  console.error(`[ReceitaPagamentoController] Erro ao buscar CNPJ faltante ${cnpjMissing}:`, missingError);
+                } else if (missingData) {
+                  console.log(`[ReceitaPagamentoController] ⚠ CNPJ encontrado em busca individual (mas não em .in()): ${cnpjMissing} -> "${missingData.razao_social || 'SEM NOME'}"`);
+                  // Adicionar manualmente ao map
+                  clientesMap.set(cnpjMissing, {
+                    ...missingData,
+                    nome: missingData.razao_social || 'SEM NOME', // Apenas razao_social existe na tabela
+                  });
+                } else {
+                  console.warn(`[ReceitaPagamentoController] ✗ CNPJ realmente não existe na tabela: ${cnpjMissing}`);
+                }
+              }
+            }
+          } else {
+            console.warn(`[ReceitaPagamentoController] ⚠ Resposta vazia (sem erro) para chunk de ${chunkLimpo.length} CNPJs`);
           }
         }
         
         console.log(`[ReceitaPagamentoController] Total de clientes mapeados: ${clientesMap.size} de ${cnpjsUnicos.length} CNPJs únicos`);
         
         if (clientesMap.size === 0) {
-          console.warn('[ReceitaPagamentoController] Nenhum cliente encontrado para os CNPJs. Verifique se os CNPJs na tabela clientes correspondem aos CNPJs nos pagamentos.');
+          console.warn('[ReceitaPagamentoController] ⚠ Nenhum cliente encontrado para os CNPJs. Verifique:');
+          console.warn('  1. Se os CNPJs na tabela clientes estão no formato correto (apenas números, 14 dígitos)');
+          console.warn('  2. Se os CNPJs nos pagamentos correspondem aos CNPJs dos clientes');
+          console.warn(`  3. Primeiros CNPJs dos pagamentos: ${cnpjsUnicos.slice(0, 3).join(', ')}`);
+        } else if (clientesMap.size < cnpjsUnicos.length) {
+          const cnpjsNaoEncontrados = cnpjsUnicos.filter(cnpj => !clientesMap.has(cnpj));
+          console.warn(`[ReceitaPagamentoController] ⚠ Apenas ${clientesMap.size} de ${cnpjsUnicos.length} CNPJs encontrados na tabela clientes`);
+          console.warn(`[ReceitaPagamentoController] CNPJs não encontrados (primeiros 10):`, cnpjsNaoEncontrados.slice(0, 10));
         }
       } else {
-        console.warn('[ReceitaPagamentoController] Nenhum CNPJ válido encontrado nos pagamentos retornados');
+        console.warn('[ReceitaPagamentoController] ⚠ Nenhum CNPJ válido encontrado nos pagamentos retornados');
       }
 
       // Mapear para formato esperado pelo frontend
       const pagamentos = pagamentosSalvos.map(item => {
-        // Garantir que o CNPJ esteja limpo para busca
-        const cnpjOriginal = item.cnpj_contribuinte ? String(item.cnpj_contribuinte) : '';
+        // Garantir que o CNPJ esteja limpo para busca (normalizar)
+        const cnpjOriginal = item.cnpj_contribuinte ? String(item.cnpj_contribuinte).trim() : '';
         const cnpjLimpo = cnpjOriginal.replace(/\D/g, '');
-        const cliente = cnpjLimpo && cnpjLimpo.length === 14 && clientesMap.has(cnpjLimpo) ? clientesMap.get(cnpjLimpo) : null;
+        
+        // Buscar cliente usando CNPJ limpo
+        const cliente = cnpjLimpo && cnpjLimpo.length === 14 && clientesMap.has(cnpjLimpo) 
+          ? clientesMap.get(cnpjLimpo) 
+          : null;
         
         // Priorizar razao_social ou nome do cliente, senão usar CNPJ formatado
-        let clienteNome = cnpjOriginal || 'SEM CNPJ'; // fallback: CNPJ original
+        let clienteNome: string;
+        let clienteEncontradoFlag = false;
+        let clienteNaoEncontradoFlag = false;
         
         if (cliente) {
-          const nomeCliente = cliente.razao_social || cliente.nome;
+          const nomeCliente = cliente.razao_social; // Apenas razao_social existe na tabela clientes
           if (nomeCliente && String(nomeCliente).trim()) {
             clienteNome = String(nomeCliente).trim();
+            clienteEncontradoFlag = true;
+          } else {
+            // Cliente foi encontrado mas não tem razao_social válido
+            clienteNome = cnpjLimpo.length === 14 ? this.formatCNPJ(cnpjLimpo) : cnpjOriginal || 'SEM CNPJ';
+            clienteEncontradoFlag = true;
           }
         } else if (cnpjLimpo && cnpjLimpo.length === 14) {
-          // Se não encontrou cliente, manter o CNPJ original (já pode estar formatado)
-          console.log(`[ReceitaPagamentoController] Cliente não encontrado para CNPJ: ${cnpjLimpo}`);
+          // Se não encontrou cliente, usar CNPJ formatado
+          clienteNome = this.formatCNPJ(cnpjLimpo);
+          clienteNaoEncontradoFlag = true;
+        } else {
+          // CNPJ inválido
+          clienteNome = cnpjOriginal || 'SEM CNPJ';
         }
         
         return {
-          cnpj: item.cnpj_contribuinte,
+          cnpj: cnpjLimpo.length === 14 ? cnpjLimpo : item.cnpj_contribuinte, // Retornar CNPJ limpo se válido
           clienteNome: clienteNome,
           clienteId: cliente?.id || undefined,
-          clienteEncontrado: !!cliente, // Flag indicando se o cliente foi encontrado na tabela
-          clienteNaoEncontrado: !cliente && !!cnpjLimpo, // Flag indicando se tentou buscar mas não encontrou
+          clienteEncontrado: clienteEncontradoFlag, // Flag indicando se o cliente foi encontrado na tabela
+          clienteNaoEncontrado: clienteNaoEncontradoFlag, // Flag indicando se tentou buscar mas não encontrou
           numeroDocumento: item.numero_documento,
           tipoDocumento: item.tipo_documento || '',
           periodoApuracao: item.periodo_apuracao ? new Date(item.periodo_apuracao).toISOString().split('T')[0] : '',

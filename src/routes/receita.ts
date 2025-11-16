@@ -20,5 +20,8 @@ router.get('/consulta-lote/:progressId', (req, res) => consultaController.verifi
 // POST /api/receita/consulta-lote/:progressId/cancelar - Cancelar consulta em lote
 router.post('/consulta-lote/:progressId/cancelar', (req, res) => consultaController.cancelarConsulta(req, res));
 
+// GET /api/receita/validar-token - Valida token (e opcionalmente autorização para um CNPJ)
+router.get('/validar-token', (req, res) => consultaController.validarToken(req, res));
+
 export default router;
 

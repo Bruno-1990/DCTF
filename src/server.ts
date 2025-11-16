@@ -22,6 +22,7 @@ import adminDashboardConferenceRoutes from './routes/admin-dashboard-conferences
 import pagamentosRoutes from './routes/pagamentos';
 import receitaPagamentosRoutes from './routes/receita-pagamentos';
 import receitaRoutes from './routes/receita';
+import conferenciasRoutes from './routes/conferencias';
 
 class Server {
   private app: express.Application;
@@ -126,6 +127,7 @@ class Server {
     this.app.use('/api/pagamentos', pagamentosRoutes);
     this.app.use('/api/receita-pagamentos', receitaPagamentosRoutes);
     this.app.use('/api/receita', receitaRoutes);
+    this.app.use('/api/conferencias', conferenciasRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

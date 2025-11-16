@@ -3,6 +3,7 @@ import type { ConferenceIssue } from '../services/conferences';
 import { fetchConferenceSummary } from '../services/conferences';
 import { format } from 'date-fns';
 import { ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { Pagination } from '../components/Pagination';
 
 function formatDate(value?: string) {
   if (!value) return '—';
@@ -49,12 +50,15 @@ function SeverityTag({ severity }: SeverityTagProps) {
 }
 
 export default function Conferencias() {
+
   const [issues, setIssues] = useState<ConferenceIssue[]>([]);
   const [generatedAt, setGeneratedAt] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const itensPorPagina = 10;
 
   useEffect(() => {
     let mounted = true;
@@ -89,6 +93,19 @@ export default function Conferencias() {
       return severityOrder[a.severity] - severityOrder[b.severity];
     });
   }, [issues]);
+
+  // Resetar para página 1 quando issues mudarem
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [issues.length]);
+
+  // Calcular paginação
+  const totalPaginas = Math.ceil(orderedIssues.length / itensPorPagina);
+  const indiceInicio = (paginaAtual - 1) * itensPorPagina;
+  const indiceFim = indiceInicio + itensPorPagina;
+  const issuesPaginadas = useMemo(() => {
+    return orderedIssues.slice(indiceInicio, indiceFim);
+  }, [orderedIssues, indiceInicio, indiceFim]);
 
   const toggleActionPlan = (id: string) => {
     setExpanded((prev) => {
@@ -132,6 +149,7 @@ export default function Conferencias() {
 
   return (
     <div className="p-8 space-y-6">
+      {/* Seções existentes de conferências legais permanecem abaixo */}
       <header className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold text-slate-900">Conferências e Alertas Legais</h1>
         <p className="text-xs text-slate-500 max-w-3xl">
@@ -174,7 +192,7 @@ export default function Conferencias() {
                   </td>
                 </tr>
               )}
-              {orderedIssues.map(issue => {
+              {issuesPaginadas.map(issue => {
                 const isExpanded = expanded.has(issue.id);
                 return (
                   <Fragment key={issue.id}>
@@ -229,6 +247,16 @@ export default function Conferencias() {
             </tbody>
           </table>
         </div>
+        {!isLoading && orderedIssues.length > 0 && (
+          <Pagination
+            currentPage={paginaAtual}
+            totalPages={totalPaginas}
+            totalItems={orderedIssues.length}
+            itemsPerPage={itensPorPagina}
+            onPageChange={setPaginaAtual}
+            itemLabel="pendência"
+          />
+        )}
       </section>
     </div>
   );

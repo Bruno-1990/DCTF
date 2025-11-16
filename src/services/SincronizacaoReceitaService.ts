@@ -307,8 +307,8 @@ export class SincronizacaoReceitaService {
           result.totalErros += resultadoCliente.totalErros;
           result.detalhes.push(...resultadoCliente.detalhes);
 
-          // Delay de 3 segundos entre requisições para evitar rate limiting
-          await new Promise(resolve => setTimeout(resolve, 3000));
+              // Delay de 2 segundos entre requisições para evitar rate limiting (waiter)
+              await new Promise(resolve => setTimeout(resolve, 2000));
         } catch (error) {
           result.totalErros++;
           result.detalhes.push({
@@ -319,8 +319,8 @@ export class SincronizacaoReceitaService {
             mensagem: `Erro ao sincronizar cliente: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
           });
 
-          // Delay mesmo em caso de erro para evitar rate limiting
-          await new Promise(resolve => setTimeout(resolve, 3000));
+              // Delay de 2 segundos mesmo em caso de erro para evitar rate limiting
+              await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
 
@@ -365,8 +365,14 @@ export class SincronizacaoReceitaService {
     periodoInicial?: string,
     periodoFinal?: string
   ) {
+    // Garantir que o CNPJ esteja sempre limpo (apenas números) antes de salvar
+    const cnpjLimpo = String(cnpj || '').replace(/\D/g, '');
+    if (cnpjLimpo.length !== 14) {
+      console.warn(`[SincronizacaoReceita] CNPJ inválido ao mapear item: ${cnpj} -> ${cnpjLimpo}`);
+    }
+    
     return {
-      cnpj_contribuinte: cnpj,
+      cnpj_contribuinte: cnpjLimpo, // Salvar sempre limpo
       periodo_consulta_inicial: periodoInicial ? new Date(periodoInicial) : null,
       periodo_consulta_final: periodoFinal ? new Date(periodoFinal) : null,
       data_sincronizacao: new Date(),

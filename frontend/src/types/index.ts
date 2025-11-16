@@ -13,6 +13,9 @@ export interface Cliente {
   cep?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  // Indicadores de pagamento (enviados pelo backend em /api/clientes)
+  hasPayments?: boolean;
+  paymentsCount?: number;
 }
 
 export interface DCTF {

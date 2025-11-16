@@ -233,18 +233,37 @@ export class ReceitaFederalService {
     periodoApuracao?: string
   ): Promise<ReceitaPagamentoItem[]> {
     try {
-      // 1. SEMPRE obter token de acesso primeiro, antes de qualquer consulta
-      // Garantir que temos um token válido antes de fazer a requisição
-      console.log('[ReceitaFederal] Iniciando consulta - obtendo token de acesso...');
-      await this.obterToken();
+      // ============================================================
+      // PASSO 1: SEMPRE obter token de validação PRIMEIRO
+      // ============================================================
+      // A ordem OBRIGATÓRIA é:
+      // 1. Obter token de validação (obterToken)
+      // 2. Depois fazer a consulta na Receita Federal
+      // 
+      // NÃO fazer a consulta antes de obter o token!
+      // ============================================================
+      console.log('[ReceitaFederal] PASSO 1: Obtendo token de validação...');
+      await this.obterToken(true); // Sempre forçar novo token (forceRenew = true)
       
       // Verificar se o token foi obtido com sucesso
       if (!this.accessToken) {
         throw new Error('Token de acesso não foi obtido. Não é possível fazer a consulta.');
       }
       
-      console.log('[ReceitaFederal] Token obtido com sucesso. Prosseguindo com a consulta...');
+      console.log('[ReceitaFederal] Token obtido com sucesso. Prosseguindo com PASSO 2: Consulta na Receita Federal...');
 
+      // ============================================================
+      // PASSO 2: Preparar CNPJs para a requisição
+      // ============================================================
+      // IMPORTANTE sobre os CNPJs no body da requisição:
+      // - contratante: CNPJ ESTÁTICO (32401481000133 ou variável de ambiente)
+      // - autorPedidoDados: CNPJ ESTÁTICO (32401481000133 ou variável de ambiente)
+      // - contribuinte: CNPJ DINÂMICO (o CNPJ que está sendo consultado/iterado)
+      // 
+      // Os 2 primeiros campos (contratante e autorPedidoDados) são ESTÁTICOS.
+      // Apenas o campo contribuinte varia dinamicamente.
+      // ============================================================
+      
       // Limpar CNPJ do contribuinte (apenas números) - será usado no campo 'contribuinte'
       const cnpjContribuinte = cnpj.replace(/\D/g, '');
 
@@ -253,7 +272,7 @@ export class ReceitaFederalService {
         throw new Error('CNPJ inválido. Deve conter 14 dígitos.');
       }
 
-      // CNPJs fixos para contratante e autorPedidoDados
+      // CNPJs FIXOS (ESTÁTICOS) para contratante e autorPedidoDados
       // SEMPRE usar o CNPJ fixo 32401481000133 (ou da variável de ambiente se configurada)
       // NUNCA usar o CNPJ do contribuinte nestes campos
       const cnpjContratanteFixo = process.env['RECEITA_CNPJ_CONTRATANTE'] || '32401481000133';
@@ -294,18 +313,18 @@ export class ReceitaFederalService {
       const dadosString = JSON.stringify(dadosObjeto);
 
       // Construir payload da requisição conforme estrutura da Receita
-      // O CNPJ iterado é usado APENAS no campo 'contribuinte'
+      // IMPORTANTE: O CNPJ iterado é usado APENAS no campo 'contribuinte'
       const request: ReceitaPagamentoRequest = {
         contratante: {
-          numero: cnpjContratante, // CNPJ fixo ou configurável via variável de ambiente
+          numero: cnpjContratante, // CNPJ ESTÁTICO (fixo: 32401481000133)
           tipo: 2, // CNPJ
         },
         autorPedidoDados: {
-          numero: cnpjAutorPedido, // CNPJ fixo ou configurável via variável de ambiente
+          numero: cnpjAutorPedido, // CNPJ ESTÁTICO (fixo: 32401481000133)
           tipo: 2,
         },
         contribuinte: {
-          numero: cnpjContribuinte, // CNPJ variável (iterado) - usado aqui
+          numero: cnpjContribuinte, // CNPJ DINÂMICO (varia conforme a iteração)
           tipo: 2,
         },
         pedidoDados: {
@@ -327,9 +346,10 @@ export class ReceitaFederalService {
       // Armazenar endpoint em variável de escopo superior para uso no catch
       const apiEndpoint = endpoint;
       
-      console.log(`[ReceitaFederal] Consultando pagamentos para CNPJ (contribuinte): ${cnpjContribuinte}`);
-      console.log(`[ReceitaFederal] Contratante (FIXO): ${cnpjContratante}, Autor Pedido (FIXO): ${cnpjAutorPedido}`);
-      console.log(`[ReceitaFederal] Contribuinte (VARIÁVEL): ${cnpjContribuinte}`);
+      console.log(`[ReceitaFederal] PASSO 2: Consultando pagamentos na Receita Federal`);
+      console.log(`[ReceitaFederal] CNPJ Contratante (ESTÁTICO): ${cnpjContratante}`);
+      console.log(`[ReceitaFederal] CNPJ Autor Pedido (ESTÁTICO): ${cnpjAutorPedido}`);
+      console.log(`[ReceitaFederal] CNPJ Contribuinte (DINÂMICO): ${cnpjContribuinte}`);
       console.log(`[ReceitaFederal] Endpoint: ${this.baseURL}${endpoint}`);
       console.log(`[ReceitaFederal] Token disponível: ${this.accessToken ? 'Sim' : 'Não'}`);
       console.log(`[ReceitaFederal] JWT Token disponível: ${this.jwtToken ? 'Sim' : 'Não'}`);
