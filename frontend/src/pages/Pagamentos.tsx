@@ -627,6 +627,8 @@ const Pagamentos: React.FC = () => {
   // Verificar apenas o acesso (token/procuração) sem consultar pagamentos
   // (A validação de token/procuração é feita automaticamente dentro do fluxo de consulta)
 
+  // (Removido) Exportação de relatório de pendentes pela aba Pagamentos
+
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden">
       {/* Seção de Consulta à Receita Federal */}
@@ -810,6 +812,7 @@ const Pagamentos: React.FC = () => {
               )}
             </p>
           )}
+          
         </div>
       )}
 

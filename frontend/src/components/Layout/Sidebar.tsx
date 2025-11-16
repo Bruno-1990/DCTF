@@ -19,6 +19,7 @@ const navigation = [
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },
   { name: 'Pagamentos', href: '/pagamentos', icon: CreditCardIcon },
   { name: 'Relatórios', href: '/relatorios', icon: ChartBarIcon },
+  { name: 'Situação Fiscal', href: '/situacao-fiscal', icon: DocumentTextIcon },
   { name: 'Administração', href: '/administracao', icon: Cog6ToothIcon },
 ];
 

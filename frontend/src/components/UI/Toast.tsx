@@ -1,3 +1,38 @@
+import React from 'react';
+import { useToast } from '../../hooks/useToast';
+
+const colors: Record<string, string> = {
+  success: 'bg-green-600',
+  error: 'bg-red-600',
+  info: 'bg-blue-600',
+  warning: 'bg-yellow-600',
+};
+
+export const ToastContainer: React.FC = () => {
+  const { items, remove } = useToast();
+  return (
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+      {items.map((t) => (
+        <div
+          key={t.id}
+          className={`rounded shadow-lg text-white px-4 py-3 min-w-[240px] ${colors[t.type] ?? colors.info}`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-sm">{t.message}</div>
+            <button
+              onClick={() => remove(t.id)}
+              className="text-white/80 hover:text-white text-sm"
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 import { useEffect } from 'react';
 
 type ToastProps = {

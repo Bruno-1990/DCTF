@@ -38,7 +38,7 @@ export class ReportXlsxService {
 
     worksheet.columns = schema.columns.map(column => ({ header: column.header, key: column.key, width: column.header.length + 4 }));
     const headerRow = worksheet.getRow(1);
-    headerRow.height = 22;
+    headerRow.height = 30;
     headerRow.eachCell(cell => {
       cell.fill = {
         type: 'pattern',
@@ -55,7 +55,7 @@ export class ReportXlsxService {
 
     schema.rows.forEach(rowData => {
       const row = worksheet.addRow(rowData);
-      row.height = 18;
+      row.height = 25;
       row.eachCell(cell => {
         cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
       });

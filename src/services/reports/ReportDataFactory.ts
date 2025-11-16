@@ -469,14 +469,15 @@ export class ReportDataFactory {
     console.log('[ReportDataFactory] Total de issues encontradas:', conferenceSummary.rules.dueDate.length);
 
     // Filtrar declarações pendentes com prazo vigente ou vencidas
-    // Inclui: medium (próximo do vencimento) e high (vencidas)
+    // Inclui: low (vigente), medium (próximo do vencimento) e high (vencidas)
     const pendentes: DashboardConferenceIssue[] = conferenceSummary.rules.dueDate.filter((issue) => {
       // Não estão concluídas (status não é 'concluido')
       const status = (issue.status ?? '').toLowerCase();
       const notCompleted = status !== 'concluido';
       
-      // Incluir todas as severidades (medium e high) - medium = próximo do vencimento, high = vencido
-      const isPending = issue.severity === 'medium' || issue.severity === 'high';
+      // Incluir todas as severidades -
+      // low = vigente, medium = próximo do vencimento, high = vencido
+      const isPending = issue.severity === 'low' || issue.severity === 'medium' || issue.severity === 'high';
       
       const matches = notCompleted && isPending;
       

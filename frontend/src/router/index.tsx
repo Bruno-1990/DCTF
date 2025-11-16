@@ -13,6 +13,7 @@ import AdminDashboard from '../pages/AdminDashboard';
 import Conferencias from '../pages/Conferencias';
 import Administracao from '../pages/Administracao';
 import Pagamentos from '../pages/Pagamentos';
+import SituacaoFiscal from '../pages/SituacaoFiscal';
 
 const router = createBrowserRouter([
   {
@@ -59,6 +60,10 @@ const router = createBrowserRouter([
       {
         path: 'relatorios',
         element: <Relatorios />,
+      },
+      {
+        path: 'situacao-fiscal',
+        element: <SituacaoFiscal />,
       },
       {
         path: 'administracao',
