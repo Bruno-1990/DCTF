@@ -93,6 +93,25 @@ router.get('/history', async (req, res, next) => {
   }
 });
 
+// DELETE /api/situacao-fiscal/history/:id
+router.delete('/history/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const client = supabaseAdmin || supabase;
+    
+    const { error } = await client
+      .from('sitf_downloads')
+      .delete()
+      .eq('id', id);
+    
+    if (error) return res.status(500).json({ success: false, error: error.message });
+    
+    return res.status(200).json({ success: true, message: 'Registro excluído com sucesso' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
 
 

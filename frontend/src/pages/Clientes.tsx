@@ -3,7 +3,18 @@ import { Link } from 'react-router-dom';
 import { useClientes } from '../hooks/useClientes';
 import type { Cliente } from '../types';
 import { Pagination } from '../components/Pagination';
-import { ClipboardDocumentIcon, CheckIcon, PlusIcon } from '@heroicons/react/24/outline';
+import {
+  ClipboardDocumentIcon,
+  CheckIcon,
+  PlusIcon,
+  BuildingOfficeIcon,
+  MagnifyingGlassIcon,
+  UserGroupIcon,
+  PencilIcon,
+  TrashIcon,
+  XMarkIcon,
+  DocumentArrowUpIcon,
+} from '@heroicons/react/24/outline';
 
 const Clientes: React.FC = () => {
   const { clientes, loadClientes, createCliente, updateClienteById, deleteClienteById, loading, error, clearError } = useClientes();
@@ -197,145 +208,276 @@ const Clientes: React.FC = () => {
   const canGoNext = totalPages != null ? page < totalPages : lastPageCount === limit;
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Clientes</h1>
-        <div className="flex gap-3 items-center">
-          <input
-            type="text"
-            placeholder="Buscar por Razão Social ou CNPJ"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          
-          <button
-            onClick={() => setShowForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            Novo Cliente
-          </button>
-          <Link
-            to="/clientes/upload"
-            className="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700"
-          >
-            Upload em Lote
-          </Link>
+    <div className="container mx-auto px-4 py-6 max-w-7xl">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
+          <UserGroupIcon className="h-8 w-8 text-blue-600" />
+          Clientes
+        </h1>
+        <p className="text-gray-600">Gerencie o cadastro de clientes e suas informações</p>
+      </div>
+
+      {/* Barra de Busca e Ações */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+          <div className="flex-1 max-w-md w-full">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Buscar Cliente</label>
+            <div className="relative">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar por Razão Social ou CNPJ"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 items-end">
+            <button
+              onClick={() => setShowForm(true)}
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors flex items-center gap-2 shadow-sm hover:shadow"
+            >
+              <PlusIcon className="h-5 w-5" />
+              Novo Cliente
+            </button>
+            <Link
+              to="/clientes/upload"
+              className="px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors flex items-center gap-2 shadow-sm hover:shadow"
+            >
+              <DocumentArrowUpIcon className="h-5 w-5" />
+              Upload em Lote
+            </Link>
+          </div>
         </div>
       </div>
 
 
       {showForm && (
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-base font-medium mb-4">{editingCliente ? 'Editar Cliente' : 'Novo Cliente'}</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+          <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <BuildingOfficeIcon className="h-5 w-5 text-blue-600" />
+              {editingCliente ? 'Editar Cliente' : 'Novo Cliente'}
+            </h2>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Razão Social</label>
-                <input type="text" value={formData.razao_social || formData.nome || ''} onChange={(e) => setFormData({ ...formData, razao_social: e.target.value, nome: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                <label className="block text-sm font-medium text-gray-700 mb-2">Razão Social</label>
+                <div className="relative">
+                  <BuildingOfficeIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={formData.razao_social || formData.nome || ''}
+                    onChange={(e) => setFormData({ ...formData, razao_social: e.target.value, nome: e.target.value })}
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    required
+                  />
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">CNPJ</label>
-                <input type="text" placeholder="00.000.000/0000-00" value={formData.cnpj || ''} onChange={(e) => { const formatted = formatCNPJ(e.target.value); setFormData({ ...formData, cnpj_limpo: formatted.replace(/\D/g, ''), cnpj: formatted }); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                <label className="block text-sm font-medium text-gray-700 mb-2">CNPJ</label>
+                <input
+                  type="text"
+                  placeholder="00.000.000/0000-00"
+                  value={formData.cnpj || ''}
+                  onChange={(e) => {
+                    const formatted = formatCNPJ(e.target.value);
+                    setFormData({ ...formData, cnpj_limpo: formatted.replace(/\D/g, ''), cnpj: formatted });
+                  }}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                  required
+                />
               </div>
             </div>
-            <div className="flex space-x-4">
-              <button type="submit" disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-60">{editingCliente ? 'Atualizar' : 'Criar'}</button>
-              <button type="button" onClick={() => { setShowForm(false); setEditingCliente(null); setFormData({}); }} className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Cancelar</button>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <CheckIcon className="h-5 w-5" />
+                    {editingCliente ? 'Atualizar' : 'Criar'}
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForm(false);
+                  setEditingCliente(null);
+                  setFormData({});
+                }}
+                className="px-6 py-2.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-medium transition-colors flex items-center gap-2"
+              >
+                <XMarkIcon className="h-5 w-5" />
+                Cancelar
+              </button>
             </div>
           </form>
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Razão Social</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">CNPJ</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Inf. Financeiras</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {clientes.map((cliente) => {
-              const cnpjDisplay = displayCNPJ(cliente.cnpj_limpo || cliente.cnpj);
-              const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
-              const cnpjKey = `${cliente.id}-${cnpjValue}`;
-              return (
-              <tr key={cliente.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-xs font-medium text-gray-900">
-                  {cliente.razao_social || cliente.nome || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
-                  <div className="flex items-center gap-2">
-                    <span>{cnpjDisplay}</span>
-                    <button
-                      onClick={() => copyToClipboard(cnpjValue, cnpjKey)}
-                      className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                      title="Copiar CNPJ"
-                    >
-                      {copiedCnpj === cnpjKey ? (
-                        <CheckIcon className="w-3.5 h-3.5 text-green-600" />
-                      ) : (
-                        <ClipboardDocumentIcon className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-700">
-                  {cliente.hasPayments === true ? (
-                    <div className="flex items-center gap-2">
-                      <CheckIcon className="w-4 h-4 text-emerald-600" title="Possui pagamentos" />
-                      <span className="text-gray-600">Pagamentos</span>
-                    </div>
-                  ) : (
-                    <Link
-                      to={`/pagamentos?cnpj=${encodeURIComponent(cnpjValue)}`}
-                      className="text-emerald-600 hover:text-emerald-700 font-medium inline-flex items-center gap-1"
-                      title="Adicionar pagamentos para este CNPJ"
-                    >
-                      <PlusIcon className="w-4 h-4" />
-                      <span>Adicionar</span>
-                    </Link>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs font-medium">
-                  <button onClick={() => handleEdit(cliente)} className="text-blue-600 hover:text-blue-900 mr-3">Editar</button>
-                  <button onClick={() => handleDeleteClick(cliente)} className="text-red-600 hover:text-red-900">Excluir</button>
-                </td>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <UserGroupIcon className="h-5 w-5 text-gray-600" />
+            Lista de Clientes
+          </h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Razão Social</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Inf. Financeiras</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
               </tr>
-            );
-            })}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {clientes.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <UserGroupIcon className="h-12 w-12 text-gray-400" />
+                      <p className="text-gray-500 font-medium">Nenhum cliente encontrado</p>
+                      <p className="text-sm text-gray-400">
+                        {search ? 'Tente ajustar os termos de busca' : 'Cadastre um novo cliente para começar'}
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                clientes.map((cliente) => {
+                  const cnpjDisplay = displayCNPJ(cliente.cnpj_limpo || cliente.cnpj);
+                  const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
+                  const cnpjKey = `${cliente.id}-${cnpjValue}`;
+                  return (
+                    <tr key={cliente.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <BuildingOfficeIcon className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm font-medium text-gray-900">
+                            {cliente.razao_social || cliente.nome || '-'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600 font-mono">{cnpjDisplay}</span>
+                          <button
+                            onClick={() => copyToClipboard(cnpjValue, cnpjKey)}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                            title="Copiar CNPJ"
+                          >
+                            {copiedCnpj === cnpjKey ? (
+                              <CheckIcon className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <ClipboardDocumentIcon className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {cliente.hasPayments === true ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 gap-1.5">
+                            <CheckIcon className="w-3.5 h-3.5" />
+                            Pagamentos
+                          </span>
+                        ) : (
+                          <Link
+                            to={`/pagamentos?cnpj=${encodeURIComponent(cnpjValue)}`}
+                            className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors gap-1.5"
+                            title="Adicionar pagamentos para este CNPJ"
+                          >
+                            <PlusIcon className="w-4 h-4" />
+                            Adicionar
+                          </Link>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleEdit(cliente)}
+                            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1.5"
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(cliente)}
+                            className="px-3 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1.5"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                            Excluir
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {clientes.length > 0 && (
-        <>
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="text-sm text-gray-600">
-              {total != null && totalPages != null
-                ? `Total: ${total} clientes`
-                : `Mostrando ${clientes.length} clientes`}
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Carregando...
+                </span>
+              ) : total != null && totalPages != null ? (
+                <span className="font-medium">Total: <span className="text-gray-900">{total}</span> clientes</span>
+              ) : (
+                <span>Exibindo {clientes.length} clientes</span>
+              )}
             </div>
-            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-              <option value={5}>5 por página</option>
-              <option value={10}>10 por página</option>
-              <option value={20}>20 por página</option>
-            </select>
+            <div className="flex items-center gap-3">
+              <select
+                value={limit}
+                onChange={(e) => setLimit(Number(e.target.value))}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={5}>5 por página</option>
+                <option value={10}>10 por página</option>
+                <option value={20}>20 por página</option>
+              </select>
+            </div>
           </div>
           {totalPages != null && total != null && (
-            <Pagination
-              currentPage={page}
-              totalPages={totalPages}
-              totalItems={total}
-              itemsPerPage={limit}
-              onPageChange={setPage}
-              itemLabel="cliente"
-            />
+            <div className="mt-4">
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                totalItems={total}
+                itemsPerPage={limit}
+                onPageChange={setPage}
+                itemLabel="cliente"
+              />
+            </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Notificação de exclusão pendente com contagem regressiva */}

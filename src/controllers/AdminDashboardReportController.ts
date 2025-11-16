@@ -141,6 +141,22 @@ class AdminDashboardReportController {
     stream.pipe(res);
   }
 
+  async deleteHistory(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ success: false, error: 'ID do relatório é obrigatório' });
+      return;
+    }
+
+    const deleted = AdminReportHistoryService.delete(id);
+    if (!deleted) {
+      res.status(404).json({ success: false, error: 'Relatório não encontrado' });
+      return;
+    }
+
+    res.status(200).json({ success: true, message: 'Relatório excluído com sucesso' });
+  }
+
   private parseFilters(req: Request): ReportFilterOptions {
     const monthsParam = req.query.months;
     const monthsParsed = typeof monthsParam === 'string' ? Number.parseInt(monthsParam, 10) : undefined;

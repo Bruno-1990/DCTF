@@ -442,7 +442,21 @@ export class SituacaoFiscalOrchestrator {
         if (url) {
           // salvar em downloads e atualizar state
           const client = supabaseAdmin || supabase;
-          await client.from('sitf_downloads').insert({ cnpj: clean, file_url: url });
+          
+          // Proteção contra duplicatas: verificar se já existe registro recente (últimos 10 segundos)
+          const recentThreshold = new Date(now - 10000).toISOString();
+          const { data: recent } = await client
+            .from('sitf_downloads')
+            .select('id')
+            .eq('cnpj', clean)
+            .gte('created_at', recentThreshold)
+            .limit(1);
+          
+          // Só inserir se não houver registro recente
+          if (!recent || recent.length === 0) {
+            await client.from('sitf_downloads').insert({ cnpj: clean, file_url: url });
+          }
+          
           await upsertState({ cnpj: clean, status: 'pronto', last_response: emit.raw, file_url: url });
         } else {
           await upsertState({ cnpj: clean, status: 'pronto', last_response: emit.raw });

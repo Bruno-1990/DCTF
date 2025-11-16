@@ -146,6 +146,29 @@ class AdminReportHistoryService {
     return `${base}_${record.id}.${record.extension}`;
   }
 
+  delete(id: string): boolean {
+    const index = this.records.findIndex(record => record.id === id);
+    if (index === -1) {
+      return false;
+    }
+
+    const record = this.records[index];
+    
+    // Remover arquivo físico se existir
+    try {
+      if (fs.existsSync(record.filePath)) {
+        fs.unlinkSync(record.filePath);
+      }
+    } catch (error) {
+      console.warn(`Erro ao deletar arquivo ${record.filePath}:`, error);
+    }
+
+    // Remover do array
+    this.records.splice(index, 1);
+    this.saveToDisk();
+    return true;
+  }
+
   private resolveMimeType(format: AdminReportFormat): string {
     if (format === 'xlsx') {
       return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

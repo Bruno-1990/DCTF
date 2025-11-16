@@ -1,6 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../hooks/useToast';
 import Alert from '../components/UI/Alert';
+import {
+  DocumentMagnifyingGlassIcon,
+  MagnifyingGlassIcon,
+  DocumentArrowDownIcon,
+  BuildingOfficeIcon,
+  CalendarIcon,
+  EyeIcon,
+  ArrowDownTrayIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
 
 function formatCNPJ(value: string) {
   const digits = value.replace(/\D/g, '');
@@ -23,6 +33,8 @@ export default function SituacaoFiscal() {
   const [history, setHistory] = useState<Array<{ id: string; cnpj: string; file_url?: string | null; created_at: string; cliente?: { razao_social: string } | null }>>([]);
   const [historyFilter, setHistoryFilter] = useState('');
   const countdownRef = useRef<number | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string | null; cnpj: string; countdown: number }>({ id: null, cnpj: '', countdown: 0 });
+  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
 
   const handleConsultarRetry = useCallback(async () => {
     try {
@@ -238,137 +250,354 @@ export default function SituacaoFiscal() {
     }
   };
 
+  const handleDeleteClick = (id: string, cnpj: string) => {
+    // Limpar timer anterior se existir
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+      setDeleteTimer(null);
+    }
+    
+    // Iniciar contagem regressiva de 3 segundos
+    setPendingDelete({ id, cnpj, countdown: 3 });
+    
+    let countdown = 3;
+    const timer = setInterval(() => {
+      countdown -= 1;
+      setPendingDelete(prev => ({ ...prev, countdown }));
+      
+      if (countdown <= 0) {
+        clearInterval(timer);
+        setDeleteTimer(null);
+        // Executar exclusão automaticamente
+        executeDelete(id);
+      }
+    }, 1000);
+    
+    setDeleteTimer(timer);
+  };
+
+  const cancelDelete = () => {
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+      setDeleteTimer(null);
+    }
+    setPendingDelete({ id: null, cnpj: '', countdown: 0 });
+  };
+
+  const executeDelete = async (id: string) => {
+    // Limpar estado de exclusão pendente
+    setPendingDelete({ id: null, cnpj: '', countdown: 0 });
+
+    try {
+      const res = await fetch(`/api/situacao-fiscal/history/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        toast.success('Registro excluído com sucesso');
+        // Atualizar histórico
+        void fetchHistory();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body?.error || 'Erro ao excluir registro');
+      }
+    } catch (e: any) {
+      toast.error('Erro ao excluir registro');
+    }
+  };
+
+  // Limpar timer ao desmontar componente
+  useEffect(() => {
+    return () => {
+      if (deleteTimer) {
+        clearInterval(deleteTimer);
+      }
+    };
+  }, [deleteTimer]);
+
   useEffect(() => {
     void fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white shadow rounded-lg p-6">
-        <h1 className="text-lg font-semibold text-gray-900">Situação Fiscal</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Informe o CNPJ e clique em “Consultar Receita”. Se o relatório estiver em processamento, um contador aparecerá e a página tentará automaticamente assim que estiver pronto.
-        </p>
-        <div className="mt-4 flex flex-col md:flex-row gap-3 md:items-end">
-          <div className="w-full md:w-64">
-            <label htmlFor="cnpj" className="block text-sm font-medium text-gray-700 mb-2">
-              CNPJ
-            </label>
-            <input
-              id="cnpj"
-              type="text"
-              placeholder="00.000.000/0000-00"
-              value={cnpj}
-              onChange={handleInput}
-              maxLength={18}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              onClick={handleConsultar}
-              disabled={disabled}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Consultando…' : retryAfter != null && retryAfter > 0 ? `Aguardando… ${retryAfter}s` : 'Consultar Receita'}
-            </button>
-          </div>
+    <div className="container mx-auto px-4 py-6 max-w-7xl">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
+          <DocumentMagnifyingGlassIcon className="h-8 w-8 text-blue-600" />
+          Situação Fiscal
+        </h1>
+        <p className="text-gray-600">Consulte a situação fiscal de empresas através da Receita Federal</p>
+      </div>
+
+      {/* Card de Consulta */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+        <div className="px-6 py-5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <DocumentMagnifyingGlassIcon className="h-5 w-5 text-blue-600" />
+            Nova Consulta
+          </h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Informe o CNPJ e clique em "Consultar Receita". Se o relatório estiver em processamento, um contador aparecerá e a página tentará automaticamente assim que estiver pronto.
+          </p>
         </div>
         
-        {/* Alertas de sucesso (passos) */}
-        {showSuccess && successMessage && (
-          <div className="mt-4">
-            <Alert type="success" onClose={() => setShowSuccess(false)}>
-              <div className="whitespace-pre-wrap">{successMessage}</div>
-            </Alert>
+        <div className="p-6">
+          <div className="flex flex-col md:flex-row gap-4 md:items-end">
+            <div className="flex-1 max-w-md">
+              <label htmlFor="cnpj" className="block text-sm font-medium text-gray-700 mb-2">
+                CNPJ
+              </label>
+              <div className="relative">
+                <BuildingOfficeIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <input
+                  id="cnpj"
+                  type="text"
+                  placeholder="00.000.000/0000-00"
+                  value={cnpj}
+                  onChange={handleInput}
+                  maxLength={18}
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                />
+              </div>
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={handleConsultar}
+                disabled={disabled}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 shadow-sm hover:shadow"
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Consultando...
+                  </>
+                ) : retryAfter != null && retryAfter > 0 ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Aguardando... {retryAfter}s
+                  </>
+                ) : (
+                  <>
+                    <MagnifyingGlassIcon className="h-5 w-5" />
+                    Consultar Receita
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        )}
+          
+          {/* Alertas de sucesso (passos) */}
+          {showSuccess && successMessage && (
+            <div className="mt-4">
+              <Alert type="success" onClose={() => setShowSuccess(false)}>
+                <div className="whitespace-pre-wrap">{successMessage}</div>
+              </Alert>
+            </div>
+          )}
 
-        {/* Alert de Erro */}
-        {error && (
-          <div className="mt-4">
-            <Alert type="error" onClose={() => setError(null)}>
-              <div className="whitespace-pre-wrap break-words">{error}</div>
-            </Alert>
-          </div>
-        )}
+          {/* Alert de Erro */}
+          {error && (
+            <div className="mt-4">
+              <Alert type="error" onClose={() => setError(null)}>
+                <div className="whitespace-pre-wrap break-words">{error}</div>
+              </Alert>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Histórico de downloads */}
-      <div className="bg-white shadow rounded-lg p-6">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <h2 className="text-base font-semibold text-gray-900">Downloads recentes</h2>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
+          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <DocumentArrowDownIcon className="h-5 w-5 text-gray-600" />
+            Downloads Recentes
+          </h2>
           <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={historyFilter}
-              onChange={(e) => setHistoryFilter(e.target.value)}
-              placeholder="Filtrar por CNPJ..."
-              className="w-56 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+            <div className="relative">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                value={historyFilter}
+                onChange={(e) => setHistoryFilter(e.target.value)}
+                placeholder="Filtrar por CNPJ..."
+                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+              />
+            </div>
             <button
               onClick={() => fetchHistory(historyFilter)}
-              className="px-3 py-2 bg-gray-100 rounded hover:bg-gray-200 text-sm"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
             >
+              <MagnifyingGlassIcon className="h-4 w-4" />
               Buscar
             </button>
           </div>
         </div>
-        <div className="mt-4 overflow-x-auto">
+
+        <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CNPJ</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Razão Social</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Razão Social</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Data</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {history.map((h) => (
-                <tr key={h.id}>
-                  <td className="px-4 py-2 text-sm text-gray-900">{formatCNPJ(h.cnpj)}</td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {h.cliente?.razao_social || <span className="text-gray-400 italic">Não cadastrado</span>}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-500">{new Date(h.created_at).toLocaleString('pt-BR')}</td>
-                  <td className="px-4 py-2 text-sm">
-                    {h.file_url ? (
-                      <div className="flex items-center gap-3">
-                        <a
-                          href={h.file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          Visualizar
-                        </a>
-                        <a
-                          href={h.file_url}
-                          download
-                          className="text-green-600 hover:text-green-800"
-                        >
-                          Baixar PDF
-                        </a>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400">Indisponível</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {history.length === 0 && (
+              {history.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-gray-500" colSpan={4}>
-                    Nenhum download recente.
+                  <td colSpan={4} className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <DocumentArrowDownIcon className="h-12 w-12 text-gray-400" />
+                      <p className="text-gray-500 font-medium">Nenhum download recente</p>
+                      <p className="text-sm text-gray-400">Realize uma consulta acima para gerar relatórios</p>
+                    </div>
                   </td>
                 </tr>
+              ) : (
+                history.map((h) => (
+                  <tr key={h.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="text-sm font-medium text-gray-900">{formatCNPJ(h.cnpj)}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <BuildingOfficeIcon className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm text-gray-900">
+                          {h.cliente?.razao_social || <span className="text-gray-400 italic">Não cadastrado</span>}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <CalendarIcon className="h-4 w-4 text-gray-400" />
+                        {new Date(h.created_at).toLocaleString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        {h.file_url ? (
+                          <>
+                            <a
+                              href={h.file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1.5"
+                            >
+                              <EyeIcon className="h-4 w-4" />
+                              Visualizar
+                            </a>
+                            <a
+                              href={h.file_url}
+                              download
+                              className="px-3 py-1.5 text-sm font-medium text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1.5"
+                            >
+                              <ArrowDownTrayIcon className="h-4 w-4" />
+                              Baixar PDF
+                            </a>
+                            <button
+                              onClick={() => handleDeleteClick(h.id, h.cnpj)}
+                              className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Excluir"
+                            >
+                              <XMarkIcon className="h-5 w-5" />
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-sm text-gray-400">Indisponível</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Alert de exclusão pendente */}
+      {pendingDelete.id && pendingDelete.countdown > 0 && (
+        <div className="fixed top-4 right-4 z-50 animate-toast-slide-in">
+          <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-lg shadow-2xl px-6 py-4 min-w-[320px] animate-toast-fade-in">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-white">
+                  Exclusão em {pendingDelete.countdown} segundo{pendingDelete.countdown !== 1 ? 's' : ''}
+                </p>
+                <p className="text-sm text-white/90 mt-1">
+                  CNPJ: {formatCNPJ(pendingDelete.cnpj)}
+                </p>
+              </div>
+            </div>
+            
+            {/* Barra de progresso */}
+            <div className="w-full bg-yellow-200/30 rounded-full h-2 mb-3">
+              <div 
+                className="bg-white h-2 rounded-full transition-all duration-1000 ease-linear"
+                style={{ width: `${(pendingDelete.countdown / 3) * 100}%` }}
+              />
+            </div>
+            
+            {/* Botão de cancelar */}
+            <button
+              onClick={cancelDelete}
+              className="w-full px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors font-medium"
+            >
+              Cancelar Exclusão
+            </button>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes toast-slide-in {
+          from {
+            opacity: 0;
+            transform: translateX(100%);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        @keyframes toast-fade-in {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        .animate-toast-slide-in {
+          animation: toast-slide-in 0.3s ease-out;
+        }
+        .animate-toast-fade-in {
+          animation: toast-fade-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }

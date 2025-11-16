@@ -4,6 +4,16 @@ import ExcelJS from 'exceljs';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { relatoriosService } from '../services/relatorios';
 import { dctfService } from '../services/dctf';
+import {
+  ChartBarIcon,
+  DocumentCheckIcon,
+  BuildingOfficeIcon,
+  DocumentTextIcon,
+  ExclamationTriangleIcon,
+  CurrencyDollarIcon,
+  FunnelIcon,
+  TableCellsIcon,
+} from '@heroicons/react/24/outline';
 
 const RelatoriosPage: React.FC = () => {
   const { items, load, loading, error, clearError } = useRelatorios();
@@ -13,6 +23,8 @@ const RelatoriosPage: React.FC = () => {
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [generatingTarget, setGeneratingTarget] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string | null; titulo: string; countdown: number }>({ id: null, titulo: '', countdown: 0 });
+  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
 
   const fetchData = (params: { page: number; limit: number }) =>
     load({
@@ -58,6 +70,70 @@ const RelatoriosPage: React.FC = () => {
       console.error('Erro ao baixar relatório do histórico:', err);
     }
   };
+
+  const handleDeleteClick = (id: string, titulo: string) => {
+    // Limpar timer anterior se existir
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+      setDeleteTimer(null);
+    }
+    
+    // Iniciar contagem regressiva de 3 segundos
+    setPendingDelete({ id, titulo, countdown: 3 });
+    
+    let countdown = 3;
+    const timer = setInterval(() => {
+      countdown -= 1;
+      setPendingDelete(prev => ({ ...prev, countdown }));
+      
+      if (countdown <= 0) {
+        clearInterval(timer);
+        setDeleteTimer(null);
+        // Executar exclusão automaticamente
+        executeDelete(id);
+      }
+    }, 1000);
+    
+    setDeleteTimer(timer);
+  };
+
+  const cancelDelete = () => {
+    if (deleteTimer) {
+      clearInterval(deleteTimer);
+      setDeleteTimer(null);
+    }
+    setPendingDelete({ id: null, titulo: '', countdown: 0 });
+  };
+
+  const executeDelete = async (id: string) => {
+    // Limpar estado de exclusão pendente
+    setPendingDelete({ id: null, titulo: '', countdown: 0 });
+
+    try {
+      const res = await fetch(`/api/dashboard/admin/reports/history/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        // Atualizar lista
+        await fetchData({ page, limit });
+      } else {
+        const body = await res.json().catch(() => ({}));
+        alert(body?.error || 'Erro ao excluir relatório');
+      }
+    } catch (e: any) {
+      alert('Erro ao excluir relatório');
+    }
+  };
+
+  // Limpar timer ao desmontar componente
+  useEffect(() => {
+    return () => {
+      if (deleteTimer) {
+        clearInterval(deleteTimer);
+      }
+    };
+  }, [deleteTimer]);
 
   const handleGenerate = async (reportType: 'gerencial' | 'clientes' | 'dctf' | 'conferencia' | 'pendentes' | 'pagamentos-pendentes', format: 'pdf' | 'xlsx') => {
     try {
@@ -350,156 +426,340 @@ const RelatoriosPage: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const reportCards = [
+    { key: 'gerencial', title: 'Relatório Gerencial', description: 'Visão consolidada das DCTFs monitoradas', icon: ChartBarIcon, color: 'blue' },
+    { key: 'conferencia', title: 'Relatório de Conferências', description: 'Pendências legais e conferência de prazos', icon: DocumentCheckIcon, color: 'purple' },
+    { key: 'clientes', title: 'Relatório de Clientes', description: 'Resumo por contribuinte com saldos e status', icon: BuildingOfficeIcon, color: 'indigo' },
+    { key: 'dctf', title: 'Relatório DCTF', description: 'Lista detalhada das declarações transmitidas', icon: DocumentTextIcon, color: 'green' },
+    { key: 'pendentes', title: 'DCTFs Em Aberto', description: 'Declarações em aberto com prazo vigente', icon: ExclamationTriangleIcon, color: 'orange' },
+    { key: 'pagamentos-pendentes', title: 'Pagamentos Pendentes', description: 'Pagamentos em aberto por cliente e documento', icon: CurrencyDollarIcon, color: 'red' },
+  ];
+
+  const colorClasses = {
+    blue: 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100',
+    purple: 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100',
+    indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100',
+    green: 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100',
+    orange: 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100',
+    red: 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100',
+  };
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Relatórios</h1>
+    <div className="container mx-auto px-4 py-6 max-w-7xl">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Relatórios</h1>
+        <p className="text-gray-600">Gere e gerencie relatórios do sistema</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-        {[
-          { key: 'gerencial', title: 'Relatório Gerencial', description: 'Visão consolidada das DCTFs monitoradas.' },
-          { key: 'conferencia', title: 'Relatório de Conferências', description: 'Pendências legais e conferência de prazos.' },
-          { key: 'clientes', title: 'Relatório de Clientes', description: 'Resumo por contribuinte com saldos e status.' },
-          { key: 'dctf', title: 'Relatório DCTF', description: 'Lista detalhada das declarações transmitidas.' },
-          { key: 'pendentes', title: 'DCTFs Em Aberto', description: 'Declarações em aberto com prazo vigente e últimos registros DCTF.' },
-          { key: 'pagamentos-pendentes', title: 'Pagamentos Pendentes', description: 'Pagamentos em aberto por cliente e documento (estrutura Pai → Filho).' },
-        ].map(card => (
-          <div key={card.key} className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col gap-3 items-center justify-center text-center">
-            <div>
-              <h2 className="text-base font-medium text-gray-800 text-center">{card.title}</h2>
-              <p className="text-xs text-gray-500 text-center mt-2">{card.description}</p>
-            </div>
-            <div className="flex gap-3 justify-center w-full">
-              <button
-                onClick={() => handleGenerate(card.key as any, 'xlsx')}
-                disabled={generatingTarget === `${card.key}-xlsx`}
-                className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-center"
+      {/* Cards de Geração */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <ChartBarIcon className="h-5 w-5 text-gray-600" />
+          Gerar Novo Relatório
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {reportCards.map(card => {
+            const Icon = card.icon;
+            const isGenerating = generatingTarget === `${card.key}-xlsx`;
+            return (
+              <div
+                key={card.key}
+                className={`bg-white border-2 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden ${colorClasses[card.color as keyof typeof colorClasses]}`}
               >
-                {generatingTarget === `${card.key}-xlsx` ? 'Gerando…' : 'Gerar XLSX'}
+                <div className="p-5">
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className={`p-3 rounded-lg bg-white/80 ${colorClasses[card.color as keyof typeof colorClasses].split(' ')[0]}`}>
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900 mb-1">{card.title}</h3>
+                      <p className="text-sm text-gray-600 leading-relaxed">{card.description}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleGenerate(card.key as any, 'xlsx')}
+                    disabled={isGenerating}
+                    className="w-full px-4 py-2.5 bg-white border-2 border-current rounded-lg font-medium hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Gerando...
+                      </>
+                    ) : (
+                      <>
+                        <TableCellsIcon className="h-4 w-4" />
+                        Gerar XLSX
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Filtros e Histórico */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <FunnelIcon className="h-5 w-5 text-gray-600" />
+            Histórico de Relatórios
+          </h2>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <span className="whitespace-nowrap">Filtrar por tipo:</span>
+              <select
+                value={tipoRelatorio}
+                onChange={(e) => setTipoRelatorio(e.target.value)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Todos</option>
+                <option value="gerencial">Relatório Gerencial</option>
+                <option value="conferencia">Relatório de Conferências</option>
+                <option value="clientes">Relatório de Clientes</option>
+                <option value="dctf">Relatório DCTF</option>
+                <option value="pendentes">DCTFs Em Aberto</option>
+                <option value="pagamentos-pendentes">Pagamentos Pendentes</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mx-6 mt-4 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={clearError} className="text-red-600 hover:text-red-800 font-medium">
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Paginação Superior */}
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <div className="text-sm text-gray-600">
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Carregando...
+              </span>
+            ) : total != null && totalPages != null ? (
+              <span className="font-medium">Total: <span className="text-gray-900">{total}</span> relatórios</span>
+            ) : (
+              <span>Exibindo {filtered.length} relatórios</span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={5}>5 por página</option>
+              <option value={10}>10 por página</option>
+              <option value={20}>20 por página</option>
+            </select>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Anterior
+              </button>
+              <span className="px-3 py-1.5 text-sm text-gray-700 font-medium">
+                Página {page}{totalPages != null ? ` de ${totalPages}` : ''}
+              </span>
+              <button
+                disabled={!canGoNext}
+                onClick={() => setPage((p) => p + 1)}
+                className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Próxima
               </button>
             </div>
           </div>
-        ))}
-      </div>
+        </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
-        <h2 className="text-base font-medium text-gray-800 mb-3">Filtros</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-          <label className="flex flex-col text-xs text-gray-600">
-            Tipo de relatório
-            <select
-              value={tipoRelatorio}
-              onChange={(e) => setTipoRelatorio(e.target.value)}
-              className="mt-1 px-2 py-1 border rounded"
-            >
-              <option value="">Todos</option>
-              <option value="gerencial">Relatório Gerencial</option>
-              <option value="conferencia">Relatório de Conferências</option>
-              <option value="clientes">Relatório de Clientes</option>
-              <option value="dctf">Relatório DCTF</option>
-              <option value="pendentes">DCTFs Em Aberto</option>
-              <option value="pagamentos-pendentes">Pagamentos Pendentes</option>
-            </select>
-          </label>
+        {/* Tabela */}
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Título</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tipo</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Formato</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Criado em</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <DocumentTextIcon className="h-12 w-12 text-gray-400" />
+                      <p className="text-gray-500 font-medium">Nenhum relatório encontrado</p>
+                      <p className="text-sm text-gray-400">Gere um novo relatório usando os cards acima</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((r) => (
+                  <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-gray-900">{r.titulo}</span>
+                        <div className="mt-1 space-y-0.5">
+                          {r.notes && <span className="text-xs text-gray-500 block">{r.notes}</span>}
+                          {r.period && <span className="text-xs text-gray-500 block">Competência: {r.period}</span>}
+                          {r.responsible && <span className="text-xs text-gray-500 block">Responsável: {r.responsible}</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {r.tipoRelatorio}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        {r.formato?.toUpperCase() ?? (r.arquivoPdf ? 'PDF' : '—')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      }) : '-'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        {r.downloadUrl ? (
+                          <button
+                            onClick={() => handleDownload(r.id, r.titulo, r.formato ?? 'pdf')}
+                            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            Baixar {r.formato?.toUpperCase() ?? 'PDF'}
+                          </button>
+                        ) : r.arquivoPdf && !r.downloadUrl ? (
+                          <a
+                            href={r.arquivoPdf}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            Baixar PDF
+                          </a>
+                        ) : r.arquivoXlsx ? (
+                          <a
+                            href={r.arquivoXlsx}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            Baixar XLSX
+                          </a>
+                        ) : (
+                          <span className="text-sm text-gray-400">Sem arquivo</span>
+                        )}
+                        <button
+                          onClick={() => handleDeleteClick(r.id, r.titulo)}
+                          className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Excluir"
+                        >
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-2 rounded mb-4">
-          {error}
-          <button onClick={clearError} className="ml-3 underline">
-            fechar
-          </button>
+      {/* Alert de exclusão pendente */}
+      {pendingDelete.id && pendingDelete.countdown > 0 && (
+        <div className="fixed top-4 right-4 z-50 animate-toast-slide-in">
+          <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-lg shadow-2xl px-6 py-4 min-w-[320px] animate-toast-fade-in">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-white">
+                  Exclusão em {pendingDelete.countdown} segundo{pendingDelete.countdown !== 1 ? 's' : ''}
+                </p>
+                <p className="text-sm text-white/90 mt-1">
+                  Relatório: {pendingDelete.titulo}
+                </p>
+              </div>
+            </div>
+            
+            {/* Barra de progresso */}
+            <div className="w-full bg-yellow-200/30 rounded-full h-2 mb-3">
+              <div 
+                className="bg-white h-2 rounded-full transition-all duration-1000 ease-linear"
+                style={{ width: `${(pendingDelete.countdown / 3) * 100}%` }}
+              />
+            </div>
+            
+            {/* Botão de cancelar */}
+            <button
+              onClick={cancelDelete}
+              className="w-full px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors font-medium"
+            >
+              Cancelar Exclusão
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-xs text-gray-600">
-          {loading ? 'Carregando…' : total != null && totalPages != null ? `Página ${page} de ${totalPages} — Total: ${total}` : `Total exibido: ${filtered.length}`}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50 text-xs"
-          >
-            Anterior
-          </button>
-          <span className="text-xs">
-            Página {page}
-            {totalPages != null ? ` de ${totalPages}` : ''}
-          </span>
-          <button
-            disabled={!canGoNext}
-            onClick={() => setPage((p) => p + 1)}
-            className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50 text-xs"
-          >
-            Próxima
-          </button>
-          <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="ml-2 px-2 py-1 border rounded text-xs">
-            <option value={5}>5</option>
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Título</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Formato</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Declaração</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Criado em</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filtered.map((r) => (
-              <tr key={r.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-900">
-                  <div className="flex flex-col">
-                    <span>{r.titulo}</span>
-                    {r.notes && <span className="text-xs text-gray-500">{r.notes}</span>}
-                    {r.period && <span className="text-xs text-gray-500">Competência: {r.period}</span>}
-                    {r.responsible && <span className="text-xs text-gray-500">Responsável: {r.responsible}</span>}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{r.tipoRelatorio}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{r.formato?.toUpperCase() ?? (r.arquivoPdf ? 'PDF' : '—')}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{r.declaracaoId}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR') : '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs flex flex-col md:flex-row md:items-center md:gap-3 gap-2">
-                  {r.downloadUrl ? (
-                    <button
-                      onClick={() => handleDownload(r.id, r.titulo, r.formato ?? 'pdf')}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      Baixar {r.formato?.toUpperCase() ?? 'PDF'}
-                    </button>
-                  ) : null}
-                  {r.arquivoPdf && !r.downloadUrl ? (
-                    <a href={r.arquivoPdf} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-800">
-                      Baixar PDF
-                    </a>
-                  ) : null}
-                  {r.arquivoXlsx ? (
-                    <a href={r.arquivoXlsx} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-800">
-                      Baixar XLSX
-                    </a>
-                  ) : null}
-                  {!r.downloadUrl && !r.arquivoPdf && !r.arquivoXlsx ? (
-                    <span className="text-gray-400">Sem arquivo</span>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <style>{`
+        @keyframes toast-slide-in {
+          from {
+            opacity: 0;
+            transform: translateX(100%);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        @keyframes toast-fade-in {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        .animate-toast-slide-in {
+          animation: toast-slide-in 0.3s ease-out;
+        }
+        .animate-toast-fade-in {
+          animation: toast-fade-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 };
