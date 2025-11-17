@@ -209,7 +209,7 @@ export default function Conferencias() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">CNPJ</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Competência</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento Legal</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Data de Envio</th>
@@ -233,12 +233,12 @@ export default function Conferencias() {
                     <Fragment key={issue.id}>
                       <tr className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-gray-800 font-medium text-xs">{issue.businessName ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">
+                        <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <span>{formatCNPJ(issue.identification)}</span>
+                            <span className="font-mono">{formatCNPJ(issue.identification)}</span>
                             <button
                               onClick={() => copyToClipboard(issue.identification, issue.id)}
-                              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                              className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
                               title="Copiar CNPJ"
                             >
                               {copiedId === issue.id ? (

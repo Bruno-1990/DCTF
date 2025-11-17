@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { dctfService } from '../services/dctf';
 import { relatoriosService } from '../services/relatorios';
-import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 
 const ADMIN_CREDENTIALS = {
@@ -15,6 +16,7 @@ const STORAGE_PROGRESS_KEY = 'dctf_consulta_progress_id';
 // AUTH_TIMEOUT removido - não expira automaticamente na aba admin para não atrapalhar consultas em lote
 
 const Administracao: React.FC = () => {
+  const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(true);
   const [username, setUsername] = useState('');
@@ -399,12 +401,22 @@ const Administracao: React.FC = () => {
                 </div>
               )}
 
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 font-medium transition-colors"
-              >
-                Entrar
-              </button>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="flex items-center justify-center gap-2 flex-1 bg-gray-200 text-gray-700 px-4 py-3 rounded-lg hover:bg-gray-300 font-medium transition-colors"
+                >
+                  <ArrowLeftIcon className="h-4 w-4" />
+                  Voltar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                >
+                  Entrar
+                </button>
+              </div>
             </form>
           </div>
         </div>
