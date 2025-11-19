@@ -38,6 +38,22 @@ export class SincronizacaoReceitaService {
   }
 
   /**
+   * Converte uma string para Date de forma segura, retornando null se inválida
+   */
+  private safeDateParse(value: string | null | undefined): Date | null {
+    if (!value) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed || trimmed === '') return null;
+    
+    const date = new Date(trimmed);
+    // Verifica se a data é válida
+    if (isNaN(date.getTime())) {
+      return null;
+    }
+    return date;
+  }
+
+  /**
    * Configura autenticação com a Receita Federal
    */
   configurarAutenticacao(token: string): void {
@@ -68,9 +84,9 @@ export class SincronizacaoReceitaService {
       // 0. Criar registro de sincronização
       const sincronizacaoRecord = await this.receitaSincronizacaoModel.criarSincronizacao({
         cnpj_contribuinte: cnpjLimpo,
-        periodo_inicial: periodoInicial ? new Date(`${periodoInicial}-01`) : null,
+        periodo_inicial: periodoInicial ? this.safeDateParse(`${periodoInicial}-01`) : null,
         periodo_final: periodoFinal 
-          ? new Date(`${periodoFinal}-${new Date(parseInt(periodoFinal.split('-')[0]), parseInt(periodoFinal.split('-')[1]), 0).getDate()}`)
+          ? this.safeDateParse(`${periodoFinal}-${new Date(parseInt(periodoFinal.split('-')[0]), parseInt(periodoFinal.split('-')[1]), 0).getDate()}`)
           : null,
         tipo_sincronizacao: 'cliente',
         total_consultados: 0,
@@ -253,9 +269,9 @@ export class SincronizacaoReceitaService {
       // 0. Criar registro de sincronização
       const sincronizacaoRecord = await this.receitaSincronizacaoModel.criarSincronizacao({
         cnpj_contribuinte: null,
-        periodo_inicial: periodoInicial ? new Date(`${periodoInicial}-01`) : null,
+        periodo_inicial: periodoInicial ? this.safeDateParse(`${periodoInicial}-01`) : null,
         periodo_final: periodoFinal 
-          ? new Date(`${periodoFinal}-${new Date(parseInt(periodoFinal.split('-')[0]), parseInt(periodoFinal.split('-')[1]), 0).getDate()}`)
+          ? this.safeDateParse(`${periodoFinal}-${new Date(parseInt(periodoFinal.split('-')[0]), parseInt(periodoFinal.split('-')[1]), 0).getDate()}`)
           : null,
         tipo_sincronizacao: 'todos',
         total_consultados: 0,
@@ -373,15 +389,15 @@ export class SincronizacaoReceitaService {
     
     return {
       cnpj_contribuinte: cnpjLimpo, // Salvar sempre limpo
-      periodo_consulta_inicial: periodoInicial ? new Date(periodoInicial) : null,
-      periodo_consulta_final: periodoFinal ? new Date(periodoFinal) : null,
+      periodo_consulta_inicial: this.safeDateParse(periodoInicial),
+      periodo_consulta_final: this.safeDateParse(periodoFinal),
       data_sincronizacao: new Date(),
       numero_documento: item.numeroDocumento,
       tipo_documento: item.tipoDocumento,
-      periodo_apuracao: item.periodoApuracao ? new Date(item.periodoApuracao) : null,
+      periodo_apuracao: this.safeDateParse(item.periodoApuracao),
       competencia: item.competencia || (item.periodoApuracao ? item.periodoApuracao.substring(0, 7) : null),
-      data_arrecadacao: item.dataArrecadacao ? new Date(item.dataArrecadacao) : null,
-      data_vencimento: item.dataVencimento ? new Date(item.dataVencimento) : null,
+      data_arrecadacao: this.safeDateParse(item.dataArrecadacao),
+      data_vencimento: this.safeDateParse(item.dataVencimento),
       codigo_receita_doc: item.codigoReceitaDoc,
       valor_documento: item.valorDocumento,
       valor_saldo_documento: item.valorSaldoDocumento,
@@ -390,8 +406,8 @@ export class SincronizacaoReceitaService {
       sequencial: item.sequencial || null,
       codigo_receita_linha: item.codigoReceitaLinha || null,
       descricao_receita_linha: item.descricaoReceitaLinha || null,
-      periodo_apuracao_linha: item.periodoApuracaoLinha ? new Date(item.periodoApuracaoLinha) : null,
-      data_vencimento_linha: item.dataVencimentoLinha ? new Date(item.dataVencimentoLinha) : null,
+      periodo_apuracao_linha: this.safeDateParse(item.periodoApuracaoLinha),
+      data_vencimento_linha: this.safeDateParse(item.dataVencimentoLinha),
       valor_linha: item.valorLinha || null,
       valor_principal_linha: item.valorPrincipalLinha || null,
       valor_saldo_linha: item.valorSaldoLinha || null,

@@ -452,9 +452,31 @@ export class DashboardMetricsService {
     return keepMonthYear ? `${monthStr}/${year}` : `${year}-${monthStr}`;
   }
 
+  /**
+   * Calcula o vencimento legal conforme IN RFB 2.248/2025:
+   * Último dia útil do mês seguinte ao fato gerador
+   * 
+   * Exemplo: Fato gerador de janeiro/2025 -> Vencimento: último dia útil de fevereiro/2025
+   */
   private static computeDueDate(year: number, month: number) {
-    const dueMonthIndex = month - 1 + 2; // segundo mês subsequente
-    return new Date(year, dueMonthIndex, 15);
+    // Mês seguinte ao fato gerador
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    
+    // Último dia do mês seguinte
+    const lastDayOfMonth = new Date(nextYear, nextMonth, 0).getDate();
+    let dueDate = new Date(nextYear, nextMonth - 1, lastDayOfMonth);
+    
+    // Ajustar para o último dia útil (não pode ser sábado ou domingo)
+    let dayOfWeek = dueDate.getDay(); // 0 = domingo, 6 = sábado
+    
+    // Retroceder até encontrar um dia útil (segunda a sexta)
+    while (dayOfWeek === 0 || dayOfWeek === 6) {
+      dueDate.setDate(dueDate.getDate() - 1);
+      dayOfWeek = dueDate.getDay();
+    }
+    
+    return dueDate;
   }
 
   private static parseDateTime(value: string) {

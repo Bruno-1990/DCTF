@@ -28,12 +28,9 @@ const Header: React.FC = () => {
     <header className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white shadow-xl border-b border-blue-800/30">
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
-          <Link 
-            to="/" 
-            className="flex items-center gap-2 text-xl font-bold hover:opacity-90 transition-opacity"
-          >
+          <Link to="/" className="flex items-center gap-2.5 text-base font-bold hover:opacity-90 transition-opacity">
             <div className="bg-white/20 backdrop-blur-sm p-1.5 rounded-lg">
-              <DocumentTextIcon className="h-6 w-6" />
+              <DocumentTextIcon className="h-5 w-5" />
             </div>
             <span className="hidden sm:inline">DCTF ANALYZER</span>
             <span className="sm:hidden">DCTF</span>

@@ -28,8 +28,10 @@ export interface DCTF extends BaseEntity {
   dataDeclaracao: Date;
   status: 'pendente' | 'processando' | 'concluido' | 'erro';
   situacao?: string | null;
+  tipo?: string | null;  // ✅ Campo 'tipo' do banco (Original, Retificadora, Original sem movimento, etc.)
   periodoApuracao?: string | null;
   dataTransmissao?: Date | string | null;
+  horaTransmissao?: string | null;
   tipoNi?: string | null;
   numeroIdentificacao?: string | null;
   categoria?: string | null;
@@ -121,7 +123,7 @@ export type ConferenceIssueSeverity = 'low' | 'medium' | 'high';
 
 export interface DashboardConferenceIssue {
   id: string;
-  rule: 'due_date';
+  rule: 'due_date' | 'transmission_obligation' | 'missing_period' | 'retificadora_without_original' | 'duplicate_declaration' | 'future_period' | 'retificadora_sequence' | 'missing_declaration';
   identification: string;
   businessName?: string;
   period: string;
@@ -139,6 +141,14 @@ export interface DashboardConferenceSummary {
   generatedAt: string;
   rules: {
     dueDate: DashboardConferenceIssue[];
+    transmissionObligation?: DashboardConferenceIssue[];
+    missingPeriod?: DashboardConferenceIssue[];
+    retificadoraWithoutOriginal?: DashboardConferenceIssue[];
+    duplicateDeclaration?: DashboardConferenceIssue[];
+    futurePeriod?: DashboardConferenceIssue[];
+    retificadoraSequence?: DashboardConferenceIssue[];
+    allSemMovimento?: DashboardConferenceIssue[];  // ✅ Lista simples de todas as declarações "sem movimento"
+    clientesSemDCTF?: DashboardConferenceIssue[];  // ✅ Clientes sem DCTF na competência vigente
   };
 }
 

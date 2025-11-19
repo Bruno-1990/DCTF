@@ -23,6 +23,12 @@ router.get('/stats', (req, res) => {
   clienteController.obterEstatisticas(req, res);
 });
 
+// GET /api/clientes/sem-dctf - Identificar clientes sem DCTF no mês vigente
+// Conforme IN RFB 2.237/2024, 2.267/2025 e 2.248/2025
+router.get('/sem-dctf', (req, res) => {
+  clienteController.identificarClientesSemDCTF(req, res);
+});
+
 // GET /api/clientes/cnpj/:cnpj - Buscar por CNPJ
 router.get('/cnpj/:cnpj', (req, res) => {
   clienteController.buscarPorCNPJ(req, res);

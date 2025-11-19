@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { SituacaoFiscalOrchestrator, base64ToBuffer, fetchAccessToken } from '../services/SituacaoFiscalOrchestrator';
+import { SituacaoFiscalOrchestrator, base64ToBuffer, fetchAccessToken, extractDataFromPdfBase64 } from '../services/SituacaoFiscalOrchestrator';
 import { supabase, supabaseAdmin } from '../config/database';
 
 const router = Router();
@@ -81,11 +81,23 @@ router.get('/history', async (req, res, next) => {
     // Criar mapa de CNPJ -> cliente
     const clientesMap = new Map((clientes ?? []).map((c: any) => [c.cnpj_limpo, c]));
     
-    // Combinar dados
-    const items = (downloads ?? []).map((item: any) => ({
-      ...item,
-      cliente: clientesMap.get(item.cnpj) ? { razao_social: clientesMap.get(item.cnpj)!.razao_social } : null,
-    }));
+    // Combinar dados (NÃO retornar pdf_base64 por segurança - muito grande)
+    const items = (downloads ?? []).map((item: any) => {
+      const { pdf_base64, ...itemWithoutBase64 } = item; // Remover base64 da resposta
+      return {
+        ...itemWithoutBase64,
+        cliente: clientesMap.get(item.cnpj) ? { razao_social: clientesMap.get(item.cnpj)!.razao_social } : null,
+        // Garantir que extracted_data seja incluído se existir
+        extracted_data: item.extracted_data || null,
+        // Flag indicando se tem base64 disponível para extração
+        has_pdf_base64: !!item.pdf_base64,
+      };
+    });
+    
+    // Log para debug
+    const itemsComDados = items.filter((item: any) => item.extracted_data);
+    const itemsComBase64 = items.filter((item: any) => item.has_pdf_base64);
+    console.log(`[Sitf History] Total: ${items.length}, Com dados extraídos: ${itemsComDados.length}, Com base64: ${itemsComBase64.length}`);
     
     return res.status(200).json({ success: true, items });
   } catch (err) {
@@ -109,6 +121,124 @@ router.delete('/history/:id', async (req, res, next) => {
     return res.status(200).json({ success: true, message: 'Registro excluído com sucesso' });
   } catch (err) {
     next(err);
+  }
+});
+
+// POST /api/situacao-fiscal/extract/:id
+// Extrai dados do PDF base64 armazenado no banco (sob demanda)
+router.post('/extract/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const client = supabaseAdmin || supabase;
+    
+    // Buscar registro no banco
+    const { data: download, error: fetchError } = await client
+      .from('sitf_downloads')
+      .select('id, pdf_base64, extracted_data')
+      .eq('id', id)
+      .single();
+    
+    if (fetchError || !download) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Registro não encontrado' 
+      });
+    }
+    
+    // Se já tem dados extraídos, retornar
+    if (download.extracted_data) {
+      return res.status(200).json({
+        success: true,
+        data: download.extracted_data,
+        cached: true,
+      });
+    }
+    
+    // Se não tem base64, não pode extrair
+    if (!download.pdf_base64) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'PDF base64 não disponível para este registro' 
+      });
+    }
+    
+    // Extrair dados do PDF
+    console.log('[Sitf Extract] Iniciando extração para ID:', id);
+    const extractedData = await extractDataFromPdfBase64(download.pdf_base64);
+    console.log('[Sitf Extract] Dados extraídos com sucesso:', {
+      hasDebitos: extractedData.debitos && extractedData.debitos.length > 0,
+      hasPendencias: extractedData.pendencias && extractedData.pendencias.length > 0,
+      debitosCount: extractedData.debitos?.length || 0,
+      pendenciasCount: extractedData.pendencias?.length || 0,
+    });
+    
+    // Salvar dados extraídos no banco
+    const { error: updateError } = await client
+      .from('sitf_downloads')
+      .update({ extracted_data: extractedData })
+      .eq('id', id);
+    
+    if (updateError) {
+      console.error('[Sitf Extract] Erro ao salvar dados extraídos:', updateError);
+      // Retornar mesmo assim, mas sem salvar
+    } else {
+      console.log('[Sitf Extract] Dados salvos no banco com sucesso para ID:', id);
+    }
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        numPages: extractedData.numPages,
+        textLength: extractedData.text.length,
+        debitos: extractedData.debitos,
+        pendencias: extractedData.pendencias,
+        info: extractedData.info,
+        metadata: extractedData.metadata,
+      },
+      cached: false,
+    });
+  } catch (err: any) {
+    console.error('[Sitf Extract] Erro:', err);
+    return res.status(500).json({ 
+      success: false, 
+      error: err.message || 'Erro ao extrair dados do PDF' 
+    });
+  }
+});
+
+// POST /api/situacao-fiscal/test-extract
+// Endpoint de teste para extrair dados de um PDF base64
+// Permite enviar o base64 e receber os dados extraídos formatados
+router.post('/test-extract', async (req, res, next) => {
+  try {
+    const { base64 } = req.body;
+    
+    if (!base64 || typeof base64 !== 'string') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Base64 do PDF é obrigatório no body: { "base64": "..." }' 
+      });
+    }
+    
+    const extractedData = await extractDataFromPdfBase64(base64);
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        numPages: extractedData.numPages,
+        textLength: extractedData.text.length,
+        text: extractedData.text, // Texto completo extraído
+        debitos: extractedData.debitos,
+        pendencias: extractedData.pendencias,
+        info: extractedData.info,
+        metadata: extractedData.metadata,
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ 
+      success: false, 
+      error: err.message || 'Erro ao extrair dados do PDF' 
+    });
   }
 });
 

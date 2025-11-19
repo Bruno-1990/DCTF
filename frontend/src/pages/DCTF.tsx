@@ -85,6 +85,7 @@ const DCTFPage: React.FC = () => {
   const [limitSelection, setLimitSelection] =
     useState<(typeof limitOptions)[number] | 'all'>('10');
   const [situacao, setSituacao] = useState('');
+  const [tipo, setTipo] = useState('');
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [orderBy, setOrderBy] = useState<string>('');
@@ -92,6 +93,7 @@ const DCTFPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>(searchParams.get('search') || '');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [tiposDisponiveis, setTiposDisponiveis] = useState<string[]>([]);
 
   // Ler parâmetro de busca da URL ao carregar a página (vindo do Dashboard)
   useEffect(() => {
@@ -116,6 +118,7 @@ const DCTFPage: React.FC = () => {
       page,
       limit,
       situacao: situacao || undefined,
+      tipo: tipo || undefined,
     };
     
     // Adicionar search apenas se houver valor
@@ -124,7 +127,7 @@ const DCTFPage: React.FC = () => {
     }
     
     // Se houver filtro e não houver ordenação manual, ordenar por data de transmissão (mais recentes primeiro)
-    const hasFilter = (situacao && situacao !== 'Todos') || (debouncedSearchTerm && debouncedSearchTerm.trim());
+    const hasFilter = (situacao && situacao !== 'Todos') || (tipo && tipo !== 'Todos') || (debouncedSearchTerm && debouncedSearchTerm.trim());
     if (hasFilter && !orderBy) {
       params.orderBy = 'dataTransmissao';
       params.order = 'desc';
@@ -134,15 +137,18 @@ const DCTFPage: React.FC = () => {
     }
 
     load(params)
-      .then(({ items, pagination, lastUpdate }) => {
+      .then(({ items, pagination, lastUpdate, tiposDisponiveis }) => {
         setTotal(pagination?.total ?? null);
         setTotalPages(pagination?.totalPages ?? null);
         if (lastUpdate) {
           setLastUpdate(new Date(lastUpdate));
         }
+        if (tiposDisponiveis && Array.isArray(tiposDisponiveis)) {
+          setTiposDisponiveis(tiposDisponiveis);
+        }
       })
       .catch(() => {});
-  }, [page, limit, orderBy, orderDirection, situacao, debouncedSearchTerm, load]);
+  }, [page, limit, orderBy, orderDirection, situacao, tipo, debouncedSearchTerm, load]);
 
   const situacaoOptions: Array<{ value: string; label: string }> = [
     { value: 'Ativa', label: 'Ativa' },
@@ -196,22 +202,41 @@ const DCTFPage: React.FC = () => {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="situacao" className="text-xs text-gray-600">Situação:</label>
-            <select
-              id="situacao"
-              value={situacao}
-              onChange={(e) => {
-                setSituacao(e.target.value);
-                setPage(1);
-              }}
-              className="px-2 py-1 border rounded"
-            >
-              <option value="">Todos</option>
-              {situacaoOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label htmlFor="situacao" className="text-xs text-gray-600">Situação:</label>
+              <select
+                id="situacao"
+                value={situacao}
+                onChange={(e) => {
+                  setSituacao(e.target.value);
+                  setPage(1);
+                }}
+                className="px-2 py-1 border rounded"
+              >
+                <option value="">Todos</option>
+                {situacaoOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="tipo" className="text-xs text-gray-600">Tipo:</label>
+              <select
+                id="tipo"
+                value={tipo}
+                onChange={(e) => {
+                  setTipo(e.target.value);
+                  setPage(1);
+                }}
+                className="px-2 py-1 border rounded"
+              >
+                <option value="">Todos</option>
+                {tiposDisponiveis.map((tipoOption) => (
+                  <option key={tipoOption} value={tipoOption}>{tipoOption}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">

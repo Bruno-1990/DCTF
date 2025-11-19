@@ -333,22 +333,27 @@ export class DCTF extends DatabaseService<IDCTF> {
       };
     }
 
-    // Verificar se já existe declaração para o mesmo cliente e período
-    if (dctfData.clienteId && dctfData.periodo) {
-      const existingDCTF = await this.findBy({
-        cliente_id: dctfData.clienteId,
-        periodo: dctfData.periodo,
-      });
-      
-      if (existingDCTF.success && existingDCTF.data!.length > 0) {
-        return {
-          success: false,
-          error: 'Já existe declaração DCTF para este cliente e período',
-        };
-      }
-    }
+    // Converter camelCase para snake_case antes de salvar
+    const supabaseData: any = {
+      cliente_id: dctfData.clienteId,
+      periodo: dctfData.periodo,
+      periodo_apuracao: dctfData.periodoApuracao || dctfData.periodo,
+      data_declaracao: dctfData.dataDeclaracao,
+      data_transmissao: dctfData.dataTransmissao && dctfData.dataTransmissao.toString().trim() !== '' ? dctfData.dataTransmissao : null,
+      hora_transmissao: dctfData.horaTransmissao && dctfData.horaTransmissao.toString().trim() !== '' ? dctfData.horaTransmissao : null,
+      status: dctfData.status || 'pendente',
+      situacao: dctfData.situacao || null,
+      tipo_ni: dctfData.tipoNi || null,
+      numero_identificacao: dctfData.numeroIdentificacao || null,
+      categoria: dctfData.categoria || null,
+      origem: dctfData.origem || null,
+      tipo_declaracao: dctfData.tipoDeclaracao || null,
+      debito_apurado: dctfData.debitoApurado || null,
+      saldo_a_pagar: dctfData.saldoAPagar || null,
+      observacoes: dctfData.observacoes || null,
+    };
 
-    return this.create(dctfData);
+    return this.create(supabaseData);
   }
 
   /**
@@ -401,7 +406,30 @@ export class DCTF extends DatabaseService<IDCTF> {
       };
     }
 
-    return this.update(id, updates);
+    // Converter camelCase para snake_case antes de atualizar
+    const supabaseUpdates: any = {};
+    if (updates.clienteId !== undefined) supabaseUpdates.cliente_id = updates.clienteId;
+    if (updates.periodo !== undefined) supabaseUpdates.periodo = updates.periodo;
+    if (updates.periodoApuracao !== undefined) supabaseUpdates.periodo_apuracao = updates.periodoApuracao;
+    if (updates.dataDeclaracao !== undefined) supabaseUpdates.data_declaracao = updates.dataDeclaracao;
+    if (updates.dataTransmissao !== undefined) {
+      supabaseUpdates.data_transmissao = updates.dataTransmissao && updates.dataTransmissao.toString().trim() !== '' ? updates.dataTransmissao : null;
+    }
+    if (updates.horaTransmissao !== undefined) {
+      supabaseUpdates.hora_transmissao = updates.horaTransmissao && updates.horaTransmissao.toString().trim() !== '' ? updates.horaTransmissao : null;
+    }
+    if (updates.status !== undefined) supabaseUpdates.status = updates.status;
+    if (updates.situacao !== undefined) supabaseUpdates.situacao = updates.situacao;
+    if (updates.tipoNi !== undefined) supabaseUpdates.tipo_ni = updates.tipoNi;
+    if (updates.numeroIdentificacao !== undefined) supabaseUpdates.numero_identificacao = updates.numeroIdentificacao;
+    if (updates.categoria !== undefined) supabaseUpdates.categoria = updates.categoria;
+    if (updates.origem !== undefined) supabaseUpdates.origem = updates.origem;
+    if (updates.tipoDeclaracao !== undefined) supabaseUpdates.tipo_declaracao = updates.tipoDeclaracao;
+    if (updates.debitoApurado !== undefined) supabaseUpdates.debito_apurado = updates.debitoApurado;
+    if (updates.saldoAPagar !== undefined) supabaseUpdates.saldo_a_pagar = updates.saldoAPagar;
+    if (updates.observacoes !== undefined) supabaseUpdates.observacoes = updates.observacoes;
+
+    return this.update(id, supabaseUpdates);
   }
 
   /**

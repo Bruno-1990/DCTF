@@ -211,11 +211,11 @@ const Clientes: React.FC = () => {
     <div className="container mx-auto px-4 py-6 max-w-7xl">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
-          <UserGroupIcon className="h-8 w-8 text-blue-600" />
+        <h1 className="text-3xl font-bold text-gray-900 mb-3 flex items-center gap-3">
+          <UserGroupIcon className="h-7 w-7 text-blue-600" />
           Clientes
         </h1>
-        <p className="text-gray-600">Gerencie o cadastro de clientes e suas informações</p>
+        <p className="text-base text-gray-600">Gerencie o cadastro de clientes e suas informações</p>
       </div>
 
       {/* Barra de Busca e Ações */}
@@ -257,7 +257,7 @@ const Clientes: React.FC = () => {
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
           <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
               <BuildingOfficeIcon className="h-5 w-5 text-blue-600" />
               {editingCliente ? 'Editar Cliente' : 'Novo Cliente'}
             </h2>
@@ -332,7 +332,7 @@ const Clientes: React.FC = () => {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+          <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
             <UserGroupIcon className="h-5 w-5 text-gray-600" />
             Lista de Clientes
           </h2>

@@ -668,7 +668,17 @@
           10,
           11,
           12,
-          13
+          13,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
         ],
         "priority": "high",
         "subtasks": []
@@ -824,6 +834,93 @@
           8
         ],
         "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 19,
+        "title": "Sistema de Gerenciamento de Pagamentos",
+        "description": "API completa para gerenciamento de status de pagamento de débitos DCTF, atualização individual e em lote, filtros avançados, estatísticas de pagamento, rastreamento de comprovantes e integração com sistema de conferências",
+        "details": "Implementações realizadas:\n- API completa para gerenciamento de status de pagamento\n- Atualização individual e em lote de pagamentos\n- Filtros avançados (por cliente, período, status, saldo)\n- Estatísticas de pagamento (totais, pendentes, pagos)\n- Rastreamento de comprovantes e datas de pagamento\n- Integração com sistema de conferências\n- Endpoints: GET /api/pagamentos, PUT /api/pagamentos/:id, PUT /api/pagamentos/lote, GET /api/pagamentos/estatisticas",
+        "testStrategy": "Testes unitários e de integração para endpoints de pagamentos, validação de status e atualizações em lote",
+        "status": "done",
+        "dependencies": [
+          9,
+          18
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 20,
+        "title": "Sistema de Códigos DCTF",
+        "description": "API completa para gerenciamento de códigos DCTF, CRUD de códigos com validação e categorização, sistema de hierarquia de códigos, gerenciamento de alíquotas por código e período, validação de códigos, busca e exportação, estatísticas e códigos de receita organizados",
+        "details": "Implementações realizadas:\n- API completa para gerenciamento de códigos DCTF\n- CRUD de códigos com validação e categorização\n- Sistema de hierarquia de códigos por categoria\n- Gerenciamento de alíquotas por código e período\n- Validação de códigos DCTF\n- Busca e exportação de códigos (CSV)\n- Estatísticas e relatórios de códigos\n- Códigos de receita organizados por categoria e subcategoria\n- Validação de códigos obrigatórios por período\n- Endpoints: GET /api/dctf-codes, POST /api/dctf-codes, GET /api/dctf-codes/hierarchy, GET /api/dctf-codes/statistics",
+        "testStrategy": "Testes unitários para validação de códigos, hierarquia e alíquotas",
+        "status": "done",
+        "dependencies": [
+          3,
+          9
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 21,
+        "title": "Sistema de Conferências DCTF",
+        "description": "API de conferências com resumo e detalhes, conferência de dados DCTF por CNPJ e período, comparação entre declarações e dados cadastrais, views otimizadas para consultas de conferência, integração com dashboard administrativo e relatórios de conferência",
+        "details": "Implementações realizadas:\n- API de conferências com resumo e detalhes\n- Conferência de dados DCTF por CNPJ e período\n- Comparação entre declarações e dados cadastrais\n- Views otimizadas para consultas de conferência\n- Integração com dashboard administrativo\n- Relatórios de conferência\n- Endpoints: GET /api/conferencias/resumo, GET /api/conferencias/detalhe",
+        "testStrategy": "Testes de integração para conferências e validação de dados cruzados",
+        "status": "done",
+        "dependencies": [
+          8,
+          9,
+          12
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 22,
+        "title": "Sistema de Cálculo Fiscal",
+        "description": "API completa para cálculos fiscais DCTF, cálculo de impostos com base em alíquotas, cálculo de compensação de impostos, cálculo de alíquota efetiva, cálculo de totais por categoria, cálculo de percentual de variação, validação de totais de seções DCTF, validação de consistência de dados fiscais, validação de regras de arredondamento e regras de cálculo fiscal configuráveis",
+        "details": "Implementações realizadas:\n- API completa para cálculos fiscais DCTF\n- Cálculo de impostos com base em alíquotas\n- Cálculo de compensação de impostos\n- Cálculo de alíquota efetiva\n- Cálculo de totais por categoria\n- Cálculo de percentual de variação\n- Validação de totais de seções DCTF\n- Validação de consistência de dados fiscais\n- Validação de regras de arredondamento\n- Regras de cálculo fiscal configuráveis\n- Endpoints: POST /api/fiscal/calculate-imposto, POST /api/fiscal/calculate-compensacao, POST /api/fiscal/validate-total",
+        "testStrategy": "Testes unitários para todos os cálculos fiscais e validações de consistência",
+        "status": "done",
+        "dependencies": [
+          3,
+          8,
+          9
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 23,
+        "title": "Sistema de Situação Fiscal",
+        "description": "Integração com API da Receita Federal para download de situação fiscal, download assíncrono de PDFs de situação fiscal por CNPJ, extração automática de dados de PDFs (débitos, pendências), armazenamento seguro de PDFs em base64, histórico de downloads com metadados, API para consulta de histórico, extração sob demanda de dados de PDFs armazenados, processamento assíncrono com retry automático e gerenciamento de protocolos",
+        "details": "Implementações realizadas:\n- Integração com API da Receita Federal para download de situação fiscal\n- Download assíncrono de PDFs de situação fiscal por CNPJ\n- Extração automática de dados de PDFs (débitos, pendências)\n- Armazenamento seguro de PDFs em base64\n- Histórico de downloads com metadados\n- API para consulta de histórico de situação fiscal\n- Extração sob demanda de dados de PDFs armazenados\n- Processamento assíncrono com retry automático\n- Gerenciamento de protocolos e status de processamento\n- Endpoints: POST /api/situacao-fiscal/:cnpj/download, GET /api/situacao-fiscal/history, POST /api/situacao-fiscal/extract/:id",
+        "testStrategy": "Testes de integração para download, extração de PDFs e gerenciamento de histórico",
+        "status": "done",
+        "dependencies": [
+          9,
+          19
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 24,
+        "title": "Sistema de Monitoramento de Performance",
+        "description": "API de monitoramento de performance do banco de dados, monitoramento de queries lentas, métricas de performance do sistema, health check do sistema, análise de performance de índices, recomendações de otimização, identificação de índices não utilizados, reindexação de tabelas DCTF, otimização automática de consultas e relatórios completos de performance",
+        "details": "Implementações realizadas:\n- API de monitoramento de performance do banco de dados\n- Monitoramento de queries lentas\n- Métricas de performance do sistema\n- Health check do sistema\n- Análise de performance de índices\n- Recomendações de otimização\n- Identificação de índices não utilizados\n- Reindexação de tabelas DCTF\n- Otimização automática de consultas\n- Relatórios completos de performance\n- Endpoints: GET /api/performance/metrics, GET /api/performance/health, GET /api/performance/index-analysis, POST /api/performance/reindex",
+        "testStrategy": "Testes de monitoramento e validação de métricas de performance",
+        "status": "done",
+        "dependencies": [
+          2,
+          3,
+          9
+        ],
+        "priority": "medium",
         "subtasks": []
       }
     ],

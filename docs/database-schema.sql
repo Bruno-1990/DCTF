@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS dctf_declaracoes (
     periodo_apuracao VARCHAR(7), -- Período de apuração
     data_declaracao DATE NOT NULL,
     data_transmissao TIMESTAMP WITH TIME ZONE, -- Data/hora de transmissão
+    hora_transmissao VARCHAR(8), -- Hora da transmissão (HH:MM:SS)
     status VARCHAR(20) DEFAULT 'pendente' CHECK (status IN ('pendente', 'processando', 'concluido', 'erro')),
     situacao VARCHAR(50), -- Situação da declaração (Ativa, Em andamento, etc)
     tipo_ni VARCHAR(10), -- Tipo de identificação (CNPJ, CPF)
@@ -70,6 +71,7 @@ CREATE INDEX IF NOT EXISTS idx_dctf_status ON dctf_declaracoes(status);
 CREATE INDEX IF NOT EXISTS idx_dctf_situacao ON dctf_declaracoes(situacao);
 CREATE INDEX IF NOT EXISTS idx_dctf_data_declaracao ON dctf_declaracoes(data_declaracao);
 CREATE INDEX IF NOT EXISTS idx_dctf_data_transmissao ON dctf_declaracoes(data_transmissao);
+CREATE INDEX IF NOT EXISTS idx_dctf_hora_transmissao ON dctf_declaracoes(hora_transmissao);
 CREATE INDEX IF NOT EXISTS idx_dctf_numero_identificacao ON dctf_declaracoes(numero_identificacao);
 
 -- Comentários

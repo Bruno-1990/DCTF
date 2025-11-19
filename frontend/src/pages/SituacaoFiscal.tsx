@@ -28,16 +28,25 @@ export default function SituacaoFiscal() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
   const toast = useToast();
   const [history, setHistory] = useState<Array<{ id: string; cnpj: string; file_url?: string | null; created_at: string; cliente?: { razao_social: string } | null }>>([]);
   const [historyFilter, setHistoryFilter] = useState('');
   const countdownRef = useRef<number | null>(null);
+  const isConsultingRef = useRef<boolean>(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string | null; cnpj: string; countdown: number }>({ id: null, cnpj: '', countdown: 0 });
-  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
+  const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const handleConsultarRetry = useCallback(async () => {
+    // Proteção contra múltiplas chamadas simultâneas
+    if (isConsultingRef.current) {
+      console.log('[Frontend] Retry já em andamento, ignorando chamada duplicada');
+      return;
+    }
+    
     try {
+      isConsultingRef.current = true;
       setLoading(true);
       setError(null);
       const clean = cnpj.replace(/\D/g, '');
@@ -87,7 +96,7 @@ export default function SituacaoFiscal() {
       
       // 3) PDF pronto - todos os passos concluídos
       // Backend retorna JSON, não blob
-      const body = await res.json();
+      await res.json();
       setCompletedSteps(new Set(['token', 'protocolo', 'emitir']));
       setSuccessMessage('✓ Passo 1: Access Token obtido com sucesso.\n✓ Passo 2: Protocolo obtido com sucesso.\n✓ Passo 3: Relatório emitido com sucesso.\n\n✓ Concluído com Sucesso!');
       setShowSuccess(true);
@@ -103,6 +112,9 @@ export default function SituacaoFiscal() {
         const historyBody = await historyRes.json();
         setHistory(historyBody?.items ?? []);
       }
+      
+      // Limpar campo CNPJ após sucesso
+      setCnpj('');
     } catch (e: any) {
       const msg = (e?.message || 'Erro ao consultar a Situação Fiscal').toString().slice(0, 300);
       setError('Não foi possível concluir a operação. ' + msg);
@@ -143,7 +155,14 @@ export default function SituacaoFiscal() {
   };
 
   const handleConsultar = async () => {
+    // Proteção contra múltiplas chamadas simultâneas
+    if (isConsultingRef.current) {
+      console.log('[Frontend] Consulta já em andamento, ignorando chamada duplicada');
+      return;
+    }
+    
     try {
+      isConsultingRef.current = true;
       setLoading(true);
       setError(null);
       setRetryAfter(null);
@@ -226,7 +245,13 @@ export default function SituacaoFiscal() {
       toast.success('Relatório gerado com sucesso! Disponível na tabela abaixo.');
       
       // atualizar histórico para mostrar o arquivo na tabela
-      void fetchHistory(clean);
+      // Aguardar um pouco para garantir que o banco foi atualizado
+      setTimeout(() => {
+        void fetchHistory(); // Sem filtro para buscar todos os registros
+      }, 1000);
+      
+      // Limpar campo CNPJ após sucesso
+      setCnpj('');
     } catch (e: any) {
       const msg = (e?.message || 'Erro ao consultar a Situação Fiscal').toString().slice(0, 300);
       setError('Não foi possível concluir a operação. ' + msg);
@@ -235,18 +260,20 @@ export default function SituacaoFiscal() {
       setSuccessMessage(null);
     } finally {
       setLoading(false);
+      isConsultingRef.current = false;
     }
   };
 
   const fetchHistory = async (cnpjParam?: string) => {
-    const clean = (cnpjParam || cnpj).replace(/\D/g, '');
+    const clean = cnpjParam ? cnpjParam.replace(/\D/g, '') : '';
     const qs = new URLSearchParams();
-    if (clean.length === 14) qs.set('cnpj', clean);
+    if (clean && clean.length === 14) qs.set('cnpj', clean);
     qs.set('limit', '20');
     const res = await fetch(`/api/situacao-fiscal/history?${qs.toString()}`);
     if (res.ok) {
       const body = await res.json();
-      setHistory(body?.items ?? []);
+      const items = body?.items ?? [];
+      setHistory(items);
     }
   };
 
@@ -306,6 +333,23 @@ export default function SituacaoFiscal() {
     }
   };
 
+  const handleDownloadPDF = async (fileUrl: string, cnpj: string) => {
+    try {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `situacao-fiscal-${cnpj.replace(/\D/g, '')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error('Erro ao baixar PDF');
+    }
+  };
+
   // Limpar timer ao desmontar componente
   useEffect(() => {
     return () => {
@@ -321,20 +365,20 @@ export default function SituacaoFiscal() {
   }, []);
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl">
+    <div className="container mx-auto px-4 py-6 max-w-7xl min-h-screen">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
-          <DocumentMagnifyingGlassIcon className="h-8 w-8 text-blue-600" />
+        <h1 className="text-3xl font-bold text-gray-900 mb-3 flex items-center gap-3">
+          <DocumentMagnifyingGlassIcon className="h-7 w-7 text-blue-600" />
           Situação Fiscal
         </h1>
-        <p className="text-gray-600">Consulte a situação fiscal de empresas através da Receita Federal</p>
+        <p className="text-base text-gray-600">Consulte a situação fiscal de empresas através da Receita Federal</p>
       </div>
 
       {/* Card de Consulta */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
         <div className="px-6 py-5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+          <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
             <DocumentMagnifyingGlassIcon className="h-5 w-5 text-blue-600" />
             Nova Consulta
           </h2>
@@ -416,32 +460,33 @@ export default function SituacaoFiscal() {
 
       {/* Histórico de downloads */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-            <DocumentArrowDownIcon className="h-5 w-5 text-gray-600" />
-            Downloads Recentes
-          </h2>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                value={historyFilter}
-                onChange={(e) => setHistoryFilter(e.target.value)}
-                placeholder="Filtrar por CNPJ..."
-                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
-              />
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+              <DocumentArrowDownIcon className="h-5 w-5 text-gray-600" />
+              Downloads Recentes
+            </h2>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={historyFilter}
+                  onChange={(e) => setHistoryFilter(e.target.value)}
+                  placeholder="Filtrar por CNPJ..."
+                  className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+                />
+              </div>
+              <button
+                onClick={() => fetchHistory(historyFilter)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+              >
+                <MagnifyingGlassIcon className="h-4 w-4" />
+                Buscar
+              </button>
             </div>
-            <button
-              onClick={() => fetchHistory(historyFilter)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-            >
-              <MagnifyingGlassIcon className="h-4 w-4" />
-              Buscar
-            </button>
           </div>
         </div>
-
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -502,14 +547,13 @@ export default function SituacaoFiscal() {
                               <EyeIcon className="h-4 w-4" />
                               Visualizar
                             </a>
-                            <a
-                              href={h.file_url}
-                              download
+                            <button
+                              onClick={() => handleDownloadPDF(h.file_url!, h.cnpj)}
                               className="px-3 py-1.5 text-sm font-medium text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1.5"
                             >
                               <ArrowDownTrayIcon className="h-4 w-4" />
                               Baixar PDF
-                            </a>
+                            </button>
                             <button
                               onClick={() => handleDeleteClick(h.id, h.cnpj)}
                               className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
@@ -601,5 +645,3 @@ export default function SituacaoFiscal() {
     </div>
   );
 }
-
-

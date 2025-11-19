@@ -295,6 +295,7 @@ export class DCTFController {
         periodo,
         status,
         situacao,
+        tipo,
         orderBy,
         order = 'desc',
         search,
@@ -316,6 +317,16 @@ export class DCTFController {
 
       let filteredData = result.data || [];
 
+      // Extrair tipos únicos disponíveis (antes de aplicar filtros)
+      const tiposUnicos = new Set<string>();
+      filteredData.forEach((d: any) => {
+        const tipoDeclaracao = d.tipoDeclaracao || d.tipo || d.tipo_declaracao;
+        if (tipoDeclaracao && typeof tipoDeclaracao === 'string' && tipoDeclaracao.trim()) {
+          tiposUnicos.add(tipoDeclaracao.trim());
+        }
+      });
+      const tiposDisponiveis = Array.from(tiposUnicos).sort();
+
       // Aplicar filtros adicionais
       if (periodo) {
         filteredData = filteredData.filter((d: any) => d.periodo === periodo);
@@ -327,6 +338,13 @@ export class DCTFController {
 
       if (situacao) {
         filteredData = filteredData.filter((d: any) => (d.situacao || d.status) === situacao);
+      }
+
+      if (tipo) {
+        filteredData = filteredData.filter((d: any) => {
+          const tipoDeclaracao = d.tipoDeclaracao || d.tipo || d.tipo_declaracao || 'Original';
+          return tipoDeclaracao === tipo;
+        });
       }
 
       // Filtro de busca por CNPJ/CPF
@@ -358,8 +376,8 @@ export class DCTFController {
         }
       }
 
-      // Se houver filtro (search ou situacao) e não houver orderBy, ordenar por data de transmissão (mais recentes primeiro)
-      const hasFilter = (search && typeof search === 'string' && search.trim()) || (situacao && situacao !== 'Todos');
+      // Se houver filtro (search, situacao ou tipo) e não houver orderBy, ordenar por data de transmissão (mais recentes primeiro)
+      const hasFilter = (search && typeof search === 'string' && search.trim()) || (situacao && situacao !== 'Todos') || (tipo && tipo !== 'Todos');
       let orderKey = typeof orderBy === 'string' ? orderBy : undefined;
       let orderToUse = order;
       if (hasFilter && !orderKey) {
@@ -460,6 +478,7 @@ export class DCTFController {
           totalPages: Math.ceil(filteredData.length / Number(limit)),
         },
         lastUpdate: lastUpdate ? lastUpdate.toISOString() : null,
+        tiposDisponiveis: tiposDisponiveis,
       });
     } catch (error) {
       res.status(500).json({

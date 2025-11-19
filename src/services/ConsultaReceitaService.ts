@@ -48,6 +48,22 @@ export class ConsultaReceitaService {
   }
 
   /**
+   * Converte uma string para Date de forma segura, retornando null se inválida
+   */
+  private safeDateParse(value: string | null | undefined): Date | null {
+    if (!value) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed || trimmed === '') return null;
+    
+    const date = new Date(trimmed);
+    // Verifica se a data é válida
+    if (isNaN(date.getTime())) {
+      return null;
+    }
+    return date;
+  }
+
+  /**
    * Valida o token de acesso com a API da Receita (e opcionalmente a procuração para um CNPJ)
    * - Se cnpj for informado, apenas tenta obter um token e executar uma chamada leve de validação.
    * - Caso contrário, apenas valida a obtenção do token.
@@ -276,8 +292,8 @@ export class ConsultaReceitaService {
         await this.erroConsultaModel.registrarErro({
           sincronizacao_id: null,
           cnpj_contribuinte: cnpjLimpo,
-          periodo_inicial: dataInicial ? new Date(dataInicial) : null,
-          periodo_final: dataFinal ? new Date(dataFinal) : null,
+          periodo_inicial: this.safeDateParse(dataInicial),
+          periodo_final: this.safeDateParse(dataFinal),
           tipo_consulta: 'consulta_simples',
           tipo_erro: tipoErro,
           mensagem_erro: errorMessage,
@@ -424,9 +440,9 @@ export class ConsultaReceitaService {
         
         const sincronizacao = await sincronizacaoModel.criarSincronizacao({
           cnpj_contribuinte: 'TODOS',
-          periodo_inicial: dataInicial ? new Date(`${dataInicial}-01`) : null,
+          periodo_inicial: dataInicial ? this.safeDateParse(`${dataInicial}-01`) : null,
           periodo_final: dataFinal 
-            ? new Date(`${dataFinal}-${new Date(parseInt(dataFinal.split('-')[0]), parseInt(dataFinal.split('-')[1]), 0).getDate()}`)
+            ? this.safeDateParse(`${dataFinal}-${new Date(parseInt(dataFinal.split('-')[0]), parseInt(dataFinal.split('-')[1]), 0).getDate()}`)
             : null,
           tipo_sincronizacao: 'todos',
           total_consultados: 0,
@@ -588,8 +604,8 @@ export class ConsultaReceitaService {
             await this.erroConsultaModel.registrarErro({
               sincronizacao_id: sincronizacaoId || null,
               cnpj_contribuinte: cnpj,
-              periodo_inicial: dataInicial ? new Date(dataInicial) : null,
-              periodo_final: dataFinal ? new Date(dataFinal) : null,
+              periodo_inicial: this.safeDateParse(dataInicial),
+              periodo_final: this.safeDateParse(dataFinal),
               tipo_consulta: 'consulta_lote',
               tipo_erro: tipoErro,
               mensagem_erro: errorMessage,
@@ -704,15 +720,15 @@ export class ConsultaReceitaService {
     
     return {
       cnpj_contribuinte: cnpjLimpo, // Salvar sempre limpo
-      periodo_consulta_inicial: periodoInicial ? new Date(periodoInicial) : null,
-      periodo_consulta_final: periodoFinal ? new Date(periodoFinal) : null,
+      periodo_consulta_inicial: this.safeDateParse(periodoInicial),
+      periodo_consulta_final: this.safeDateParse(periodoFinal),
       data_sincronizacao: new Date(),
       numero_documento: item.numeroDocumento,
       tipo_documento: item.tipoDocumento,
-      periodo_apuracao: item.periodoApuracao ? new Date(item.periodoApuracao) : null,
+      periodo_apuracao: this.safeDateParse(item.periodoApuracao),
       competencia: item.competencia || (item.periodoApuracao ? item.periodoApuracao.substring(0, 7) : null),
-      data_arrecadacao: item.dataArrecadacao ? new Date(item.dataArrecadacao) : null,
-      data_vencimento: item.dataVencimento ? new Date(item.dataVencimento) : null,
+      data_arrecadacao: this.safeDateParse(item.dataArrecadacao),
+      data_vencimento: this.safeDateParse(item.dataVencimento),
       codigo_receita_doc: item.codigoReceitaDoc,
       valor_documento: item.valorDocumento,
       valor_saldo_documento: item.valorSaldoDocumento,
@@ -721,8 +737,8 @@ export class ConsultaReceitaService {
       sequencial: item.sequencial || null,
       codigo_receita_linha: item.codigoReceitaLinha || null,
       descricao_receita_linha: item.descricaoReceitaLinha || null,
-      periodo_apuracao_linha: item.periodoApuracaoLinha ? new Date(item.periodoApuracaoLinha) : null,
-      data_vencimento_linha: item.dataVencimentoLinha ? new Date(item.dataVencimentoLinha) : null,
+      periodo_apuracao_linha: this.safeDateParse(item.periodoApuracaoLinha),
+      data_vencimento_linha: this.safeDateParse(item.dataVencimentoLinha),
       valor_linha: item.valorLinha || null,
       valor_principal_linha: item.valorPrincipalLinha || null,
       valor_saldo_linha: item.valorSaldoLinha || null,

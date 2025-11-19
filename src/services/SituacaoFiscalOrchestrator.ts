@@ -1,6 +1,12 @@
 import axios from 'axios';
 import { supabaseAdmin, supabase } from '../config/database';
 
+// Importação do pdf-parse (CommonJS module)
+// Na versão 2.x, pdf-parse mudou a API - precisamos usar a função diretamente
+// Mas como não há função direta, vamos tentar usar a classe corretamente
+const pdfParseModule = require('pdf-parse');
+const PDFParse = pdfParseModule.PDFParse;
+
 export type SitfState = {
   cnpj: string;
   protocolo?: string | null;
@@ -443,25 +449,75 @@ export class SituacaoFiscalOrchestrator {
           // salvar em downloads e atualizar state
           const client = supabaseAdmin || supabase;
           
-          // Proteção contra duplicatas: verificar se já existe registro recente (últimos 10 segundos)
-          const recentThreshold = new Date(now - 10000).toISOString();
-          const { data: recent } = await client
+          // Proteção contra duplicatas: verificar se já existe registro recente (últimos 60 segundos)
+          // Aumentado para 60 segundos para evitar duplicatas em requisições simultâneas
+          const recentThreshold = new Date(now - 60000).toISOString();
+          
+          // Verificar se já existe um registro recente com o mesmo CNPJ e file_url (ou mesmo protocolo)
+          const { data: recent, error: checkError } = await client
             .from('sitf_downloads')
-            .select('id')
+            .select('id, created_at, file_url')
             .eq('cnpj', clean)
             .gte('created_at', recentThreshold)
+            .order('created_at', { ascending: false })
             .limit(1);
           
-          // Só inserir se não houver registro recente
-          if (!recent || recent.length === 0) {
-            await client.from('sitf_downloads').insert({ cnpj: clean, file_url: url });
+          if (checkError) {
+            console.warn('[Sitf] Erro ao verificar duplicatas:', checkError);
+          }
+          
+          // Verificar se já existe um registro com o mesmo file_url (mesmo arquivo)
+          const hasDuplicate = recent && recent.length > 0;
+          const hasSameFile = hasDuplicate && recent[0].file_url === url;
+          
+          if (hasSameFile) {
+            console.log('[Sitf] Registro duplicado detectado (mesmo file_url), pulando inserção');
+          } else if (hasDuplicate) {
+            console.log('[Sitf] Registro recente encontrado (últimos 60s), pulando inserção para evitar duplicatas');
+          } else {
+            // Verificar uma segunda vez imediatamente antes de inserir (double-check)
+            const { data: doubleCheck } = await client
+              .from('sitf_downloads')
+              .select('id')
+              .eq('cnpj', clean)
+              .eq('file_url', url) // Verificar pelo file_url também
+              .limit(1);
+            
+            if (doubleCheck && doubleCheck.length > 0) {
+              console.log('[Sitf] Registro com mesmo file_url já existe, pulando inserção');
+            } else {
+              // Salvar base64 do PDF para extração sob demanda
+              const insertData: any = { 
+                cnpj: clean, 
+                file_url: url,
+                pdf_base64: emit.pdfBase64, // Armazenar base64 para extração posterior
+              };
+              
+              console.log('[Sitf] Salvando PDF base64 no banco para extração sob demanda');
+              const { error: insertError } = await client.from('sitf_downloads').insert(insertData);
+              if (insertError) {
+                // Se o erro for de constraint única ou duplicata, apenas logar (não é crítico)
+                if (insertError.code === '23505' || insertError.message?.includes('duplicate') || insertError.message?.includes('unique')) {
+                  console.log('[Sitf] Registro duplicado detectado pelo banco (constraint), pulando inserção');
+                } else {
+                  console.error('[Sitf] Erro ao inserir download no banco:', insertError);
+                }
+              } else {
+                console.log('[Sitf] Download salvo com sucesso no banco (com base64)');
+              }
+            }
           }
           
           await upsertState({ cnpj: clean, status: 'pronto', last_response: emit.raw, file_url: url });
         } else {
           await upsertState({ cnpj: clean, status: 'pronto', last_response: emit.raw });
         }
-        return { type: 'ready-base64' as const, base64: emit.pdfBase64, url: url ?? undefined, step: 'concluido' as const };
+        return { 
+          type: 'ready-base64' as const, 
+          base64: emit.pdfBase64, 
+          url: url ?? undefined, 
+          step: 'concluido' as const,
+        };
       }
       // Tratar 202 (Accepted) - relatório ainda em processamento
       if (emit.status === 202) {
@@ -497,6 +553,193 @@ export class SituacaoFiscalOrchestrator {
 export function base64ToBuffer(b64: string): Buffer {
   const clean = b64.includes(';base64,') ? b64.split(';base64,').pop()! : b64;
   return Buffer.from(clean, 'base64');
+}
+
+/**
+ * Extrai dados estruturados do PDF a partir do base64
+ * Usa o base64 diretamente, sem precisar salvar em arquivo
+ */
+export async function extractDataFromPdfBase64(base64Pdf: string): Promise<{
+  text: string;
+  numPages: number;
+  info?: any;
+  metadata?: any;
+  debitos?: Array<{
+    codigoReceita?: string;
+    tipoReceita?: string;
+    periodo?: string;
+    dataVencimento?: string;
+    valorOriginal?: number;
+    saldoDevedor?: number;
+    situacao?: string;
+  }>;
+  pendencias?: Array<{
+    tipo?: string;
+    descricao?: string;
+    situacao?: string;
+  }>;
+}> {
+  try {
+    // Converter base64 diretamente para Buffer
+    const buffer = base64ToBuffer(base64Pdf);
+    
+    // Converter Buffer para Uint8Array (pdf-parse 2.x requer Uint8Array)
+    const uint8Array = new Uint8Array(buffer);
+    
+    // Extrair texto e metadados do PDF
+    // PDFParse é uma classe - precisamos instanciar e chamar métodos
+    const parser = new PDFParse(uint8Array);
+    
+    // Carregar o PDF
+    await parser.load();
+    
+    // Obter texto e informações
+    // getText() é uma função async que retorna uma Promise
+    const text = await parser.getText() || '';
+    const info = parser.getInfo() || {};
+    const numPages = info.numpages || info.numPages || 0;
+    const metadata = info.metadata || {};
+    
+    console.log('[Sitf Extract] Texto extraído:', {
+      textLength: text.length,
+      numPages,
+      hasText: !!text,
+      textPreview: text.substring(0, 200),
+    });
+    
+    // Validar que temos texto antes de processar
+    if (!text || typeof text !== 'string') {
+      console.warn('[Sitf] PDF não contém texto extraível ou texto está vazio');
+    }
+    
+    // Tentar extrair informações estruturadas do texto
+    // (ajustar conforme o formato real do PDF da Receita Federal)
+    const debitos = text ? extractDebitos(text) : [];
+    const pendencias = text ? extractPendencias(text) : [];
+    
+    console.log('[Sitf Extract] Dados extraídos:', {
+      debitosCount: debitos.length,
+      pendenciasCount: pendencias.length,
+      debitosPreview: debitos.slice(0, 2),
+      pendenciasPreview: pendencias.slice(0, 2),
+    });
+    
+    return {
+      text,
+      numPages,
+      info,
+      metadata,
+      debitos,
+      pendencias,
+    };
+  } catch (error: any) {
+    console.error('[Sitf] Erro ao extrair dados do PDF:', error);
+    throw new Error(`Falha ao extrair dados do PDF: ${error.message}`);
+  }
+}
+
+/**
+ * Extrai informações de débitos do texto do PDF
+ * Extrai dados da tabela "Débito com Exigibilidade Suspensa (SIEF)"
+ */
+function extractDebitos(text: string): Array<{
+  codigoReceita?: string;
+  tipoReceita?: string;
+  periodo?: string;
+  dataVencimento?: string;
+  valorOriginal?: number;
+  saldoDevedor?: number;
+  situacao?: string;
+}> {
+  const debitos: Array<{
+    codigoReceita?: string;
+    tipoReceita?: string;
+    periodo?: string;
+    dataVencimento?: string;
+    valorOriginal?: number;
+    saldoDevedor?: number;
+    situacao?: string;
+  }> = [];
+  
+  // Validar entrada
+  if (!text || typeof text !== 'string') {
+    console.warn('[Sitf extractDebitos] Texto inválido ou vazio');
+    return debitos;
+  }
+  
+  // Procurar pela seção "Débito com Exigibilidade Suspensa"
+  const secaoMatch = text.match(/Débito com Exigibilidade Suspensa[^\n]*\n([\s\S]*?)(?=Diagnóstico Fiscal|Final do Relatório|$)/i);
+  if (!secaoMatch) return debitos;
+  
+  const secaoTexto = secaoMatch[1];
+  
+  // Padrão para identificar linhas da tabela de débitos
+  // Formato esperado: "0561-07 IRRF 10/2025 19/11/2025 8.858,85 8.858,85 A ANALISAR-A VENCER"
+  // Ou: "2089-01 IRPJ 3 TRIM/2025 28/11/2025 81.852,68 81.852,68 A ANALISAR-A VENCER"
+  
+  // Regex para capturar linhas da tabela
+  // Formato: código-tipo (ex: 0561-07) + tipo (ex: IRRF) + período + data + valor1 + valor2 + situação
+  const linhaPattern = /(\d{4}-\d{2})\s+([A-Z\s-]+?)\s+(\d{1,2}\s*(?:TRIM|TRIMESTRE)?\/\d{4}|\d{1,2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+([\d.,]+)\s+([A-Z\s-]+)/g;
+  
+  let match;
+  while ((match = linhaPattern.exec(secaoTexto)) !== null) {
+    const codigoReceita = match[1].trim(); // ex: "0561-07"
+    const tipoReceita = match[2].trim(); // ex: "IRRF", "PIS", "COFINS"
+    const periodo = match[3].trim(); // ex: "10/2025", "3 TRIM/2025"
+    const dataVencimento = match[4].trim(); // ex: "19/11/2025"
+    const valorOriginalStr = match[5].trim().replace(/\./g, '').replace(',', '.'); // ex: "8.858,85" -> "8858.85"
+    const saldoDevedorStr = match[6].trim().replace(/\./g, '').replace(',', '.'); // ex: "8.858,85" -> "8858.85"
+    const situacao = match[7].trim(); // ex: "A ANALISAR-A VENCER"
+    
+    const valorOriginal = parseFloat(valorOriginalStr) || 0;
+    const saldoDevedor = parseFloat(saldoDevedorStr) || 0;
+    
+    debitos.push({
+      codigoReceita,
+      tipoReceita,
+      periodo,
+      dataVencimento,
+      valorOriginal,
+      saldoDevedor,
+      situacao,
+    });
+  }
+  
+  return debitos;
+}
+
+/**
+ * Extrai informações de pendências do texto do PDF
+ * Extrai mensagens de diagnóstico fiscal
+ */
+function extractPendencias(text: string): Array<{
+  tipo?: string;
+  descricao?: string;
+  situacao?: string;
+}> {
+  const pendencias: Array<{
+    tipo?: string;
+    descricao?: string;
+    situacao?: string;
+  }> = [];
+  
+  // Procurar por mensagens de diagnóstico
+  // Exemplo: "Não foram detectadas pendências/exigibilidades suspensas..."
+  const diagnosticoPattern = /Diagnóstico Fiscal[^\n]*\n([^\n]+(?:\n[^\n]+)*?)(?=Final do Relatório|$)/gi;
+  let match;
+  
+  while ((match = diagnosticoPattern.exec(text)) !== null) {
+    const diagnosticoTexto = match[1].trim();
+    if (diagnosticoTexto && diagnosticoTexto.length > 10) {
+      pendencias.push({
+        tipo: 'Diagnóstico Fiscal',
+        descricao: diagnosticoTexto,
+        situacao: diagnosticoTexto.includes('Não foram detectadas') ? 'SEM PENDÊNCIAS' : 'COM PENDÊNCIAS',
+      });
+    }
+  }
+  
+  return pendencias;
 }
 
 

@@ -8,6 +8,7 @@ type LoadParams = {
   periodo?: string;
   status?: string;
   situacao?: string;
+  tipo?: string;
   orderBy?: string;
   order?: 'asc' | 'desc';
   search?: string;

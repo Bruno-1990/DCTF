@@ -35,9 +35,9 @@ const Sidebar: React.FC = () => {
 
   return (
     <aside className="w-64 bg-white shadow-lg h-full">
-      <div className="p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-8">DCTF ANALYZER</h2>
-        <nav className="space-y-2">
+      <div className="p-5">
+        <h2 className="text-base font-bold text-gray-900 mb-5">DCTF ANALYZER</h2>
+        <nav className="space-y-1.5">
           {navigation.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -45,13 +45,13 @@ const Sidebar: React.FC = () => {
               <Link
                 key={item.href}
                 to={item.href}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors text-sm ${
                   active
                     ? 'bg-blue-100 text-blue-700 font-medium shadow-sm'
                     : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 }`}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className="h-4 w-4" />
                 <span>{item.name}</span>
               </Link>
             );

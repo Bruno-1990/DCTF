@@ -432,7 +432,7 @@ const RelatoriosPage: React.FC = () => {
     { key: 'clientes', title: 'Relatório de Clientes', description: 'Resumo por contribuinte com saldos e status', icon: BuildingOfficeIcon, color: 'indigo' },
     { key: 'dctf', title: 'Relatório DCTF', description: 'Lista detalhada das declarações transmitidas', icon: DocumentTextIcon, color: 'green' },
     { key: 'pendentes', title: 'DCTFs Em Aberto', description: 'Declarações em aberto com prazo vigente', icon: ExclamationTriangleIcon, color: 'orange' },
-    { key: 'pagamentos-pendentes', title: 'Pagamentos Pendentes', description: 'Pagamentos em aberto por cliente e documento', icon: CurrencyDollarIcon, color: 'red' },
+    { key: 'pagamentos-pendentes', title: 'Pagamentos Pendentes', description: 'Pagamentos em aberto por cliente', icon: CurrencyDollarIcon, color: 'red' },
   ];
 
   const colorClasses = {
@@ -448,13 +448,13 @@ const RelatoriosPage: React.FC = () => {
     <div className="container mx-auto px-4 py-6 max-w-7xl">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Relatórios</h1>
-        <p className="text-gray-600">Gere e gerencie relatórios do sistema</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-3">Relatórios</h1>
+        <p className="text-base text-gray-600">Gere e gerencie relatórios do sistema</p>
       </div>
 
       {/* Cards de Geração */}
       <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+        <h2 className="text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
           <ChartBarIcon className="h-5 w-5 text-gray-600" />
           Gerar Novo Relatório
         </h2>
@@ -507,7 +507,7 @@ const RelatoriosPage: React.FC = () => {
       {/* Filtros e Histórico */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+          <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
             <FunnelIcon className="h-5 w-5 text-gray-600" />
             Histórico de Relatórios
           </h2>

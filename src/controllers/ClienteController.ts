@@ -726,4 +726,36 @@ export class ClienteController {
       });
     }
   }
+
+  /**
+   * Identificar clientes sem DCTF no mês vigente
+   * Conforme IN RFB 2.237/2024, 2.267/2025 e 2.248/2025
+   * Faz confronto direto entre tabelas clientes e dctf_declaracoes
+   */
+  async identificarClientesSemDCTF(req: Request, res: Response): Promise<void> {
+    try {
+      const { ClientesSemDCTFService } = await import('../services/ClientesSemDCTFService');
+      const service = new ClientesSemDCTFService();
+      
+      // Permitir data customizada via query param (útil para testes)
+      const dataParam = req.query.data as string;
+      const today = dataParam ? new Date(dataParam) : new Date();
+      
+      const result = await service.identificarClientesSemDCTF(today);
+
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error('[ClienteController] Erro ao identificar clientes sem DCTF:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
 }

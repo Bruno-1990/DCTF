@@ -26,6 +26,7 @@ export type DCTFListResponse = {
   items: DCTFListItem[];
   pagination?: { total: number; totalPages: number; page: number; limit: number };
   lastUpdate?: string | null;
+  tiposDisponiveis?: string[];
 };
 
 type ListParams = {
@@ -35,6 +36,7 @@ type ListParams = {
   periodo?: string;
   status?: string;
   situacao?: string;
+  tipo?: string;
   orderBy?: string;
   order?: 'asc' | 'desc';
   search?: string;
@@ -45,16 +47,17 @@ export const dctfService = {
     const response = await api.get<any>('/dctf', { params });
     const body = response.data;
     if (Array.isArray(body)) {
-      return { items: body.map(normalizeItem) as DCTFListItem[], lastUpdate: null };
+      return { items: body.map(normalizeItem) as DCTFListItem[], lastUpdate: null, tiposDisponiveis: [] };
     }
     if (body && Array.isArray(body.data)) {
       return { 
         items: body.data.map(normalizeItem) as DCTFListItem[], 
         pagination: body.pagination,
         lastUpdate: body.lastUpdate || null,
+        tiposDisponiveis: body.tiposDisponiveis || [],
       };
     }
-    return { items: [], lastUpdate: null };
+    return { items: [], lastUpdate: null, tiposDisponiveis: [] };
   },
 
   async getById(id: string): Promise<DCTF> {
@@ -63,8 +66,16 @@ export const dctfService = {
   },
 
   async getByClienteId(clienteId: string): Promise<DCTF[]> {
-    const response = await api.get<DCTF[]>(`/dctf/cliente/${clienteId}`);
-    return response.data;
+    const response = await api.get<any>(`/dctf/cliente/${clienteId}`);
+    // O endpoint retorna { success: true, data: [...] }
+    if (response.data && response.data.success && Array.isArray(response.data.data)) {
+      return response.data.data.map(normalizeItem) as DCTF[];
+    }
+    // Fallback: se retornar array diretamente
+    if (Array.isArray(response.data)) {
+      return response.data.map(normalizeItem) as DCTF[];
+    }
+    return [];
   },
 
   async create(payload: Partial<DCTFListItem>) {
