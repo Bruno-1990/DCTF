@@ -17,6 +17,9 @@ import {
   ArrowTopRightOnSquareIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  XCircleIcon,
+  ExclamationCircleIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../components/Pagination';
 
@@ -91,6 +94,7 @@ export default function Conferencias() {
   const [paginaAtualFuture, setPaginaAtualFuture] = useState(1);
   const [paginaAtualSequence, setPaginaAtualSequence] = useState(1);
   const [paginaAtualClientesSemDCTF, setPaginaAtualClientesSemDCTF] = useState(1);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['prazos', 'obrigatoriedade', 'clientes-sem-dctf'])); // Seções críticas expandidas por padrão
   const itensPorPagina = 10;
 
   useEffect(() => {
@@ -175,6 +179,51 @@ export default function Conferencias() {
   const obligationIssuesPaginadas = useMemo(() => {
     return orderedObligationIssues.slice(indiceInicioObrigacao, indiceFimObrigacao);
   }, [orderedObligationIssues, indiceInicioObrigacao, indiceFimObrigacao]);
+
+  // Calcular estatísticas para os cards de resumo
+  const stats = useMemo(() => {
+    const allIssues = [
+      ...issues,
+      ...transmissionObligationIssues,
+      ...missingPeriodIssues,
+      ...duplicateDeclarationIssues,
+      ...futurePeriodIssues,
+      ...retificadoraSequenceIssues,
+    ];
+
+    return {
+      criticas: allIssues.filter(i => i.severity === 'high').length,
+      medias: allIssues.filter(i => i.severity === 'medium').length,
+      baixas: allIssues.filter(i => i.severity === 'low').length,
+      clientesSemDCTF: clientesSemDCTFIssues.length,
+      pendenciasPrazo: issues.length,
+      duplicatas: duplicateDeclarationIssues.length,
+      total: allIssues.length + clientesSemDCTFIssues.length,
+    };
+  }, [issues, transmissionObligationIssues, missingPeriodIssues, duplicateDeclarationIssues, futurePeriodIssues, retificadoraSequenceIssues, clientesSemDCTFIssues]);
+
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  };
+
+  const scrollToSection = (sectionId: string) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Expandir a seção se estiver colapsada
+      if (!expandedSections.has(sectionId)) {
+        setExpandedSections((prev) => new Set(prev).add(sectionId));
+      }
+    }
+  };
 
   const toggleActionPlan = (id: string) => {
     setExpanded((prev) => {
@@ -353,6 +402,101 @@ export default function Conferencias() {
               </p>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Cards de Resumo - Estatísticas Principais */}
+      <div className="mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {/* Card: Críticas */}
+          <button
+            onClick={() => scrollToSection('secao-prazos')}
+            className="bg-white rounded-lg border-2 border-red-200 shadow-sm hover:shadow-md hover:border-red-300 transition-all p-4 text-left group"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <XCircleIcon className="h-5 w-5 text-red-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-500">Alta</span>
+            </div>
+            <p className="text-2xl font-bold text-red-600 mb-1">{stats.criticas}</p>
+            <p className="text-xs text-gray-600">Críticas</p>
+          </button>
+
+          {/* Card: Médias */}
+          <button
+            onClick={() => scrollToSection('secao-prazos')}
+            className="bg-white rounded-lg border-2 border-amber-200 shadow-sm hover:shadow-md hover:border-amber-300 transition-all p-4 text-left group"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <ExclamationCircleIcon className="h-5 w-5 text-amber-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-500">Média</span>
+            </div>
+            <p className="text-2xl font-bold text-amber-600 mb-1">{stats.medias}</p>
+            <p className="text-xs text-gray-600">Médias</p>
+          </button>
+
+          {/* Card: Baixas */}
+          <button
+            onClick={() => scrollToSection('secao-prazos')}
+            className="bg-white rounded-lg border-2 border-blue-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all p-4 text-left group"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <InformationCircleIcon className="h-5 w-5 text-blue-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-500">Baixa</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-600 mb-1">{stats.baixas}</p>
+            <p className="text-xs text-gray-600">Baixas</p>
+          </button>
+
+          {/* Card: Clientes sem DCTF */}
+          <button
+            onClick={() => scrollToSection('secao-clientes-sem-dctf')}
+            className="bg-white rounded-lg border-2 border-purple-200 shadow-sm hover:shadow-md hover:border-purple-300 transition-all p-4 text-left group"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <BuildingOfficeIcon className="h-5 w-5 text-purple-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-500">Vigente</span>
+            </div>
+            <p className="text-2xl font-bold text-purple-600 mb-1">{stats.clientesSemDCTF}</p>
+            <p className="text-xs text-gray-600">Sem DCTF</p>
+          </button>
+
+          {/* Card: Pendências de Prazo */}
+          <button
+            onClick={() => scrollToSection('secao-prazos')}
+            className="bg-white rounded-lg border-2 border-orange-200 shadow-sm hover:shadow-md hover:border-orange-300 transition-all p-4 text-left group"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <ClockIcon className="h-5 w-5 text-orange-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-500">Prazo</span>
+            </div>
+            <p className="text-2xl font-bold text-orange-600 mb-1">{stats.pendenciasPrazo}</p>
+            <p className="text-xs text-gray-600">Pendências</p>
+          </button>
+
+          {/* Card: Duplicatas */}
+          <button
+            onClick={() => scrollToSection('secao-duplicatas')}
+            className="bg-white rounded-lg border-2 border-yellow-200 shadow-sm hover:shadow-md hover:border-yellow-300 transition-all p-4 text-left group"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-500">Duplicatas</span>
+            </div>
+            <p className="text-2xl font-bold text-yellow-600 mb-1">{stats.duplicatas}</p>
+            <p className="text-xs text-gray-600">Encontradas</p>
+          </button>
         </div>
       </div>
 
@@ -550,28 +694,40 @@ export default function Conferencias() {
         </div>
       </div>
 
-      {/* Seção de Conferências */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-              <ExclamationTriangleIcon className="h-5 w-5 text-orange-600" />
-              Entrega dentro do prazo legal
-            </h2>
-            <p className="text-sm text-gray-600">
-              Classificamos o risco considerando atrasos e proximidade do vencimento conforme as normas aplicáveis.
-            </p>
+      {/* Seção de Conferências - Accordion */}
+      <div id="secao-prazos" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+        <button
+          onClick={() => toggleSection('prazos')}
+          className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+        >
+          <div className="flex items-center gap-3 flex-1">
+            {expandedSections.has('prazos') ? (
+              <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            )}
+            <div className="flex-1 text-left">
+              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                <ExclamationTriangleIcon className="h-5 w-5 text-orange-600" />
+                Entrega dentro do prazo legal
+              </h2>
+              <p className="text-sm text-gray-600">
+                Classificamos o risco considerando atrasos e proximidade do vencimento conforme as normas aplicáveis.
+              </p>
+            </div>
           </div>
           <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
             Total: <span className="text-gray-900">{orderedIssues.length}</span> pendências
           </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-xs">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
+        </button>
+        
+        {expandedSections.has('prazos') && (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-xs">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Competência</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento Legal</th>
@@ -745,36 +901,47 @@ export default function Conferencias() {
                   );
                 })
               )}
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
 
-        {/* Paginação */}
-        {!isLoading && orderedIssues.length > 0 && (
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-            <Pagination
-              currentPage={paginaAtual}
-              totalPages={totalPaginas}
-              totalItems={orderedIssues.length}
-              itemsPerPage={itensPorPagina}
-              onPageChange={setPaginaAtual}
-              itemLabel="pendência"
-            />
-          </div>
+            {/* Paginação */}
+            {!isLoading && orderedIssues.length > 0 && (
+              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <Pagination
+                  currentPage={paginaAtual}
+                  totalPages={totalPaginas}
+                  totalItems={orderedIssues.length}
+                  itemsPerPage={itensPorPagina}
+                  onPageChange={setPaginaAtual}
+                  itemLabel="pendência"
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Seção de Obrigatoriedade de Transmissão */}
-      <div id="secao-obrigatoriedade" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8">
-        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-              <DocumentTextIcon className="h-5 w-5 text-blue-600" />
-              Obrigatoriedade de Transmissão
-            </h2>
-            <p className="text-sm text-gray-600">
-              Análise de obrigatoriedade conforme IN RFB 2.237/2024 e 2.248/2025. Verifica "Original sem movimento" e "Original zerada".
-            </p>
+      {/* Seção de Obrigatoriedade de Transmissão - Accordion */}
+      <div id="secao-obrigatoriedade" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+        <button
+          onClick={() => toggleSection('obrigatoriedade')}
+          className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+        >
+          <div className="flex items-center gap-3 flex-1">
+            {expandedSections.has('obrigatoriedade') ? (
+              <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            )}
+            <div className="flex-1 text-left">
+              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                <DocumentTextIcon className="h-5 w-5 text-blue-600" />
+                Obrigatoriedade de Transmissão
+              </h2>
+              <p className="text-sm text-gray-600">
+                Análise de obrigatoriedade conforme IN RFB 2.237/2024 e 2.248/2025. Verifica "Original sem movimento" e "Original zerada".
+              </p>
             {(() => {
               const semMovimentoCount = orderedObligationIssues.filter(issue => issue.details?.isSemMovimento).length;
               const zeradaCount = orderedObligationIssues.filter(issue => issue.details?.isZerada).length;
@@ -789,16 +956,19 @@ export default function Conferencias() {
               }
               return null;
             })()}
+            </div>
           </div>
           <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
             Total: <span className="text-gray-900">{orderedObligationIssues.length}</span> {orderedObligationIssues.length === 1 ? 'registro' : 'registros'}
           </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-xs">
-            <thead className="bg-gray-50">
-              <tr>
+        </button>
+        
+        {expandedSections.has('obrigatoriedade') && (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-xs">
+                <thead className="bg-gray-50">
+                  <tr>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Competência</th>
@@ -903,56 +1073,71 @@ export default function Conferencias() {
                   );
                 })
               )}
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
 
-        {/* Paginação */}
-        {!isLoading && orderedObligationIssues.length > 0 && (
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-            <Pagination
-              currentPage={paginaAtualObrigacao}
-              totalPages={totalPaginasObrigacao}
-              totalItems={orderedObligationIssues.length}
-              itemsPerPage={itensPorPagina}
-              onPageChange={setPaginaAtualObrigacao}
-              itemLabel="pendência"
-            />
-          </div>
+            {/* Paginação */}
+            {!isLoading && orderedObligationIssues.length > 0 && (
+              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <Pagination
+                  currentPage={paginaAtualObrigacao}
+                  totalPages={totalPaginasObrigacao}
+                  totalItems={orderedObligationIssues.length}
+                  itemsPerPage={itensPorPagina}
+                  onPageChange={setPaginaAtualObrigacao}
+                  itemLabel="pendência"
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Seção de Lacunas de Períodos */}
+      {/* Seção de Lacunas de Períodos - Accordion */}
       {missingPeriodIssues.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-                <ExclamationTriangleIcon className="h-5 w-5 text-orange-600" />
-                Lacunas de Períodos
-              </h2>
-              <p className="text-sm text-gray-600">
-                Detecta períodos faltando entre declarações. Conforme IN RFB 2.237/2024, todas as competências devem ser declaradas sequencialmente.
-              </p>
+        <div id="secao-lacunas" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+          <button
+            onClick={() => toggleSection('lacunas')}
+            className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+          >
+            <div className="flex items-center gap-3 flex-1">
+              {expandedSections.has('lacunas') ? (
+                <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              ) : (
+                <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              )}
+              <div className="flex-1 text-left">
+                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                  <ExclamationTriangleIcon className="h-5 w-5 text-orange-600" />
+                  Lacunas de Períodos
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Detecta períodos faltando entre declarações. Conforme IN RFB 2.237/2024, todas as competências devem ser declaradas sequencialmente.
+                </p>
+              </div>
             </div>
             <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
               Total: <span className="text-gray-900">{missingPeriodIssues.length}</span> lacunas
             </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-xs">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Período Faltante</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          </button>
+          
+          {expandedSections.has('lacunas') && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Período Faltante</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
                 {missingPeriodIssues
                   .slice((paginaAtualMissingPeriod - 1) * itensPorPagina, paginaAtualMissingPeriod * itensPorPagina)
                   .map(issue => {
@@ -1005,54 +1190,69 @@ export default function Conferencias() {
                       </Fragment>
                     );
                   })}
-              </tbody>
-            </table>
-          </div>
-          {missingPeriodIssues.length > itensPorPagina && (
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-              <Pagination
-                currentPage={paginaAtualMissingPeriod}
-                totalPages={Math.ceil(missingPeriodIssues.length / itensPorPagina)}
-                totalItems={missingPeriodIssues.length}
-                itemsPerPage={itensPorPagina}
-                onPageChange={setPaginaAtualMissingPeriod}
-                itemLabel="lacuna"
-              />
-            </div>
+                  </tbody>
+                </table>
+              </div>
+              {missingPeriodIssues.length > itensPorPagina && (
+                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                  <Pagination
+                    currentPage={paginaAtualMissingPeriod}
+                    totalPages={Math.ceil(missingPeriodIssues.length / itensPorPagina)}
+                    totalItems={missingPeriodIssues.length}
+                    itemsPerPage={itensPorPagina}
+                    onPageChange={setPaginaAtualMissingPeriod}
+                    itemLabel="lacuna"
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {/* Seção de Duplicidades */}
+      {/* Seção de Lacunas de Períodos - Accordion */}
       {duplicateDeclarationIssues.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-                <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600" />
-                Declarações Duplicadas
-              </h2>
-              <p className="text-sm text-gray-600">
-                Detecta múltiplas declarações originais para o mesmo período. Conforme legislação, não deve haver múltiplas declarações originais para o mesmo período.
-              </p>
+        <div id="secao-duplicatas" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+          <button
+            onClick={() => toggleSection('duplicatas')}
+            className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+          >
+            <div className="flex items-center gap-3 flex-1">
+              {expandedSections.has('duplicatas') ? (
+                <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              ) : (
+                <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              )}
+              <div className="flex-1 text-left">
+                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                  <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600" />
+                  Declarações Duplicadas
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Detecta múltiplas declarações originais para o mesmo período. Conforme legislação, não deve haver múltiplas declarações originais para o mesmo período (exceto SERO).
+                </p>
+              </div>
             </div>
             <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
               Total: <span className="text-gray-900">{duplicateDeclarationIssues.length}</span> duplicatas
             </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-xs">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Período</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          </button>
+          
+          {expandedSections.has('duplicatas') && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Período</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
                 {duplicateDeclarationIssues
                   .slice((paginaAtualDuplicate - 1) * itensPorPagina, paginaAtualDuplicate * itensPorPagina)
                   .map(issue => {
@@ -1104,54 +1304,69 @@ export default function Conferencias() {
                       </Fragment>
                     );
                   })}
-              </tbody>
-            </table>
-          </div>
-          {duplicateDeclarationIssues.length > itensPorPagina && (
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-              <Pagination
-                currentPage={paginaAtualDuplicate}
-                totalPages={Math.ceil(duplicateDeclarationIssues.length / itensPorPagina)}
-                totalItems={duplicateDeclarationIssues.length}
-                itemsPerPage={itensPorPagina}
-                onPageChange={setPaginaAtualDuplicate}
-                itemLabel="duplicata"
-              />
-            </div>
+                  </tbody>
+                </table>
+              </div>
+              {duplicateDeclarationIssues.length > itensPorPagina && (
+                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                  <Pagination
+                    currentPage={paginaAtualDuplicate}
+                    totalPages={Math.ceil(duplicateDeclarationIssues.length / itensPorPagina)}
+                    totalItems={duplicateDeclarationIssues.length}
+                    itemsPerPage={itensPorPagina}
+                    onPageChange={setPaginaAtualDuplicate}
+                    itemLabel="duplicata"
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {/* Seção de Períodos Futuros */}
+      {/* Seção de Períodos Futuros - Accordion */}
       {futurePeriodIssues.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-                <ExclamationTriangleIcon className="h-5 w-5 text-red-600" />
-                Períodos Futuros
-              </h2>
-              <p className="text-sm text-gray-600">
-                Detecta declarações com períodos futuros, indicando possível erro de digitação ou cadastro incorreto.
-              </p>
+        <div id="secao-futuros" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+          <button
+            onClick={() => toggleSection('futuros')}
+            className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+          >
+            <div className="flex items-center gap-3 flex-1">
+              {expandedSections.has('futuros') ? (
+                <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              ) : (
+                <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              )}
+              <div className="flex-1 text-left">
+                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                  <ExclamationTriangleIcon className="h-5 w-5 text-red-600" />
+                  Períodos Futuros
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Detecta declarações com períodos futuros, indicando possível erro de digitação ou cadastro incorreto.
+                </p>
+              </div>
             </div>
             <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
               Total: <span className="text-gray-900">{futurePeriodIssues.length}</span> erros
             </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-xs">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Período</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          </button>
+          
+          {expandedSections.has('futuros') && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Período</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
                 {futurePeriodIssues
                   .slice((paginaAtualFuture - 1) * itensPorPagina, paginaAtualFuture * itensPorPagina)
                   .map(issue => {
@@ -1203,54 +1418,69 @@ export default function Conferencias() {
                       </Fragment>
                     );
                   })}
-              </tbody>
-            </table>
-          </div>
-          {futurePeriodIssues.length > itensPorPagina && (
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-              <Pagination
-                currentPage={paginaAtualFuture}
-                totalPages={Math.ceil(futurePeriodIssues.length / itensPorPagina)}
-                totalItems={futurePeriodIssues.length}
-                itemsPerPage={itensPorPagina}
-                onPageChange={setPaginaAtualFuture}
-                itemLabel="erro"
-              />
-            </div>
+                  </tbody>
+                </table>
+              </div>
+              {futurePeriodIssues.length > itensPorPagina && (
+                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                  <Pagination
+                    currentPage={paginaAtualFuture}
+                    totalPages={Math.ceil(futurePeriodIssues.length / itensPorPagina)}
+                    totalItems={futurePeriodIssues.length}
+                    itemsPerPage={itensPorPagina}
+                    onPageChange={setPaginaAtualFuture}
+                    itemLabel="erro"
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {/* Seção de Sequência de Retificadoras */}
+      {/* Seção de Sequência de Retificadoras - Accordion */}
       {retificadoraSequenceIssues.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-                <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600" />
-                Sequência de Retificadoras
-              </h2>
-              <p className="text-sm text-gray-600">
-                Detecta múltiplas retificadoras para o mesmo período, indicando possível problema na sequência ou necessidade de revisão.
-              </p>
+        <div id="secao-retificadoras" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+          <button
+            onClick={() => toggleSection('retificadoras')}
+            className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+          >
+            <div className="flex items-center gap-3 flex-1">
+              {expandedSections.has('retificadoras') ? (
+                <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              ) : (
+                <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              )}
+              <div className="flex-1 text-left">
+                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                  <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600" />
+                  Sequência de Retificadoras
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Detecta múltiplas retificadoras para o mesmo período, indicando possível problema na sequência ou necessidade de revisão.
+                </p>
+              </div>
             </div>
             <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
               Total: <span className="text-gray-900">{retificadoraSequenceIssues.length}</span> alertas
             </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-xs">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Período</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          </button>
+          
+          {expandedSections.has('retificadoras') && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Período</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
                 {retificadoraSequenceIssues
                   .slice((paginaAtualSequence - 1) * itensPorPagina, paginaAtualSequence * itensPorPagina)
                   .map(issue => {
@@ -1302,55 +1532,70 @@ export default function Conferencias() {
                       </Fragment>
                     );
                   })}
-              </tbody>
-            </table>
-          </div>
-          {retificadoraSequenceIssues.length > itensPorPagina && (
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-              <Pagination
-                currentPage={paginaAtualSequence}
-                totalPages={Math.ceil(retificadoraSequenceIssues.length / itensPorPagina)}
-                totalItems={retificadoraSequenceIssues.length}
-                itemsPerPage={itensPorPagina}
-                onPageChange={setPaginaAtualSequence}
-                itemLabel="alerta"
-              />
-            </div>
+                  </tbody>
+                </table>
+              </div>
+              {retificadoraSequenceIssues.length > itensPorPagina && (
+                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                  <Pagination
+                    currentPage={paginaAtualSequence}
+                    totalPages={Math.ceil(retificadoraSequenceIssues.length / itensPorPagina)}
+                    totalItems={retificadoraSequenceIssues.length}
+                    itemsPerPage={itensPorPagina}
+                    onPageChange={setPaginaAtualSequence}
+                    itemLabel="alerta"
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {/* Seção de Clientes sem DCTF na Competência Vigente */}
+      {/* Seção de Clientes sem DCTF na Competência Vigente - Accordion */}
       {clientesSemDCTFIssues.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-                <BuildingOfficeIcon className="h-5 w-5 text-red-600" />
-                Clientes sem DCTF na Competência Vigente
-              </h2>
-              <p className="text-sm text-gray-600">
-                Lista de clientes cadastrados que não apresentaram DCTF enviada no mês vigente. Conforme IN RFB 2.237/2024, 2.267/2025 e 2.248/2025.
-              </p>
+        <div id="secao-clientes-sem-dctf" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+          <button
+            onClick={() => toggleSection('clientes-sem-dctf')}
+            className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+          >
+            <div className="flex items-center gap-3 flex-1">
+              {expandedSections.has('clientes-sem-dctf') ? (
+                <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              ) : (
+                <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+              )}
+              <div className="flex-1 text-left">
+                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                  <BuildingOfficeIcon className="h-5 w-5 text-red-600" />
+                  Clientes sem DCTF na Competência Vigente
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Lista de clientes cadastrados que não apresentaram DCTF enviada no mês vigente. Conforme IN RFB 2.237/2024, 2.267/2025 e 2.248/2025.
+                </p>
+              </div>
             </div>
             <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
               Total: <span className="text-gray-900">{clientesSemDCTFIssues.length}</span> clientes
             </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-xs">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Competência</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          </button>
+          
+          {expandedSections.has('clientes-sem-dctf') && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Competência</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
                 {clientesSemDCTFIssues
                   .slice((paginaAtualClientesSemDCTF - 1) * itensPorPagina, paginaAtualClientesSemDCTF * itensPorPagina)
                   .map(issue => {
@@ -1403,20 +1648,22 @@ export default function Conferencias() {
                       </Fragment>
                     );
                   })}
-              </tbody>
-            </table>
-          </div>
-          {clientesSemDCTFIssues.length > itensPorPagina && (
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-              <Pagination
-                currentPage={paginaAtualClientesSemDCTF}
-                totalPages={Math.ceil(clientesSemDCTFIssues.length / itensPorPagina)}
-                totalItems={clientesSemDCTFIssues.length}
-                itemsPerPage={itensPorPagina}
-                onPageChange={setPaginaAtualClientesSemDCTF}
-                itemLabel="cliente"
-              />
-            </div>
+                  </tbody>
+                </table>
+              </div>
+              {clientesSemDCTFIssues.length > itensPorPagina && (
+                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                  <Pagination
+                    currentPage={paginaAtualClientesSemDCTF}
+                    totalPages={Math.ceil(clientesSemDCTFIssues.length / itensPorPagina)}
+                    totalItems={clientesSemDCTFIssues.length}
+                    itemsPerPage={itensPorPagina}
+                    onPageChange={setPaginaAtualClientesSemDCTF}
+                    itemLabel="cliente"
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
