@@ -111,6 +111,16 @@ export function buildAdminDashboardSnapshot(
 }
 
 export function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
+  // Debug: Log apenas para registros "sem movimento"
+  if (record.tipoDeclaracao?.toLowerCase().includes('sem movimento')) {
+    console.log('[AdminDashboard] ✅ Encontrado "sem movimento":', {
+      id: record.id,
+      tipoDeclaracao: record.tipoDeclaracao,
+      situacao: record.situacao,
+      periodo: record.periodo
+    });
+  }
+  
   // Formatar período de apuração se existir, garantindo formato MM/YYYY
   let periodApuracaoFormatted: string | null = null;
   if (record.periodoApuracao && record.periodoApuracao.trim() !== '') {
@@ -147,8 +157,8 @@ export function mapToDashboardRecord(record: IDCTF): DashboardDCTFRecord {
     periodApuracao: periodApuracaoFormatted,
     transmissionDate: formatDate(record.dataDeclaracao),
     category: "Geral",
-    origin: "Plataforma",
-    declarationType: record.situacao ?? record.status ?? "Desconhecido",
+    origin: record.origem ?? "Plataforma",  // ✅ Usar campo 'origem' do banco (coluna ORIGEM da tabela DCTF_DECLARACOES)
+    declarationType: record.tipoDeclaracao ?? "Desconhecido",  // ✅✅ CORRETO: usar 'tipoDeclaracao' (camelCase do banco 'tipo_declaracao')
     situation: record.situacao ?? record.status,
     status: record.status,
     debitAmount: Number(record.debitoApurado ?? 0),
