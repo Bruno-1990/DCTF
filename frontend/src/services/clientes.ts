@@ -37,6 +37,7 @@ export const clientesService = {
   async delete(id: string): Promise<void> {
     await api.delete(`/clientes/${id}`);
   },
+
 };
 
 export const spreadsheetService = {

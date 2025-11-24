@@ -88,13 +88,13 @@ export default function Conferencias() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [paginaAtual, setPaginaAtual] = useState(1);
-  const [paginaAtualObrigacao, setPaginaAtualObrigacao] = useState(1);
   const [paginaAtualMissingPeriod, setPaginaAtualMissingPeriod] = useState(1);
   const [paginaAtualDuplicate, setPaginaAtualDuplicate] = useState(1);
   const [paginaAtualFuture, setPaginaAtualFuture] = useState(1);
   const [paginaAtualSequence, setPaginaAtualSequence] = useState(1);
   const [paginaAtualClientesSemDCTF, setPaginaAtualClientesSemDCTF] = useState(1);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['prazos', 'obrigatoriedade', 'clientes-sem-dctf'])); // Seções críticas expandidas por padrão
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set()); // Seções fechadas por padrão
+  const [mostrarTodasEmpresasSemMovimento, setMostrarTodasEmpresasSemMovimento] = useState(false); // Controla se mostra todas as empresas ou apenas 6
   const itensPorPagina = 10;
 
   useEffect(() => {
@@ -136,8 +136,19 @@ export default function Conferencias() {
   }, []);
 
   const orderedIssues = useMemo(() => {
+    // Filtrar competências vencidas - não listar porque pode ser retificadora
+    // e a original foi enviada dentro do prazo. Só conta como atrasada se for original,
+    // mas isso não precisa checar agora.
+    const filteredIssues = issues.filter(issue => {
+      // Remover issues vencidas (severity 'high' com mensagem de vencida)
+      if (issue.severity === 'high' && issue.message?.toLowerCase().includes('vencida')) {
+        return false;
+      }
+      return true;
+    });
+    
     const severityOrder: Record<ConferenceIssue['severity'], number> = { high: 0, medium: 1, low: 2 };
-    return [...issues].sort((a, b) => {
+    return filteredIssues.sort((a, b) => {
       if (a.severity === b.severity) {
         return (new Date(a.dueDate).getTime() || 0) - (new Date(b.dueDate).getTime() || 0);
       }
@@ -151,7 +162,6 @@ export default function Conferencias() {
   }, [issues.length]);
 
   useEffect(() => {
-    setPaginaAtualObrigacao(1);
   }, [transmissionObligationIssues.length]);
 
   // Calcular paginação para issues de prazo
@@ -173,17 +183,20 @@ export default function Conferencias() {
     });
   }, [transmissionObligationIssues]);
 
-  const totalPaginasObrigacao = Math.ceil(orderedObligationIssues.length / itensPorPagina);
-  const indiceInicioObrigacao = (paginaAtualObrigacao - 1) * itensPorPagina;
-  const indiceFimObrigacao = indiceInicioObrigacao + itensPorPagina;
-  const obligationIssuesPaginadas = useMemo(() => {
-    return orderedObligationIssues.slice(indiceInicioObrigacao, indiceFimObrigacao);
-  }, [orderedObligationIssues, indiceInicioObrigacao, indiceFimObrigacao]);
 
   // Calcular estatísticas para os cards de resumo
   const stats = useMemo(() => {
+    // Filtrar competências vencidas das estatísticas também
+    const filteredIssues = issues.filter(issue => {
+      // Remover issues vencidas (severity 'high' com mensagem de vencida)
+      if (issue.severity === 'high' && issue.message?.toLowerCase().includes('vencida')) {
+        return false;
+      }
+      return true;
+    });
+    
     const allIssues = [
-      ...issues,
+      ...filteredIssues,
       ...transmissionObligationIssues,
       ...missingPeriodIssues,
       ...duplicateDeclarationIssues,
@@ -196,7 +209,7 @@ export default function Conferencias() {
       medias: allIssues.filter(i => i.severity === 'medium').length,
       baixas: allIssues.filter(i => i.severity === 'low').length,
       clientesSemDCTF: clientesSemDCTFIssues.length,
-      pendenciasPrazo: issues.length,
+      pendenciasPrazo: filteredIssues.length, // Usar filteredIssues ao invés de issues
       duplicatas: duplicateDeclarationIssues.length,
       total: allIssues.length + clientesSemDCTFIssues.length,
     };
@@ -215,13 +228,19 @@ export default function Conferencias() {
   };
 
   const scrollToSection = (sectionId: string) => {
+    // Mapear ID da seção para a chave do estado (remover prefixo 'secao-')
+    const sectionKey = sectionId.replace('secao-', '');
+    
     const element = document.getElementById(sectionId);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       // Expandir a seção se estiver colapsada
-      if (!expandedSections.has(sectionId)) {
-        setExpandedSections((prev) => new Set(prev).add(sectionId));
+      if (!expandedSections.has(sectionKey)) {
+        setExpandedSections((prev) => new Set(prev).add(sectionKey));
       }
+      // Aguardar um pouco para a animação de expansão antes de fazer scroll
+      setTimeout(() => {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
     }
   };
 
@@ -393,6 +412,48 @@ export default function Conferencias() {
             <p className="text-base text-gray-600 mb-2">
               Monitoramos automaticamente o cumprimento dos prazos legais estabelecidos pelas Instruções Normativas da RFB.
             </p>
+            {/* Normas Aplicáveis */}
+            <div className="mt-4">
+              <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <BookOpenIcon className="h-4 w-4 text-gray-500" />
+                    <span className="text-xs font-medium text-gray-700">Normas Aplicáveis:</span>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <a
+                      href="https://barroscarvalho.com.br"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-gray-600 hover:text-blue-600 transition-colors inline-flex items-center gap-1"
+                    >
+                      IN RFB 2.237/2024
+                      <ArrowTopRightOnSquareIcon className="h-3 w-3" />
+                    </a>
+                    <span className="text-gray-300">•</span>
+                    <a
+                      href="https://legisweb.com.br"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-gray-600 hover:text-blue-600 transition-colors inline-flex items-center gap-1"
+                    >
+                      IN RFB 2.267/2025
+                      <ArrowTopRightOnSquareIcon className="h-3 w-3" />
+                    </a>
+                    <span className="text-gray-300">•</span>
+                    <a
+                      href="https://legisweb.com.br"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-gray-600 hover:text-blue-600 transition-colors inline-flex items-center gap-1"
+                    >
+                      IN RFB 2.248/2025
+                      <ArrowTopRightOnSquareIcon className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           {generatedAt && (
             <div className="flex-shrink-0">
@@ -500,47 +561,111 @@ export default function Conferencias() {
         </div>
       </div>
 
-      {/* Card de Alerta - Empresas Sem Movimento da Competência Vigente */}
-      {(() => {
-        // Calcular competência vigente (mês anterior ao atual)
-        const hoje = new Date();
-        const mesAtual = hoje.getMonth() + 1; // getMonth() retorna 0-11
-        const anoAtual = hoje.getFullYear();
+      {/* Seção de Obrigatoriedade de Transmissão - Accordion */}
+      <div id="secao-obrigatoriedade" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+        <button
+          onClick={() => toggleSection('obrigatoriedade')}
+          className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+        >
+          <div className="flex items-center gap-3 flex-1">
+            {expandedSections.has('obrigatoriedade') ? (
+              <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            )}
+            <div className="flex-1 text-left">
+              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                <DocumentTextIcon className="h-5 w-5 text-blue-600" />
+                Obrigatoriedade de Transmissão
+              </h2>
+              <p className="text-sm text-gray-600">
+                Análise de obrigatoriedade conforme IN RFB 2.237/2024 e 2.248/2025. Verifica "Original sem movimento".
+              </p>
+            {(() => {
+              const semMovimentoCount = orderedObligationIssues.filter(issue => issue.details?.isSemMovimento).length;
+              if (semMovimentoCount > 0) {
+                return (
+                  <p className="text-xs text-gray-500 mt-1">
+                    <span>📋 {semMovimentoCount} "sem movimento"</span>
+                  </p>
+                );
+              }
+              return null;
+            })()}
+            </div>
+          </div>
+          <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
+            Total: <span className="text-gray-900">{orderedObligationIssues.length}</span> {orderedObligationIssues.length === 1 ? 'registro' : 'registros'}
+          </div>
+        </button>
         
-        // Competência vigente: mês anterior
-        const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
-        const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
-        const competenciaVigente = `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
-        
-        // ✅ FILTRO SIMPLES: tipo LIKE "sem movimento" E período = competência vigente
-        const semMovimentoCompetenciaVigente = allSemMovimentoIssues.filter(issue => 
-          issue.period === competenciaVigente
-        );
-        
-        console.log('[Conferências] === DEBUG CARD SEM MOVIMENTO ===');
-        console.log('[Conferências] Data atual:', hoje.toISOString());
-        console.log('[Conferências] Competência vigente:', competenciaVigente);
-        console.log('[Conferências] Total allSemMovimentoIssues:', allSemMovimentoIssues.length);
-        console.log('[Conferências] Filtrados competência vigente:', semMovimentoCompetenciaVigente.length);
-        console.log('[Conferências] Exemplos:', semMovimentoCompetenciaVigente.slice(0, 5).map(i => ({
-          businessName: i.businessName,
-          period: i.period,
-          declarationType: i.details?.declarationType,
-          transmissionDate: i.transmissionDate
-        })));
-        
-        return semMovimentoCompetenciaVigente.length > 0;
-      })() && (
-        <div className="mb-6">
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 bg-blue-600 text-white">
-              <div className="flex items-center gap-3">
-                <div className="bg-white/20 p-2 rounded-lg">
-                  <DocumentTextIcon className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold">📋 Empresas "Sem Movimento" - Competência Vigente</h3>
-                  <p className="text-sm text-blue-100 mt-0.5">
+        {expandedSections.has('obrigatoriedade') && (
+          <>
+            {/* Card de Alerta - Empresas Sem Movimento da Competência Vigente */}
+            {(() => {
+              // Calcular competência vigente (mês anterior ao atual)
+              const hoje = new Date();
+              const mesAtual = hoje.getMonth() + 1; // getMonth() retorna 0-11
+              const anoAtual = hoje.getFullYear();
+              
+              // Competência vigente: mês anterior
+              const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
+              const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
+              const competenciaVigente = `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
+              
+              // ✅ FILTRO SIMPLES: tipo LIKE "sem movimento" E período = competência vigente
+              const semMovimentoCompetenciaVigente = allSemMovimentoIssues.filter(issue => 
+                issue.period === competenciaVigente
+              );
+              
+              return semMovimentoCompetenciaVigente.length > 0;
+            })() && (
+              <div className="px-6 py-4 border-b border-gray-200">
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 bg-blue-600 text-white">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-lg">
+                        <DocumentTextIcon className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold">📋 Empresas "Sem Movimento" - Competência Vigente</h3>
+                        <p className="text-sm text-blue-100 mt-0.5">
+                          {(() => {
+                            const hoje = new Date();
+                            const mesAtual = hoje.getMonth() + 1;
+                            const anoAtual = hoje.getFullYear();
+                            const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
+                            const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
+                            const competenciaVigente = `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
+                            return allSemMovimentoIssues.filter(i => i.period === competenciaVigente).length;
+                          })()} empresas declararam "sem movimento" em {(() => {
+                            const hoje = new Date();
+                            const mesAtual = hoje.getMonth() + 1;
+                            const anoAtual = hoje.getFullYear();
+                            const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
+                            const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
+                            return `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
+                          })()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-6 py-4">
+                    <div className="bg-green-50 border-2 border-green-300 rounded-lg px-4 py-3 mb-4">
+                      <p className="text-sm text-green-900 font-bold flex items-center gap-2 mb-2">
+                        <CheckIcon className="h-5 w-5 flex-shrink-0 text-green-600" />
+                        ✅ Importante: Próximos meses NÃO precisam ser enviados!
+                      </p>
+                      <p className="text-xs text-green-800 ml-7">
+                        Enquanto a empresa continuar sem movimento, não há obrigação de transmitir DCTFs dos meses seguintes. 
+                        <span className="font-semibold"> Só precisa enviar novamente quando houver movimento.</span>
+                      </p>
+                      <p className="text-xs text-green-700 ml-7 mt-1 italic">
+                        📖 Base legal: IN RFB 2.237/2024, Art. 3º
+                      </p>
+                    </div>
+                    
+                    {/* Lista de empresas - 6 primeiras em ordem alfabética ou todas */}
                     {(() => {
                       const hoje = new Date();
                       const mesAtual = hoje.getMonth() + 1;
@@ -548,150 +673,88 @@ export default function Conferencias() {
                       const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
                       const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
                       const competenciaVigente = `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
-                      return allSemMovimentoIssues.filter(i => i.period === competenciaVigente).length;
-                    })()} empresas declararam "sem movimento" em {(() => {
-                      const hoje = new Date();
-                      const mesAtual = hoje.getMonth() + 1;
-                      const anoAtual = hoje.getFullYear();
-                      const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
-                      const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
-                      return `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
-                    })()}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-4">
-              <div className="bg-green-50 border-2 border-green-300 rounded-lg px-4 py-3 mb-4">
-                <p className="text-sm text-green-900 font-bold flex items-center gap-2 mb-2">
-                  <CheckIcon className="h-5 w-5 flex-shrink-0 text-green-600" />
-                  ✅ Importante: Próximos meses NÃO precisam ser enviados!
-                </p>
-                <p className="text-xs text-green-800 ml-7">
-                  Enquanto a empresa continuar sem movimento, não há obrigação de transmitir DCTFs dos meses seguintes. 
-                  <span className="font-semibold"> Só precisa enviar novamente quando houver movimento.</span>
-                </p>
-                <p className="text-xs text-green-700 ml-7 mt-1 italic">
-                  📖 Base legal: IN RFB 2.237/2024, Art. 3º
-                </p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {(() => {
-                  const hoje = new Date();
-                  const mesAtual = hoje.getMonth() + 1;
-                  const anoAtual = hoje.getFullYear();
-                  const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
-                  const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
-                  const competenciaVigente = `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
-                  return allSemMovimentoIssues.filter(i => i.period === competenciaVigente).slice(0, 6);
-                })().map((issue) => (
-                    <button
-                      key={issue.id}
-                      onClick={() => navigate(`/dctf?search=${issue.identification}`)}
-                      className="bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-blue-400 hover:shadow-md transition-all text-left group"
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">
-                            {issue.businessName ?? 'Empresa não identificada'}
-                          </p>
-                          <p className="text-xs text-gray-500 font-mono mt-0.5">
-                            {formatCNPJ(issue.identification)}
-                          </p>
+                      
+                      // Filtrar e ordenar alfabeticamente
+                      const empresasFiltradas = allSemMovimentoIssues
+                        .filter(i => i.period === competenciaVigente)
+                        .sort((a, b) => {
+                          const nameA = (a.businessName ?? '').toLowerCase();
+                          const nameB = (b.businessName ?? '').toLowerCase();
+                          return nameA.localeCompare(nameB, 'pt-BR');
+                        });
+                      
+                      // Pegar 6 primeiras ou todas, dependendo do estado
+                      const empresasParaExibir = mostrarTodasEmpresasSemMovimento 
+                        ? empresasFiltradas 
+                        : empresasFiltradas.slice(0, 6);
+                      
+                      const totalEmpresas = empresasFiltradas.length;
+                      const temMaisEmpresas = totalEmpresas > 6;
+                      
+                      return (
+                        <div className="mt-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {empresasParaExibir.map((issue) => (
+                              <button
+                                key={issue.id}
+                                onClick={() => navigate(`/dctf?search=${issue.identification}`)}
+                                className="bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-blue-400 hover:shadow-md transition-all text-left group"
+                              >
+                                <div className="flex items-start justify-between gap-2 mb-2">
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">
+                                      {issue.businessName ?? 'Empresa não identificada'}
+                                    </p>
+                                    <p className="text-xs text-gray-500 font-mono mt-0.5">
+                                      {formatCNPJ(issue.identification)}
+                                    </p>
+                                  </div>
+                                  <SeverityTag severity={issue.severity} />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-gray-600">
+                                    Competência: <span className="font-medium">{issue.period}</span>
+                                  </span>
+                                  <span className="text-xs text-blue-600 group-hover:underline flex items-center gap-1">
+                                    Ver DCTFs
+                                    <ArrowTopRightOnSquareIcon className="h-3 w-3" />
+                                  </span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                          
+                          {/* Botão Mostrar mais / Ocultar */}
+                          {temMaisEmpresas && (
+                            <div className="mt-4 text-center">
+                              <button
+                                onClick={() => setMostrarTodasEmpresasSemMovimento(!mostrarTodasEmpresasSemMovimento)}
+                                className="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center gap-2 mx-auto"
+                              >
+                                {mostrarTodasEmpresasSemMovimento ? (
+                                  <>
+                                    <ChevronDownIcon className="h-4 w-4" />
+                                    Ocultar ({totalEmpresas - 6} empresas)
+                                  </>
+                                ) : (
+                                  <>
+                                    Mostrar mais ({totalEmpresas - 6} empresas)
+                                    <ChevronRightIcon className="h-4 w-4" />
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <SeverityTag severity={issue.severity} />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-600">
-                          Competência: <span className="font-medium">{issue.period}</span>
-                        </span>
-                        <span className="text-xs text-blue-600 group-hover:underline flex items-center gap-1">
-                          Ver DCTFs
-                          <ArrowTopRightOnSquareIcon className="h-3 w-3" />
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-              </div>
-              {(() => {
-                const hoje = new Date();
-                const mesAtual = hoje.getMonth() + 1;
-                const anoAtual = hoje.getFullYear();
-                const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
-                const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
-                const competenciaVigente = `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
-                const filtered = allSemMovimentoIssues.filter(i => i.period === competenciaVigente);
-                return filtered.length > 6;
-              })() && (
-                <div className="mt-4 text-center">
-                  <p className="text-sm text-gray-600">
-                    ... e mais {(() => {
-                      const hoje = new Date();
-                      const mesAtual = hoje.getMonth() + 1;
-                      const anoAtual = hoje.getFullYear();
-                      const competenciaMes = mesAtual === 1 ? 12 : mesAtual - 1;
-                      const competenciaAno = mesAtual === 1 ? anoAtual - 1 : anoAtual;
-                      const competenciaVigente = `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
-                      return allSemMovimentoIssues.filter(i => i.period === competenciaVigente).length - 6;
-                    })()} empresas. 
-                    <button 
-                      onClick={() => {
-                        // Scroll para a seção de Obrigatoriedade de Transmissão
-                        document.querySelector('#secao-obrigatoriedade')?.scrollIntoView({ behavior: 'smooth' });
-                      }}
-                      className="text-blue-600 hover:underline ml-1 font-medium"
-                    >
-                      Ver todas
-                    </button>
-                  </p>
+                      );
+                    })()}
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+              </div>
+            )}
 
-      {/* Seção de Legislação - Compacta e Discreta */}
-      <div className="mb-6">
-        <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <BookOpenIcon className="h-4 w-4 text-gray-500" />
-              <span className="text-xs font-medium text-gray-700">Normas Aplicáveis:</span>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <a
-                href="https://barroscarvalho.com.br"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-gray-600 hover:text-blue-600 transition-colors inline-flex items-center gap-1"
-              >
-                IN RFB 2.237/2024
-                <ArrowTopRightOnSquareIcon className="h-3 w-3" />
-              </a>
-              <span className="text-gray-300">•</span>
-              <a
-                href="https://legisweb.com.br"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-gray-600 hover:text-blue-600 transition-colors inline-flex items-center gap-1"
-              >
-                IN RFB 2.267/2025
-                <ArrowTopRightOnSquareIcon className="h-3 w-3" />
-              </a>
-              <span className="text-gray-300">•</span>
-              <a
-                href="https://legisweb.com.br"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-gray-600 hover:text-blue-600 transition-colors inline-flex items-center gap-1"
-              >
-                IN RFB 2.248/2025
-                <ArrowTopRightOnSquareIcon className="h-3 w-3" />
-              </a>
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
 
       {/* Seção de Conferências - Accordion */}
@@ -921,294 +984,6 @@ export default function Conferencias() {
           </>
         )}
       </div>
-
-      {/* Seção de Obrigatoriedade de Transmissão - Accordion */}
-      <div id="secao-obrigatoriedade" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-        <button
-          onClick={() => toggleSection('obrigatoriedade')}
-          className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
-        >
-          <div className="flex items-center gap-3 flex-1">
-            {expandedSections.has('obrigatoriedade') ? (
-              <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
-            ) : (
-              <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
-            )}
-            <div className="flex-1 text-left">
-              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-                <DocumentTextIcon className="h-5 w-5 text-blue-600" />
-                Obrigatoriedade de Transmissão
-              </h2>
-              <p className="text-sm text-gray-600">
-                Análise de obrigatoriedade conforme IN RFB 2.237/2024 e 2.248/2025. Verifica "Original sem movimento" e "Original zerada".
-              </p>
-            {(() => {
-              const semMovimentoCount = orderedObligationIssues.filter(issue => issue.details?.isSemMovimento).length;
-              const zeradaCount = orderedObligationIssues.filter(issue => issue.details?.isZerada).length;
-              if (semMovimentoCount > 0 || zeradaCount > 0) {
-                return (
-                  <p className="text-xs text-gray-500 mt-1">
-                    {semMovimentoCount > 0 && <span>📋 {semMovimentoCount} "sem movimento"</span>}
-                    {semMovimentoCount > 0 && zeradaCount > 0 && <span className="mx-1">•</span>}
-                    {zeradaCount > 0 && <span>🔢 {zeradaCount} "zerada"</span>}
-                  </p>
-                );
-              }
-              return null;
-            })()}
-            </div>
-          </div>
-          <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
-            Total: <span className="text-gray-900">{orderedObligationIssues.length}</span> {orderedObligationIssues.length === 1 ? 'registro' : 'registros'}
-          </div>
-        </button>
-        
-        {expandedSections.has('obrigatoriedade') && (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-xs">
-                <thead className="bg-gray-50">
-                  <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Competência</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento Legal</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Situação</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {(() => {
-                // Debug: Verificar se há issues mas nenhum está sendo paginado
-                if (orderedObligationIssues.length > 0 && obligationIssuesPaginadas.length === 0) {
-                  console.warn('[Conferências] ⚠️ ATENÇÃO: Há', orderedObligationIssues.length, 'issues mas nenhum está sendo exibido na página', paginaAtualObrigacao);
-                }
-                return null;
-              })()}
-              {orderedObligationIssues.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-xs text-gray-500">
-                    ✅ Nenhuma pendência ou informação de obrigatoriedade encontrada.
-                  </td>
-                </tr>
-              ) : obligationIssuesPaginadas.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-xs text-gray-500">
-                    Nenhum registro nesta página. Navegue para a página anterior.
-                  </td>
-                </tr>
-              ) : (
-                obligationIssuesPaginadas.map(issue => {
-                  const isExpanded = expanded.has(issue.id);
-                  const isSemMovimento = issue.details?.isSemMovimento === true;
-                  const isZerada = issue.details?.isZerada === true;
-                  
-                  return (
-                    <Fragment key={issue.id}>
-                      <tr className={`hover:bg-gray-50 ${isSemMovimento ? 'bg-blue-50/30' : isZerada ? 'bg-purple-50/30' : ''}`}>
-                        <td className="px-4 py-3 text-gray-800 font-medium text-xs">
-                          <div className="flex flex-col gap-1">
-                            <span>{issue.businessName ?? '—'}</span>
-                            {(isSemMovimento || isZerada) && (
-                              <div className="flex gap-1">
-                                {isSemMovimento && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                                    📋 Sem Movimento
-                                  </span>
-                                )}
-                                {isZerada && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
-                                    🔢 Zerada
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono">{formatCNPJ(issue.identification)}</span>
-                            <button
-                              onClick={() => copyToClipboard(issue.identification, issue.id)}
-                              className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
-                              title="Copiar CNPJ"
-                            >
-                              {copiedId === issue.id ? (
-                                <CheckIcon className="w-3.5 h-3.5 text-green-600" />
-                              ) : (
-                                <ClipboardDocumentIcon className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">{issue.period}</td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">{formatDate(issue.dueDate)}</td>
-                        <td className="px-4 py-3 text-gray-600 capitalize text-xs">{issue.status ?? '—'}</td>
-                        <td className="px-4 py-3"><SeverityTag severity={issue.severity} /></td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">{issue.message}</td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">
-                          {issue.actionPlan ? (
-                            <button
-                              type="button"
-                              onClick={() => toggleActionPlan(issue.id)}
-                              className="text-blue-600 hover:text-blue-800 font-medium"
-                            >
-                              {isExpanded ? 'Ocultar plano' : 'Ver plano de ação'}
-                            </button>
-                          ) : (
-                            <span className="text-gray-400">Sem plano cadastrado</span>
-                          )}
-                        </td>
-                      </tr>
-                      {issue.actionPlan && isExpanded && (
-                        <tr className="bg-gray-50">
-                          <td colSpan={8} className="px-4 py-3 text-xs text-gray-600 whitespace-pre-wrap">
-                            <strong>Plano de ação:</strong> {issue.actionPlan}
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })
-              )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Paginação */}
-            {!isLoading && orderedObligationIssues.length > 0 && (
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                <Pagination
-                  currentPage={paginaAtualObrigacao}
-                  totalPages={totalPaginasObrigacao}
-                  totalItems={orderedObligationIssues.length}
-                  itemsPerPage={itensPorPagina}
-                  onPageChange={setPaginaAtualObrigacao}
-                  itemLabel="pendência"
-                />
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Seção de Lacunas de Períodos - Accordion */}
-      {missingPeriodIssues.length > 0 && (
-        <div id="secao-lacunas" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-          <button
-            onClick={() => toggleSection('lacunas')}
-            className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
-          >
-            <div className="flex items-center gap-3 flex-1">
-              {expandedSections.has('lacunas') ? (
-                <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
-              ) : (
-                <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
-              )}
-              <div className="flex-1 text-left">
-                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-                  <ExclamationTriangleIcon className="h-5 w-5 text-orange-600" />
-                  Lacunas de Períodos
-                </h2>
-                <p className="text-sm text-gray-600">
-                  Detecta períodos faltando entre declarações. Conforme IN RFB 2.237/2024, todas as competências devem ser declaradas sequencialmente.
-                </p>
-              </div>
-            </div>
-            <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
-              Total: <span className="text-gray-900">{missingPeriodIssues.length}</span> lacunas
-            </div>
-          </button>
-          
-          {expandedSections.has('lacunas') && (
-            <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-xs">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Período Faltante</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Resumo</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Plano de ação</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                {missingPeriodIssues
-                  .slice((paginaAtualMissingPeriod - 1) * itensPorPagina, paginaAtualMissingPeriod * itensPorPagina)
-                  .map(issue => {
-                    const isExpanded = expanded.has(issue.id);
-                    return (
-                      <Fragment key={issue.id}>
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-gray-800 font-medium text-xs">{issue.businessName ?? '—'}</td>
-                          <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono">{formatCNPJ(issue.identification)}</span>
-                              <button
-                                onClick={() => copyToClipboard(issue.identification, issue.id)}
-                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
-                                title="Copiar CNPJ"
-                              >
-                                {copiedId === issue.id ? (
-                                  <CheckIcon className="w-3.5 h-3.5 text-green-600" />
-                                ) : (
-                                  <ClipboardDocumentIcon className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-gray-600 text-xs">{issue.period}</td>
-                          <td className="px-4 py-3 text-gray-600 text-xs">{formatDate(issue.dueDate)}</td>
-                          <td className="px-4 py-3"><SeverityTag severity={issue.severity} /></td>
-                          <td className="px-4 py-3 text-gray-600 text-xs">{issue.message}</td>
-                          <td className="px-4 py-3 text-gray-600 text-xs">
-                            {issue.actionPlan ? (
-                              <button
-                                type="button"
-                                onClick={() => toggleActionPlan(issue.id)}
-                                className="text-blue-600 hover:text-blue-800 font-medium"
-                              >
-                                {isExpanded ? 'Ocultar plano' : 'Ver plano de ação'}
-                              </button>
-                            ) : (
-                              <span className="text-gray-400">Sem plano cadastrado</span>
-                            )}
-                          </td>
-                        </tr>
-                        {issue.actionPlan && isExpanded && (
-                          <tr className="bg-gray-50">
-                            <td colSpan={7} className="px-4 py-3 text-xs text-gray-600 whitespace-pre-wrap">
-                              <strong>Plano de ação:</strong> {issue.actionPlan}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                  </tbody>
-                </table>
-              </div>
-              {missingPeriodIssues.length > itensPorPagina && (
-                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                  <Pagination
-                    currentPage={paginaAtualMissingPeriod}
-                    totalPages={Math.ceil(missingPeriodIssues.length / itensPorPagina)}
-                    totalItems={missingPeriodIssues.length}
-                    itemsPerPage={itensPorPagina}
-                    onPageChange={setPaginaAtualMissingPeriod}
-                    itemLabel="lacuna"
-                  />
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
 
       {/* Seção de Lacunas de Períodos - Accordion */}
       {duplicateDeclarationIssues.length > 0 && (
