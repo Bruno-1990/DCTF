@@ -378,9 +378,7 @@ export class ConsultaReceitaService {
         }
       } else {
         // Buscar todos os CNPJs da tabela clientes (comportamento original)
-        if (!process.env['SUPABASE_URL']) {
-          throw new Error('Supabase não configurado');
-        }
+        // Usa MySQL através do adapter Supabase
 
         // Acessar supabase através de cast temporário (propriedade protected)
         const { supabase: supabaseClient } = this.receitaPagamentoModel as any;

@@ -280,7 +280,9 @@ async function buildClientesSemDCTFVigente(
  * 
  * Regras:
  * 1. "Original sem movimento": Se aparecer um mês sem movimento, no mês seguinte não tem obrigação até que tenha movimento novamente
- * 2. "Original zerada": Precisa transmitir mesmo zerada
+ * 
+ * NOTA: "Original zerada" NÃO se enquadra na análise de não obrigatoriedade de transmissão.
+ * Declarações zeradas são sempre obrigatórias e não dispensam meses seguintes.
  */
 function buildTransmissionObligationIssues(
   records: DashboardDCTFRecord[],
@@ -339,20 +341,18 @@ function buildTransmissionObligationIssues(
       
       const isOriginalRecord = isOriginal(record);
       const isSemMovimentoRecord = isSemMovimento(record);
-      const isZeradaRecord = isZerada(record);
       const status = (record.status ?? '').toLowerCase();
       const transmittedAt = parseDate(record.transmissionDate);
       // Considera "entregue" se tem data de transmissão OU status indica conclusão
       const isDelivered = !!transmittedAt || status === 'concluido' || status === 'ativa' || status.includes('ativa');
       
-      if (isSemMovimentoRecord || isZeradaRecord) {
-        console.log('[Conference] ⭐ Registro interessante encontrado:', {
+      if (isSemMovimentoRecord) {
+        console.log('[Conference] ⭐ Registro "sem movimento" encontrado:', {
           cnpj,
           period: record.period,
           businessName: record.businessName,
           isOriginal: isOriginalRecord,
           isSemMovimento: isSemMovimentoRecord,
-          isZerada: isZeradaRecord,
           status: record.status,
           isDelivered,
           transmissionDate: record.transmissionDate,
@@ -492,80 +492,15 @@ function buildTransmissionObligationIssues(
         }
       }
       
-      // Regra 2: "Original zerada" - sempre obrigatória
-      if (isOriginalRecord && isZeradaRecord && !isSemMovimentoRecord) {
-        const dueDate = computeDueDate(periodInfo.year, periodInfo.month);
-        const dueDayStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const daysUntilDue = Math.floor((dueDayStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
-        
-        // Se JÁ foi transmitida, criar alerta informativo (baixa prioridade)
-        if (isDelivered && transmittedAt) {
-          issues.push({
-            id: randomUUID(),
-            rule: 'transmission_obligation',
-            identification: cnpj,
-            businessName: record.businessName,
-            period: record.period,
-            dueDate: dueDate.toISOString(),
-            transmissionDate: transmittedAt.toISOString(),
-            status: record.status,
-            severity: 'low',
-            message: `✅ Declaração "zerada" enviada (R$ 0,00). Obrigação cumprida!`,
-            details: {
-              declarationType: record.declarationType,
-              situation: record.situation,
-              isZerada: true,
-              debitAmount: record.debitAmount,
-              balanceDue: record.balanceDue,
-            },
-            actionPlan: `📌 Informação importante:\n\n✓ Você JÁ enviou esta declaração "zerada"\n✓ Mesmo sem valor a pagar (R$ 0,00), o envio ERA obrigatório\n✓ Obrigação cumprida com sucesso!\n\n💡 Atenção: Declarações "zeradas" são SEMPRE obrigatórias, mesmo sem débito.\n\n📖 Base legal: IN RFB 2.237/2024, Art. 3º, § 1º`,
-          });
-          continue;
-        }
-        
-        // Se NÃO foi transmitida ainda, criar issue de pendência
-        // Só criar issue se ainda não venceu ou está próximo do vencimento
-        if (daysUntilDue >= -5) {
-          const severity: DashboardConferenceIssue['severity'] = 
-            daysUntilDue < 0 ? 'high' : daysUntilDue <= DAYS_BEFORE_DEADLINE_MEDIUM ? 'medium' : 'low';
-          
-          issues.push({
-            id: randomUUID(),
-            rule: 'transmission_obligation',
-            identification: cnpj,
-            businessName: record.businessName,
-            period: record.period,
-            dueDate: dueDate.toISOString(),
-            transmissionDate: transmittedAt?.toISOString(),
-            status: record.status,
-            severity,
-            message: daysUntilDue < 0
-              ? 'Original zerada não transmitida - obrigatória mesmo com valores zerados (vencida).'
-              : `Original zerada não transmitida - obrigatória mesmo com valores zerados (vencimento em ${daysUntilDue} dia${daysUntilDue === 1 ? '' : 's'}).`,
-            details: {
-              declarationType: record.declarationType,
-              situation: record.situation,
-              isZerada: true,
-              debitAmount: record.debitAmount,
-              balanceDue: record.balanceDue,
-              daysUntilDue,
-            },
-            actionPlan: daysUntilDue < 0
-              ? 'Transmitir a DCTF "Original zerada" imediatamente. Conforme IN RFB 2.237/2024, Art. 3º, § 1º, mesmo com valores zerados é obrigatória a transmissão.'
-              : 'Transmitir a DCTF "Original zerada" antes do vencimento. Conforme IN RFB 2.237/2024, Art. 3º, § 1º, mesmo com valores zerados é obrigatória a transmissão.',
-          });
-        }
-      }
+      // NOTA: "Original zerada" NÃO é tratada aqui porque não se enquadra na análise de não obrigatoriedade.
+      // Declarações zeradas são sempre obrigatórias e devem ser tratadas nas outras regras de conferência.
     }
   }
   
   const semMovimento = issues.filter(i => i.details?.isSemMovimento);
-  const zerada = issues.filter(i => i.details?.isZerada);
   
   console.log('[Conference] ✅ Total de alertas de obrigatoriedade criados:', issues.length);
   console.log('[Conference] Alertas "sem movimento":', semMovimento.length);
-  console.log('[Conference] Alertas "zerada":', zerada.length);
   
   if (semMovimento.length > 0) {
     console.log('[Conference] 📋 Exemplos de alertas "sem movimento":', semMovimento.slice(0, 3).map(i => ({

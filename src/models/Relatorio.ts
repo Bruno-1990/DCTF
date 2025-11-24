@@ -243,7 +243,8 @@ export class Relatorio extends DatabaseService<IRelatorio> {
    */
   async findByPeriodo(dataInicio: Date, dataFim: Date): Promise<ApiResponse<IRelatorio[]>> {
     try {
-      const { data, error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .select('*')
         .gte('created_at', dataInicio.toISOString())
@@ -280,7 +281,8 @@ export class Relatorio extends DatabaseService<IRelatorio> {
     ultimos30Dias: number;
   }>> {
     try {
-      let query = this.supabase.from(this.tableName).select('*');
+      const adapter = this.supabase as any;
+      let query = adapter.from(this.tableName).select('*');
       
       if (declaracaoId) {
         query = query.eq('declaracao_id', declaracaoId);

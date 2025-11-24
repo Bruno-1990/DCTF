@@ -66,7 +66,8 @@ export class UploadHistory extends DatabaseService<IUploadHistory> {
       return { success: true, data: { items: data.slice(start, end), total: data.length } };
     }
 
-    let query = this.supabase.from(this.tableName).select('*', { count: 'exact' }).order('timestamp', { ascending: false });
+    const adapter = this.supabase as any;
+    let query = adapter.from(this.tableName).select('*', { count: 'exact' }).order('timestamp', { ascending: false });
     if (clienteId) query = query.eq('clienteId', clienteId);
     if (periodo) query = query.eq('periodo', periodo);
     const start = (page - 1) * limit;

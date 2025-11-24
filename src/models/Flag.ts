@@ -184,7 +184,8 @@ export class Flag extends DatabaseService<Flag> {
     criticasNaoResolvidas: number;
   }>> {
     try {
-      let query = this.supabase.from(this.tableName).select('*');
+      const adapter = this.supabase as any;
+      let query = adapter.from(this.tableName).select('*');
       
       if (declaracaoId) {
         query = query.eq('declaracao_id', declaracaoId);
@@ -350,7 +351,8 @@ export class Flag extends DatabaseService<Flag> {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    let query = this.supabase
+    const adapter = this.supabase as any;
+    let query = adapter
       .from(this.tableName)
       .select('*', { count: 'exact' })
       .range(from, to);

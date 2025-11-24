@@ -90,11 +90,9 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
    * Insere um novo pagamento da Receita
    */
   async criarPagamento(pagamento: Omit<ReceitaPagamento, 'id' | 'created_at' | 'updated_at'>): Promise<ReceitaPagamento> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
-    const { data, error } = await this.supabase
+    // Usa MySQL através do adapter Supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .insert(pagamento)
       .select()
@@ -111,11 +109,9 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
    * Insere múltiplos pagamentos
    */
   async criarPagamentosEmLote(pagamentos: Array<Omit<ReceitaPagamento, 'id' | 'created_at' | 'updated_at'>>): Promise<ReceitaPagamento[]> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
-    const { data, error } = await this.supabase
+    // Usa MySQL através do adapter Supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .insert(pagamentos)
       .select();
@@ -137,7 +133,8 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
 
     const cnpjLimpo = cnpj.replace(/\D/g, '');
 
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('cnpj_contribuinte', cnpjLimpo)
@@ -193,7 +190,8 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
       const dataFinal = new Date(`${pFinal}-${ultimoDiaMesFinal}`);
 
       // Buscar todos os CNPJs únicos que têm registros de pagamento no período
-      const { data: pagamentosExistentes, error: errorPagamentos } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data: pagamentosExistentes, error: errorPagamentos } = await adapter
         .from(this.tableName)
         .select('cnpj_contribuinte')
         .gte('periodo_consulta_inicial', dataInicial.toISOString().split('T')[0])
@@ -216,7 +214,7 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
       }
 
       // Buscar todos os CNPJs da tabela clientes
-      const { data: todosClientes, error: errorClientes } = await this.supabase
+      const { data: todosClientes, error: errorClientes } = await adapter
         .from('clientes')
         .select('cnpj_limpo')
         .not('cnpj_limpo', 'is', null);
@@ -259,7 +257,8 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
       return [];
     }
 
-    let query = this.supabase
+    const adapter = this.supabase as any;
+    let query = adapter
       .from(this.tableName)
       .select('*')
       .is('dctf_id', null)
@@ -284,11 +283,9 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
    * Atualiza o relacionamento com DCTF
    */
   async vincularDCTF(pagamentoId: string, dctfId: string): Promise<ReceitaPagamento> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
-    const { data, error } = await this.supabase
+    // Usa MySQL através do adapter Supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .update({
         dctf_id: dctfId,
@@ -313,7 +310,8 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
       return null;
     }
 
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('numero_documento', numeroDocumento)
@@ -341,7 +339,8 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
       return null;
     }
 
-    let query = this.supabase
+    const adapter = this.supabase as any;
+    let query = adapter
       .from(this.tableName)
       .select('*')
       .eq('numero_documento', numeroDocumento);
@@ -372,16 +371,14 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
    * Verifica por numero_documento e cnpj_contribuinte
    */
   async upsertPagamento(pagamento: Omit<ReceitaPagamento, 'id' | 'created_at' | 'updated_at'>): Promise<ReceitaPagamento> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
+    // Usa MySQL através do adapter Supabase
     // Verificar se já existe
     const existente = await this.buscarPorNumeroDocumento(pagamento.numero_documento);
 
     if (existente) {
       // Atualizar existente
-      const { data, error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .update({
           ...pagamento,
@@ -431,7 +428,8 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
         
         if (existente) {
           // Atualizar existente usando ID encontrado
-          const { error: updateError } = await this.supabase
+          const adapter = this.supabase as any;
+          const { error: updateError } = await adapter
             .from(this.tableName)
             .update({
               ...pagamento,
@@ -472,17 +470,15 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
    * Registra um novo erro de consulta
    */
   async registrarErro(erro: Omit<ReceitaErroConsulta, 'id' | 'ocorrido_em' | 'reprocessado' | 'created_at'>): Promise<ReceitaErroConsulta> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
+    // Usa MySQL através do adapter Supabase
     const erroParaInserir = {
       ...erro,
       reprocessado: false,
       ocorrido_em: new Date().toISOString(),
     };
 
-    const { data, error: insertError } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error: insertError } = await adapter
       .from(this.tableName)
       .insert(erroParaInserir)
       .select()
@@ -502,10 +498,7 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
     registrados: number;
     erros: number;
   }> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
+    // Usa MySQL através do adapter Supabase
     let registrados = 0;
     let erros = 0;
 
@@ -521,7 +514,8 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
       }));
 
       try {
-        const { error: insertError } = await this.supabase
+        const adapter = this.supabase as any;
+        const { error: insertError } = await adapter
           .from(this.tableName)
           .insert(errosParaInserir);
 
@@ -550,7 +544,8 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
 
     const cnpjLimpo = cnpj.replace(/\D/g, '');
 
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('cnpj_contribuinte', cnpjLimpo)
@@ -573,7 +568,8 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
       return [];
     }
 
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('sincronizacao_id', sincronizacaoId)
@@ -595,7 +591,8 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
       return [];
     }
 
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('reprocessado', false)
@@ -617,10 +614,7 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
     erroId: string,
     reprocessadoSincronizacaoId?: string
   ): Promise<void> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
+    // Usa MySQL através do adapter Supabase
     const updateData: any = {
       reprocessado: true,
       reprocessado_em: new Date().toISOString(),
@@ -630,7 +624,8 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
       updateData.reprocessado_sincronizacao_id = reprocessadoSincronizacaoId;
     }
 
-    const { error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { error } = await adapter
       .from(this.tableName)
       .update(updateData)
       .eq('id', erroId);
@@ -658,7 +653,8 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
       };
     }
 
-    let query = this.supabase
+    const adapter = this.supabase as any;
+    let query = adapter
       .from(this.tableName)
       .select('tipo_erro, cnpj_contribuinte, reprocessado');
 
@@ -724,11 +720,9 @@ export class ReceitaSincronizacaoModel extends DatabaseService<ReceitaSincroniza
   async criarSincronizacao(
     sincronizacao: Omit<ReceitaSincronizacao, 'id' | 'created_at'>
   ): Promise<ReceitaSincronizacao> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
-    const { data, error } = await this.supabase
+    // Usa MySQL através do adapter Supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .insert(sincronizacao)
       .select()
@@ -749,17 +743,15 @@ export class ReceitaSincronizacaoModel extends DatabaseService<ReceitaSincroniza
     status: ReceitaSincronizacao['status'],
     dados?: Partial<Omit<ReceitaSincronizacao, 'id' | 'created_at'>>
   ): Promise<ReceitaSincronizacao> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
-
+    // Usa MySQL através do adapter Supabase
     const updateData: any = {
       status,
       concluido_em: status !== 'em_andamento' ? new Date().toISOString() : null,
       ...dados,
     };
 
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .update(updateData)
       .eq('id', sincronizacaoId)
@@ -786,7 +778,8 @@ export class ReceitaSincronizacaoModel extends DatabaseService<ReceitaSincroniza
       return [];
     }
 
-    let query = this.supabase
+    const adapter = this.supabase as any;
+    let query = adapter
       .from(this.tableName)
       .select('*')
       .order('iniciado_em', { ascending: false });

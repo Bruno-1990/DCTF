@@ -11,7 +11,9 @@
  * - dctf_declaracoes (numero_identificacao ou via cliente_id)
  */
 
-import { supabaseAdmin } from '../config/database';
+import { createSupabaseAdapter } from './SupabaseAdapter';
+
+const supabaseAdmin = createSupabaseAdapter() as any;
 import { ApiResponse } from '../types';
 
 export interface ClienteSemDCTF {
@@ -135,7 +137,28 @@ export class ClientesSemDCTFService {
         .catch(async () => {
           // Se a função RPC não existir, usar consulta direta
           console.log('[ClientesSemDCTF] Função RPC não encontrada, usando consulta direta');
-          return this.consultarClientesSemDCTFDireto(competenciaSQL);
+          const resultado = await this.consultarClientesSemDCTFDireto(competenciaSQL);
+          if (!resultado.success) {
+            return resultado as unknown as ApiResponse<ClientesSemDCTFResult>;
+          }
+          // Processar resultado e retornar no formato esperado
+          const clientes = resultado.data || [];
+          const clientesComUltimaDCTF = await this.enriquecerComUltimaDCTF(clientes);
+          const estatisticas = await this.obterEstatisticas(competenciaSQL);
+          const { month, year } = this.calcularCompetenciaVigente(today);
+          const prazoVencimento = this.calcularPrazoVencimento(year, month);
+          return {
+            success: true,
+            data: {
+              competenciaVigente: competenciaSQL,
+              prazoVencimento: prazoVencimento.toISOString(),
+              totalClientes: estatisticas.totalClientes,
+              clientesComDCTF: estatisticas.clientesComDCTF,
+              clientesSemDCTF: clientesComUltimaDCTF.length,
+              clientes: clientesComUltimaDCTF,
+              geradoEm: new Date().toISOString(),
+            },
+          };
         });
 
       if (errorSemDCTF && !clientesSemDCTF) {
@@ -144,7 +167,7 @@ export class ClientesSemDCTFService {
         const resultadoDireto = await this.consultarClientesSemDCTFDireto(competenciaSQL);
         
         if (!resultadoDireto.success) {
-          return resultadoDireto;
+          return resultadoDireto as unknown as ApiResponse<ClientesSemDCTFResult>;
         }
         
         const clientes = resultadoDireto.data || [];

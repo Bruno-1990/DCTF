@@ -164,7 +164,8 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
       }
 
       // Inserir em lote
-      const { data, error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .insert(dadosArray)
         .select();
@@ -207,7 +208,8 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
    */
   async findByValorRange(valorMin: number, valorMax: number): Promise<ApiResponse<DCTFDados[]>> {
     try {
-      const { data, error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .select('*')
         .gte('valor', valorMin)
@@ -238,7 +240,8 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
    */
   async findByPeriodoOcorrencia(dataInicio: Date, dataFim: Date): Promise<ApiResponse<DCTFDados[]>> {
     try {
-      const { data, error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .select('*')
         .gte('data_ocorrencia', dataInicio.toISOString())
@@ -276,7 +279,8 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
     valorMinimo: number;
   }>> {
     try {
-      let query = this.supabase.from(this.tableName).select('*');
+      const adapter = this.supabase as any;
+      let query = adapter.from(this.tableName).select('*');
       
       if (declaracaoId) {
         query = query.eq('declaracao_id', declaracaoId);
@@ -336,7 +340,8 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
    */
   async deleteByDeclaracao(declaracaoId: string): Promise<ApiResponse<boolean>> {
     try {
-      const { error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { error } = await adapter
         .from(this.tableName)
         .delete()
         .eq('declaracao_id', declaracaoId);
@@ -394,7 +399,8 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
       } = params;
 
       if (process.env['SUPABASE_URL'] && process.env['SUPABASE_URL'] !== '') {
-        let query = this.supabase
+        const adapter = this.supabase as any;
+        let query = adapter
           .from(this.tableName)
           .select('*', { count: 'exact' })
           .eq('declaracao_id', declaracaoId);
@@ -497,7 +503,8 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
   async deduplicateByDeclaracao(declaracaoId: string): Promise<ApiResponse<{ removed: number; kept: number; totalBefore: number; totalAfter: number }>> {
     try {
       // Carregar todos os registros da declaração
-      const { data, error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .select('*')
         .eq('declaracao_id', declaracaoId);
@@ -555,7 +562,8 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
 
       let removed = 0;
       if (toDeleteIds.length > 0) {
-        const { error: delError } = await this.supabase
+        const adapter = this.supabase as any;
+        const { error: delError } = await adapter
           .from(this.tableName)
           .delete()
           .in('id', toDeleteIds);

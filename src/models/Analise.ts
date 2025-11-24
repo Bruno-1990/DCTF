@@ -160,7 +160,8 @@ export class Analise extends DatabaseService<IAnalise> {
     criticasPendentes: number;
   }>> {
     try {
-      let query = this.supabase.from(this.tableName).select('*');
+      const adapter = this.supabase as any;
+      let query = adapter.from(this.tableName).select('*');
       
       if (declaracaoId) {
         query = query.eq('declaracao_id', declaracaoId);

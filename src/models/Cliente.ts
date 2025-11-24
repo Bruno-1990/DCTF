@@ -3,9 +3,8 @@
  * Implementa validações e operações CRUD específicas
  */
 
-import { DatabaseService } from '../services/DatabaseService';
+import { DatabaseService, SupabaseAdapterType } from '../services/DatabaseService';
 import { Cliente as ICliente, ApiResponse } from '../types';
-import { supabase } from '../config/database';
 import Joi from 'joi';
 
 // Schema de validação para Cliente
@@ -84,11 +83,7 @@ export class Cliente extends DatabaseService<ICliente> {
    */
   async findAll(): Promise<ApiResponse<ICliente[]>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        return this.getMockData();
-      }
-
+      // Usa MySQL através do DatabaseService
       const result = await super.findAll();
       
       if (!result.success || !result.data) {
@@ -115,25 +110,7 @@ export class Cliente extends DatabaseService<ICliente> {
    */
   async findById(id: string): Promise<ApiResponse<ICliente>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        const mockData = this.getMockData();
-        if (mockData.success && mockData.data) {
-          const cliente = mockData.data.find(c => c.id === id);
-          if (cliente) {
-            return {
-              success: true,
-              data: cliente,
-            };
-          } else {
-            return {
-              success: false,
-              error: 'Cliente não encontrado',
-            };
-          }
-        }
-      }
-
+      // Usa MySQL através do DatabaseService
       const result = await super.findById(id);
       
       if (!result.success || !result.data) {
@@ -158,22 +135,10 @@ export class Cliente extends DatabaseService<ICliente> {
    */
   async searchByName(nome: string): Promise<ApiResponse<ICliente[]>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        const mockData = this.getMockData();
-        if (mockData.success && mockData.data) {
-          const clientesFiltrados = mockData.data.filter(cliente =>
-            (cliente.razao_social || cliente.nome || '').toLowerCase().includes(nome.toLowerCase())
-          );
-          return {
-            success: true,
-            data: clientesFiltrados,
-          };
-        }
-      }
-
-      // Implementação real do searchByName quando Supabase estiver configurado
-      const { data, error } = await this.supabase
+      // Usa MySQL através do adapter Supabase
+      // Type assertion necessária devido a problema de inferência TypeScript
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .select('*')
         .ilike('razao_social', `%${nome}%`)
@@ -206,21 +171,7 @@ export class Cliente extends DatabaseService<ICliente> {
    */
   async getStats(): Promise<ApiResponse<{ total: number; ativos: number }>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        const mockData = this.getMockData();
-        if (mockData.success && mockData.data) {
-          return {
-            success: true,
-            data: {
-              total: mockData.data.length,
-              ativos: mockData.data.length, // Todos ativos no mock
-            },
-          };
-        }
-      }
-
-      // Implementação real do getStats quando Supabase estiver configurado
+      // Usa MySQL através do DatabaseService
       const totalResult = await this.count();
       if (!totalResult.success) {
         return {
@@ -367,29 +318,7 @@ export class Cliente extends DatabaseService<ICliente> {
       console.log(`[Cliente.createCliente] ⚠️ Validação do dígito verificador do CNPJ pulada (upload em massa)`);
     }
 
-    // Mock temporário se Supabase não estiver configurado
-    if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-      const novoCliente: ICliente = {
-        id: Date.now().toString(),
-        razao_social: clienteData.razao_social!,
-        cnpj_limpo: clienteData.cnpj_limpo!,
-        // cnpj formatado não é salvo, apenas gerado na exibição
-        email: clienteData.email || '',
-        telefone: clienteData.telefone || '',
-        endereco: clienteData.endereco || '',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      // Persistir em memória para testes
-      Cliente.mockStore.push(novoCliente);
-
-      return {
-        success: true,
-        data: novoCliente,
-      };
-    }
-
+    // Usa MySQL através do DatabaseService
     // Verificar se CNPJ já existe usando cnpj_limpo
     if (clienteData.cnpj_limpo) {
       const existingCliente = await this.findBy({ cnpj_limpo: clienteData.cnpj_limpo });
@@ -495,18 +424,7 @@ export class Cliente extends DatabaseService<ICliente> {
   async findByCNPJ(cnpj: string): Promise<ApiResponse<ICliente>> {
     const cleanCNPJ = this.cleanCNPJ(cnpj);
 
-    // Mock temporário se Supabase não estiver configurado
-    if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-      const mockData = this.getMockData();
-      if (mockData.success && mockData.data) {
-        const cliente = mockData.data.find(c => c.cnpj_limpo === cleanCNPJ);
-        if (cliente) {
-          return { success: true, data: cliente };
-        }
-      }
-      return { success: false, error: 'Cliente não encontrado' };
-    }
-
+    // Usa MySQL através do DatabaseService
     // Buscar por cnpj_limpo em vez de cnpj formatado
     const result = await this.findBy({ cnpj_limpo: cleanCNPJ });
     

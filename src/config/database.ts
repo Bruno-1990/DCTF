@@ -19,27 +19,30 @@ const supabaseConfig: SupabaseConfig = {
   serviceRoleKey: process.env['SUPABASE_SERVICE_ROLE_KEY'],
 };
 
-// Verificar se as variáveis estão definidas e avisar o usuário
-if (!config.database.url || (!config.database.apiKey && !supabaseConfig.serviceRoleKey)) {
-  console.warn('⚠️  SUPABASE_URL e SUPABASE_ANON_KEY (ou SUPABASE_SERVICE_ROLE_KEY) não estão definidas.');
-  console.warn('   Configure as variáveis de ambiente para conectar ao Supabase.');
-  console.warn('   Consulte docs/SUPABASE_SETUP.md para instruções.');
+// Verificar se as variáveis estão definidas
+// Se não estiverem, Supabase está desabilitado (aplicação usa MySQL)
+const SUPABASE_ENABLED = config.database.url && (config.database.apiKey || supabaseConfig.serviceRoleKey);
+
+if (!SUPABASE_ENABLED) {
+  console.log('ℹ️  Supabase desabilitado - aplicação usando MySQL');
 }
 
-// Cliente Supabase para operações públicas
-export const supabase = createClient(
-  supabaseConfig.url,
-  supabaseConfig.anonKey,
-  {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-    },
-  }
-);
+// Cliente Supabase para operações públicas (criado apenas se habilitado)
+export const supabase = SUPABASE_ENABLED
+  ? createClient(
+      supabaseConfig.url,
+      supabaseConfig.anonKey,
+      {
+        auth: {
+          autoRefreshToken: true,
+          persistSession: true,
+        },
+      }
+    )
+  : null;
 
-// Cliente Supabase para operações administrativas (com service role)
-export const supabaseAdmin = supabaseConfig.serviceRoleKey
+// Cliente Supabase para operações administrativas (criado apenas se habilitado)
+export const supabaseAdmin = (SUPABASE_ENABLED && supabaseConfig.serviceRoleKey)
   ? createClient(
       supabaseConfig.url,
       supabaseConfig.serviceRoleKey,
@@ -54,14 +57,23 @@ export const supabaseAdmin = supabaseConfig.serviceRoleKey
 
 // Log de qual cliente está sendo usado (apenas em dev)
 if (process.env['NODE_ENV'] === 'development') {
-  console.log('🔐 Supabase configurado:');
-  console.log('   - anon key:', supabaseConfig.anonKey ? '✅ Definida' : '❌ Não definida');
-  console.log('   - service_role key:', supabaseConfig.serviceRoleKey ? '✅ Definida' : '❌ Não definida');
-  console.log('   - usando:', supabaseAdmin ? 'service_role (admin)' : 'anon (public)');
+  if (SUPABASE_ENABLED) {
+    console.log('🔐 Supabase configurado:');
+    console.log('   - anon key:', supabaseConfig.anonKey ? '✅ Definida' : '❌ Não definida');
+    console.log('   - service_role key:', supabaseConfig.serviceRoleKey ? '✅ Definida' : '❌ Não definida');
+    console.log('   - usando:', supabaseAdmin ? 'service_role (admin)' : 'anon (public)');
+  } else {
+    console.log('✅ Aplicação usando MySQL (Supabase desabilitado)');
+  }
 }
 
-// Função para testar conexão
+// Função para testar conexão (apenas se Supabase estiver habilitado)
 export const testConnection = async (): Promise<boolean> => {
+  if (!SUPABASE_ENABLED || !supabase) {
+    console.log('ℹ️  Supabase desabilitado - teste de conexão ignorado');
+    return false;
+  }
+  
   try {
     const { data, error } = await supabase
       .from('_test_connection')

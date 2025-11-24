@@ -3,7 +3,9 @@
  * Implementa validações complexas e regras de consistência para DCTF
  */
 
-import { supabase } from '../config/database';
+import { createSupabaseAdapter } from './SupabaseAdapter';
+
+const supabase = createSupabaseAdapter() as any;
 import { DCTFValidationService } from './DCTFValidationService';
 import { DCTFCalculationService } from './DCTFCalculationService';
 

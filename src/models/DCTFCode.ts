@@ -136,7 +136,8 @@ export class DCTFCode extends DatabaseService<IDCTFCode> {
    * Buscar códigos por tipo
    */
   async findByTipo(tipo: 'receita' | 'deducao' | 'retencao' | 'outros'): Promise<IDCTFCode[]> {
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('tipo', tipo)
@@ -154,7 +155,8 @@ export class DCTFCode extends DatabaseService<IDCTFCode> {
    * Verificar se código está ativo no período
    */
   async isActiveInPeriod(codigo: string, periodo: string): Promise<boolean> {
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('ativo, periodo_inicio, periodo_fim')
       .eq('codigo', codigo)
@@ -184,7 +186,8 @@ export class DCTFCode extends DatabaseService<IDCTFCode> {
    * Buscar códigos ativos no período
    */
   async findActiveInPeriod(periodo: string, tipo?: string): Promise<IDCTFCode[]> {
-    let query = this.supabase
+    const adapter = this.supabase as any;
+    let query = adapter
       .from(this.tableName)
       .select('*')
       .eq('ativo', true)
@@ -231,7 +234,8 @@ export class DCTFReceitaCode extends DatabaseService<IDCTFReceitaCode> {
    * Buscar códigos por categoria
    */
   async findByCategoria(categoria: string): Promise<IDCTFReceitaCode[]> {
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('categoria', categoria)
@@ -249,7 +253,8 @@ export class DCTFReceitaCode extends DatabaseService<IDCTFReceitaCode> {
    * Buscar códigos por subcategoria
    */
   async findBySubcategoria(subcategoria: string): Promise<IDCTFReceitaCode[]> {
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('subcategoria', subcategoria)
@@ -289,7 +294,8 @@ export class DCTFAliquota extends DatabaseService<IDCTFAliquota> {
    * Buscar alíquota por código e período
    */
   async findByCodeAndPeriod(codigoDctf: string, periodo: string): Promise<IDCTFAliquota | null> {
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .eq('codigo_dctf', codigoDctf)
@@ -310,7 +316,8 @@ export class DCTFAliquota extends DatabaseService<IDCTFAliquota> {
    * Buscar alíquotas por período
    */
   async findByPeriod(periodo: string): Promise<IDCTFAliquota[]> {
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('*')
       .lte('periodo_inicio', periodo)

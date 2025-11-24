@@ -1,5 +1,8 @@
 import axios from 'axios';
-import { supabaseAdmin, supabase } from '../config/database';
+import { createSupabaseAdapter } from './SupabaseAdapter';
+
+const supabaseAdmin = createSupabaseAdapter() as any;
+const supabase = createSupabaseAdapter() as any;
 
 // Importação do pdf-parse (CommonJS module)
 // Na versão 2.x, pdf-parse mudou a API - precisamos usar a função diretamente

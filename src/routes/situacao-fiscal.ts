@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { SituacaoFiscalOrchestrator, base64ToBuffer, fetchAccessToken, extractDataFromPdfBase64 } from '../services/SituacaoFiscalOrchestrator';
-import { supabase, supabaseAdmin } from '../config/database';
+import { createSupabaseAdapter } from '../services/SupabaseAdapter';
+
+const supabase = createSupabaseAdapter() as any;
+const supabaseAdmin = createSupabaseAdapter() as any;
 
 const router = Router();
 
@@ -57,7 +60,7 @@ router.get('/history', async (req, res, next) => {
   try {
     const cnpj = String(req.query.cnpj || '').replace(/\D/g, '');
     const limit = Math.min(parseInt(String(req.query.limit || '20'), 10) || 20, 100);
-    const client = supabaseAdmin || supabase;
+    const client = (supabaseAdmin || supabase) as any;
     
     // Buscar downloads
     let q = client
@@ -86,7 +89,7 @@ router.get('/history', async (req, res, next) => {
       const { pdf_base64, ...itemWithoutBase64 } = item; // Remover base64 da resposta
       return {
         ...itemWithoutBase64,
-        cliente: clientesMap.get(item.cnpj) ? { razao_social: clientesMap.get(item.cnpj)!.razao_social } : null,
+        cliente: clientesMap.get(item.cnpj) ? { razao_social: (clientesMap.get(item.cnpj) as any)?.razao_social } : null,
         // Garantir que extracted_data seja incluído se existir
         extracted_data: item.extracted_data || null,
         // Flag indicando se tem base64 disponível para extração
@@ -109,7 +112,7 @@ router.get('/history', async (req, res, next) => {
 router.delete('/history/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const client = supabaseAdmin || supabase;
+    const client = (supabaseAdmin || supabase) as any;
     
     const { error } = await client
       .from('sitf_downloads')
@@ -129,7 +132,7 @@ router.delete('/history/:id', async (req, res, next) => {
 router.post('/extract/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const client = supabaseAdmin || supabase;
+    const client = (supabaseAdmin || supabase) as any;
     
     // Buscar registro no banco
     const { data: download, error: fetchError } = await client

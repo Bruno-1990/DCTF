@@ -1,4 +1,6 @@
-import { supabase } from '../config/database';
+import { createSupabaseAdapter } from './SupabaseAdapter';
+
+const supabase = createSupabaseAdapter() as any;
 
 export type ConferenciaResumoItem = {
   cnpj: string;

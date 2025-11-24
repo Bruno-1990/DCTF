@@ -38,7 +38,8 @@ export class PagamentoService extends DatabaseService<DCTF> {
       return [];
     }
 
-    let query = this.supabase
+    const adapter = this.supabase as any;
+    let query = adapter
       .from(this.tableName)
       .select(`
         *,
@@ -104,9 +105,7 @@ export class PagamentoService extends DatabaseService<DCTF> {
     dctfId: string,
     dados: UpdatePagamentoRequest
   ): Promise<DCTF> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
+    // Usa MySQL através do adapter Supabase
 
     const updateData: any = {
       status_pagamento: dados.statusPagamento,
@@ -131,7 +130,8 @@ export class PagamentoService extends DatabaseService<DCTF> {
       updateData.usuario_que_atualizou = dados.usuarioQueAtualizou;
     }
 
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .update(updateData)
       .eq('id', dctfId)
@@ -159,9 +159,7 @@ export class PagamentoService extends DatabaseService<DCTF> {
     dctfIds: string[],
     dados: UpdatePagamentoRequest
   ): Promise<number> {
-    if (!process.env['SUPABASE_URL']) {
-      throw new Error('Supabase não configurado');
-    }
+    // Usa MySQL através do adapter Supabase
 
     const updateData: any = {
       status_pagamento: dados.statusPagamento,
@@ -186,7 +184,8 @@ export class PagamentoService extends DatabaseService<DCTF> {
       updateData.usuario_que_atualizou = dados.usuarioQueAtualizou;
     }
 
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .update(updateData)
       .in('id', dctfIds)
@@ -222,7 +221,8 @@ export class PagamentoService extends DatabaseService<DCTF> {
     }
 
     // Buscar todas as declarações com saldo
-    const { data, error } = await this.supabase
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
       .from(this.tableName)
       .select('status_pagamento, saldo_a_pagar')
       .or('saldo_a_pagar.gt.0,saldo_a_pagar.is.null');

@@ -3,7 +3,9 @@
  * Monitora e otimiza performance das consultas e operações
  */
 
-import { supabase } from '../config/database';
+import { createSupabaseAdapter } from './SupabaseAdapter';
+
+const supabase = createSupabaseAdapter() as any;
 
 export interface PerformanceMetrics {
   queryTime: number;

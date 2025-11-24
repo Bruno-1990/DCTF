@@ -29,17 +29,17 @@ router.get('/sem-dctf', (req, res) => {
   clienteController.identificarClientesSemDCTF(req, res);
 });
 
-// GET /api/clientes/cnpj/:cnpj - Buscar por CNPJ
-router.get('/cnpj/:cnpj', (req, res) => {
-  clienteController.buscarPorCNPJ(req, res);
-});
-
 // GET /api/clientes/modelo - Download do modelo de planilha (DEVE vir antes de /:id)
 router.get('/modelo', (req, res) => {
   clienteController.downloadModelo(req, res);
 });
 
-// GET /api/clientes/:id - Obter cliente por ID
+// GET /api/clientes/cnpj/:cnpj - Buscar por CNPJ (DEVE vir antes de /:id)
+router.get('/cnpj/:cnpj', (req, res) => {
+  clienteController.buscarPorCNPJ(req, res);
+});
+
+// GET /api/clientes/:id - Obter cliente por ID (DEVE ser a última rota GET com :id)
 router.get('/:id', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.obterCliente(req, res);
 });
