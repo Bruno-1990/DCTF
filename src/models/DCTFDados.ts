@@ -165,10 +165,11 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
 
       // Inserir em lote
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .insert(dadosArray)
         .select();
+      const { data, error } = result;
 
       if (error) {
         return {
@@ -209,12 +210,13 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
   async findByValorRange(valorMin: number, valorMax: number): Promise<ApiResponse<DCTFDados[]>> {
     try {
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .select('*')
         .gte('valor', valorMin)
         .lte('valor', valorMax)
         .order('valor');
+      const { data, error } = result;
 
       if (error) {
         return {
@@ -241,12 +243,13 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
   async findByPeriodoOcorrencia(dataInicio: Date, dataFim: Date): Promise<ApiResponse<DCTFDados[]>> {
     try {
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .select('*')
         .gte('data_ocorrencia', dataInicio.toISOString())
         .lte('data_ocorrencia', dataFim.toISOString())
         .order('data_ocorrencia');
+      const { data, error } = result;
 
       if (error) {
         return {
@@ -504,10 +507,11 @@ export class DCTFDados extends DatabaseService<DCTFDados> {
     try {
       // Carregar todos os registros da declaração
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .select('*')
         .eq('declaracao_id', declaracaoId);
+      const { data, error } = result;
 
       if (error) {
         return { success: false, error: error.message };

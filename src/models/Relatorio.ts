@@ -244,12 +244,13 @@ export class Relatorio extends DatabaseService<IRelatorio> {
   async findByPeriodo(dataInicio: Date, dataFim: Date): Promise<ApiResponse<IRelatorio[]>> {
     try {
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .select('*')
         .gte('created_at', dataInicio.toISOString())
         .lte('created_at', dataFim.toISOString())
         .order('created_at', { ascending: false });
+      const { data, error } = result;
 
       if (error) {
         return {

@@ -92,11 +92,12 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
   async criarPagamento(pagamento: Omit<ReceitaPagamento, 'id' | 'created_at' | 'updated_at'>): Promise<ReceitaPagamento> {
     // Usa MySQL através do adapter Supabase
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .insert(pagamento)
       .select()
       .single();
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao criar pagamento: ${error.message}`);
@@ -111,10 +112,11 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
   async criarPagamentosEmLote(pagamentos: Array<Omit<ReceitaPagamento, 'id' | 'created_at' | 'updated_at'>>): Promise<ReceitaPagamento[]> {
     // Usa MySQL através do adapter Supabase
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .insert(pagamentos)
       .select();
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao criar pagamentos em lote: ${error.message}`);
@@ -134,12 +136,13 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
     const cnpjLimpo = cnpj.replace(/\D/g, '');
 
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('cnpj_contribuinte', cnpjLimpo)
       .eq('competencia', competencia)
       .order('data_sincronizacao', { ascending: false });
+    const { data, error } = result;
 
     if (error) {
       console.error('Erro ao buscar pagamentos:', error);
@@ -285,7 +288,7 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
   async vincularDCTF(pagamentoId: string, dctfId: string): Promise<ReceitaPagamento> {
     // Usa MySQL através do adapter Supabase
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .update({
         dctf_id: dctfId,
@@ -294,6 +297,7 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
       .eq('id', pagamentoId)
       .select()
       .single();
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao vincular DCTF: ${error.message}`);
@@ -311,13 +315,14 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
     }
 
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('numero_documento', numeroDocumento)
       .order('data_sincronizacao', { ascending: false })
       .limit(1)
       .maybeSingle();
+    const { data, error } = result;
 
     if (error) {
       console.error('Erro ao buscar pagamento:', error);
@@ -378,7 +383,7 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
     if (existente) {
       // Atualizar existente
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .update({
           ...pagamento,
@@ -387,6 +392,7 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
         .eq('id', existente.id)
         .select()
         .single();
+      const { data, error } = result;
 
       if (error) {
         throw new Error(`Erro ao atualizar pagamento: ${error.message}`);
@@ -545,12 +551,13 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
     const cnpjLimpo = cnpj.replace(/\D/g, '');
 
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('cnpj_contribuinte', cnpjLimpo)
       .order('ocorrido_em', { ascending: false })
       .limit(limit);
+    const { data, error } = result;
 
     if (error) {
       console.error('[ReceitaErroConsultaModel] Erro ao buscar erros por CNPJ:', error);
@@ -569,11 +576,12 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
     }
 
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('sincronizacao_id', sincronizacaoId)
       .order('ocorrido_em', { ascending: false });
+    const { data, error } = result;
 
     if (error) {
       console.error('[ReceitaErroConsultaModel] Erro ao buscar erros por sincronização:', error);
@@ -592,12 +600,13 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
     }
 
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('reprocessado', false)
       .order('ocorrido_em', { ascending: false })
       .limit(limit);
+    const { data, error } = result;
 
     if (error) {
       console.error('[ReceitaErroConsultaModel] Erro ao buscar erros não reprocessados:', error);
@@ -722,11 +731,12 @@ export class ReceitaSincronizacaoModel extends DatabaseService<ReceitaSincroniza
   ): Promise<ReceitaSincronizacao> {
     // Usa MySQL através do adapter Supabase
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .insert(sincronizacao)
       .select()
       .single();
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao criar sincronização: ${error.message}`);
@@ -751,12 +761,13 @@ export class ReceitaSincronizacaoModel extends DatabaseService<ReceitaSincroniza
     };
 
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .update(updateData)
       .eq('id', sincronizacaoId)
       .select()
       .single();
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao atualizar sincronização: ${error.message}`);

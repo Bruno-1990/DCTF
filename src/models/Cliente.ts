@@ -138,11 +138,12 @@ export class Cliente extends DatabaseService<ICliente> {
       // Usa MySQL através do adapter Supabase
       // Type assertion necessária devido a problema de inferência TypeScript
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .select('*')
         .ilike('razao_social', `%${nome}%`)
         .order('razao_social');
+      const { data, error } = result;
 
       if (error) {
         return {
