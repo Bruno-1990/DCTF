@@ -132,9 +132,10 @@ export class DCTF extends DatabaseService<IDCTF> {
         };
       }
       
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .select('*');
+      const { data, error } = result;
 
       if (error) {
         console.error('[DCTF.findAll] Erro ao buscar DCTF:', error);
@@ -195,11 +196,12 @@ export class DCTF extends DatabaseService<IDCTF> {
   async findById(id: string): Promise<ApiResponse<IDCTF>> {
     try {
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .select('*')
         .eq('id', id)
         .single();
+      const { data, error } = result;
 
       if (error) {
         return {
@@ -420,10 +422,11 @@ export class DCTF extends DatabaseService<IDCTF> {
     try {
       // Buscar registros por cliente
       const adapter = this.supabase as any;
-      const { data, error } = await adapter
+      const result = await adapter
         .from(this.tableName)
         .select('*')
         .eq('cliente_id', clienteId);
+      const { data, error } = result;
 
       if (error) {
         console.error('Erro ao buscar DCTF por cliente:', error);

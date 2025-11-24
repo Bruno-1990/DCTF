@@ -137,12 +137,13 @@ export class DCTFCode extends DatabaseService<IDCTFCode> {
    */
   async findByTipo(tipo: 'receita' | 'deducao' | 'retencao' | 'outros'): Promise<IDCTFCode[]> {
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('tipo', tipo)
       .eq('ativo', true)
       .order('codigo');
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao buscar códigos por tipo: ${error.message}`);
@@ -156,11 +157,13 @@ export class DCTFCode extends DatabaseService<IDCTFCode> {
    */
   async isActiveInPeriod(codigo: string, periodo: string): Promise<boolean> {
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('ativo, periodo_inicio, periodo_fim')
       .eq('codigo', codigo)
       .single();
+
+    const { data, error } = result;
 
     if (error || !data) {
       return false;
@@ -199,7 +202,8 @@ export class DCTFCode extends DatabaseService<IDCTFCode> {
       query = query.eq('tipo', tipo);
     }
 
-    const { data, error } = await query;
+    const result = await query;
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao buscar códigos ativos no período: ${error.message}`);
@@ -235,12 +239,13 @@ export class DCTFReceitaCode extends DatabaseService<IDCTFReceitaCode> {
    */
   async findByCategoria(categoria: string): Promise<IDCTFReceitaCode[]> {
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('categoria', categoria)
       .eq('ativo', true)
       .order('codigo');
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao buscar códigos por categoria: ${error.message}`);
@@ -254,12 +259,13 @@ export class DCTFReceitaCode extends DatabaseService<IDCTFReceitaCode> {
    */
   async findBySubcategoria(subcategoria: string): Promise<IDCTFReceitaCode[]> {
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('subcategoria', subcategoria)
       .eq('ativo', true)
       .order('codigo');
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao buscar códigos por subcategoria: ${error.message}`);
@@ -295,7 +301,7 @@ export class DCTFAliquota extends DatabaseService<IDCTFAliquota> {
    */
   async findByCodeAndPeriod(codigoDctf: string, periodo: string): Promise<IDCTFAliquota | null> {
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .eq('codigo_dctf', codigoDctf)
@@ -304,6 +310,7 @@ export class DCTFAliquota extends DatabaseService<IDCTFAliquota> {
       .order('periodo_inicio', { ascending: false })
       .limit(1)
       .single();
+    const { data, error } = result;
 
     if (error && error.code !== 'PGRST116') {
       throw new Error(`Erro ao buscar alíquota: ${error.message}`);
@@ -317,12 +324,13 @@ export class DCTFAliquota extends DatabaseService<IDCTFAliquota> {
    */
   async findByPeriod(periodo: string): Promise<IDCTFAliquota[]> {
     const adapter = this.supabase as any;
-    const { data, error } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .select('*')
       .lte('periodo_inicio', periodo)
       .or(`periodo_fim.is.null,periodo_fim.gte.${periodo}`)
       .order('codigo_dctf');
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Erro ao buscar alíquotas por período: ${error.message}`);
