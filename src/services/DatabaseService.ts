@@ -1,226 +1,94 @@
 /**
  * Serviço base para operações de banco de dados
  * Implementa padrões comuns para CRUD e operações de banco
+ * MIGRADO PARA MYSQL - Agora usa MySQLDatabaseService internamente
  */
 
-import { supabase, supabaseAdmin } from '../config/database';
+import { MySQLDatabaseService } from './MySQLDatabaseService';
 import { ApiResponse } from '../types';
+import { createSupabaseAdapter } from './SupabaseAdapter';
 
-export abstract class DatabaseService<T> {
-  protected tableName: string;
-  protected supabase = supabaseAdmin || supabase; // Usar supabaseAdmin se disponível, senão usar supabase
+// Tipo do adapter para uso nos models
+export type SupabaseAdapterType = ReturnType<typeof createSupabaseAdapter>;
+
+export abstract class DatabaseService<T> extends MySQLDatabaseService<T> {
+  /**
+   * Mantido para compatibilidade - agora herda de MySQLDatabaseService
+   * Todas as operações CRUD agora usam MySQL em vez de Supabase
+   * 
+   * Métodos disponíveis (herdados de MySQLDatabaseService):
+   * - findAll(): Promise<ApiResponse<T[]>>
+   * - findById(id: string | number): Promise<ApiResponse<T>>
+   * - create(record: Partial<T>): Promise<ApiResponse<T>>
+   * - update(id: string | number, updates: Partial<T>): Promise<ApiResponse<T>>
+   * - delete(id: string | number): Promise<ApiResponse<boolean>>
+   * - findBy(filters: Record<string, any>): Promise<ApiResponse<T[]>>
+   * - count(filters?: Record<string, any>): Promise<ApiResponse<number>>
+   * - executeCustomQuery<TResult>(query: string, params?: any[]): Promise<ApiResponse<TResult[]>>
+   * - runTransaction<TResult>(callback: (connection: PoolConnection) => Promise<TResult>): Promise<ApiResponse<TResult>>
+   */
+
+  // Adapter para compatibilidade com código que usa this.supabase
+  protected readonly supabase: SupabaseAdapterType;
 
   constructor(tableName: string) {
-    this.tableName = tableName;
-  }
-
-  /**
-   * Buscar todos os registros
-   */
-  async findAll(): Promise<ApiResponse<T[]>> {
-    try {
-      const { data, error } = await supabase
-        .from(this.tableName)
-        .select('*');
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-
-      return {
-        success: true,
-        data: data || [],
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro desconhecido',
-      };
+    super(tableName);
+    // Inicializar adapter no construtor para garantir tipagem correta
+    const adapter = createSupabaseAdapter();
+    if (!adapter || !adapter.from) {
+      console.error('[DatabaseService] ERRO: createSupabaseAdapter não retornou um adapter válido!');
+      console.error('[DatabaseService] Adapter recebido:', adapter);
     }
+    this.supabase = adapter;
+    console.log('[DatabaseService] Adapter inicializado para tabela:', tableName);
   }
 
   /**
-   * Buscar registro por ID
+   * Helper para compatibilidade - permite executar queries SQL diretamente
+   * Use este método para substituir chamadas this.supabase.from().select()
    */
-  async findById(id: string): Promise<ApiResponse<T>> {
-    try {
-      const { data, error } = await supabase
-        .from(this.tableName)
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-
-      return {
-        success: true,
-        data,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro desconhecido',
-      };
-    }
+  protected async querySQL<TResult = T>(
+    query: string,
+    params?: any[]
+  ): Promise<ApiResponse<TResult[]>> {
+    return this.executeCustomQuery<TResult>(query, params);
   }
 
   /**
-   * Criar novo registro
+   * Helper para buscar com filtro simples (substitui this.supabase.from().select().eq())
    */
-  async create(record: Partial<T>): Promise<ApiResponse<T>> {
+  protected async queryWithFilter(
+    filters: Record<string, any>,
+    orderBy?: { column: string; ascending?: boolean },
+    limit?: number
+  ): Promise<ApiResponse<T[]>> {
     try {
-      const { data, error } = await supabase
-        .from(this.tableName)
-        .insert(record)
-        .select()
-        .single();
+      let query = `SELECT * FROM \`${this.tableName}\``;
+      const values: any[] = [];
 
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
+      // Adicionar WHERE
+      if (Object.keys(filters).length > 0) {
+        const conditions = Object.keys(filters)
+          .map((key, index) => {
+            values.push(filters[key]);
+            return `\`${key}\` = ?`;
+          })
+          .join(' AND ');
+        query += ` WHERE ${conditions}`;
       }
 
-      return {
-        success: true,
-        data,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro desconhecido',
-      };
-    }
-  }
-
-  /**
-   * Atualizar registro
-   */
-  async update(id: string, updates: Partial<T>): Promise<ApiResponse<T>> {
-    try {
-      const { data, error } = await supabase
-        .from(this.tableName)
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
+      // Adicionar ORDER BY
+      if (orderBy) {
+        query += ` ORDER BY \`${orderBy.column}\` ${orderBy.ascending !== false ? 'ASC' : 'DESC'}`;
       }
 
-      return {
-        success: true,
-        data,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro desconhecido',
-      };
-    }
-  }
-
-  /**
-   * Deletar registro
-   */
-  async delete(id: string): Promise<ApiResponse<boolean>> {
-    try {
-      const { error } = await supabase
-        .from(this.tableName)
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
+      // Adicionar LIMIT
+      if (limit) {
+        const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
+        query += ` LIMIT ${safeLimit}`;
       }
 
-      return {
-        success: true,
-        data: true,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro desconhecido',
-      };
-    }
-  }
-
-  /**
-   * Buscar com filtros personalizados
-   */
-  async findBy(filters: Record<string, any>): Promise<ApiResponse<T[]>> {
-    try {
-      let query = supabase.from(this.tableName).select('*');
-
-      // Aplicar filtros dinamicamente
-      Object.entries(filters).forEach(([key, value]) => {
-        query = query.eq(key, value);
-      });
-
-      const { data, error } = await query;
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-
-      return {
-        success: true,
-        data: data || [],
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro desconhecido',
-      };
-    }
-  }
-
-  /**
-   * Contar registros
-   */
-  async count(filters?: Record<string, any>): Promise<ApiResponse<number>> {
-    try {
-      let query = supabase.from(this.tableName).select('*', { count: 'exact', head: true });
-
-      if (filters) {
-        Object.entries(filters).forEach(([key, value]) => {
-          query = query.eq(key, value);
-        });
-      }
-
-      const { count, error } = await query;
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-
-      return {
-        success: true,
-        data: count || 0,
-      };
+      return await this.executeCustomQuery<T>(query, values.length > 0 ? values : undefined);
     } catch (error) {
       return {
         success: false,

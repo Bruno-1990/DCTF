@@ -106,27 +106,45 @@ export class DCTF extends DatabaseService<IDCTF> {
   }
 
   /**
-   * Buscar todos os registros (com mock temporário)
+   * Buscar todos os registros
    */
   async findAll(): Promise<ApiResponse<IDCTF[]>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        return this.getMockData();
-      }
-
-      // Buscar registros - garantir que periodo_apuracao e hora_transmissao sejam incluídos
-      const { data, error } = await this.supabase
-        .from(this.tableName)
-        .select('*, periodo_apuracao, hora_transmissao');
-
-      if (error) {
-        console.error('Erro ao buscar DCTF:', error);
+      // Usar MySQL diretamente através do adapter (que funciona mesmo sem SUPABASE_URL)
+      if (!this.supabase) {
+        console.error('[DCTF.findAll] ERRO: this.supabase está undefined!');
         return {
           success: false,
-          error: error.message,
+          error: 'Adapter não inicializado. Verifique a configuração do DatabaseService.',
         };
       }
+      
+      const adapter = this.supabase as any;
+      console.log('[DCTF.findAll] Buscando dados da tabela:', this.tableName);
+      console.log('[DCTF.findAll] Adapter type:', typeof adapter);
+      console.log('[DCTF.findAll] Adapter.from type:', typeof adapter?.from);
+      
+      if (!adapter || !adapter.from) {
+        console.error('[DCTF.findAll] ERRO: adapter ou adapter.from está undefined!');
+        return {
+          success: false,
+          error: 'Adapter não possui método from. Verifique a configuração do SupabaseAdapter.',
+        };
+      }
+      
+      const { data, error } = await adapter
+        .from(this.tableName)
+        .select('*');
+
+      if (error) {
+        console.error('[DCTF.findAll] Erro ao buscar DCTF:', error);
+        return {
+          success: false,
+          error: error.message || 'Erro desconhecido ao buscar DCTF',
+        };
+      }
+
+      console.log('[DCTF.findAll] Dados encontrados:', data?.length || 0, 'registros');
 
       if (!data || data.length === 0) {
         return {
@@ -140,7 +158,7 @@ export class DCTF extends DatabaseService<IDCTF> {
       let clientesMap = new Map();
       
       if (clienteIds.length > 0) {
-        const { data: clientesData, error: clientesError } = await this.supabase
+        const { data: clientesData, error: clientesError } = await adapter
           .from('clientes')
           .select('id, razao_social, cnpj_limpo')
           .in('id', clienteIds);
@@ -163,6 +181,7 @@ export class DCTF extends DatabaseService<IDCTF> {
         data: mappedData,
       };
     } catch (error) {
+      console.error('Erro ao buscar DCTF:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro desconhecido',
@@ -171,30 +190,12 @@ export class DCTF extends DatabaseService<IDCTF> {
   }
 
   /**
-   * Buscar registro por ID (com mock temporário)
+   * Buscar registro por ID
    */
   async findById(id: string): Promise<ApiResponse<IDCTF>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        const mockData = this.getMockData();
-        if (mockData.success && mockData.data) {
-          const dctf = mockData.data.find(d => d.id === id);
-          if (dctf) {
-            return {
-              success: true,
-              data: dctf,
-            };
-          } else {
-            return {
-              success: false,
-              error: 'Declaração DCTF não encontrada',
-            };
-          }
-        }
-      }
-
-      const { data, error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .select('*')
         .eq('id', id)
@@ -216,7 +217,7 @@ export class DCTF extends DatabaseService<IDCTF> {
 
       let clienteRecord = undefined;
       if (data.cliente_id) {
-        const { data: clienteData } = await this.supabase
+        const { data: clienteData } = await adapter
           .from('clientes')
           .select('id, razao_social, nome, cnpj_limpo')
           .eq('id', data.cliente_id)
@@ -229,6 +230,7 @@ export class DCTF extends DatabaseService<IDCTF> {
         data: this.mapSupabaseRow(data, clienteRecord),
       };
     } catch (error) {
+      console.error('Erro ao buscar DCTF por ID:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro desconhecido',
@@ -310,28 +312,7 @@ export class DCTF extends DatabaseService<IDCTF> {
       };
     }
 
-    // Mock temporário se Supabase não estiver configurado
-    if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-      const novaDeclaracao: IDCTF = {
-        id: Date.now().toString(),
-        clienteId: dctfData.clienteId!,
-        periodo: dctfData.periodo!,
-        dataDeclaracao: dctfData.dataDeclaracao || new Date(),
-        status: dctfData.status || 'pendente',
-        situacao: dctfData.situacao || dctfData.status || 'pendente',
-        arquivoOriginal: dctfData.arquivoOriginal || '',
-        dadosProcessados: dctfData.dadosProcessados,
-        debitoApurado: dctfData.debitoApurado ?? null,
-        saldoAPagar: dctfData.saldoAPagar ?? null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      return {
-        success: true,
-        data: novaDeclaracao,
-      };
-    }
+    // Removido mock - sempre usar MySQL
 
     // Converter camelCase para snake_case antes de salvar
     const supabaseData: any = {
@@ -433,24 +414,13 @@ export class DCTF extends DatabaseService<IDCTF> {
   }
 
   /**
-   * Buscar declarações por cliente (com mock temporário)
+   * Buscar declarações por cliente
    */
   async findByCliente(clienteId: string): Promise<ApiResponse<IDCTF[]>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        const mockData = this.getMockData();
-        if (mockData.success && mockData.data) {
-          const dctfsPorCliente = mockData.data.filter(d => d.clienteId === clienteId);
-          return {
-            success: true,
-            data: dctfsPorCliente,
-          };
-        }
-      }
-
       // Buscar registros por cliente
-      const { data, error } = await this.supabase
+      const adapter = this.supabase as any;
+      const { data, error } = await adapter
         .from(this.tableName)
         .select('*')
         .eq('cliente_id', clienteId);
@@ -472,7 +442,7 @@ export class DCTF extends DatabaseService<IDCTF> {
 
       // Buscar dados do cliente
       let cliente = undefined;
-      const { data: clienteData, error: clienteError } = await this.supabase
+      const { data: clienteData, error: clienteError } = await adapter
         .from('clientes')
         .select('id, razao_social, cnpj_limpo')
         .eq('id', clienteId)
@@ -494,6 +464,7 @@ export class DCTF extends DatabaseService<IDCTF> {
         data: mappedData,
       };
     } catch (error) {
+      console.error('Erro ao buscar DCTF por cliente:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro desconhecido',
@@ -555,36 +526,7 @@ export class DCTF extends DatabaseService<IDCTF> {
     porPeriodo: Record<string, number>;
   }>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        const mockData = this.getMockData();
-        if (mockData.success && mockData.data) {
-          const porStatus: Record<string, number> = {
-            pendente: 0,
-            processando: 0,
-            concluido: 0,
-            erro: 0,
-          };
-          
-          mockData.data.forEach(d => {
-            porStatus[d.status] = (porStatus[d.status] || 0) + 1;
-          });
-
-          const porPeriodo: Record<string, number> = {};
-          mockData.data.forEach(d => {
-            porPeriodo[d.periodo] = (porPeriodo[d.periodo] || 0) + 1;
-          });
-
-          return {
-            success: true,
-            data: {
-              total: mockData.data.length,
-              porStatus,
-              porPeriodo,
-            },
-          };
-        }
-      }
+      // Sempre usar MySQL - remover verificação de SUPABASE_URL
 
       const totalResult = await this.count();
       if (!totalResult.success) {
@@ -756,29 +698,20 @@ export class DCTF extends DatabaseService<IDCTF> {
    */
   async clearAll(): Promise<ApiResponse<{ deletedDeclarations: number; deletedData: number }>> {
     try {
-      // Mock temporário se Supabase não estiver configurado
-      if (!process.env['SUPABASE_URL'] || process.env['SUPABASE_URL'] === '') {
-        return {
-          success: true,
-          data: {
-            deletedDeclarations: 0,
-            deletedData: 0,
-          },
-          message: 'Operação simulada (Supabase não configurado)',
-        };
-      }
+      // Sempre usar MySQL - remover verificação de SUPABASE_URL
 
       // Primeiro, contar os registros antes de deletar
-      const { count: dadosCount } = await this.supabase
+      const adapter = this.supabase as any;
+      const { count: dadosCount } = await adapter
         .from('dctf_dados')
         .select('*', { count: 'exact', head: true });
 
-      const { count: declaracoesCount } = await this.supabase
+      const { count: declaracoesCount } = await adapter
         .from(this.tableName)
         .select('*', { count: 'exact', head: true });
 
       // Deletar todos os dados relacionados (dctf_dados)
-      const { error: dadosError } = await this.supabase
+      const { error: dadosError } = await adapter
         .from('dctf_dados')
         .delete()
         .neq('id', '00000000-0000-0000-0000-000000000000'); // Condição sempre verdadeira para deletar tudo
@@ -792,7 +725,7 @@ export class DCTF extends DatabaseService<IDCTF> {
       }
 
       // Deletar todas as declarações
-      const { error: declaracoesError } = await this.supabase
+      const { error: declaracoesError } = await adapter
         .from(this.tableName)
         .delete()
         .neq('id', '00000000-0000-0000-0000-000000000000'); // Condição sempre verdadeira para deletar tudo
