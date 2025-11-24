@@ -1,0 +1,23 @@
+RELATÓRIO DE DIFERENÇAS ENTRE SUPABASE E MYSQL
+============================================================
+
+Tabela 'analises' existe no MySQL mas não no Supabase
+Tabela 'dctf_aliquotas' existe no MySQL mas não no Supabase
+Tabela 'dctf_codes' existe no MySQL mas não no Supabase
+Tabela 'dctf_dados' existe no MySQL mas não no Supabase
+Tabela 'dctf_receita_codes' existe no MySQL mas não no Supabase
+Tabela 'flags' existe no MySQL mas não no Supabase
+Tabela 'relatorios' existe no MySQL mas não no Supabase
+Coluna 'email' existe no MySQL (varchar(255)) mas não no Supabase
+Coluna 'telefone' existe no MySQL (varchar(20)) mas não no Supabase
+Coluna 'endereco' existe no MySQL (text) mas não no Supabase
+Coluna 'cod_emp' existe no MySQL (int) mas não no Supabase
+Coluna 'periodo' existe no MySQL (varchar(7)) mas não no Supabase
+Coluna 'data_declaracao' existe no MySQL (date) mas não no Supabase
+Coluna 'status' existe no MySQL (varchar(20)) mas não no Supabase
+Coluna 'numero_identificacao' existe no MySQL (varchar(20)) mas não no Supabase
+Coluna 'tipo_declaracao' existe no MySQL (varchar(50)) mas não no Supabase
+Coluna 'arquivo_original' existe no MySQL (varchar(500)) mas não no Supabase
+Coluna 'arquivo_processado' existe no MySQL (varchar(500)) mas não no Supabase
+Coluna 'total_registros' existe no MySQL (int) mas não no Supabase
+Coluna 'observacoes' existe no MySQL (text) mas não no Supabase
