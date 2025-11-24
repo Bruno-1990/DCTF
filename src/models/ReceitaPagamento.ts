@@ -358,10 +358,11 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
       query = query.is('sequencial', null);
     }
 
-    const { data, error } = await query
+    const result = await query
       .order('data_sincronizacao', { ascending: false })
       .limit(1)
       .maybeSingle();
+    const { data, error } = result;
 
     if (error) {
       console.error('Erro ao buscar pagamento por documento e sequencial:', error);
@@ -484,11 +485,12 @@ export class ReceitaErroConsultaModel extends DatabaseService<ReceitaErroConsult
     };
 
     const adapter = this.supabase as any;
-    const { data, error: insertError } = await adapter
+    const result = await adapter
       .from(this.tableName)
       .insert(erroParaInserir)
       .select()
       .single();
+    const { data, error: insertError } = result;
 
     if (insertError) {
       throw new Error(`Erro ao registrar erro de consulta: ${insertError.message}`);
