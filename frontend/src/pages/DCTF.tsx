@@ -302,6 +302,7 @@ const DCTFPage: React.FC = () => {
             {items.map((d) => {
               const numeroIdentificacao =
                 d.numeroIdentificacao ||
+                d.cnpj || // Campo cnpj direto do registro
                 d.cliente?.cnpj ||
                 d.cliente?.cnpj_limpo ||
                 undefined;

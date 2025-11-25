@@ -100,6 +100,37 @@ export const dctfService = {
     return response.data;
   },
 
+  async syncFromSupabase(): Promise<{ 
+    success: boolean; 
+    message?: string; 
+    error?: string;
+    data?: {
+      total: number;
+      processed: number;
+      inserted: number;
+      updated: number;
+      errors: number;
+      currentBatch: number;
+      totalBatches: number;
+    };
+  }> {
+    const response = await api.post('/dctf/admin/sync');
+    return response.data;
+  },
+
+  async fixSchema(): Promise<{ 
+    success: boolean; 
+    message?: string; 
+    error?: string;
+    data?: {
+      foreignKeyRemoved: boolean;
+      clienteIdNullable: boolean;
+    };
+  }> {
+    const response = await api.post('/dctf/admin/fix-schema');
+    return response.data;
+  },
+
   async processSpreadsheet(file: File): Promise<{ dctfId: string; message: string }> {
     const formData = new FormData();
     formData.append('file', file);

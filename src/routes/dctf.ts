@@ -54,6 +54,16 @@ router.post('/admin/clear', (req, res) => {
   dctfController.limparTodasDeclaracoes(req, res);
 });
 
+// POST /api/dctf/admin/sync - Sincronizar declarações do Supabase para MySQL (operação administrativa)
+router.post('/admin/sync', (req, res) => {
+  dctfController.sincronizarDoSupabase(req, res);
+});
+
+// POST /api/dctf/admin/fix-schema - Corrigir schema MySQL (tornar cliente_id nullable e remover FK)
+router.post('/admin/fix-schema', (req, res) => {
+  dctfController.corrigirSchemaClienteId(req, res);
+});
+
 // POST /api/dctf - Criar declaração
 router.post('/', validate(dctfSchemas.create), (req, res) => {
   dctfController.criarDeclaracao(req, res);

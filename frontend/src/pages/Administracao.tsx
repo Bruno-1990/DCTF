@@ -29,6 +29,21 @@ const Administracao: React.FC = () => {
   const [clearSuccess, setClearSuccess] = useState<string | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{
+    total: number;
+    processed: number;
+    inserted: number;
+    updated: number;
+    errors: number;
+    currentBatch: number;
+    totalBatches: number;
+  } | null>(null);
+  const [fixingSchema, setFixingSchema] = useState(false);
+  const [schemaFixSuccess, setSchemaFixSuccess] = useState<string | null>(null);
+  const [schemaFixError, setSchemaFixError] = useState<string | null>(null);
   
   // Estados para consulta em lote na Receita
   const [dataInicialConsulta, setDataInicialConsulta] = useState('');
@@ -156,11 +171,8 @@ const Administracao: React.FC = () => {
           setClearConfirmCode('');
           setClearConfirmText('');
           setClearError(null);
-          setClearSuccess(null);
-          // Recarregar a página após 3 segundos
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
+          // NÃO recarregar a página - manter dados na tela
+          // setClearSuccess(null);
         }, 3000);
       } else {
         setClearError(result.message || 'Erro ao limpar declarações');
@@ -169,6 +181,54 @@ const Administracao: React.FC = () => {
       setClearError(err.response?.data?.error || 'Erro ao limpar declarações');
     } finally {
       setClearing(false);
+    }
+  };
+
+  const handleFixSchema = async () => {
+    setFixingSchema(true);
+    setSchemaFixError(null);
+    setSchemaFixSuccess(null);
+
+    try {
+      const result = await dctfService.fixSchema();
+      if (result.success) {
+        const message = result.message || 'Schema corrigido com sucesso! Agora você pode sincronizar os dados.';
+        setSchemaFixSuccess(message);
+        setTimeout(() => {
+          setSchemaFixSuccess(null);
+        }, 5000);
+      } else {
+        setSchemaFixError(result.error || 'Erro ao corrigir schema');
+      }
+    } catch (err: any) {
+      setSchemaFixError(err.response?.data?.error || err.message || 'Erro ao corrigir schema');
+    } finally {
+      setFixingSchema(false);
+    }
+  };
+
+  const handleSyncFromSupabase = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+    setSyncProgress(null);
+
+    try {
+      const result = await dctfService.syncFromSupabase();
+      if (result.success) {
+        const message = result.message || 
+          `Sincronização concluída: ${result.data?.inserted || 0} inseridos, ${result.data?.updated || 0} atualizados, ${result.data?.errors || 0} erros`;
+        setSyncSuccess(message);
+        setSyncProgress(result.data || null);
+        // NÃO recarregar a página - manter dados na tela
+        // Os dados de progresso já estão sendo exibidos
+      } else {
+        setSyncError(result.error || 'Erro ao sincronizar declarações');
+      }
+    } catch (err: any) {
+      setSyncError(err.response?.data?.error || err.message || 'Erro ao sincronizar declarações');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -454,24 +514,31 @@ const Administracao: React.FC = () => {
         <div className="flex items-start mb-4">
           <TrashIcon className="h-6 w-6 text-red-600 mr-3 mt-1" />
           <div className="flex-1">
-            <h2 className="text-xl font-semibold text-red-900 mb-2">Limpeza de Declarações DCTF</h2>
+            <h2 className="text-xl font-semibold text-red-900 mb-2">Limpeza de Declarações DCTF (MySQL)</h2>
             <p className="text-sm text-red-700 mb-4">
-              Esta operação irá <strong>deletar permanentemente</strong> todas as declarações DCTF e seus dados relacionados do banco de dados.
-              Esta ação é <strong>irreversível</strong> e deve ser executada apenas antes de inserir novos dados mensais.
+              Esta operação irá <strong>deletar permanentemente</strong> todas as declarações DCTF e seus dados relacionados do banco de dados <strong>MySQL</strong>.
+              Esta ação é <strong>irreversível</strong> e deve ser executada antes de sincronizar novos dados do Supabase.
             </p>
             
             <div className="bg-white rounded-lg p-4 border border-red-300 mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será deletado:</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será deletado (apenas no MySQL):</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
-                <li>Todas as declarações da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code></li>
-                <li>Todos os dados relacionados da tabela <code className="bg-gray-100 px-1 rounded">dctf_dados</code></li>
-                <li>Todos os registros de análise e flags associados</li>
+                <li>Todas as declarações da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code> no <strong>MySQL</strong></li>
+                <li>Todos os dados relacionados da tabela <code className="bg-gray-100 px-1 rounded">dctf_dados</code> no <strong>MySQL</strong></li>
+                <li>Todos os registros de análise e flags associados no <strong>MySQL</strong></li>
+                <li className="text-green-700 font-semibold">✓ Os dados no Supabase NÃO serão afetados</li>
               </ul>
+              
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Fluxo Recomendado:</h3>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside mb-4">
+                <li><strong>1. Limpar dados do MySQL</strong> (este botão) - Remove dados antigos do MySQL</li>
+                <li><strong>2. Sincronizar do Supabase</strong> (botão abaixo) - Busca dados novos do Supabase e insere no MySQL</li>
+              </ol>
               
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
                 <li><strong>Sempre</strong> faça um backup antes de executar esta operação</li>
-                <li>Execute esta operação apenas no início de cada mês, antes de inserir novos dados</li>
+                <li>Execute esta operação antes de sincronizar novos dados do Supabase</li>
                 <li>Verifique se não há processos importantes em andamento</li>
                 <li>Certifique-se de que todos os relatórios necessários foram gerados</li>
               </ul>
@@ -601,6 +668,158 @@ const Administracao: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Seção de Sincronização do Supabase */}
+      <div className="bg-green-50 border-2 border-green-200 shadow-lg rounded-lg p-6 mb-6">
+        <div className="flex items-start mb-4">
+          <ArrowPathIcon className="h-6 w-6 text-green-600 mr-3 mt-1" />
+          <div className="flex-1">
+            <h2 className="text-xl font-semibold text-green-900 mb-2">Sincronização de Declarações DCTF (Supabase → MySQL)</h2>
+            <p className="text-sm text-green-700 mb-4">
+              Esta operação irá <strong>buscar todas as declarações DCTF</strong> da tabela <code className="bg-green-100 px-1 rounded">dctf_declaracoes</code> do <strong>Supabase</strong>
+              e <strong>sincronizar</strong> para a tabela de mesmo nome no <strong>MySQL</strong>. Registros existentes serão atualizados, novos registros serão inseridos.
+            </p>
+            
+            {(syncError && syncError.includes('cannot be null') || syncError?.includes('foreign key')) && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-yellow-800 font-semibold mb-2">
+                  ⚠️ Erro detectado: Schema MySQL precisa ser corrigido
+                </p>
+                <p className="text-sm text-yellow-700 mb-2">
+                  O schema do MySQL não está alinhado com o Supabase. Clique no botão <strong>"Corrigir Schema MySQL"</strong> antes de sincronizar.
+                </p>
+                <p className="text-sm text-yellow-700">
+                  Isso irá tornar <code className="bg-yellow-100 px-1 rounded">cliente_id</code> nullable e remover a foreign key.
+                </p>
+              </div>
+            )}
+            
+            <div className="bg-white rounded-lg p-4 border border-green-300 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Como funciona:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
+                <li>O sistema busca todos os registros da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code> no Supabase</li>
+                <li>Processa os registros em lotes de 100 para não sobrecarregar o sistema</li>
+                <li>Registros existentes (mesmo ID) são atualizados no MySQL</li>
+                <li>Registros novos são inseridos no MySQL</li>
+                <li>O processo mostra progresso em tempo real</li>
+              </ul>
+              
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Execute esta operação após receber novos dados do agente N8N</li>
+                <li>Certifique-se de que o Supabase está configurado (SUPABASE_URL e SUPABASE_ANON_KEY no .env)</li>
+                <li>Esta operação pode levar alguns minutos dependendo da quantidade de registros</li>
+                <li>Você pode executar esta operação quantas vezes quiser - ela é segura e não duplica dados</li>
+              </ul>
+            </div>
+
+            {syncSuccess && (
+              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
+                {syncSuccess}
+              </div>
+            )}
+
+            {schemaFixSuccess && (
+              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
+                {schemaFixSuccess}
+              </div>
+            )}
+
+            {schemaFixError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
+                {schemaFixError}
+              </div>
+            )}
+
+            {syncError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
+                {syncError}
+              </div>
+            )}
+
+            {syncProgress && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold text-blue-900">Resultado da Sincronização</h4>
+                  <button
+                    onClick={() => {
+                      setSyncProgress(null);
+                      setSyncSuccess(null);
+                      setSyncError(null);
+                    }}
+                    className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    title="Limpar resultado"
+                  >
+                    ✕ Fechar
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                  <div>
+                    <div className="text-gray-600">Total</div>
+                    <div className="text-2xl font-bold text-gray-900">{syncProgress.total}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Processados</div>
+                    <div className="text-2xl font-bold text-blue-600">{syncProgress.processed}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Inseridos</div>
+                    <div className="text-2xl font-bold text-green-600">{syncProgress.inserted}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Atualizados</div>
+                    <div className="text-2xl font-bold text-purple-600">{syncProgress.updated}</div>
+                  </div>
+                </div>
+                {syncProgress.errors > 0 && (
+                  <div className="text-sm text-red-600 mb-2 bg-red-50 border border-red-200 rounded p-2">
+                    <strong>⚠️ Erros:</strong> {syncProgress.errors} registro(s) com erro durante a sincronização.
+                    {syncProgress.errors === syncProgress.total && (
+                      <div className="mt-1 text-xs">
+                        Todos os registros falharam. Verifique se o schema MySQL foi corrigido (botão "Corrigir Schema MySQL" acima).
+                      </div>
+                    )}
+                  </div>
+                )}
+                {syncProgress.processed === syncProgress.total && syncProgress.errors === 0 && (
+                  <div className="text-sm text-green-600 mb-2 bg-green-50 border border-green-200 rounded p-2">
+                    ✅ Sincronização concluída com sucesso! Todos os registros foram processados.
+                  </div>
+                )}
+                <div className="w-full bg-blue-200 rounded-full h-4 overflow-hidden mb-2">
+                  <div
+                    className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${Math.min(100, Math.round((syncProgress.processed / syncProgress.total) * 100))}%` }}
+                  />
+                </div>
+                <div className="text-xs text-blue-600">
+                  Lote {syncProgress.currentBatch} de {syncProgress.totalBatches} • {Math.round((syncProgress.processed / syncProgress.total) * 100)}% concluído
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleFixSchema}
+                disabled={fixingSchema || syncing || clearing}
+                className="flex items-center gap-2 bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                title="Corrige o schema MySQL para permitir cliente_id NULL e remove foreign key"
+              >
+                <ArrowPathIcon className="h-5 w-5" />
+                {fixingSchema ? 'Corrigindo...' : 'Corrigir Schema MySQL'}
+              </button>
+              <button
+                onClick={handleSyncFromSupabase}
+                disabled={syncing || clearing || fixingSchema}
+                className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                <ArrowPathIcon className="h-5 w-5" />
+                {syncing ? 'Sincronizando...' : 'Sincronizar do Supabase para MySQL'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Seção de Consulta em Lote na Receita Federal */}
       <div className="bg-blue-50 border-2 border-blue-200 shadow-lg rounded-lg p-6 mb-6">

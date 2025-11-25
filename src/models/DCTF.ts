@@ -169,11 +169,50 @@ export class DCTF extends DatabaseService<IDCTF> {
         }
       }
 
+      // Buscar clientes por CNPJ quando cliente_id for NULL
+      const cnpjsParaBuscar = [...new Set(
+        data
+          .filter((item: any) => !item.cliente_id && item.cnpj)
+          .map((item: any) => item.cnpj.replace(/\D/g, '')) // Remove formatação do CNPJ
+          .filter(Boolean)
+      )];
+      
+      if (cnpjsParaBuscar.length > 0) {
+        const { data: clientesPorCnpj, error: clientesPorCnpjError } = await adapter
+          .from('clientes')
+          .select('id, razao_social, cnpj_limpo')
+          .in('cnpj_limpo', cnpjsParaBuscar);
+        
+        if (!clientesPorCnpjError && clientesPorCnpj) {
+          // Criar mapa por CNPJ limpo
+          const clientesPorCnpjMap = new Map(
+            clientesPorCnpj.map((c: any) => [c.cnpj_limpo, c])
+          );
+          
+          // Adicionar ao mapa principal usando CNPJ como chave
+          clientesPorCnpjMap.forEach((cliente, cnpjLimpo) => {
+            clientesMap.set(`cnpj_${cnpjLimpo}`, cliente);
+          });
+        }
+      }
+
       // Mapear resultado para camelCase e incluir dados do cliente
       const mappedData = data.map((item: any) => {
-        const clienteRecord = item.cliente_id && clientesMap.has(item.cliente_id)
-          ? clientesMap.get(item.cliente_id)
-          : undefined;
+        let clienteRecord: any = undefined;
+        
+        // Primeiro, tentar buscar por cliente_id
+        if (item.cliente_id && clientesMap.has(item.cliente_id)) {
+          clienteRecord = clientesMap.get(item.cliente_id);
+        }
+        // Se não encontrou e tem CNPJ, tentar buscar por CNPJ
+        else if (!clienteRecord && item.cnpj) {
+          const cnpjLimpo = item.cnpj.replace(/\D/g, '');
+          const cnpjKey = `cnpj_${cnpjLimpo}`;
+          if (clientesMap.has(cnpjKey)) {
+            clienteRecord = clientesMap.get(cnpjKey);
+          }
+        }
+        
         return this.mapSupabaseRow(item, clienteRecord);
       });
 
@@ -225,6 +264,20 @@ export class DCTF extends DatabaseService<IDCTF> {
           .eq('id', data.cliente_id)
           .single();
         clienteRecord = clienteData || undefined;
+      }
+      
+      // Se não encontrou por cliente_id e tem CNPJ, buscar por CNPJ
+      if (!clienteRecord && data.cnpj) {
+        const cnpjLimpo = data.cnpj.replace(/\D/g, '');
+        const { data: clientePorCnpj } = await adapter
+          .from('clientes')
+          .select('id, razao_social, nome, cnpj_limpo')
+          .eq('cnpj_limpo', cnpjLimpo)
+          .single();
+        
+        if (clientePorCnpj) {
+          clienteRecord = clientePorCnpj;
+        }
       }
 
       return {
@@ -644,6 +697,7 @@ export class DCTF extends DatabaseService<IDCTF> {
       (clienteRecord?.cnpj_limpo ? 'CNPJ' : null);
 
     let numeroIdentificacao =
+      item.cnpj || // Campo cnpj da tabela dctf_declaracoes (prioridade)
       item.numero_identificacao ||
       item.identificacao ||
       item.identification ||
@@ -701,54 +755,41 @@ export class DCTF extends DatabaseService<IDCTF> {
    */
   async clearAll(): Promise<ApiResponse<{ deletedDeclarations: number; deletedData: number }>> {
     try {
-      // Sempre usar MySQL - remover verificação de SUPABASE_URL
+      // Usar MySQL diretamente para operações de limpeza (mais confiável)
+      const { getConnection } = await import('../config/mysql');
+      const connection = await getConnection();
 
-      // Primeiro, contar os registros antes de deletar
-      const adapter = this.supabase as any;
-      const { count: dadosCount } = await adapter
-        .from('dctf_dados')
-        .select('*', { count: 'exact', head: true });
+      try {
+        // Primeiro, contar os registros antes de deletar
+        const [dadosCountResult] = await connection.execute('SELECT COUNT(*) as count FROM `dctf_dados`');
+        const dadosCount = (dadosCountResult as any[])[0]?.count || 0;
 
-      const { count: declaracoesCount } = await adapter
-        .from(this.tableName)
-        .select('*', { count: 'exact', head: true });
+        const [declaracoesCountResult] = await connection.execute(`SELECT COUNT(*) as count FROM \`${this.tableName}\``);
+        const declaracoesCount = (declaracoesCountResult as any[])[0]?.count || 0;
 
-      // Deletar todos os dados relacionados (dctf_dados)
-      const { error: dadosError } = await adapter
-        .from('dctf_dados')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Condição sempre verdadeira para deletar tudo
+        // Deletar todos os dados relacionados (dctf_dados) primeiro (devido a foreign keys)
+        await connection.execute('DELETE FROM `dctf_dados` WHERE 1=1');
 
-      if (dadosError) {
-        console.error('Erro ao limpar dados DCTF:', dadosError);
+        // Deletar todas as declarações
+        await connection.execute(`DELETE FROM \`${this.tableName}\` WHERE 1=1`);
+
+        return {
+          success: true,
+          data: {
+            deletedDeclarations: declaracoesCount,
+            deletedData: dadosCount,
+          },
+          message: `Limpeza concluída: ${declaracoesCount} declarações e ${dadosCount} registros de dados deletados`,
+        };
+      } catch (err: any) {
+        console.error('Erro ao limpar declarações DCTF:', err);
         return {
           success: false,
-          error: `Erro ao limpar dados DCTF: ${dadosError.message}`,
+          error: `Erro ao limpar declarações DCTF: ${err.message}`,
         };
+      } finally {
+        connection.release();
       }
-
-      // Deletar todas as declarações
-      const { error: declaracoesError } = await adapter
-        .from(this.tableName)
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Condição sempre verdadeira para deletar tudo
-
-      if (declaracoesError) {
-        console.error('Erro ao limpar declarações DCTF:', declaracoesError);
-        return {
-          success: false,
-          error: `Erro ao limpar declarações DCTF: ${declaracoesError.message}`,
-        };
-      }
-
-      return {
-        success: true,
-        data: {
-          deletedDeclarations: declaracoesCount ?? 0,
-          deletedData: dadosCount ?? 0,
-        },
-        message: `Limpeza concluída: ${declaracoesCount ?? 0} declarações e ${dadosCount ?? 0} registros de dados deletados`,
-      };
     } catch (error) {
       console.error('Erro ao limpar declarações DCTF:', error);
       return {

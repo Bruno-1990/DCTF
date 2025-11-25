@@ -493,16 +493,47 @@ class QueryBuilder implements SupabaseQueryBuilder {
         if (cond.type === 'eq') {
           conditions.push(`\`${cond.column}\` = ?`);
           params.push(cond.value);
+        } else if (cond.type === 'neq') {
+          conditions.push(`\`${cond.column}\` != ?`);
+          params.push(cond.value);
+        } else if (cond.type === 'gt') {
+          conditions.push(`\`${cond.column}\` > ?`);
+          params.push(cond.value);
+        } else if (cond.type === 'gte') {
+          conditions.push(`\`${cond.column}\` >= ?`);
+          params.push(cond.value);
+        } else if (cond.type === 'lt') {
+          conditions.push(`\`${cond.column}\` < ?`);
+          params.push(cond.value);
+        } else if (cond.type === 'lte') {
+          conditions.push(`\`${cond.column}\` <= ?`);
+          params.push(cond.value);
+        } else if (cond.type === 'in') {
+          const placeholders = cond.value.map(() => '?').join(', ');
+          conditions.push(`\`${cond.column}\` IN (${placeholders})`);
+          params.push(...cond.value);
+        } else if (cond.type === 'is') {
+          if (cond.value === null) {
+            conditions.push(`\`${cond.column}\` IS NULL`);
+          } else {
+            conditions.push(`\`${cond.column}\` IS ?`);
+            params.push(cond.value);
+          }
         }
       });
-      const fullQuery = `${query} WHERE ${conditions.join(' AND ')}`;
-      const connection = await getConnection();
+      
+      if (conditions.length > 0) {
+        const fullQuery = `${query} WHERE ${conditions.join(' AND ')}`;
+        const connection = await getConnection();
 
-      try {
-        await connection.execute(fullQuery, params);
-        return { data: null, error: null };
-      } finally {
-        connection.release();
+        try {
+          await connection.execute(fullQuery, params);
+          return { data: null, error: null };
+        } catch (err: any) {
+          return { data: null, error: { message: err.message, code: err.code } };
+        } finally {
+          connection.release();
+        }
       }
     }
 

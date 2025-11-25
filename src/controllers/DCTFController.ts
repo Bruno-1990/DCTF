@@ -9,16 +9,19 @@ import { ValidationService } from '../services/ValidationService';
 import { ApiResponse } from '../types';
 import { DCTFDados } from '../models/DCTFDados';
 import { DCTFAnalysisService } from '../services/DCTFAnalysisService';
+import { DCTFSyncService } from '../services/DCTFSyncService';
 
 export class DCTFController {
   private dctfModel: DCTF;
   private dctfDadosModel: DCTFDados;
   private analysisService: DCTFAnalysisService;
+  private syncService: DCTFSyncService;
 
   constructor() {
     this.dctfModel = new DCTF();
     this.dctfDadosModel = new DCTFDados();
     this.analysisService = new DCTFAnalysisService();
+    this.syncService = new DCTFSyncService();
   }
 
   private formatDateISO(dateValue: unknown): string | undefined {
@@ -84,6 +87,7 @@ export class DCTFController {
       clone.numeroIdentificacao ||
       clone.numero_identificacao ||
       clone.identificacao ||
+      clone.cnpj || // Campo cnpj da tabela dctf_declaracoes
       clone.cliente?.cnpj_limpo ||
       null;
 
@@ -675,6 +679,105 @@ export class DCTFController {
         success: false,
         error: 'Erro interno do servidor',
         message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Sincronizar declarações do Supabase para MySQL (operação administrativa)
+   */
+  async sincronizarDoSupabase(req: Request, res: Response): Promise<void> {
+    try {
+      // Verificar se Supabase está disponível
+      if (!this.syncService.isSupabaseAvailable()) {
+        res.status(400).json({
+          success: false,
+          error: 'Supabase não está configurado. Configure SUPABASE_URL e SUPABASE_ANON_KEY no .env',
+        });
+        return;
+      }
+
+      // Iniciar sincronização
+      const result = await this.syncService.syncFromSupabase((progress) => {
+        // Enviar progresso via Server-Sent Events se o cliente suportar
+        // Por enquanto, apenas log
+        console.log('[DCTF Sync Progress]', progress);
+      });
+
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Corrigir schema MySQL para permitir cliente_id NULL (operação administrativa)
+   */
+  async corrigirSchemaClienteId(req: Request, res: Response): Promise<void> {
+    try {
+      const { getConnection } = await import('../config/mysql');
+      const connection = await getConnection();
+
+      try {
+        // 1. Remover foreign key
+        const [constraints] = await connection.execute(`
+          SELECT CONSTRAINT_NAME 
+          FROM information_schema.KEY_COLUMN_USAGE 
+          WHERE TABLE_SCHEMA = DATABASE() 
+            AND TABLE_NAME = 'dctf_declaracoes' 
+            AND REFERENCED_TABLE_NAME = 'clientes'
+          LIMIT 1
+        `) as [any[], any];
+
+        let fkRemoved = false;
+        if (constraints && constraints.length > 0) {
+          const constraintName = constraints[0].CONSTRAINT_NAME;
+          await connection.execute(`ALTER TABLE dctf_declaracoes DROP FOREIGN KEY ${constraintName}`);
+          fkRemoved = true;
+        }
+
+        // 2. Tornar cliente_id nullable
+        await connection.execute(`
+          ALTER TABLE dctf_declaracoes 
+          MODIFY COLUMN cliente_id CHAR(36) NULL COMMENT 'ID do cliente (pode ser NULL)'
+        `);
+
+        // 3. Verificar
+        const [columns] = await connection.execute(`
+          SELECT is_nullable
+          FROM information_schema.columns
+          WHERE table_schema = DATABASE()
+            AND table_name = 'dctf_declaracoes'
+            AND column_name = 'cliente_id'
+        `) as [any[], any];
+
+        const isNullable = columns && columns.length > 0 && columns[0].is_nullable === 'YES';
+
+        res.json({
+          success: true,
+          message: 'Schema corrigido com sucesso',
+          data: {
+            foreignKeyRemoved: fkRemoved,
+            clienteIdNullable: isNullable,
+          },
+        });
+      } finally {
+        connection.release();
+      }
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao corrigir schema',
+        message: error.message || 'Erro desconhecido',
       });
     }
   }
