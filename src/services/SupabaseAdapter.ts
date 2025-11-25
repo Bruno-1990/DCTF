@@ -360,14 +360,32 @@ class QueryBuilder implements SupabaseQueryBuilder {
         .map(key => `\`${key}\` = VALUES(\`${key}\`)`)
         .join(', ');
       
-      if (this.upsertConflictColumn) {
-        query = `INSERT INTO \`${this.table}\` (${fields}) VALUES (${placeholders}) 
-                 ON DUPLICATE KEY UPDATE ${updateFields || 'id = id'}`;
-      } else {
-        // Se não especificou coluna de conflito, usar PRIMARY KEY
-        query = `INSERT INTO \`${this.table}\` (${fields}) VALUES (${placeholders}) 
-                 ON DUPLICATE KEY UPDATE ${updateFields || 'id = id'}`;
+      // Para ON DUPLICATE KEY UPDATE, MySQL usa a PRIMARY KEY ou UNIQUE KEY automaticamente
+      // Não precisamos especificar qual coluna, apenas os campos a atualizar
+      // Se não há campos para atualizar (todos foram filtrados), atualizar pelo menos updated_at se existir
+      let finalUpdateFields = updateFields;
+      if (!finalUpdateFields || finalUpdateFields.trim() === '') {
+        // Se não há campos para atualizar, verificar se existe updated_at
+        if (this.insertData.updated_at !== undefined) {
+          finalUpdateFields = '`updated_at` = VALUES(`updated_at`)';
+        } else {
+          // Fallback: atualizar um campo que não seja a chave primária
+          const nonKeyFields = Object.keys(this.insertData).filter(key => {
+            const conflictKey = this.upsertConflictColumn || 'id';
+            return key !== conflictKey;
+          });
+          if (nonKeyFields.length > 0) {
+            finalUpdateFields = `\`${nonKeyFields[0]}\` = VALUES(\`${nonKeyFields[0]}\`)`;
+          } else {
+            // Último recurso: atualizar a própria chave (não faz nada, mas evita erro SQL)
+            const conflictKey = this.upsertConflictColumn || 'id';
+            finalUpdateFields = `\`${conflictKey}\` = \`${conflictKey}\``;
+          }
+        }
       }
+      
+      query = `INSERT INTO \`${this.table}\` (${fields}) VALUES (${placeholders}) 
+               ON DUPLICATE KEY UPDATE ${finalUpdateFields}`;
     } else {
       query = `INSERT INTO \`${this.table}\` (${fields}) VALUES (${placeholders})`;
     }
@@ -379,17 +397,39 @@ class QueryBuilder implements SupabaseQueryBuilder {
       
       // Buscar o registro inserido/atualizado
       let inserted;
-      if (this.insertData.id) {
+      const conflictColumn = this.upsertConflictColumn || 'id';
+      
+      if (this.insertData[conflictColumn]) {
+        // Usar a coluna de conflito (ou 'id' por padrão) para buscar o registro
+        const [result] = await connection.execute(
+          `SELECT * FROM \`${this.table}\` WHERE \`${conflictColumn}\` = ?`,
+          [this.insertData[conflictColumn]]
+        );
+        inserted = (result as any[])[0];
+      } else if (this.insertData.id) {
+        // Fallback para 'id' se existir
         const [result] = await connection.execute(
           `SELECT * FROM \`${this.table}\` WHERE id = ?`,
           [this.insertData.id]
         );
         inserted = (result as any[])[0];
       } else {
-        const [result] = await connection.execute(
-          `SELECT * FROM \`${this.table}\` WHERE id = LAST_INSERT_ID()`
-        );
-        inserted = (result as any[])[0];
+        // Último fallback: usar LAST_INSERT_ID() (só funciona se a tabela tiver AUTO_INCREMENT)
+        try {
+          const [result] = await connection.execute(
+            `SELECT * FROM \`${this.table}\` WHERE id = LAST_INSERT_ID()`
+          );
+          inserted = (result as any[])[0];
+        } catch (err) {
+          // Se falhar, tentar buscar usando a coluna de conflito se disponível
+          if (conflictColumn !== 'id' && this.insertData[conflictColumn]) {
+            const [result] = await connection.execute(
+              `SELECT * FROM \`${this.table}\` WHERE \`${conflictColumn}\` = ?`,
+              [this.insertData[conflictColumn]]
+            );
+            inserted = (result as any[])[0];
+          }
+        }
       }
 
       return {

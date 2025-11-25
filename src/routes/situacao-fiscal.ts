@@ -108,6 +108,51 @@ router.get('/history', async (req, res, next) => {
   }
 });
 
+// GET /api/situacao-fiscal/pdf/:id - Servir PDF do banco de dados
+router.get('/pdf/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const client = (supabaseAdmin || supabase) as any;
+    
+    // Buscar registro no banco
+    const { data: download, error: fetchError } = await client
+      .from('sitf_downloads')
+      .select('id, pdf_base64, cnpj')
+      .eq('id', id)
+      .single();
+    
+    if (fetchError || !download) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Registro não encontrado' 
+      });
+    }
+    
+    // Se não tem base64, retornar erro
+    if (!download.pdf_base64) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'PDF não disponível para este registro' 
+      });
+    }
+    
+    // Converter base64 para buffer
+    const pdfBuffer = Buffer.from(download.pdf_base64, 'base64');
+    
+    // Retornar PDF com headers corretos
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="situacao-fiscal-${download.cnpj}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error('[Sitf PDF] Erro ao servir PDF:', err);
+    return res.status(500).json({ 
+      success: false, 
+      error: err.message || 'Erro ao servir PDF' 
+    });
+  }
+});
+
 // DELETE /api/situacao-fiscal/history/:id
 router.delete('/history/:id', async (req, res, next) => {
   try {

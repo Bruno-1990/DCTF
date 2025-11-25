@@ -83,16 +83,90 @@ async function getState(cnpj: string): Promise<SitfState | null> {
     console.warn('[Sitf] getState error', error);
     return null;
   }
+  
+  if (data) {
+    console.log('[Sitf] Estado recuperado do banco:', {
+      hasProtocolo: !!data.protocolo,
+      status: data.status,
+      nextEligibleAt: data.next_eligible_at,
+    });
+  } else {
+    console.log('[Sitf] Nenhum estado encontrado no banco para CNPJ:', clean);
+  }
+  
   return (data as any) ?? null;
 }
 
 async function upsertState(partial: Partial<SitfState> & { cnpj: string }) {
   const client = supabaseAdmin || supabase;
-  const payload = { ...partial, cnpj: normalizeCnpj(partial.cnpj) };
+  const payload: any = { ...partial, cnpj: normalizeCnpj(partial.cnpj) };
+  
+  // Converter datas ISO para formato MySQL (YYYY-MM-DD HH:MM:SS)
+  // MySQL TIMESTAMP aceita formato: YYYY-MM-DD HH:MM:SS (sem timezone)
+  if (payload.next_eligible_at) {
+    try {
+      const date = typeof payload.next_eligible_at === 'string' 
+        ? new Date(payload.next_eligible_at) 
+        : payload.next_eligible_at;
+      
+      if (date instanceof Date && !isNaN(date.getTime())) {
+        // Converter para formato MySQL: YYYY-MM-DD HH:MM:SS
+        // Usar métodos locais para evitar problemas de timezone
+        const year = date.getUTCFullYear();
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(date.getUTCDate()).padStart(2, '0');
+        const hours = String(date.getUTCHours()).padStart(2, '0');
+        const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+        payload.next_eligible_at = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        console.log('[Sitf] next_eligible_at convertido para MySQL:', payload.next_eligible_at);
+      } else {
+        console.warn('[Sitf] next_eligible_at inválido, removendo:', payload.next_eligible_at);
+        delete payload.next_eligible_at;
+      }
+    } catch (err) {
+      console.error('[Sitf] Erro ao converter next_eligible_at:', err);
+      delete payload.next_eligible_at;
+    }
+  }
+  
+  if (payload.expires_at) {
+    try {
+      const date = typeof payload.expires_at === 'string' 
+        ? new Date(payload.expires_at) 
+        : payload.expires_at;
+      
+      if (date instanceof Date && !isNaN(date.getTime())) {
+        const year = date.getUTCFullYear();
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(date.getUTCDate()).padStart(2, '0');
+        const hours = String(date.getUTCHours()).padStart(2, '0');
+        const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+        payload.expires_at = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      } else {
+        delete payload.expires_at;
+      }
+    } catch (err) {
+      console.error('[Sitf] Erro ao converter expires_at:', err);
+      delete payload.expires_at;
+    }
+  }
+  
+  console.log('[Sitf] Salvando estado no banco:', {
+    cnpj: payload.cnpj,
+    hasProtocolo: !!payload.protocolo,
+    status: payload.status,
+    next_eligible_at: payload.next_eligible_at,
+  });
+  
   const { error } = await client.from('sitf_protocols').upsert(payload, { onConflict: 'cnpj' });
   if (error) {
     console.error('[Sitf] upsertState error', error);
+    throw error; // Re-throw para que o erro seja propagado
   }
+  
+  console.log('[Sitf] Estado salvo com sucesso no banco');
 }
 
 export async function fetchAccessToken(): Promise<string> {
@@ -221,6 +295,41 @@ async function solicitarProtocolo(cnpj: string) {
     throw new Error(`SERPRO retornou 403: ${errorMsg}`);
   }
   
+  // Tratar 304 (Not Modified) - pode significar que já existe protocolo em processamento
+  if (res.status === 304) {
+    const mensagens: any[] = res.data?.mensagens || [];
+    const tempoMsg = mensagens.find((m) => 
+      String(m.codigo || '').toLowerCase().includes('aviso') || 
+      String(m.texto || '').toLowerCase().includes('processamento') ||
+      String(m.texto || '').toLowerCase().includes('aguarde')
+    );
+    const waitMs = parseTempoEspera(tempoMsg?.texto) ?? 5000;
+    console.log('[Sitf] SERPRO retornou 304 (protocolo ainda processando ou já existe), waitMs:', waitMs);
+    
+    // Tentar extrair protocolo mesmo com 304 (pode estar na resposta)
+    let protocolo: string | undefined = undefined;
+    if (typeof res.data?.dados === 'string') {
+      try {
+        const s = res.data.dados.replace(/^"+|"+$/g, '');
+        const parsed = JSON.parse(s);
+        protocolo = parsed?.protocoloRelatorio;
+      } catch {
+        // Ignorar erro de parse
+      }
+    } else if (res.data?.dados && typeof res.data.dados === 'object') {
+      protocolo = res.data.dados.protocoloRelatorio;
+    }
+    
+    // Se não temos protocolo, retornar erro para aguardar
+    if (!protocolo) {
+      throw new Error(`Protocolo ainda em processamento. Aguarde ${Math.ceil(waitMs / 1000)}s e tente novamente.`);
+    }
+    
+    // Se temos protocolo mesmo com 304, retornar normalmente
+    console.log('[Sitf] Protocolo extraído mesmo com status 304:', protocolo.substring(0, 50) + '...');
+    return { protocolo, waitMs, raw: res.data };
+  }
+  
   if (res.status !== 200 && res.status !== 202) {
     const errorMsg = res.data?.mensagens?.[0]?.texto || res.data?.message || `Erro HTTP ${res.status}`;
     console.error('[Sitf] SERPRO retornou erro:', {
@@ -301,6 +410,9 @@ async function emitirRelatorio(protocolo: string, cnpj: string) {
   const { accessToken, jwtToken } = await fetchAuthTokens();
   const url = `${baseUrl}${path}`;
   const cnpjFixo = normalizeCnpj(process.env['SERPRO_CONTRATANTE_CNPJ'] || '32401481000133');
+  // Limpar protocolo (remover espaços, aspas extras, etc.)
+  const protocoloLimpo = (protocolo || '').toString().trim().replace(/^"+|"+$/g, '').replace(/\s+/g, '');
+  
   const body = {
     contratante: { numero: cnpjFixo, tipo: 2 },
     autorPedidoDados: { numero: cnpjFixo, tipo: 2 },
@@ -310,7 +422,7 @@ async function emitirRelatorio(protocolo: string, cnpj: string) {
       idServico: 'RELATORIOSITFIS92',
       versaoSistema: '2.0',
       // 'dados' deve ser uma string JSON com o protocolo limpo
-      dados: JSON.stringify({ protocoloRelatorio: protocolo }),
+      dados: JSON.stringify({ protocoloRelatorio: protocoloLimpo }),
     },
   };
   // Construir headers com autenticação (mesmo padrão do ReceitaFederalService)
@@ -327,10 +439,12 @@ async function emitirRelatorio(protocolo: string, cnpj: string) {
   
   console.log('[Sitf] Emitir relatório:', { 
     url, 
-    protocolo: protocolo.substring(0, 50) + '...',
+    protocoloOriginal: protocolo.substring(0, 50) + '...',
+    protocoloLimpo: protocoloLimpo.substring(0, 50) + '...',
     cnpj: normalizeCnpj(cnpj),
   });
   console.log('[Sitf] Body emitir relatório:', JSON.stringify(body, null, 2));
+  console.log('[Sitf] Protocolo no dados (string):', body.pedidoDados.dados);
   
   try {
     const res = await axios.post(url, body, {
@@ -358,22 +472,43 @@ async function emitirRelatorio(protocolo: string, cnpj: string) {
     }
     
     if (res.status === 200) {
-      // Extrair PDF base64: o campo 'dados' é uma string JSON contendo {"pdf":"..."}
+      // Extrair PDF base64: o campo 'dados' pode vir em diferentes formatos:
+      // 1. String JSON: "{\"pdf\":\"JVBERi0xLjQK...\"}"
+      // 2. Objeto: { pdf: "JVBERi0xLjQK..." }
+      // 3. Base64 direto (string longa que parece base64)
       let pdf: string | undefined = undefined;
       
       if (typeof res.data?.dados === 'string') {
+        const dadosStr = res.data.dados.trim();
+        
+        // Tentar parsear como JSON primeiro
         try {
-          // Parse da string JSON: "{\"pdf\":\"JVBERi0xLjQK...\"}"
-          const dadosParsed = JSON.parse(res.data.dados);
+          const dadosParsed = JSON.parse(dadosStr);
           pdf = dadosParsed?.pdf;
-          console.log('[Sitf] PDF extraído de string JSON:', pdf ? `SIM (${pdf.substring(0, 50)}...)` : 'NÃO');
+          console.log('[Sitf] PDF extraído de string JSON parseada:', pdf ? `SIM (${pdf.substring(0, 50)}...)` : 'NÃO');
         } catch (parseErr) {
-          console.warn('[Sitf] Erro ao fazer parse do dados como JSON:', parseErr);
+          // Se não for JSON válido, verificar se é base64 direto
+          // Base64 geralmente tem caracteres alfanuméricos, +, /, = e é bem longo
+          const isBase64Like = /^[A-Za-z0-9+/=]+$/.test(dadosStr) && dadosStr.length > 100;
+          if (isBase64Like) {
+            pdf = dadosStr;
+            console.log('[Sitf] PDF extraído como base64 direto (não JSON):', pdf ? `SIM (${pdf.substring(0, 50)}...)` : 'NÃO');
+          } else {
+            console.warn('[Sitf] Dados não é JSON válido nem parece base64:', dadosStr.substring(0, 100));
+          }
         }
       } else if (res.data?.dados && typeof res.data.dados === 'object') {
         // Se dados é um objeto, extrair diretamente
         pdf = res.data.dados.pdf;
         console.log('[Sitf] PDF extraído de objeto:', pdf ? `SIM (${pdf.substring(0, 50)}...)` : 'NÃO');
+        
+        // Se não encontrou em .pdf, verificar outras chaves possíveis
+        if (!pdf) {
+          pdf = res.data.dados.base64 || res.data.dados.conteudo || res.data.dados.arquivo;
+          if (pdf) {
+            console.log('[Sitf] PDF encontrado em chave alternativa:', Object.keys(res.data.dados).join(', '));
+          }
+        }
       }
       
       if (!pdf) {
@@ -381,6 +516,7 @@ async function emitirRelatorio(protocolo: string, cnpj: string) {
         const statusInterno = res.data?.status;
         const mensagens: any[] = res.data?.mensagens || [];
         console.warn('[Sitf] Status 200 mas sem PDF. Status interno:', statusInterno, 'Mensagens:', mensagens);
+        console.warn('[Sitf] Estrutura completa de dados:', JSON.stringify(res.data?.dados, null, 2).substring(0, 500));
         
         // Se houver mensagem indicando processamento, tratar como 202
         const processandoMsg = mensagens.find((m) => 
@@ -394,17 +530,33 @@ async function emitirRelatorio(protocolo: string, cnpj: string) {
           return { status: 202 as const, waitMs, raw: res.data };
         }
         
-        throw new Error('PDF base64 ausente na resposta do SERPRO');
+        throw new Error('PDF base64 ausente na resposta do SERPRO. Verifique os logs para mais detalhes.');
       }
-      console.log('[Sitf] PDF obtido com sucesso!');
+      
+      // Validar que o PDF base64 parece válido (começa com indicador de PDF)
+      const pdfHeader = Buffer.from(pdf.substring(0, Math.min(20, pdf.length)), 'base64').toString('utf-8');
+      const isValidPdf = pdfHeader.includes('%PDF') || pdf.length > 1000; // PDFs são geralmente grandes
+      
+      if (!isValidPdf && pdf.length < 100) {
+        console.warn('[Sitf] PDF base64 parece muito curto ou inválido. Tamanho:', pdf.length);
+      }
+      
+      console.log('[Sitf] PDF obtido com sucesso! Tamanho base64:', pdf.length, 'caracteres');
       return { status: 200 as const, pdfBase64: pdf, raw: res.data };
     }
     if (res.status === 304) {
+      // HTTP 304 (Not Modified) significa que o relatório ainda não está pronto
+      // Tratar como 202 (Accepted) - relatório em processamento
       const mensagens: any[] = res.data?.mensagens || [];
-      const tempoMsg = mensagens.find((m) => String(m.codigo || '').toLowerCase().includes('aviso'));
+      const tempoMsg = mensagens.find((m) => 
+        String(m.codigo || '').toLowerCase().includes('aviso') || 
+        String(m.texto || '').toLowerCase().includes('processamento') ||
+        String(m.texto || '').toLowerCase().includes('aguarde')
+      );
       const waitMs = parseTempoEspera(tempoMsg?.texto) ?? 5000;
-      console.log('[Sitf] SERPRO retornou 304, waitMs:', waitMs);
-      return { status: 304 as const, waitMs, raw: res.data };
+      console.log('[Sitf] SERPRO retornou 304 (Not Modified - relatório ainda processando), waitMs:', waitMs);
+      // Tratar 304 como 202 para manter consistência
+      return { status: 202 as const, waitMs, raw: res.data };
     }
     console.warn('[Sitf] Status inesperado do SERPRO:', res.status);
     return { status: res.status as any, raw: res.data };
@@ -522,13 +674,8 @@ export class SituacaoFiscalOrchestrator {
           step: 'concluido' as const,
         };
       }
-      // Tratar 202 (Accepted) - relatório ainda em processamento
-      if (emit.status === 202) {
-        const next = new Date(now + (emit.waitMs ?? 5000)).toISOString();
-        await upsertState({ cnpj: clean, status: 'aguardando', next_eligible_at: next, last_response: emit.raw });
-        return { type: 'wait' as const, retryAfter: Math.ceil((emit.waitMs ?? 5000) / 1000), step: 'emitir' as const };
-      }
-      if (emit.status === 304) {
+      // Tratar 202 (Accepted) ou 304 (Not Modified) - relatório ainda em processamento
+      if (emit.status === 202 || emit.status === 304) {
         const next = new Date(now + (emit.waitMs ?? 5000)).toISOString();
         await upsertState({ cnpj: clean, status: 'aguardando', next_eligible_at: next, last_response: emit.raw });
         return { type: 'wait' as const, retryAfter: Math.ceil((emit.waitMs ?? 5000) / 1000), step: 'emitir' as const };
@@ -542,13 +689,22 @@ export class SituacaoFiscalOrchestrator {
     const req = await solicitarProtocolo(clean);
     console.log('[Sitf] Protocolo obtido com sucesso, waitMs:', req.waitMs);
     const next = new Date(now + req.waitMs).toISOString();
-    await upsertState({
-      cnpj: clean,
-      protocolo: req.protocolo,
-      status: 'aguardando',
-      next_eligible_at: next,
-      last_response: req.raw,
-    });
+    
+    try {
+      await upsertState({
+        cnpj: clean,
+        protocolo: req.protocolo,
+        status: 'aguardando',
+        next_eligible_at: next,
+        last_response: req.raw,
+      });
+      console.log('[Sitf] Estado salvo com sucesso. Protocolo:', req.protocolo.substring(0, 50) + '...');
+    } catch (saveError: any) {
+      console.error('[Sitf] Erro ao salvar estado após obter protocolo:', saveError);
+      // Mesmo com erro ao salvar, retornar o resultado para que o frontend possa aguardar
+      // O protocolo será solicitado novamente na próxima chamada, mas pelo menos não quebra o fluxo
+    }
+    
     return { type: 'wait' as const, retryAfter: Math.ceil(req.waitMs / 1000), step: 'protocolo' as const };
   }
 }

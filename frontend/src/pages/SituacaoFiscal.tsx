@@ -31,7 +31,7 @@ export default function SituacaoFiscal() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
   const toast = useToast();
-  const [history, setHistory] = useState<Array<{ id: string; cnpj: string; file_url?: string | null; created_at: string; cliente?: { razao_social: string } | null }>>([]);
+  const [history, setHistory] = useState<Array<{ id: string; cnpj: string; file_url?: string | null; has_pdf_base64?: boolean; created_at: string; cliente?: { razao_social: string } | null }>>([]);
   const [historyFilter, setHistoryFilter] = useState('');
   const countdownRef = useRef<number | null>(null);
   const isConsultingRef = useRef<boolean>(false);
@@ -333,9 +333,13 @@ export default function SituacaoFiscal() {
     }
   };
 
-  const handleDownloadPDF = async (fileUrl: string, cnpj: string) => {
+  const handleDownloadPDF = async (id: string, cnpj: string) => {
     try {
-      const response = await fetch(fileUrl);
+      // Usar endpoint do backend em vez de URL do Supabase
+      const response = await fetch(`/api/situacao-fiscal/pdf/${id}`);
+      if (!response.ok) {
+        throw new Error('Erro ao baixar PDF');
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -345,7 +349,9 @@ export default function SituacaoFiscal() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
+      toast.success('PDF baixado com sucesso');
     } catch (error) {
+      console.error('Erro ao baixar PDF:', error);
       toast.error('Erro ao baixar PDF');
     }
   };
@@ -536,10 +542,10 @@ export default function SituacaoFiscal() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
-                        {h.file_url ? (
+                        {(h.has_pdf_base64 || h.file_url) ? (
                           <>
                             <a
-                              href={h.file_url}
+                              href={`/api/situacao-fiscal/pdf/${h.id}`}
                               target="_blank"
                               rel="noreferrer"
                               className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1.5"
@@ -548,7 +554,7 @@ export default function SituacaoFiscal() {
                               Visualizar
                             </a>
                             <button
-                              onClick={() => handleDownloadPDF(h.file_url!, h.cnpj)}
+                              onClick={() => handleDownloadPDF(h.id, h.cnpj)}
                               className="px-3 py-1.5 text-sm font-medium text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1.5"
                             >
                               <ArrowDownTrayIcon className="h-4 w-4" />
