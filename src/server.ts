@@ -24,6 +24,7 @@ import receitaPagamentosRoutes from './routes/receita-pagamentos';
 import receitaRoutes from './routes/receita';
 import conferenciasRoutes from './routes/conferencias';
 import situacaoFiscalRoutes from './routes/situacao-fiscal';
+import hostDadosRoutes from './routes/host-dados';
 
 class Server {
   private app: express.Application;
@@ -130,6 +131,7 @@ class Server {
     this.app.use('/api/receita', receitaRoutes);
     this.app.use('/api/conferencias', conferenciasRoutes);
     this.app.use('/api/situacao-fiscal', situacaoFiscalRoutes);
+    this.app.use('/api/host-dados', hostDadosRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {
@@ -157,12 +159,14 @@ class Server {
   }
 
     public start(): void {
-    this.httpServer.listen(this.port, () => {
-      console.log(`Server running on port ${this.port}`);
+    const host = process.env['HOST'] || '0.0.0.0';
+    this.httpServer.listen(this.port, host, () => {
+      const displayHost = host === '0.0.0.0' ? '192.168.0.47' : host;
+      console.log(`Server running on http://${displayHost}:${this.port}`);
       console.log(`Environment: ${config.nodeEnv}`);
-      console.log(`Health check: http://localhost:${this.port}/health`);
-      console.log(`API Documentation: http://localhost:${this.port}/api/docs`);
-      console.log(`WebSocket Health: http://localhost:${this.port}/ws/health`);
+      console.log(`Health check: http://${displayHost}:${this.port}/health`);
+      console.log(`API: http://${displayHost}:${this.port}/api`);
+      console.log(`WebSocket Health: http://${displayHost}:${this.port}/ws/health`);
     });
   }
 
