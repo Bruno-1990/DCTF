@@ -307,6 +307,73 @@ export class ReceitaPagamentoModel extends DatabaseService<ReceitaPagamento> {
   }
 
   /**
+   * Exclui um pagamento por ID
+   */
+  async excluirPagamento(id: string): Promise<void> {
+    if (!process.env['SUPABASE_URL']) {
+      throw new Error('Supabase não configurado');
+    }
+
+    const adapter = this.supabase as any;
+    const { error } = await adapter
+      .from(this.tableName)
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      throw new Error(`Erro ao excluir pagamento: ${error.message}`);
+    }
+  }
+
+  /**
+   * Exclui todos os pagamentos relacionados a um número de documento
+   * (inclui o documento pai e todos os desmembramentos/filhos)
+   */
+  async excluirPagamentosPorNumeroDocumento(numeroDocumento: string): Promise<number> {
+    if (!process.env['SUPABASE_URL']) {
+      throw new Error('Supabase não configurado');
+    }
+
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
+      .from(this.tableName)
+      .delete()
+      .eq('numero_documento', numeroDocumento)
+      .select();
+
+    if (error) {
+      throw new Error(`Erro ao excluir pagamentos: ${error.message}`);
+    }
+
+    return data?.length || 0;
+  }
+
+  /**
+   * Exclui todos os pagamentos de um cliente por CNPJ
+   */
+  async excluirPagamentosPorCNPJ(cnpj: string): Promise<number> {
+    if (!process.env['SUPABASE_URL']) {
+      throw new Error('Supabase não configurado');
+    }
+
+    // Normalizar CNPJ (remover caracteres não numéricos)
+    const cnpjLimpo = cnpj.replace(/\D/g, '');
+
+    const adapter = this.supabase as any;
+    const { data, error } = await adapter
+      .from(this.tableName)
+      .delete()
+      .eq('cnpj_contribuinte', cnpjLimpo)
+      .select();
+
+    if (error) {
+      throw new Error(`Erro ao excluir pagamentos do cliente: ${error.message}`);
+    }
+
+    return data?.length || 0;
+  }
+
+  /**
    * Busca pagamentos por número de documento
    */
   async buscarPorNumeroDocumento(numeroDocumento: string): Promise<ReceitaPagamento | null> {

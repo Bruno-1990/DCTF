@@ -197,19 +197,227 @@ function buildDueDateIssue(record: DashboardDCTFRecord, today: Date): DashboardC
  * Identifica clientes que NÃO têm DCTF emitida na competência vigente
  * Útil para monitorar quais clientes precisam ser verificados no mês seguinte
  */
+/**
+ * Função auxiliar para normalizar CNPJ (remover caracteres não numéricos)
+ */
+function normalizarCNPJ(cnpj: string | null | undefined): string | null {
+  if (!cnpj) return null;
+  const limpo = cnpj.replace(/\D/g, '');
+  return limpo.length >= 11 ? limpo : null;
+}
+
+/**
+ * Diagnóstico completo do cruzamento entre clientes e dctf_declaracoes
+ */
+async function diagnosticarCruzamentoClientesDCTF(
+  executeQuery: <T = any>(query: string, params?: any[]) => Promise<T[]>,
+  competenciaVigente: string,
+  periodoSql: string
+): Promise<void> {
+  console.log('\n========== DIAGNÓSTICO: CRUZAMENTO CLIENTES x DCTF ==========');
+  
+  // 1. Contar total de clientes
+  const totalClientes = await executeQuery<{ total: number }>(
+    `SELECT COUNT(*) as total FROM clientes`
+  );
+  console.log(`[Diagnóstico] 📊 Total de clientes na tabela 'clientes': ${totalClientes[0]?.total || 0}`);
+  
+  // 2. Contar total de DCTFs para a competência vigente
+  const totalDCTFs = await executeQuery<{ total: number }>(
+    `
+    SELECT COUNT(*) as total 
+    FROM dctf_declaracoes 
+    WHERE (
+      TRIM(periodo_apuracao) = ?
+      OR TRIM(periodo_apuracao) = ?
+    )
+    `,
+    [periodoSql, competenciaVigente]
+  );
+  console.log(`[Diagnóstico] 📊 Total de DCTFs para ${competenciaVigente}: ${totalDCTFs[0]?.total || 0}`);
+  
+  // 3. Verificar quantos DCTFs têm cliente_id preenchido
+  const dctfsComClienteId = await executeQuery<{ total: number }>(
+    `
+    SELECT COUNT(*) as total 
+    FROM dctf_declaracoes 
+    WHERE cliente_id IS NOT NULL
+      AND (
+        TRIM(periodo_apuracao) = ?
+        OR TRIM(periodo_apuracao) = ?
+      )
+    `,
+    [periodoSql, competenciaVigente]
+  );
+  console.log(`[Diagnóstico] 📊 DCTFs com cliente_id preenchido: ${dctfsComClienteId[0]?.total || 0}`);
+  
+  // 4. Verificar quantos DCTFs têm cnpj preenchido
+  const dctfsComCNPJ = await executeQuery<{ total: number }>(
+    `
+    SELECT COUNT(*) as total 
+    FROM dctf_declaracoes 
+    WHERE cnpj IS NOT NULL
+      AND (
+        TRIM(periodo_apuracao) = ?
+        OR TRIM(periodo_apuracao) = ?
+      )
+    `,
+    [periodoSql, competenciaVigente]
+  );
+  console.log(`[Diagnóstico] 📊 DCTFs com cnpj preenchido: ${dctfsComCNPJ[0]?.total || 0}`);
+  
+  // 5. Buscar clientes com CNPJ normalizado
+  const clientesComCNPJ = await executeQuery<{ id: number; cnpj_limpo: string; cnpj_normalizado: string }>(
+    `
+    SELECT 
+      id,
+      cnpj_limpo,
+      REPLACE(REPLACE(REPLACE(cnpj_limpo, '.', ''), '/', ''), '-', '') as cnpj_normalizado
+    FROM clientes
+    WHERE cnpj_limpo IS NOT NULL
+    LIMIT 10
+    `
+  );
+  console.log(`[Diagnóstico] 📋 Exemplos de CNPJs na tabela 'clientes' (primeiros 10):`);
+  clientesComCNPJ.forEach((c: any) => {
+    console.log(`  - ID: ${c.id}, CNPJ Original: ${c.cnpj_limpo}, CNPJ Normalizado: ${c.cnpj_normalizado}`);
+  });
+  
+  // 6. Buscar DCTFs com cnpj normalizado
+  const dctfsComCNPJExemplos = await executeQuery<{ id: number; cliente_id: number | null; cnpj: string; cnpj_normalizado: string }>(
+    `
+    SELECT 
+      id,
+      cliente_id,
+      cnpj,
+      REPLACE(REPLACE(REPLACE(cnpj, '.', ''), '/', ''), '-', '') as cnpj_normalizado
+    FROM dctf_declaracoes
+    WHERE cnpj IS NOT NULL
+      AND (
+        TRIM(periodo_apuracao) = ?
+        OR TRIM(periodo_apuracao) = ?
+      )
+    LIMIT 10
+    `,
+    [periodoSql, competenciaVigente]
+  );
+  console.log(`[Diagnóstico] 📋 Exemplos de CNPJs na tabela 'dctf_declaracoes' (primeiros 10):`);
+  dctfsComCNPJExemplos.forEach((d: any) => {
+    console.log(`  - ID: ${d.id}, cliente_id: ${d.cliente_id || 'NULL'}, CNPJ Original: ${d.cnpj}, CNPJ Normalizado: ${d.cnpj_normalizado}`);
+  });
+  
+  // 7. Verificar match por cliente_id
+  const matchPorClienteId = await executeQuery<{ total: number }>(
+    `
+    SELECT COUNT(DISTINCT c.id) as total
+    FROM clientes c
+    INNER JOIN dctf_declaracoes d ON d.cliente_id = c.id
+    WHERE (
+      TRIM(d.periodo_apuracao) = ?
+      OR TRIM(d.periodo_apuracao) = ?
+    )
+    `,
+    [periodoSql, competenciaVigente]
+  );
+  console.log(`[Diagnóstico] ✅ Clientes encontrados por cliente_id: ${matchPorClienteId[0]?.total || 0}`);
+  
+  // 8. Verificar match por cnpj (CNPJ normalizado)
+  const matchPorCNPJ = await executeQuery<{ total: number }>(
+    `
+    SELECT COUNT(DISTINCT c.id) as total
+    FROM clientes c
+    INNER JOIN dctf_declaracoes d ON (
+      REPLACE(REPLACE(REPLACE(c.cnpj_limpo, '.', ''), '/', ''), '-', '') = 
+      REPLACE(REPLACE(REPLACE(d.cnpj, '.', ''), '/', ''), '-', '')
+    )
+    WHERE (
+      TRIM(d.periodo_apuracao) = ?
+      OR TRIM(d.periodo_apuracao) = ?
+    )
+    AND d.cliente_id IS NULL
+    `,
+    [periodoSql, competenciaVigente]
+  );
+  console.log(`[Diagnóstico] ✅ Clientes encontrados por CNPJ (campo cnpj): ${matchPorCNPJ[0]?.total || 0}`);
+  
+  // 9. Verificar total de clientes únicos com DCTF (por qualquer método)
+  const totalClientesComDCTF = await executeQuery<{ total: number }>(
+    `
+    SELECT COUNT(DISTINCT COALESCE(c1.id, c2.id)) as total
+    FROM dctf_declaracoes d
+    LEFT JOIN clientes c1 ON d.cliente_id = c1.id
+    LEFT JOIN clientes c2 ON (
+      d.cnpj IS NOT NULL
+      AND REPLACE(REPLACE(REPLACE(c2.cnpj_limpo, '.', ''), '/', ''), '-', '') = 
+          REPLACE(REPLACE(REPLACE(d.cnpj, '.', ''), '/', ''), '-', '')
+    )
+    WHERE (
+      TRIM(d.periodo_apuracao) = ?
+      OR TRIM(d.periodo_apuracao) = ?
+    )
+    AND (c1.id IS NOT NULL OR c2.id IS NOT NULL)
+    `,
+    [periodoSql, competenciaVigente]
+  );
+  console.log(`[Diagnóstico] ✅ Total de clientes únicos COM DCTF (por qualquer método): ${totalClientesComDCTF[0]?.total || 0}`);
+  
+  // 10. Listar alguns clientes SEM DCTF para verificar
+  const clientesSemDCTF = await executeQuery<{ id: number; cnpj_limpo: string }>(
+    `
+    SELECT c.id, c.cnpj_limpo
+    FROM clientes c
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM dctf_declaracoes d
+      WHERE (
+        d.cliente_id = c.id
+        OR (
+          d.cnpj IS NOT NULL
+          AND REPLACE(REPLACE(REPLACE(c.cnpj_limpo, '.', ''), '/', ''), '-', '') = 
+              REPLACE(REPLACE(REPLACE(d.cnpj, '.', ''), '/', ''), '-', '')
+        )
+      )
+      AND (
+        TRIM(d.periodo_apuracao) = ?
+        OR TRIM(d.periodo_apuracao) = ?
+      )
+    )
+    LIMIT 10
+    `,
+    [periodoSql, competenciaVigente]
+  );
+  console.log(`[Diagnóstico] ⚠️ Exemplos de clientes SEM DCTF (primeiros 10):`);
+  clientesSemDCTF.forEach((c: any) => {
+    console.log(`  - ID: ${c.id}, CNPJ: ${c.cnpj_limpo}`);
+  });
+  
+  console.log('========== FIM DO DIAGNÓSTICO ==========\n');
+}
+
 async function buildClientesSemDCTFVigente(
-  records: DashboardDCTFRecord[],
+  records: DashboardDCTFRecord[], // Mantido para compatibilidade, mas não será usado
   today: Date
 ): Promise<DashboardConferenceIssue[]> {
   try {
-    // Calcular competência vigente (mês anterior)
-    const currentMonth = today.getMonth() + 1;
+    // Calcular competência vigente (SEMPRE mês anterior à data atual)
+    const currentMonth = today.getMonth() + 1; // getMonth() retorna 0-11, então +1 para 1-12
     const currentYear = today.getFullYear();
-    const competenciaMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-    const competenciaYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+    const competenciaMonth = currentMonth === 1 ? 12 : currentMonth - 1; // Mês anterior
+    const competenciaYear = currentMonth === 1 ? currentYear - 1 : currentYear; // Se janeiro, ano anterior
     const competenciaVigente = `${String(competenciaMonth).padStart(2, '0')}/${competenciaYear}`;
+    const periodoSql = `${competenciaYear}-${String(competenciaMonth).padStart(2, '0')}`;
     
-    console.log('[Conference] 🔍 Buscando clientes sem DCTF na competência:', competenciaVigente);
+    console.log('[Conference] 📅 Data atual:', today.toISOString().split('T')[0]);
+    console.log('[Conference] 📅 Mês atual:', currentMonth, '/', currentYear);
+    console.log('[Conference] 🔍 Competência vigente (mês anterior):', competenciaVigente);
+    console.log('[Conference] 🔍 Período SQL:', periodoSql);
+    console.log('[Conference] 🔄 Consultando diretamente MySQL (não Supabase)');
+    
+    // Importar executeQuery do MySQL
+    const { executeQuery } = await import('../config/mysql');
+    
+    // Executar diagnóstico completo
+    await diagnosticarCruzamentoClientesDCTF(executeQuery, competenciaVigente, periodoSql);
     
     // Importar modelo de clientes
     const { Cliente } = await import('../models/Cliente');
@@ -225,23 +433,102 @@ async function buildClientesSemDCTFVigente(
     const todosClientes = resultClientes.data;
     console.log('[Conference] 📊 Total de clientes cadastrados:', todosClientes.length);
     
-    // Extrair CNPJs que TÊM DCTF na competência vigente
-    const cnpjsComDCTF = new Set(
-      records
-        .filter(r => r.period === competenciaVigente)
-        .map(r => r.identification?.replace(/\D/g, ''))
-        .filter(Boolean)
+    // Buscar CNPJs que TÊM DCTF na competência vigente DIRETAMENTE DO MYSQL
+    // IMPORTANTE: Usar NOT EXISTS para garantir que encontramos todos os clientes que NÃO têm DCTF
+    // Primeiro, buscar todos os CNPJs que TÊM DCTF (por cliente_id OU por numero_identificacao)
+    const dctfResult = await executeQuery<{ cnpj_normalizado: string }>(
+      `
+      SELECT DISTINCT 
+        REPLACE(REPLACE(REPLACE(
+          COALESCE(c.cnpj_limpo, c2.cnpj_limpo, d.cnpj),
+          '.', ''), '/', ''), '-', ''
+        ) as cnpj_normalizado
+      FROM dctf_declaracoes d
+      -- JOIN por cliente_id (quando disponível)
+      LEFT JOIN clientes c ON d.cliente_id = c.id AND c.cnpj_limpo IS NOT NULL
+      -- JOIN por cnpj (quando cliente_id for NULL ou não encontrado)
+      LEFT JOIN clientes c2 ON (
+        (d.cliente_id IS NULL OR c.id IS NULL)
+        AND d.cnpj IS NOT NULL
+        AND REPLACE(REPLACE(REPLACE(c2.cnpj_limpo, '.', ''), '/', ''), '-', '') = 
+            REPLACE(REPLACE(REPLACE(d.cnpj, '.', ''), '/', ''), '-', '')
+      )
+      WHERE (
+        TRIM(d.periodo_apuracao) = ?
+        OR TRIM(d.periodo_apuracao) = ?
+      )
+      AND (
+        -- Cliente encontrado por cliente_id
+        c.id IS NOT NULL
+        -- OU cliente encontrado por cnpj
+        OR c2.id IS NOT NULL
+        -- OU cnpj existe (mesmo sem match em clientes, ainda conta como DCTF)
+        OR d.cnpj IS NOT NULL
+      )
+      `,
+      [periodoSql, competenciaVigente]
     );
     
-    console.log('[Conference] ✅ Clientes COM DCTF na competência vigente:', cnpjsComDCTF.size);
+    console.log('[Conference] 🔍 Query DCTF retornou', dctfResult.length, 'CNPJs únicos com DCTF');
+    console.log('[Conference] 🔍 Períodos procurados:', periodoSql, 'ou', competenciaVigente);
+    if (dctfResult.length > 0) {
+      console.log('[Conference] 🔍 Primeiros 10 CNPJs encontrados:', dctfResult.slice(0, 10).map(r => r.cnpj_normalizado));
+    }
+    
+    // Extrair CNPJs que TÊM DCTF na competência vigente (do MySQL)
+    // Já estão normalizados pela query
+    const cnpjsComDCTF = new Set(
+      dctfResult
+        .map(r => r.cnpj_normalizado)
+        .filter(cnpj => cnpj && cnpj.length >= 11) as string[]
+    );
+    
+    console.log('[Conference] ✅ Total de CNPJs únicos COM DCTF (após filtro):', cnpjsComDCTF.size);
+    
+    console.log('[Conference] ✅ Clientes COM DCTF na competência vigente (MySQL):', cnpjsComDCTF.size);
+    
+    // Validação adicional: verificar se o cliente específico está na lista
+    const cnpjTeste = '35957760000176';
+    if (cnpjsComDCTF.has(cnpjTeste)) {
+      console.log('[Conference] ✅ Cliente 35957760000176 ENCONTRADO na lista de DCTF');
+    } else {
+      console.warn('[Conference] ⚠️ Cliente 35957760000176 NÃO encontrado na lista de DCTF!');
+      // Verificar diretamente no banco
+      const checkDirect = await executeQuery<{ count: number; periodos: string }>(
+        `
+        SELECT COUNT(*) as count, GROUP_CONCAT(DISTINCT TRIM(d.periodo_apuracao) SEPARATOR ', ') as periodos
+        FROM dctf_declaracoes d
+        INNER JOIN clientes c ON d.cliente_id = c.id
+        WHERE c.cnpj_limpo = ?
+          AND (
+            TRIM(d.periodo_apuracao) = ?
+            OR TRIM(d.periodo_apuracao) = ?
+          )
+        `,
+        [cnpjTeste, periodoSql, competenciaVigente]
+      );
+      if (checkDirect.length > 0 && checkDirect[0].count > 0) {
+        console.error('[Conference] ❌ ERRO: Cliente TEM DCTF mas não foi encontrado na query principal!');
+        console.error('[Conference] ❌ Períodos encontrados diretamente:', checkDirect[0].periodos);
+      }
+    }
     
     // Filtrar clientes SEM DCTF
-    const clientesSemDCTF = todosClientes.filter(cliente => {
-      const cnpjLimpo = cliente.cnpj_limpo?.replace(/\D/g, '');
-      return cnpjLimpo && !cnpjsComDCTF.has(cnpjLimpo);
+    // Normalizar CNPJs para comparação (remover caracteres não numéricos)
+    // Usar a mesma função de normalização para garantir consistência
+    let clientesSemDCTF = todosClientes.filter(cliente => {
+      const cnpjNormalizado = normalizarCNPJ(cliente.cnpj_limpo);
+      if (!cnpjNormalizado) {
+        return false; // Ignorar CNPJs inválidos
+      }
+      const temDCTF = cnpjsComDCTF.has(cnpjNormalizado);
+      return !temDCTF;
     });
     
-    console.log('[Conference] ⚠️ Clientes SEM DCTF na competência vigente:', clientesSemDCTF.length);
+    console.log('[Conference] ⚠️ Clientes SEM DCTF (após filtro por CNPJ normalizado):', clientesSemDCTF.length);
+    
+    // A normalização de CNPJ já foi feita na query principal
+    // Não precisamos de validação adicional, pois a query já garante o match correto
     
     // Converter para DashboardConferenceIssue
     const issues: DashboardConferenceIssue[] = clientesSemDCTF.map(cliente => {

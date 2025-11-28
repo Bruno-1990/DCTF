@@ -14,6 +14,7 @@
     "mysql:demo": "ts-node src/scripts/mysql-demo.ts",
     "import:clientes": "ts-node src/scripts/import-clientes.ts",
     "update:clientes-nome": "ts-node src/scripts/update-clientes-nome.ts",
+    "create:host-dados": "ts-node src/scripts/create-host-dados-table.ts",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write src/**/*.ts",

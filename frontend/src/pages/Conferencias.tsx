@@ -1,10 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ConferenceIssue } from '../services/conferences';
 import { fetchConferenceSummary } from '../services/conferences';
 import { dctfService, type DCTFListItem } from '../services/dctf';
 import { clientesService } from '../services/clientes';
 import { format } from 'date-fns';
+import { api } from '../services/api';
+import type { AxiosError } from 'axios';
 import {
   ClipboardDocumentIcon,
   CheckIcon,
@@ -77,9 +79,17 @@ export default function Conferencias() {
   const [futurePeriodIssues, setFuturePeriodIssues] = useState<ConferenceIssue[]>([]);
   const [retificadoraSequenceIssues, setRetificadoraSequenceIssues] = useState<ConferenceIssue[]>([]);
   const [clientesSemDCTFIssues, setClientesSemDCTFIssues] = useState<ConferenceIssue[]>([]);  // ✅ Clientes sem DCTF na competência vigente
+  const [hostDadosObrigacoes, setHostDadosObrigacoes] = useState<any[]>([]);  // ✅ Obrigações baseadas no Banco SCI (movimento)
+  const [hostDadosLoading, setHostDadosLoading] = useState(false);
+  const [hostDadosError, setHostDadosError] = useState<string | null>(null);
+  const [clientesSemDCTFComMovimento, setClientesSemDCTFComMovimento] = useState<any[]>([]);  // ✅ Clientes sem DCTF mas COM movimento no SCI
+  const [clientesSemDCTFComMovimentoLoading, setClientesSemDCTFComMovimentoLoading] = useState(false);
+  const [clientesSemDCTFComMovimentoError, setClientesSemDCTFComMovimentoError] = useState<string | null>(null);
+  const [competenciaSelecionada, setCompetenciaSelecionada] = useState<{ ano: number; mes: number } | null>(null);
   const [generatedAt, setGeneratedAt] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [expandedRegistros, setExpandedRegistros] = useState<Set<string>>(new Set());
   const [ultimosRegistros, setUltimosRegistros] = useState<Map<string, DCTFListItem[]>>(new Map());
@@ -93,9 +103,168 @@ export default function Conferencias() {
   const [paginaAtualFuture, setPaginaAtualFuture] = useState(1);
   const [paginaAtualSequence, setPaginaAtualSequence] = useState(1);
   const [paginaAtualClientesSemDCTF, setPaginaAtualClientesSemDCTF] = useState(1);
+  const [paginaAtualClientesSemDCTFComMovimento, setPaginaAtualClientesSemDCTFComMovimento] = useState(1);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set()); // Seções fechadas por padrão
   const [mostrarTodasEmpresasSemMovimento, setMostrarTodasEmpresasSemMovimento] = useState(false); // Controla se mostra todas as empresas ou apenas 6
+  const [paginaAtualHostDados, setPaginaAtualHostDados] = useState(1);
   const itensPorPagina = 10;
+
+  // Calcular competência vigente (mês anterior ao atual)
+  const competenciaVigente = useMemo(() => {
+    const hoje = new Date();
+    const mesAtual = hoje.getMonth() + 1;
+    const anoAtual = hoje.getFullYear();
+    const mes = mesAtual === 1 ? 12 : mesAtual - 1;
+    const ano = mesAtual === 1 ? anoAtual - 1 : anoAtual;
+    return { ano, mes };
+  }, []);
+
+  // Inicializar competência selecionada com a vigente
+  useEffect(() => {
+    if (!competenciaSelecionada) {
+      setCompetenciaSelecionada(competenciaVigente);
+    }
+  }, [competenciaVigente, competenciaSelecionada]);
+
+  // Buscar obrigações do Banco SCI
+  useEffect(() => {
+    if (!competenciaSelecionada) return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        setHostDadosLoading(true);
+        setHostDadosError(null);
+
+        const response = await api.get('/host-dados/obrigacoes', {
+          params: {
+            ano: competenciaSelecionada.ano,
+            mes: competenciaSelecionada.mes,
+          },
+        });
+
+        if (!mounted) return;
+
+        if (response.data?.success) {
+          // Se sucesso, mesmo que array vazio, não é erro
+          setHostDadosObrigacoes(response.data.data || []);
+          setHostDadosError(null); // Limpar erro se houver sucesso
+          console.log(`[Conferencias] Obrigações carregadas: ${response.data.data?.length || 0} registros`);
+        } else {
+          // Se não teve sucesso, mas não é erro de conexão, pode ser que não há dados
+          const errorMsg = response.data?.error || 'Não foi possível carregar obrigações.';
+          setHostDadosError(errorMsg);
+          setHostDadosObrigacoes([]);
+        }
+      } catch (err) {
+        if (!mounted) return;
+        const error = err as AxiosError<any>;
+        console.error('[Conferencias] Erro ao carregar obrigações do Banco SCI:', error);
+        console.error('[Conferencias] Response:', error.response?.data);
+        console.error('[Conferencias] Competência:', competenciaSelecionada);
+        
+        let errorMessage = 'Erro ao carregar obrigações baseadas em movimentação SCI.';
+        
+        if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.message) {
+          errorMessage = `${errorMessage} Detalhes: ${error.message}`;
+        }
+        
+        if (error.code === 'ECONNREFUSED' || error.message?.includes('ERR_CONNECTION_REFUSED')) {
+          errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando.';
+        }
+        
+        setHostDadosError(errorMessage);
+        setHostDadosObrigacoes([]);
+      } finally {
+        if (mounted) {
+          setHostDadosLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [competenciaSelecionada]);
+
+  // Buscar clientes sem DCTF mas com movimento no SCI
+  useEffect(() => {
+    if (!competenciaSelecionada) return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        setClientesSemDCTFComMovimentoLoading(true);
+        setClientesSemDCTFComMovimentoError(null);
+
+        console.log(`[Conferencias] Buscando clientes sem DCTF mas com movimento para ${competenciaSelecionada.mes}/${competenciaSelecionada.ano}`);
+
+        const response = await api.get('/host-dados/clientes-sem-dctf-com-movimento', {
+          params: {
+            ano: competenciaSelecionada.ano,
+            mes: competenciaSelecionada.mes,
+          },
+        });
+
+        if (!mounted) return;
+
+        if (response.data?.success) {
+          setClientesSemDCTFComMovimento(response.data.data || []);
+          setClientesSemDCTFComMovimentoError(null);
+          console.log(`[Conferencias] Clientes sem DCTF com movimento carregados: ${response.data.data?.length || 0} registros`);
+        } else {
+          const errorMsg = response.data?.error || 'Erro ao carregar clientes sem DCTF com movimento.';
+          setClientesSemDCTFComMovimentoError(errorMsg);
+          setClientesSemDCTFComMovimento([]);
+        }
+      } catch (err) {
+        if (!mounted) return;
+        const error = err as AxiosError<any>;
+        console.error('[Conferencias] Erro ao carregar clientes sem DCTF com movimento:', error);
+        
+        let errorMessage = 'Erro ao carregar clientes sem DCTF com movimento no SCI.';
+        
+        if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.message) {
+          errorMessage = `${errorMessage} Detalhes: ${error.message}`;
+        }
+        
+        if (error.code === 'ECONNREFUSED' || error.message?.includes('ERR_CONNECTION_REFUSED')) {
+          errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando.';
+        }
+        
+        setClientesSemDCTFComMovimentoError(errorMessage);
+        setClientesSemDCTFComMovimento([]);
+      } finally {
+        if (mounted) {
+          setClientesSemDCTFComMovimentoLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [competenciaSelecionada]);
+
+  // Filtrar por CNPJ se vier da URL
+  const cnpjFiltro = searchParams.get('cnpj');
+  const hostDadosFiltrados = useMemo(() => {
+    if (!cnpjFiltro) return hostDadosObrigacoes;
+    const cnpjLimpo = cnpjFiltro.replace(/\D/g, '');
+    return hostDadosObrigacoes.filter((o) => o.cnpj === cnpjLimpo);
+  }, [hostDadosObrigacoes, cnpjFiltro]);
+
+  // Paginação para Banco SCI
+  const totalPaginasHostDados = Math.ceil(hostDadosFiltrados.length / itensPorPagina);
+  const indiceInicioHostDados = (paginaAtualHostDados - 1) * itensPorPagina;
+  const indiceFimHostDados = indiceInicioHostDados + itensPorPagina;
+  const hostDadosPaginados = useMemo(() => {
+    return hostDadosFiltrados.slice(indiceInicioHostDados, indiceFimHostDados);
+  }, [hostDadosFiltrados, indiceInicioHostDados, indiceFimHostDados]);
 
   useEffect(() => {
     let mounted = true;
@@ -204,16 +373,36 @@ export default function Conferencias() {
       ...retificadoraSequenceIssues,
     ];
 
+    // Contar obrigações do Banco SCI por severidade
+    const hostDadosAlta = hostDadosFiltrados.filter((o) => o.obrigacao === 'SIM' && o.severidade === 'alta').length;
+    const hostDadosMedia = hostDadosFiltrados.filter((o) => o.obrigacao === 'SIM' && o.severidade === 'media').length;
+    const hostDadosBaixa = hostDadosFiltrados.filter((o) => o.obrigacao === 'SIM' && o.severidade === 'baixa').length;
+
+    // Contar clientes sem DCTF com movimento por severidade (baseado em dias até vencimento)
+    const clientesSemDCTFComMovimentoAlta = clientesSemDCTFComMovimento.filter((c) => {
+      const dias = c.diasAteVencimento || 0;
+      return dias < 0 || dias <= 5;
+    }).length;
+    const clientesSemDCTFComMovimentoMedia = clientesSemDCTFComMovimento.filter((c) => {
+      const dias = c.diasAteVencimento || 0;
+      return dias > 5 && dias > 0;
+    }).length;
+
     return {
-      criticas: allIssues.filter(i => i.severity === 'high').length,
-      medias: allIssues.filter(i => i.severity === 'medium').length,
-      baixas: allIssues.filter(i => i.severity === 'low').length,
+      criticas: allIssues.filter(i => i.severity === 'high').length + hostDadosAlta + clientesSemDCTFComMovimentoAlta,
+      medias: allIssues.filter(i => i.severity === 'medium').length + hostDadosMedia + clientesSemDCTFComMovimentoMedia,
+      baixas: allIssues.filter(i => i.severity === 'low').length + hostDadosBaixa,
       clientesSemDCTF: clientesSemDCTFIssues.length,
+      clientesSemDCTFComMovimento: clientesSemDCTFComMovimento.length,
       pendenciasPrazo: filteredIssues.length, // Usar filteredIssues ao invés de issues
       duplicatas: duplicateDeclarationIssues.length,
-      total: allIssues.length + clientesSemDCTFIssues.length,
+      hostDadosObrigacoes: hostDadosFiltrados.filter((o) => o.obrigacao === 'SIM').length,
+      hostDadosAlta,
+      hostDadosMedia,
+      hostDadosBaixa,
+      total: allIssues.length + clientesSemDCTFIssues.length + hostDadosFiltrados.filter((o) => o.obrigacao === 'SIM').length + clientesSemDCTFComMovimento.length,
     };
-  }, [issues, transmissionObligationIssues, missingPeriodIssues, duplicateDeclarationIssues, futurePeriodIssues, retificadoraSequenceIssues, clientesSemDCTFIssues]);
+  }, [issues, transmissionObligationIssues, missingPeriodIssues, duplicateDeclarationIssues, futurePeriodIssues, retificadoraSequenceIssues, clientesSemDCTFIssues, hostDadosFiltrados, clientesSemDCTFComMovimento]);
 
   const toggleSection = (sectionId: string) => {
     setExpandedSections((prev) => {
@@ -468,7 +657,7 @@ export default function Conferencias() {
 
       {/* Cards de Resumo - Estatísticas Principais */}
       <div className="mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7 gap-4">
           {/* Card: Críticas */}
           <button
             onClick={() => scrollToSection('secao-prazos')}
@@ -557,6 +746,21 @@ export default function Conferencias() {
             </div>
             <p className="text-2xl font-bold text-yellow-600 mb-1">{stats.duplicatas}</p>
             <p className="text-xs text-gray-600">Encontradas</p>
+          </button>
+
+          {/* Card: Obrigações Banco SCI */}
+          <button
+            onClick={() => scrollToSection('secao-host-dados')}
+            className="bg-white rounded-lg border-2 border-indigo-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all p-4 text-left group"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-indigo-100 rounded-lg">
+                <BuildingOfficeIcon className="h-5 w-5 text-indigo-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-500">SCI</span>
+            </div>
+            <p className="text-2xl font-bold text-indigo-600 mb-1">{stats.hostDadosObrigacoes || 0}</p>
+            <p className="text-xs text-gray-600">Com Movimento</p>
           </button>
         </div>
       </div>
@@ -754,6 +958,196 @@ export default function Conferencias() {
             )}
 
           </>
+        )}
+      </div>
+
+      {/* Seção de Obrigações baseadas em Movimentação do Banco SCI */}
+      <div id="secao-host-dados" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+        <button
+          onClick={() => toggleSection('host-dados')}
+          className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+        >
+          <div className="flex items-center gap-3 flex-1">
+            {expandedSections.has('host-dados') ? (
+              <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            )}
+            <div className="flex-1 text-left">
+              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                <BuildingOfficeIcon className="h-5 w-5 text-indigo-600" />
+                Obrigações por Movimentação do Banco SCI
+              </h2>
+              <p className="text-sm text-gray-600">
+                Empresas com movimento no SCI (FPG, CTB, FISE, FISS) que ainda não enviaram DCTF para a competência.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            {/* Seletor de competência */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600">Competência:</label>
+              <select
+                value={competenciaSelecionada ? `${competenciaSelecionada.ano}-${competenciaSelecionada.mes}` : ''}
+                onChange={(e) => {
+                  const [ano, mes] = e.target.value.split('-').map(Number);
+                  setCompetenciaSelecionada({ ano, mes });
+                  setPaginaAtualHostDados(1);
+                }}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {(() => {
+                  const hoje = new Date();
+                  const options = [];
+                  for (let i = 0; i < 12; i++) {
+                    const date = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+                    const ano = date.getFullYear();
+                    const mes = date.getMonth() + 1;
+                    const competencia = `${String(mes).padStart(2, '0')}/${ano}`;
+                    options.push(
+                      <option key={`${ano}-${mes}`} value={`${ano}-${mes}`}>
+                        {competencia}
+                      </option>
+                    );
+                  }
+                  return options;
+                })()}
+              </select>
+            </div>
+            <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
+              Total: <span className="text-gray-900">{hostDadosFiltrados.filter((o) => o.obrigacao === 'SIM').length}</span> obrigações
+            </div>
+          </div>
+        </button>
+
+        {expandedSections.has('host-dados') && (
+          <div className="p-6">
+            {hostDadosLoading ? (
+              <div className="text-center py-8">
+                <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p className="text-gray-600">Carregando obrigações...</p>
+              </div>
+            ) : hostDadosError ? (
+              <div className="bg-red-50 border-2 border-red-200 rounded-lg px-4 py-3">
+                <p className="text-sm text-red-800">{hostDadosError}</p>
+              </div>
+            ) : hostDadosPaginados.filter((o) => o.obrigacao === 'SIM').length === 0 ? (
+              <div className="text-center py-8">
+                <BuildingOfficeIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 font-medium">Nenhuma obrigação encontrada</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {competenciaSelecionada
+                    ? `Para ${String(competenciaSelecionada.mes).padStart(2, '0')}/${competenciaSelecionada.ano}`
+                    : 'Selecione uma competência'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Empresa</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Competência</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Movimentos</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status DCTF</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Obrigação</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Prazo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {hostDadosPaginados
+                        .filter((o) => o.obrigacao === 'SIM')
+                        .map((obrigacao) => {
+                          const diasAteVencimento = obrigacao.diasAteVencimento;
+                          const isVencido = diasAteVencimento < 0;
+                          const isProximoVencimento = diasAteVencimento >= 0 && diasAteVencimento <= 5;
+
+                          return (
+                            <tr key={`${obrigacao.cnpj}-${obrigacao.ano}-${obrigacao.mes}`} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{obrigacao.razao_social}</div>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="text-sm text-gray-600 font-mono">{formatCNPJ(obrigacao.cnpj)}</div>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">{obrigacao.competencia}</div>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="flex flex-col gap-1">
+                                  <div className="text-xs text-gray-600">
+                                    {obrigacao.tipos_movimento.join(', ')}
+                                  </div>
+                                  <div className="text-xs font-medium text-gray-900">
+                                    Total: {obrigacao.total_movimentacoes}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {obrigacao.tem_dctf ? (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    <CheckIcon className="h-3 w-3 mr-1" />
+                                    Enviada
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                    <XCircleIcon className="h-3 w-3 mr-1" />
+                                    Não enviada
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                                    obrigacao.severidade === 'alta'
+                                      ? 'bg-red-100 text-red-800 border-red-200'
+                                      : obrigacao.severidade === 'media'
+                                      ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                      : 'bg-blue-100 text-blue-800 border-blue-200'
+                                  }`}
+                                >
+                                  {obrigacao.obrigacao === 'SIM' ? 'SIM' : obrigacao.obrigacao === 'NAO' ? 'NÃO' : 'VERIFICAR'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="text-sm">
+                                  {isVencido ? (
+                                    <span className="text-red-600 font-semibold">Vencido ({Math.abs(diasAteVencimento)} dias)</span>
+                                  ) : isProximoVencimento ? (
+                                    <span className="text-amber-600 font-semibold">Vence em {diasAteVencimento} dias</span>
+                                  ) : (
+                                    <span className="text-gray-600">{diasAteVencimento} dias</span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {hostDadosFiltrados.filter((o) => o.obrigacao === 'SIM').length > itensPorPagina && (
+                  <div className="mt-4">
+                    <Pagination
+                      currentPage={paginaAtualHostDados}
+                      onPageChange={setPaginaAtualHostDados}
+                      totalPages={totalPaginasHostDados}
+                      totalItems={hostDadosFiltrados.filter((o) => o.obrigacao === 'SIM').length}
+                      itemsPerPage={itensPorPagina}
+                      itemLabel="obrigação"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
 
@@ -1326,6 +1720,209 @@ export default function Conferencias() {
           )}
         </div>
       )}
+
+      {/* Seção de Clientes sem DCTF mas COM Movimento no SCI - Accordion */}
+      <div id="secao-clientes-sem-dctf-com-movimento" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+        <button
+          onClick={() => toggleSection('clientes-sem-dctf-com-movimento')}
+          className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+        >
+          <div className="flex items-center gap-3 flex-1">
+            {expandedSections.has('clientes-sem-dctf-com-movimento') ? (
+              <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
+            )}
+            <div className="flex-1 text-left">
+              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                <ExclamationTriangleIcon className="h-5 w-5 text-red-600" />
+                Clientes sem DCTF mas COM Movimento no SCI
+              </h2>
+              <p className="text-sm text-gray-600">
+                Clientes que <strong>NÃO têm DCTF</strong> na competência vigente, mas <strong>TÊM movimento</strong> no Banco SCI no mês anterior.
+                Estes clientes têm <strong>obrigação de enviar DCTF</strong> conforme IN RFB 2.237/2024.
+              </p>
+            </div>
+          </div>
+          <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
+            {clientesSemDCTFComMovimentoLoading ? (
+              <span className="text-gray-500">Carregando...</span>
+            ) : (
+              <>
+                Total: <span className="text-gray-900">{clientesSemDCTFComMovimento.length}</span> clientes
+              </>
+            )}
+          </div>
+        </button>
+        
+        {expandedSections.has('clientes-sem-dctf-com-movimento') && (
+          <>
+            {clientesSemDCTFComMovimentoLoading ? (
+              <div className="px-6 py-8 text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <p className="mt-2 text-sm text-gray-600">Carregando clientes sem DCTF com movimento...</p>
+              </div>
+            ) : clientesSemDCTFComMovimentoError ? (
+              <div className="px-6 py-4">
+                <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+                  <strong>Erro:</strong> {clientesSemDCTFComMovimentoError}
+                </div>
+              </div>
+            ) : clientesSemDCTFComMovimento.length === 0 ? (
+              <div className="px-6 py-8 text-center">
+                <InformationCircleIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-sm text-gray-600">
+                  Nenhum cliente encontrado sem DCTF mas com movimento no SCI para a competência {competenciaSelecionada ? `${String(competenciaSelecionada.mes).padStart(2, '0')}/${competenciaSelecionada.ano}` : 'selecionada'}.
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Isso pode indicar que todos os clientes com movimento já têm DCTF enviada, ou que não há dados sincronizados no Banco SCI.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap min-w-[140px]">CNPJ</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Competência Obrigação</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Movimento em</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Tipos Movimento</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Total Movimentações</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Dias até Vencimento</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Possível Obrigação de Envio</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-600">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {clientesSemDCTFComMovimento
+                        .slice((paginaAtualClientesSemDCTFComMovimento - 1) * itensPorPagina, paginaAtualClientesSemDCTFComMovimento * itensPorPagina)
+                        .map((cliente, index) => {
+                          const diasAteVencimento = cliente.diasAteVencimento || 0;
+                          const severidade = diasAteVencimento < 0 ? 'high' : diasAteVencimento <= 5 ? 'high' : 'medium';
+                          
+                          return (
+                            <tr key={`${cliente.cnpj}-${index}`} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-gray-800 font-medium text-xs">{cliente.razao_social || '—'}</td>
+                              <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono">{formatCNPJ(cliente.cnpj)}</span>
+                                  <button
+                                    onClick={() => copyToClipboard(cliente.cnpj, `movimento-${cliente.cnpj}`)}
+                                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                                    title="Copiar CNPJ"
+                                  >
+                                    {copiedId === `movimento-${cliente.cnpj}` ? (
+                                      <CheckIcon className="w-3.5 h-3.5 text-green-600" />
+                                    ) : (
+                                      <ClipboardDocumentIcon className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 text-xs">
+                                <span className="font-semibold text-red-600">{cliente.competencia_obrigacao}</span>
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 text-xs">{cliente.competencia_movimento}</td>
+                              <td className="px-4 py-3 text-gray-600 text-xs">
+                                <div className="flex flex-wrap gap-1">
+                                  {cliente.tipos_movimento && cliente.tipos_movimento.length > 0 ? (
+                                    cliente.tipos_movimento.map((tipo: string, idx: number) => (
+                                      <span key={idx} className="inline-block bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-medium">
+                                        {tipo}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-gray-400">—</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 text-xs font-semibold">
+                                {cliente.total_movimentacoes?.toLocaleString('pt-BR') || '0'}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 text-xs">{formatDate(cliente.prazoVencimento)}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                                  diasAteVencimento < 0 
+                                    ? 'bg-red-100 text-red-800 border-red-200' 
+                                    : diasAteVencimento <= 5 
+                                    ? 'bg-red-100 text-red-800 border-red-200'
+                                    : 'bg-amber-100 text-amber-800 border-amber-200'
+                                }`}>
+                                  {diasAteVencimento < 0 
+                                    ? `Vencido há ${Math.abs(diasAteVencimento)} dia${Math.abs(diasAteVencimento) !== 1 ? 's' : ''}`
+                                    : `${diasAteVencimento} dia${diasAteVencimento !== 1 ? 's' : ''}`
+                                  }
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                {cliente.possivelObrigacaoEnvio ? (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center rounded-full bg-red-100 text-red-800 border border-red-200 px-2.5 py-0.5 text-xs font-medium">
+                                      <ExclamationTriangleIcon className="w-3 h-3 mr-1" />
+                                      Sim
+                                    </span>
+                                    {cliente.motivoObrigacao && (
+                                      <span className="text-xs text-gray-600" title={cliente.motivoObrigacao}>
+                                        {cliente.motivoObrigacao.length > 50 
+                                          ? `${cliente.motivoObrigacao.substring(0, 50)}...` 
+                                          : cliente.motivoObrigacao}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center rounded-full bg-gray-100 text-gray-800 border border-gray-200 px-2.5 py-0.5 text-xs font-medium">
+                                      <InformationCircleIcon className="w-3 h-3 mr-1" />
+                                      Verificar
+                                    </span>
+                                    {cliente.motivoObrigacao && (
+                                      <span className="text-xs text-gray-600" title={cliente.motivoObrigacao}>
+                                        {cliente.motivoObrigacao.length > 50 
+                                          ? `${cliente.motivoObrigacao.substring(0, 50)}...` 
+                                          : cliente.motivoObrigacao}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() => {
+                                    const cnpjLimpo = cliente.cnpj.replace(/\D/g, '');
+                                    navigate(`/clientes?search=${cnpjLimpo}&tab=lancamentos`);
+                                  }}
+                                  className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg border border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-colors"
+                                  title="Ver lançamentos deste cliente"
+                                >
+                                  Ver Lançamentos
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+                {clientesSemDCTFComMovimento.length > itensPorPagina && (
+                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                    <Pagination
+                      currentPage={paginaAtualClientesSemDCTFComMovimento}
+                      totalPages={Math.ceil(clientesSemDCTFComMovimento.length / itensPorPagina)}
+                      totalItems={clientesSemDCTFComMovimento.length}
+                      itemsPerPage={itensPorPagina}
+                      onPageChange={setPaginaAtualClientesSemDCTFComMovimento}
+                      itemLabel="cliente"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Seção de Clientes sem DCTF na Competência Vigente - Accordion */}
       {clientesSemDCTFIssues.length > 0 && (

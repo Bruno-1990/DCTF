@@ -65,3 +65,12 @@ SHOW COLUMNS FROM clientes;
 
 
 
+
+
+
+
+
+
+
+
+

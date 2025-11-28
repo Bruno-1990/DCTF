@@ -131,6 +131,22 @@ export const dctfService = {
     return response.data;
   },
 
+  async deleteFromSupabase(): Promise<{ 
+    success: boolean; 
+    message?: string; 
+    error?: string;
+    data?: {
+      deletedDeclarations: number;
+      deletedData: number;
+    };
+  }> {
+    const response = await api.post('/dctf/admin/delete-supabase', {
+      confirm: true,
+      confirmationCode: 'DELETAR_SUPABASE',
+    });
+    return response.data;
+  },
+
   async processSpreadsheet(file: File): Promise<{ dctfId: string; message: string }> {
     const formData = new FormData();
     formData.append('file', file);

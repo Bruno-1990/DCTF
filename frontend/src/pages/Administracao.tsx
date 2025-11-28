@@ -44,6 +44,12 @@ const Administracao: React.FC = () => {
   const [fixingSchema, setFixingSchema] = useState(false);
   const [schemaFixSuccess, setSchemaFixSuccess] = useState<string | null>(null);
   const [schemaFixError, setSchemaFixError] = useState<string | null>(null);
+  const [showDeleteSupabaseModal, setShowDeleteSupabaseModal] = useState(false);
+  const [deleteSupabaseConfirmCode, setDeleteSupabaseConfirmCode] = useState('');
+  const [deleteSupabaseConfirmText, setDeleteSupabaseConfirmText] = useState('');
+  const [deletingSupabase, setDeletingSupabase] = useState(false);
+  const [deleteSupabaseSuccess, setDeleteSupabaseSuccess] = useState<string | null>(null);
+  const [deleteSupabaseError, setDeleteSupabaseError] = useState<string | null>(null);
   
   // Estados para consulta em lote na Receita
   const [dataInicialConsulta, setDataInicialConsulta] = useState('');
@@ -204,6 +210,40 @@ const Administracao: React.FC = () => {
       setSchemaFixError(err.response?.data?.error || err.message || 'Erro ao corrigir schema');
     } finally {
       setFixingSchema(false);
+    }
+  };
+
+  const handleDeleteFromSupabase = async () => {
+    if (deleteSupabaseConfirmCode !== 'DELETAR_SUPABASE' || deleteSupabaseConfirmText !== 'CONFIRMAR') {
+      setDeleteSupabaseError('Código de confirmação ou texto incorretos. Por favor, verifique.');
+      return;
+    }
+
+    setDeletingSupabase(true);
+    setDeleteSupabaseError(null);
+    setDeleteSupabaseSuccess(null);
+
+    try {
+      const result = await dctfService.deleteFromSupabase();
+      if (result.success) {
+        const deletedCount = result.data?.deletedDeclarations || 0;
+        const deletedDataCount = result.data?.deletedData || 0;
+        const message = result.message || 
+          `Exclusão do Supabase concluída com sucesso! ${deletedCount} declarações e ${deletedDataCount} registros de dados removidos.`;
+        setDeleteSupabaseSuccess(message);
+        setTimeout(() => {
+          setShowDeleteSupabaseModal(false);
+          setDeleteSupabaseConfirmCode('');
+          setDeleteSupabaseConfirmText('');
+          setDeleteSupabaseError(null);
+        }, 5000);
+      } else {
+        setDeleteSupabaseError(result.error || 'Erro ao deletar dados do Supabase');
+      }
+    } catch (err: any) {
+      setDeleteSupabaseError(err.response?.data?.error || 'Erro ao deletar dados do Supabase');
+    } finally {
+      setDeletingSupabase(false);
     }
   };
 
@@ -663,6 +703,155 @@ const Administracao: React.FC = () => {
                 className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
                 {clearing ? 'Limpando...' : 'Confirmar e Limpar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Seção de Exclusão do Supabase */}
+      <div className="bg-orange-50 border-2 border-orange-200 shadow-lg rounded-lg p-6 mb-6">
+        <div className="flex items-start mb-4">
+          <TrashIcon className="h-6 w-6 text-orange-600 mr-3 mt-1" />
+          <div className="flex-1">
+            <h2 className="text-xl font-semibold text-orange-900 mb-2">Exclusão de Dados do Supabase</h2>
+            <p className="text-sm text-orange-700 mb-4">
+              Esta operação irá <strong>deletar permanentemente</strong> todas as declarações DCTF e seus dados relacionados do banco de dados <strong>Supabase</strong>.
+              Esta ação é <strong>irreversível</strong> e deve ser executada antes de colocar novos registros no Supabase.
+            </p>
+            
+            <div className="bg-white rounded-lg p-4 border border-orange-300 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será deletado (apenas no Supabase):</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
+                <li>Todas as declarações da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code> no <strong>Supabase</strong></li>
+                <li>Todos os dados relacionados da tabela <code className="bg-gray-100 px-1 rounded">dctf_dados</code> no <strong>Supabase</strong></li>
+                <li className="text-green-700 font-semibold">✓ Os dados no MySQL NÃO serão afetados</li>
+              </ul>
+              
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Fluxo Recomendado:</h3>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside mb-4">
+                <li><strong>1. Deletar dados do Supabase</strong> (este botão) - Remove dados antigos do Supabase</li>
+                <li><strong>2. Colocar novos registros no Supabase</strong> - Via N8N ou importação manual</li>
+                <li><strong>3. Sincronizar do Supabase para MySQL</strong> (botão abaixo) - Busca dados novos do Supabase e insere no MySQL</li>
+              </ol>
+              
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li><strong>Sempre</strong> faça um backup antes de executar esta operação</li>
+                <li>Execute esta operação antes de colocar novos registros no Supabase</li>
+                <li>Verifique se não há processos importantes em andamento</li>
+                <li>Certifique-se de que todos os relatórios necessários foram gerados</li>
+              </ul>
+            </div>
+
+            {deleteSupabaseSuccess && (
+              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
+                {deleteSupabaseSuccess}
+              </div>
+            )}
+
+            {deleteSupabaseError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
+                {deleteSupabaseError}
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowDeleteSupabaseModal(true)}
+              disabled={deletingSupabase}
+              className="flex items-center gap-2 bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            >
+              <TrashIcon className="h-5 w-5" />
+              Deletar Dados do Supabase
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal de Confirmação - Exclusão Supabase */}
+      {showDeleteSupabaseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start mb-4">
+              <ExclamationTriangleIcon className="h-6 w-6 text-orange-600 mr-3 mt-1" />
+              <h3 className="text-xl font-bold text-orange-900">Confirmar Exclusão de Dados do Supabase</h3>
+            </div>
+            
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+              <p className="text-sm text-orange-800 font-semibold mb-2">
+                ⚠️ ATENÇÃO: Esta operação é IRREVERSÍVEL
+              </p>
+              <p className="text-sm text-orange-700 mb-2">
+                Esta ação irá deletar permanentemente:
+              </p>
+              <ul className="text-sm text-orange-700 space-y-1 list-disc list-inside mb-2">
+                <li>Todas as declarações DCTF do Supabase</li>
+                <li>Todos os dados relacionados (dctf_dados) do Supabase</li>
+              </ul>
+              <p className="text-sm text-orange-800 font-semibold">
+                Certifique-se de ter feito um backup antes de continuar!
+              </p>
+            </div>
+            
+            <div className="space-y-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Digite o código de confirmação: <strong className="text-orange-600">DELETAR_SUPABASE</strong>
+                </label>
+                <input
+                  type="text"
+                  value={deleteSupabaseConfirmCode}
+                  onChange={(e) => setDeleteSupabaseConfirmCode(e.target.value)}
+                  placeholder="DELETAR_SUPABASE"
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Digite <strong className="text-orange-600">"CONFIRMAR"</strong> para prosseguir:
+                </label>
+                <input
+                  type="text"
+                  value={deleteSupabaseConfirmText}
+                  onChange={(e) => setDeleteSupabaseConfirmText(e.target.value)}
+                  placeholder="CONFIRMAR"
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
+            </div>
+
+            {deleteSupabaseError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4 text-sm">
+                {deleteSupabaseError}
+              </div>
+            )}
+
+            {deleteSupabaseSuccess && (
+              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4 text-sm">
+                {deleteSupabaseSuccess}
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowDeleteSupabaseModal(false);
+                  setDeleteSupabaseConfirmCode('');
+                  setDeleteSupabaseConfirmText('');
+                  setDeleteSupabaseError(null);
+                  setDeleteSupabaseSuccess(null);
+                }}
+                disabled={deletingSupabase}
+                className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 disabled:opacity-50 font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteFromSupabase}
+                disabled={deletingSupabase || deleteSupabaseConfirmCode !== 'DELETAR_SUPABASE' || deleteSupabaseConfirmText !== 'CONFIRMAR'}
+                className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                {deletingSupabase ? 'Deletando...' : 'Confirmar e Deletar'}
               </button>
             </div>
           </div>

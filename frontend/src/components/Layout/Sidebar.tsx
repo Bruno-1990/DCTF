@@ -8,7 +8,6 @@ import {
   UsersIcon,
   ChartBarIcon,
   Cog6ToothIcon,
-  CreditCardIcon,
 } from '@heroicons/react/24/outline';
 
 const navigation = [
@@ -17,7 +16,6 @@ const navigation = [
   { name: 'Conferências', href: '/conferencias', icon: ClipboardDocumentCheckIcon },
   { name: 'DCTF', href: '/dctf', icon: DocumentTextIcon },
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },
-  { name: 'Pagamentos', href: '/pagamentos', icon: CreditCardIcon },
   { name: 'Relatórios', href: '/relatorios', icon: ChartBarIcon },
   { name: 'Situação Fiscal', href: '/situacao-fiscal', icon: DocumentTextIcon },
   { name: 'Administração', href: '/administracao', icon: Cog6ToothIcon },
@@ -75,7 +73,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
               >
                 {/* Barra azulada com transição do meio para as bordas */}
                 <div 
-                  className={`absolute inset-0 bg-blue-100 transition-all duration-500 ease-out ${
+                  className={`absolute inset-0 bg-blue-100 rounded-xl transition-all duration-500 ease-out ${
                     active 
                       ? 'scale-x-100 opacity-100' 
                       : 'scale-x-0 opacity-0 group-hover:scale-x-100 group-hover:opacity-100'

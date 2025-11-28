@@ -55,3 +55,5 @@ WHERE TABLE_SCHEMA = 'dctf_web'
   AND REFERENCED_TABLE_NAME = 'clientes';
 -- (Deve retornar vazio)
 
+
+

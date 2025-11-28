@@ -12,7 +12,6 @@ import DCTFDadosPage from '../pages/DCTFDadosPage';
 import AdminDashboard from '../pages/AdminDashboard';
 import Conferencias from '../pages/Conferencias';
 import Administracao from '../pages/Administracao';
-import Pagamentos from '../pages/Pagamentos';
 import SituacaoFiscal from '../pages/SituacaoFiscal';
 
 const router = createBrowserRouter([
@@ -52,10 +51,6 @@ const router = createBrowserRouter([
       {
         path: 'dctf/:id/dados',
         element: <DCTFDadosPage />,
-      },
-      {
-        path: 'pagamentos',
-        element: <Pagamentos />,
       },
       {
         path: 'relatorios',

@@ -183,3 +183,5 @@ WHERE TABLE_NAME = 'dctf_declaracoes'
 3. ✅ Verifique os logs de erro (agora mais detalhados)
 4. ✅ Corrija problemas específicos se necessário
 
+
+

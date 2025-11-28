@@ -151,3 +151,5 @@ Após corrigir o schema:
 3. ✅ Verifique se os dados foram sincronizados corretamente
 4. ✅ Se ainda houver erros, verifique os logs para detalhes específicos
 
+
+

@@ -40,7 +40,7 @@ const cards = [
   {
     title: "Pagamentos",
     description: "Consulte e gerencie informações de pagamentos da Receita Federal.",
-    href: "/pagamentos",
+    href: "/clientes?tab=pagamentos",
     icon: CreditCardIcon,
   },
   {

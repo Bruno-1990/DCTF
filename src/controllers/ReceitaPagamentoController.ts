@@ -424,6 +424,7 @@ export class ReceitaPagamentoController {
         }
         
         return {
+          id: item.id, // ID do pagamento no banco de dados
           cnpj: cnpjLimpo.length === 14 ? cnpjLimpo : item.cnpj_contribuinte, // Retornar CNPJ limpo se válido
           clienteNome: clienteNome,
           clienteId: cliente?.id || undefined,
@@ -464,6 +465,152 @@ export class ReceitaPagamentoController {
         error: error instanceof Error ? error.message : 'Erro desconhecido',
       };
 
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * DELETE /api/receita-pagamentos/:id
+   * Exclui um pagamento por ID, todos os pagamentos de um número de documento, ou todos os pagamentos de um cliente
+   */
+  async excluirPagamento(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { numeroDocumento, cnpj } = req.query; // Opcional: se fornecido, exclui todos os registros do documento ou cliente
+
+      if (!id && !numeroDocumento && !cnpj) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'ID do pagamento, número de documento ou CNPJ não fornecido',
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      if (cnpj && typeof cnpj === 'string') {
+        // Excluir todos os pagamentos do cliente por CNPJ
+        const totalExcluidos = await this.receitaPagamentoModel.excluirPagamentosPorCNPJ(cnpj);
+        const response: ApiResponse = {
+          success: true,
+          data: { 
+            message: `${totalExcluidos} pagamento(s) do cliente excluído(s) com sucesso`,
+            totalExcluidos 
+          },
+        };
+        res.json(response);
+      } else if (numeroDocumento && typeof numeroDocumento === 'string') {
+        // Excluir todos os registros relacionados ao número de documento
+        const totalExcluidos = await this.receitaPagamentoModel.excluirPagamentosPorNumeroDocumento(numeroDocumento);
+        const response: ApiResponse = {
+          success: true,
+          data: { 
+            message: `${totalExcluidos} registro(s) excluído(s) com sucesso`,
+            totalExcluidos 
+          },
+        };
+        res.json(response);
+      } else if (id) {
+        // Excluir apenas o registro específico
+        await this.receitaPagamentoModel.excluirPagamento(id);
+        const response: ApiResponse = {
+          success: true,
+          data: { message: 'Pagamento excluído com sucesso' },
+        };
+        res.json(response);
+      }
+    } catch (error: any) {
+      console.error('[ReceitaPagamentoController] Erro ao excluir pagamento:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: error.message || 'Erro ao excluir pagamento',
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * GET /api/receita-pagamentos/comprovante
+   * Busca comprovante de pagamento na Receita Federal por CNPJ e número do documento
+   */
+  async buscarComprovante(req: Request, res: Response): Promise<void> {
+    try {
+      const { cnpj, numeroDocumento } = req.query;
+
+      if (!cnpj || typeof cnpj !== 'string') {
+        const response: ApiResponse = {
+          success: false,
+          error: 'CNPJ não fornecido',
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      if (!numeroDocumento || typeof numeroDocumento !== 'string') {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Número do documento não fornecido',
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      // Importar ReceitaFederalService dinamicamente
+      const { ReceitaFederalService } = await import('../services/ReceitaFederalService');
+      const receitaService = new ReceitaFederalService();
+
+      const comprovante = await receitaService.buscarComprovantePagamento(cnpj, numeroDocumento);
+
+      const response: ApiResponse = {
+        success: true,
+        data: comprovante,
+        message: 'Comprovante encontrado com sucesso',
+      };
+      res.json(response);
+    } catch (error: any) {
+      console.error('[ReceitaPagamentoController] Erro ao buscar comprovante:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: error.message || 'Erro ao buscar comprovante na Receita Federal',
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * GET /api/receita-pagamentos/e-processos
+   * Consulta processos eletrônicos (E-Processos) na Receita Federal por CNPJ
+   */
+  async consultarEProcessos(req: Request, res: Response): Promise<void> {
+    try {
+      const { cnpj } = req.query;
+
+      if (!cnpj || typeof cnpj !== 'string') {
+        const response: ApiResponse = {
+          success: false,
+          error: 'CNPJ não fornecido',
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      // Importar ReceitaFederalService dinamicamente
+      const { ReceitaFederalService } = await import('../services/ReceitaFederalService');
+      const receitaService = new ReceitaFederalService();
+
+      const processos = await receitaService.consultarEProcessos(cnpj);
+
+      const response: ApiResponse = {
+        success: true,
+        data: processos,
+        message: 'E-Processos consultados com sucesso',
+      };
+      res.json(response);
+    } catch (error: any) {
+      console.error('[ReceitaPagamentoController] Erro ao consultar E-Processos:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: error.message || 'Erro ao consultar E-Processos na Receita Federal',
+      };
       res.status(500).json(response);
     }
   }

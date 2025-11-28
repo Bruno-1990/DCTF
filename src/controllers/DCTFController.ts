@@ -781,4 +781,158 @@ export class DCTFController {
       });
     }
   }
+
+  /**
+   * Deletar todas as declarações DCTF do Supabase (operação administrativa)
+   * ATENÇÃO: Esta operação é IRREVERSÍVEL e deleta dados diretamente do Supabase
+   */
+  async deletarDoSupabase(req: Request, res: Response): Promise<void> {
+    try {
+      // Verificar confirmação
+      const { confirm, confirmationCode } = req.body;
+      if (!confirm || confirmationCode !== 'DELETAR_SUPABASE') {
+        res.status(400).json({
+          success: false,
+          error: 'Confirmação inválida. É necessário confirmar explicitamente com o código correto.',
+        });
+        return;
+      }
+
+      // Verificar se Supabase está disponível
+      const { supabaseAdmin, supabase } = await import('../config/database');
+      const supabaseClient = supabaseAdmin || supabase;
+      
+      if (!supabaseClient) {
+        res.status(400).json({
+          success: false,
+          error: 'Supabase não está configurado. Configure SUPABASE_URL e SUPABASE_ANON_KEY no .env',
+        });
+        return;
+      }
+
+      // Log da operação
+      console.log(`[ADMIN] Exclusão de dados do Supabase iniciada por: ${req.ip} em ${new Date().toISOString()}`);
+
+      // 1. Contar registros antes da exclusão
+      const { count: countBefore } = await supabaseClient
+        .from('dctf_declaracoes')
+        .select('*', { count: 'exact', head: true });
+
+      const totalDeclaracoes = countBefore || 0;
+      console.log(`[ADMIN] Total de declarações no Supabase: ${totalDeclaracoes}`);
+
+      if (totalDeclaracoes === 0) {
+        res.json({
+          success: true,
+          message: 'Nenhuma declaração encontrada no Supabase para deletar.',
+          data: {
+            deletedDeclarations: 0,
+          },
+        });
+        return;
+      }
+
+      // 2. Deletar dados relacionados primeiro (dctf_dados) em lotes
+      console.log('[ADMIN] Deletando dados relacionados (dctf_dados)...');
+      let deletedDados = 0;
+      const batchSize = 1000;
+      
+      while (true) {
+        // Buscar um lote de IDs de dctf_dados
+        const { data: dadosBatch, error: fetchError } = await supabaseClient
+          .from('dctf_dados')
+          .select('id')
+          .limit(batchSize);
+
+        if (fetchError) {
+          console.error('[ADMIN] Erro ao buscar dctf_dados:', fetchError);
+          break;
+        }
+
+        if (!dadosBatch || dadosBatch.length === 0) {
+          break; // Não há mais registros
+        }
+
+        // Deletar o lote
+        const ids = dadosBatch.map((d: any) => d.id);
+        const { error: deleteError } = await supabaseClient
+          .from('dctf_dados')
+          .delete()
+          .in('id', ids);
+
+        if (deleteError) {
+          console.error('[ADMIN] Erro ao deletar lote de dctf_dados:', deleteError);
+          break;
+        }
+
+        deletedDados += ids.length;
+        console.log(`[ADMIN] Deletados ${deletedDados} registros de dctf_dados...`);
+      }
+
+      console.log(`[ADMIN] Total de dctf_dados deletados: ${deletedDados}`);
+
+      // 3. Deletar declarações (dctf_declaracoes) em lotes
+      console.log('[ADMIN] Deletando declarações (dctf_declaracoes)...');
+      let deletedDeclaracoes = 0;
+
+      while (true) {
+        // Buscar um lote de IDs de declarações
+        const { data: declaracoesBatch, error: fetchError } = await supabaseClient
+          .from('dctf_declaracoes')
+          .select('id')
+          .limit(batchSize);
+
+        if (fetchError) {
+          console.error('[ADMIN] Erro ao buscar dctf_declaracoes:', fetchError);
+          res.status(500).json({
+            success: false,
+            error: `Erro ao buscar declarações do Supabase: ${fetchError.message}`,
+          });
+          return;
+        }
+
+        if (!declaracoesBatch || declaracoesBatch.length === 0) {
+          break; // Não há mais registros
+        }
+
+        // Deletar o lote
+        const ids = declaracoesBatch.map((d: any) => d.id);
+        const { error: deleteError } = await supabaseClient
+          .from('dctf_declaracoes')
+          .delete()
+          .in('id', ids);
+
+        if (deleteError) {
+          console.error('[ADMIN] Erro ao deletar lote de dctf_declaracoes:', deleteError);
+          res.status(500).json({
+            success: false,
+            error: `Erro ao deletar declarações do Supabase: ${deleteError.message}`,
+          });
+          return;
+        }
+
+        deletedDeclaracoes += ids.length;
+        console.log(`[ADMIN] Deletadas ${deletedDeclaracoes}/${totalDeclaracoes} declarações...`);
+      }
+
+      // Log de sucesso
+      console.log(`[ADMIN] Exclusão do Supabase concluída: ${deletedDeclaracoes} declarações e ${deletedDados} dados deletados`);
+
+      res.json({
+        success: true,
+        message: `Dados deletados do Supabase com sucesso. ${deletedDeclaracoes} declarações e ${deletedDados} registros de dados removidos.`,
+        data: {
+          deletedDeclarations: deletedDeclaracoes,
+          deletedData: deletedDados,
+        },
+      });
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao deletar dados do Supabase:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor ao deletar dados do Supabase',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
 }

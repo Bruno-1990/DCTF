@@ -64,6 +64,11 @@ router.post('/admin/fix-schema', (req, res) => {
   dctfController.corrigirSchemaClienteId(req, res);
 });
 
+// POST /api/dctf/admin/delete-supabase - Deletar todas as declarações do Supabase (operação administrativa)
+router.post('/admin/delete-supabase', (req, res) => {
+  dctfController.deletarDoSupabase(req, res);
+});
+
 // POST /api/dctf - Criar declaração
 router.post('/', validate(dctfSchemas.create), (req, res) => {
   dctfController.criarDeclaracao(req, res);
