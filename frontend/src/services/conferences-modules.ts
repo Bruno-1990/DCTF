@@ -2,6 +2,8 @@
  * Serviço para buscar dados de conferências (Nova estrutura modular)
  */
 
+import api from './api';
+
 export interface ClienteSemDCTFVigente {
   id: string;
   cnpj: string;
@@ -28,6 +30,68 @@ export interface ClienteSemDCTFComMovimento {
   motivoObrigacao?: string;
 }
 
+export interface DCTFForaDoPrazo {
+  id: string;
+  cnpj: string;
+  razao_social: string | null;
+  periodo_apuracao: string;
+  data_transmissao: string;
+  data_vencimento: string;
+  dias_atraso: number;
+  situacao: string | null;
+  tipo: string | null;
+  severidade: 'high' | 'medium' | 'low';
+  mensagem: string;
+}
+
+export interface DCTFPeriodoInconsistente {
+  id: string;
+  cnpj: string;
+  razao_social: string | null;
+  periodo_apuracao: string;
+  periodo_esperado: string;
+  data_transmissao: string;
+  situacao: string | null;
+  tipo: string | null;
+  severidade: 'high' | 'medium' | 'low';
+  mensagem: string;
+}
+
+export interface ClienteSemMovimentacao {
+  id: string;
+  cnpj: string;
+  razao_social: string;
+  ultima_movimentacao: string | null;
+  meses_sem_movimentacao: number;
+  ultima_dctf: string | null;
+  severidade: 'high' | 'medium' | 'low';
+  mensagem: string;
+}
+
+export interface ClienteHistoricoAtraso {
+  id: string;
+  cnpj: string;
+  razao_social: string | null;
+  total_dctfs_atrasadas: number;
+  total_dctfs: number;
+  percentual_atraso: number;
+  ultima_dctf_atrasada: string | null;
+  dias_atraso_medio: number;
+  severidade: 'high' | 'medium' | 'low';
+  mensagem: string;
+}
+
+export interface ClienteDispensadoDCTF {
+  id: string;
+  cnpj: string;
+  razao_social: string;
+  periodo_original_sem_movimento: string;
+  data_transmissao_original: string;
+  competencia_vigente: string;
+  tem_movimentacao_atual: boolean;
+  mensagem: string;
+}
+
 export interface ConferenceSummary {
   generatedAt: string;
   competenciaVigente: {
@@ -38,10 +102,20 @@ export interface ConferenceSummary {
   modulos: {
     clientesSemDCTFVigente: ClienteSemDCTFVigente[];
     clientesSemDCTFComMovimento: ClienteSemDCTFComMovimento[];
+    dctfsForaDoPrazo: DCTFForaDoPrazo[];
+    dctfsPeriodoInconsistente: DCTFPeriodoInconsistente[];
+    clientesSemMovimentacao: ClienteSemMovimentacao[];
+    clientesHistoricoAtraso: ClienteHistoricoAtraso[];
+    clientesDispensadosDCTF: ClienteDispensadoDCTF[];
   };
   estatisticas: {
     totalClientesSemDCTFVigente: number;
     totalClientesSemDCTFComMovimento: number;
+    totalDCTFsForaDoPrazo: number;
+    totalDCTFsPeriodoInconsistente: number;
+    totalClientesSemMovimentacao: number;
+    totalClientesHistoricoAtraso: number;
+    totalClientesDispensadosDCTF: number;
     totalIssues: number;
   };
 }
@@ -51,19 +125,20 @@ export interface ConferenceSummary {
  */
 export async function fetchConferenceSummary(): Promise<ConferenceSummary> {
   try {
-    const response = await fetch('/api/conferences/summary');
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const errorMessage = errorData.error || errorData.message || `Erro ${response.status}: ${response.statusText}`;
-      throw new Error(errorMessage);
+    const response = await api.get('/conferencias/summary');
+    return response.data.data; // A resposta vem como { success: true, data: {...} }
+  } catch (error: any) {
+    console.error('Erro ao buscar conferências:', error);
+    if (error.response) {
+      // Erro da API
+      throw new Error(error.response.data?.error || `Erro ${error.response.status}: ${error.response.statusText}`);
+    } else if (error.request) {
+      // Requisição feita mas sem resposta
+      throw new Error('Erro ao conectar com o servidor. Verifique se o backend está rodando.');
+    } else {
+      // Erro ao configurar a requisição
+      throw new Error(error.message || 'Erro desconhecido ao carregar conferências.');
     }
-    const data = await response.json();
-    return data.data; // A resposta vem como { success: true, data: {...} }
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error('Erro ao conectar com o servidor. Verifique se o backend está rodando.');
   }
 }
 

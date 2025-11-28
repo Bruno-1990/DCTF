@@ -23,6 +23,7 @@ import pagamentosRoutes from './routes/pagamentos';
 import receitaPagamentosRoutes from './routes/receita-pagamentos';
 import receitaRoutes from './routes/receita';
 import conferenciasRoutes from './routes/conferencias';
+import conferencesRoutes from './routes/conferences';
 import situacaoFiscalRoutes from './routes/situacao-fiscal';
 import hostDadosRoutes from './routes/host-dados';
 
@@ -130,6 +131,7 @@ class Server {
     this.app.use('/api/receita-pagamentos', receitaPagamentosRoutes);
     this.app.use('/api/receita', receitaRoutes);
     this.app.use('/api/conferencias', conferenciasRoutes);
+    this.app.use('/api/conferences', conferencesRoutes);
     this.app.use('/api/situacao-fiscal', situacaoFiscalRoutes);
     this.app.use('/api/host-dados', hostDadosRoutes);
 

@@ -4,13 +4,16 @@
  * Objetivo: Listar todos os clientes cadastrados que NÃO têm DCTF enviada
  * para a competência vigente (mês anterior à data atual).
  * 
+ * IMPORTANTE: Considera apenas DCTFs do tipo "Original". 
+ * DCTFs do tipo "Retificadora" são desconsideradas.
+ * 
  * Fonte de dados: MySQL (tabelas clientes e dctf_declaracoes)
  */
 
 import { randomUUID } from 'crypto';
-import { executeQuery } from '../../config/mysql';
-import { Cliente } from '../../models/Cliente';
-import type { ICliente } from '../../types';
+import { executeQuery } from '../../../config/mysql';
+import { Cliente } from '../../../models/Cliente';
+import type { Cliente as ICliente } from '../../../types';
 
 export interface ClienteSemDCTFVigente {
   id: string;
@@ -99,6 +102,8 @@ export async function listarClientesSemDCTFVigente(): Promise<ClienteSemDCTFVige
     console.log(`[Conferência Módulo 1] 📊 Total de clientes: ${todosClientes.length}`);
     
     // 2. Buscar CNPJs que TÊM DCTF na competência vigente
+    // IMPORTANTE: Considerar tanto Original quanto Retificadora para verificar se TEM DCTF
+    // Se tem retificadora, significa que já enviou original antes
     const dctfsComCNPJ = await executeQuery<{ cnpj_normalizado: string }>(
       `
       SELECT DISTINCT 

@@ -15,8 +15,10 @@ import {
   CheckIcon,
   InformationCircleIcon,
   ArrowTopRightOnSquareIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../Pagination';
+import { exportToExcel } from '../../utils/exportExcel';
 
 interface ClienteSemDCTFComMovimento {
   cnpj: string;
@@ -82,13 +84,74 @@ export function ClientesSemDCTFComMovimentoSection({
   const [expanded, setExpanded] = useState(true);
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const navigate = useNavigate();
   const itensPorPagina = 10;
 
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const copyToClipboard = async (text: string, id: string) => {
+    try {
+      // Tenta usar a API moderna de clipboard
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback para contextos não-seguros (HTTP)
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Erro ao copiar:', err);
+    }
+  };
+
+  const handleExportar = async () => {
+    if (clientes.length === 0) {
+      alert('Não há dados para exportar');
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const data = clientes.map((cliente) => [
+        cliente.razao_social || '—',
+        formatCNPJ(cliente.cnpj) || '—',
+        cliente.competencia_obrigacao,
+        cliente.competencia_movimento,
+        cliente.tipos_movimento.join(', ') || '—',
+        cliente.total_movimentacoes.toString(),
+        formatDate(cliente.prazoVencimento),
+        cliente.diasAteVencimento.toString(),
+        cliente.possivelObrigacaoEnvio ? 'Sim' : 'Não',
+        cliente.motivoObrigacao || '—',
+      ]);
+
+      await exportToExcel({
+        filename: `clientes-sem-dctf-com-movimento-${competenciaVigente.replace('/', '-')}-${new Date().toISOString().split('T')[0]}.xlsx`,
+        sheetName: 'Clientes sem DCTF c/ Movimento',
+        headers: ['Empresa', 'CNPJ', 'Competência Obrigação', 'Movimento em', 'Tipos Movimento', 'Total Movimentações', 'Vencimento', 'Dias até Vencimento', 'Possível Obrigação', 'Motivo'],
+        data,
+        title: `Clientes sem DCTF mas com Movimento - Competência ${competenciaVigente}`,
+        metadata: {
+          'Data de Exportação': new Date().toLocaleString('pt-BR'),
+          'Total de Clientes': clientes.length.toString(),
+          'Competência Vigente': competenciaVigente,
+        },
+      });
+    } catch (err: any) {
+      console.error('Erro ao exportar:', err);
+      alert('Erro ao exportar dados: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -106,22 +169,37 @@ export function ClientesSemDCTFComMovimentoSection({
           <div className="flex-1 text-left">
             <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
               <ExclamationTriangleIcon className="h-5 w-5 text-red-600" />
-              Clientes sem DCTF mas COM Movimento no SCI
+              Clientes sem DCTF mas com Movimento
             </h2>
             <p className="text-sm text-gray-600">
-              Clientes que <strong>NÃO têm DCTF</strong> na competência vigente ({competenciaVigente}), 
-              mas <strong>TÊM movimento</strong> no Banco SCI no mês anterior.
-              Estes clientes têm <strong>obrigação de enviar DCTF</strong> conforme IN RFB 2.237/2024.
+              Clientes que tiveram movimento no mês anterior, mas ainda não enviaram a DCTF para {competenciaVigente}. 
+              Estes clientes precisam enviar a declaração.
             </p>
           </div>
         </div>
-        <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
-          {loading ? (
-            <span className="text-gray-500">Carregando...</span>
-          ) : (
-            <>
-              Total: <span className="text-gray-900">{clientes.length}</span> clientes
-            </>
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
+            {loading ? (
+              <span className="text-gray-500">Carregando...</span>
+            ) : (
+              <>
+                Total: <span className="text-gray-900">{clientes.length}</span> clientes
+              </>
+            )}
+          </div>
+          {!loading && clientes.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleExportar();
+              }}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Exportar para Excel"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              {exporting ? 'Exportando...' : 'Exportar'}
+            </button>
           )}
         </div>
       </button>
@@ -241,7 +319,10 @@ export function ClientesSemDCTFComMovimentoSection({
                             </td>
                             <td className="px-4 py-3 text-xs">
                               <button
-                                onClick={() => navigate(`/clientes/${cliente.cnpj}`)}
+                                onClick={() => {
+                                  const cnpjLimpo = cliente.cnpj.replace(/\D/g, '');
+                                  navigate(`/clientes?tab=lancamentos&cnpj=${cnpjLimpo}`);
+                                }}
                                 className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
                               >
                                 <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />

@@ -1,14 +1,14 @@
 /**
- * COMPONENTE: Seção de Clientes sem DCTF na Competência Vigente
+ * COMPONENTE: Seção de Clientes Dispensados de Transmitir DCTF
  * 
- * Módulo 1: Lista todos os clientes cadastrados que NÃO têm DCTF
- * enviada para a competência vigente (mês anterior à data atual).
+ * Módulo 7: Lista clientes que NÃO têm obrigação de transmitir DCTF na competência vigente
+ * porque já transmitiram "Original sem movimento" em vigência passada e não tiveram
+ * movimentação no mês atual.
  */
 
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  BuildingOfficeIcon,
+  CheckCircleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ClipboardDocumentIcon,
@@ -19,19 +19,19 @@ import {
 import { Pagination } from '../Pagination';
 import { exportToExcel } from '../../utils/exportExcel';
 
-interface ClienteSemDCTFVigente {
+interface ClienteDispensadoDCTF {
   id: string;
   cnpj: string;
   razao_social: string;
+  periodo_original_sem_movimento: string;
+  data_transmissao_original: string;
   competencia_vigente: string;
-  vencimento: string;
-  severidade: 'high' | 'medium' | 'low';
+  tem_movimentacao_atual: boolean;
   mensagem: string;
 }
 
 interface Props {
-  clientes: ClienteSemDCTFVigente[];
-  competenciaVigente: string;
+  clientes: ClienteDispensadoDCTF[];
   loading?: boolean;
   error?: string | null;
 }
@@ -56,29 +56,8 @@ function formatCNPJ(cnpj?: string | null) {
   return cnpj;
 }
 
-function SeverityTag({ severity }: { severity: 'high' | 'medium' | 'low' }) {
-  const styles = {
-    high: 'bg-red-100 text-red-800 border-red-200',
-    medium: 'bg-amber-100 text-amber-800 border-amber-200',
-    low: 'bg-blue-100 text-blue-800 border-blue-200',
-  };
-
-  const labels = {
-    high: 'Alta',
-    medium: 'Média',
-    low: 'Baixa',
-  };
-
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles[severity]}`}>
-      {labels[severity]}
-    </span>
-  );
-}
-
-export function ClientesSemDCTFVigenteSection({ 
+export function ClientesDispensadosDCTFSection({ 
   clientes, 
-  competenciaVigente,
   loading = false,
   error = null 
 }: Props) {
@@ -86,16 +65,13 @@ export function ClientesSemDCTFVigenteSection({
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const navigate = useNavigate();
   const itensPorPagina = 10;
 
   const copyToClipboard = async (text: string, id: string) => {
     try {
-      // Tenta usar a API moderna de clipboard
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
       } else {
-        // Fallback para contextos não-seguros (HTTP)
         const textArea = document.createElement('textarea');
         textArea.value = text;
         textArea.style.position = 'fixed';
@@ -125,22 +101,22 @@ export function ClientesSemDCTFVigenteSection({
       const data = clientes.map((cliente) => [
         cliente.razao_social || '—',
         formatCNPJ(cliente.cnpj) || '—',
+        cliente.periodo_original_sem_movimento,
+        formatDate(cliente.data_transmissao_original),
         cliente.competencia_vigente,
-        formatDate(cliente.vencimento),
-        cliente.severidade === 'high' ? 'Alta' : cliente.severidade === 'medium' ? 'Média' : 'Baixa',
+        cliente.tem_movimentacao_atual ? 'Sim' : 'Não',
         cliente.mensagem,
       ]);
 
       await exportToExcel({
-        filename: `clientes-sem-dctf-${competenciaVigente.replace('/', '-')}-${new Date().toISOString().split('T')[0]}.xlsx`,
-        sheetName: 'Clientes sem DCTF',
-        headers: ['Empresa', 'CNPJ', 'Competência', 'Vencimento', 'Severidade', 'Mensagem'],
+        filename: `clientes-dispensados-dctf-${new Date().toISOString().split('T')[0]}.xlsx`,
+        sheetName: 'Clientes Dispensados DCTF',
+        headers: ['Empresa', 'CNPJ', 'Período Original sem Movimento', 'Data Transmissão Original', 'Competência Vigente', 'Tem Movimentação Atual', 'Mensagem'],
         data,
-        title: `Clientes sem DCTF - Competência ${competenciaVigente}`,
+        title: 'Clientes Dispensados de Transmitir DCTF',
         metadata: {
           'Data de Exportação': new Date().toLocaleString('pt-BR'),
           'Total de Clientes': clientes.length.toString(),
-          'Competência Vigente': competenciaVigente,
         },
       });
     } catch (err: any) {
@@ -165,11 +141,11 @@ export function ClientesSemDCTFVigenteSection({
           )}
           <div className="flex-1 text-left">
             <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
-              <BuildingOfficeIcon className="h-5 w-5 text-amber-600" />
-              Clientes sem DCTF
+              <CheckCircleIcon className="h-5 w-5 text-green-600" />
+              Clientes Dispensados de Transmitir DCTF
             </h2>
             <p className="text-sm text-gray-600">
-              Clientes que ainda não enviaram a DCTF para {competenciaVigente}. Verifique se há necessidade de envio.
+              Clientes que não têm obrigação de transmitir DCTF na competência vigente porque já transmitiram "Original sem movimento" anteriormente e não tiveram movimentação no mês atual.
             </p>
           </div>
         </div>
@@ -205,7 +181,7 @@ export function ClientesSemDCTFVigenteSection({
           {loading ? (
             <div className="px-6 py-8 text-center">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <p className="mt-2 text-sm text-gray-600">Carregando clientes sem DCTF...</p>
+              <p className="mt-2 text-sm text-gray-600">Carregando clientes dispensados...</p>
             </div>
           ) : error ? (
             <div className="px-6 py-4">
@@ -217,10 +193,7 @@ export function ClientesSemDCTFVigenteSection({
             <div className="px-6 py-8 text-center">
               <InformationCircleIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
               <p className="text-sm text-gray-600">
-                Nenhum cliente encontrado sem DCTF na competência {competenciaVigente}.
-              </p>
-              <p className="text-xs text-gray-500 mt-2">
-                Todos os clientes cadastrados têm DCTF enviada para esta competência.
+                Nenhum cliente dispensado encontrado.
               </p>
             </div>
           ) : (
@@ -231,10 +204,10 @@ export function ClientesSemDCTFVigenteSection({
                     <tr>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">CNPJ</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Competência</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Ações</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Período Original sem Movimento</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Data Transmissão</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Competência Vigente</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Movimentação Atual</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -262,19 +235,22 @@ export function ClientesSemDCTFVigenteSection({
                             </div>
                           </td>
                           <td className="px-4 py-3 text-gray-600 text-xs">
-                            <span className="font-semibold text-amber-600">{cliente.competencia_vigente}</span>
+                            <span className="font-semibold text-blue-600">{cliente.periodo_original_sem_movimento}</span>
                           </td>
-                          <td className="px-4 py-3 text-gray-600 text-xs">{formatDate(cliente.vencimento)}</td>
-                          <td className="px-4 py-3">
-                            <SeverityTag severity={cliente.severidade} />
+                          <td className="px-4 py-3 text-gray-600 text-xs">{formatDate(cliente.data_transmissao_original)}</td>
+                          <td className="px-4 py-3 text-gray-600 text-xs">
+                            <span className="font-semibold text-gray-800">{cliente.competencia_vigente}</span>
                           </td>
                           <td className="px-4 py-3 text-xs">
-                            <button
-                              onClick={() => navigate(`/clientes/${cliente.cnpj}`)}
-                              className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
-                            >
-                              Ver Detalhes
-                            </button>
+                            {cliente.tem_movimentacao_atual ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                Sim
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Não
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -300,10 +276,4 @@ export function ClientesSemDCTFVigenteSection({
     </div>
   );
 }
-
-
-
-
-
-
 

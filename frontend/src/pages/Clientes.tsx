@@ -63,12 +63,22 @@ const Clientes: React.FC = () => {
       setActiveTab('e-processos');
     }
     
-    // Detectar CNPJ na query string para pagamentos e e-processos
+    // Detectar CNPJ na query string para pagamentos, e-processos e lançamentos
     const cnpjFromQuery = params.get('cnpj');
-    if (cnpjFromQuery && (tab === 'pagamentos' || tab === 'e-processos')) {
+    if (cnpjFromQuery) {
       const cnpjLimpo = cnpjFromQuery.replace(/\D/g, '');
       if (cnpjLimpo.length === 14) {
-        setCnpjParaPagamentos(cnpjLimpo);
+        if (tab === 'pagamentos' || tab === 'e-processos') {
+          setCnpjParaPagamentos(cnpjLimpo);
+        } else if (tab === 'lancamentos') {
+          // Preencher o campo de busca com o CNPJ formatado
+          const cnpjFormatado = cnpjLimpo
+            .replace(/(\d{2})(\d)/, '$1.$2')
+            .replace(/(\d{3})(\d)/, '$1.$2')
+            .replace(/(\d{3})(\d)/, '$1/$2')
+            .replace(/(\d{4})(\d)/, '$1-$2');
+          setSearch(cnpjFormatado);
+        }
       }
     }
   }, [location.search]);
@@ -218,7 +228,22 @@ const Clientes: React.FC = () => {
 
   const copyToClipboard = async (text: string, cnpj: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      // Tenta usar a API moderna de clipboard
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback para contextos não-seguros (HTTP)
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
       setCopiedCnpj(cnpj);
       setTimeout(() => {
         setCopiedCnpj(null);

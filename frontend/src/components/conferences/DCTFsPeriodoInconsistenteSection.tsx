@@ -1,0 +1,321 @@
+/**
+ * COMPONENTE: Seção de DCTFs com Período Inconsistente
+ * 
+ * Módulo 2.2: Lista DCTFs cujo período de apuração não corresponde ao esperado.
+ */
+
+import { useState } from 'react';
+import {
+  DocumentTextIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ClipboardDocumentIcon,
+  CheckIcon,
+  ExclamationTriangleIcon,
+  ArrowDownTrayIcon,
+} from '@heroicons/react/24/outline';
+import { Pagination } from '../Pagination';
+import { exportToExcel } from '../../utils/exportExcel';
+
+interface DCTFPeriodoInconsistente {
+  id: string;
+  cnpj: string;
+  razao_social: string | null;
+  periodo_apuracao: string;
+  periodo_esperado: string;
+  data_transmissao: string;
+  situacao: string | null;
+  tipo: string | null;
+  severidade: 'high' | 'medium' | 'low';
+  mensagem: string;
+}
+
+interface Props {
+  dctfs: DCTFPeriodoInconsistente[];
+  loading?: boolean;
+  error?: string | null;
+}
+
+function formatDate(value?: string) {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('pt-BR');
+}
+
+function formatCNPJ(cnpj?: string | null) {
+  if (!cnpj) return '—';
+  const digits = cnpj.replace(/\D/g, '');
+  if (digits.length === 14) {
+    return digits
+      .replace(/(\d{2})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1/$2')
+      .replace(/(\d{4})(\d)/, '$1-$2');
+  }
+  return cnpj;
+}
+
+function SeverityTag({ severity }: { severity: 'high' | 'medium' | 'low' }) {
+  const styles = {
+    high: 'bg-red-100 text-red-800 border-red-200',
+    medium: 'bg-amber-100 text-amber-800 border-amber-200',
+    low: 'bg-blue-100 text-blue-800 border-blue-200',
+  };
+
+  const labels = {
+    high: 'Alta',
+    medium: 'Média',
+    low: 'Baixa',
+  };
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles[severity]}`}>
+      {labels[severity]}
+    </span>
+  );
+}
+
+export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error = null }: Props) {
+  const [expanded, setExpanded] = useState(true);
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const itensPorPagina = 10;
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          setCopiedId(id);
+          setTimeout(() => setCopiedId(null), 2000);
+        })
+        .catch(() => fallbackCopyToClipboard(text, id));
+    } else {
+      fallbackCopyToClipboard(text, id);
+    }
+  };
+
+  const fallbackCopyToClipboard = (text: string, id: string) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Erro ao copiar:', err);
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const handleExportar = async () => {
+    if (dctfs.length === 0) {
+      alert('Não há dados para exportar');
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const data = dctfs.map((dctf) => [
+        dctf.razao_social || '—',
+        formatCNPJ(dctf.cnpj) || '—',
+        dctf.periodo_apuracao,
+        dctf.periodo_esperado,
+        formatDate(dctf.data_transmissao),
+        dctf.situacao || '—',
+        dctf.tipo || '—',
+        dctf.severidade === 'high' ? 'Alta' : dctf.severidade === 'medium' ? 'Média' : 'Baixa',
+        dctf.mensagem,
+      ]);
+
+      await exportToExcel({
+        filename: `dctfs-periodo-inconsistente-${new Date().toISOString().split('T')[0]}.xlsx`,
+        sheetName: 'DCTFs Período Inconsistente',
+        headers: ['Empresa', 'CNPJ', 'Período Informado', 'Período Esperado', 'Data Transmissão', 'Situação', 'Tipo', 'Severidade', 'Mensagem'],
+        data,
+        title: 'DCTFs com Período de Apuração Inconsistente',
+        metadata: {
+          'Data de Exportação': new Date().toLocaleString('pt-BR'),
+          'Total de DCTFs': dctfs.length.toString(),
+        },
+      });
+    } catch (err: any) {
+      console.error('Erro ao exportar:', err);
+      alert('Erro ao exportar dados: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const inicio = (paginaAtual - 1) * itensPorPagina;
+  const fim = inicio + itensPorPagina;
+  const dctfsPaginadas = dctfs.slice(inicio, fim);
+  const totalPaginas = Math.ceil(dctfs.length / itensPorPagina);
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-6 bg-gray-200 rounded w-1/3"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-red-200 p-6">
+        <div className="flex items-center gap-2 text-red-600">
+          <ExclamationTriangleIcon className="h-5 w-5" />
+          <p className="font-medium">Erro ao carregar DCTFs com período inconsistente</p>
+        </div>
+        <p className="text-sm text-gray-600 mt-2">{error}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          {expanded ? (
+            <ChevronDownIcon className="h-5 w-5 text-gray-500" />
+          ) : (
+            <ChevronRightIcon className="h-5 w-5 text-gray-500" />
+          )}
+          <DocumentTextIcon className="h-6 w-6 text-purple-600" />
+          <div className="text-left">
+            <h3 className="text-lg font-semibold text-gray-900">
+              DCTFs com Período Inconsistente
+            </h3>
+            <p className="text-sm text-gray-500">
+              {dctfs.length} DCTF{dctfs.length !== 1 ? 's' : ''} com período que não corresponde ao esperado
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <SeverityTag severity={dctfs.length > 0 ? (dctfs.length > 10 ? 'high' : 'medium') : 'low'} />
+          {!loading && dctfs.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleExportar();
+              }}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Exportar para Excel"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              {exporting ? 'Exportando...' : 'Exportar'}
+            </button>
+          )}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-200">
+          {dctfs.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              <p>Nenhuma DCTF com período inconsistente encontrada.</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        CNPJ
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Razão Social
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Período Informado
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Período Esperado
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Transmissão
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Severidade
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {dctfsPaginadas.map((dctf) => (
+                      <tr key={dctf.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {formatCNPJ(dctf.cnpj)}
+                            </span>
+                            <button
+                              onClick={() => copyToClipboard(formatCNPJ(dctf.cnpj) || '', dctf.id)}
+                              className="text-gray-400 hover:text-gray-600 transition-colors"
+                              title="Copiar CNPJ"
+                            >
+                              {copiedId === dctf.id ? (
+                                <CheckIcon className="h-4 w-4 text-green-600" />
+                              ) : (
+                                <ClipboardDocumentIcon className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">
+                            {dctf.razao_social || '—'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-medium text-red-600">
+                            {dctf.periodo_apuracao}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-medium text-green-600">
+                            {dctf.periodo_esperado}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatDate(dctf.data_transmissao)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <SeverityTag severity={dctf.severidade} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {totalPaginas > 1 && (
+                <div className="px-6 py-4 border-t border-gray-200">
+                  <Pagination
+                    paginaAtual={paginaAtual}
+                    totalPaginas={totalPaginas}
+                    onPageChange={setPaginaAtual}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
