@@ -10,7 +10,11 @@ import {
   EyeIcon,
   ArrowDownTrayIcon,
   XMarkIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
+import RegistroDetalhado from '../components/SituacaoFiscal/RegistroDetalhado';
 
 function formatCNPJ(value: string) {
   const digits = value.replace(/\D/g, '');
@@ -37,6 +41,65 @@ export default function SituacaoFiscal() {
   const isConsultingRef = useRef<boolean>(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string | null; cnpj: string; countdown: number }>({ id: null, cnpj: '', countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [activeTab, setActiveTab] = useState<'consulta' | 'empresas' | 'lixeira'>('consulta');
+  const [archivedProtocols, setArchivedProtocols] = useState<Array<{
+    cnpj: string;
+    razao_social: string | null;
+    protocolo: string;
+    protocolo_truncado: string | null;
+    status: string;
+    expires_at: string | null;
+    next_eligible_at: string | null;
+    created_at: string;
+    updated_at: string;
+    tempo_restante: {
+      dias: number;
+      horas: number;
+      minutos: number;
+      total_segundos: number;
+      is_valid: boolean;
+      texto_formatado: string;
+    } | null;
+  }>>([]);
+  const [loadingProtocols, setLoadingProtocols] = useState(false);
+  const [restoringProtocol, setRestoringProtocol] = useState<{ cnpj: string; razao_social: string | null } | null>(null);
+  const [companies, setCompanies] = useState<Array<{
+    cnpj: string;
+    razao_social: string | null;
+    total_registros: number;
+    ultimo_registro: string;
+    registros: Array<{
+      id: string;
+      created_at: string;
+      file_url: string | null;
+      has_pdf_base64: boolean;
+      extracted_data: any | null;
+      debitos_pendencias?: {
+        debitos?: Array<{
+          codigoReceita?: string;
+          tipoReceita?: string;
+          periodo?: string;
+          dataVencimento?: string;
+          valorOriginal?: number;
+          saldoDevedor?: number;
+          multa?: number;
+          juros?: number;
+          saldoDevedorConsolidado?: number;
+          situacao?: string;
+          tipo?: 'pendencia' | 'exigibilidade_suspensa';
+        }>;
+        pendencias?: Array<{
+          tipo?: string;
+          descricao?: string;
+          situacao?: string;
+        }>;
+      } | null;
+    }>;
+  }>>([]);
+  const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
+  const [filteredCnpj, setFilteredCnpj] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>('');
 
   const handleConsultarRetry = useCallback(async () => {
     // Proteção contra múltiplas chamadas simultâneas
@@ -365,10 +428,266 @@ export default function SituacaoFiscal() {
     };
   }, [deleteTimer]);
 
+  const fetchCompanies = useCallback(async () => {
+    try {
+      setLoadingCompanies(true);
+      const res = await fetch('/api/situacao-fiscal/companies');
+      if (res.ok || res.status === 304) {
+        // 304 Not Modified também é válido (cache hit)
+        if (res.status === 304) {
+          // Se for cache, não precisa fazer nada, manter dados atuais
+          return;
+        }
+        const body = await res.json();
+        setCompanies(body?.companies ?? []);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar empresas:', error);
+      toast.error('Erro ao buscar empresas');
+    } finally {
+      setLoadingCompanies(false);
+    }
+  }, [toast]);
+
+  const toggleCompany = (cnpj: string) => {
+    setExpandedCompanies(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(cnpj)) {
+        newSet.delete(cnpj);
+      } else {
+        newSet.add(cnpj);
+      }
+      return newSet;
+    });
+  };
+
+  const getCertidaoStatus = useCallback((registros: Array<{ created_at: string; extracted_data: any | null }>) => {
+    // Buscar o registro mais recente com dados extraídos
+    const registroComDados = registros
+      .filter(r => r.extracted_data)
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+
+    if (!registroComDados?.extracted_data) {
+      return null; // Sem dados de certidão
+    }
+
+    const certidao = registroComDados.extracted_data;
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    // Verificar se há pendências detectadas
+    const temPendencias = certidao.certidao_pendencias_detectadas === true;
+
+    // Verificar se está vencida
+    let estaVencida = false;
+    if (certidao.certidao_data_validade) {
+      try {
+        const dataValidade = new Date(certidao.certidao_data_validade);
+        dataValidade.setHours(0, 0, 0, 0);
+        estaVencida = dataValidade < hoje;
+      } catch {
+        // Se não conseguir parsear a data, considerar como não vencida
+      }
+    }
+
+    // Determinar status e cores
+    if (temPendencias) {
+      return {
+        status: 'pendencia',
+        texto: 'Com Pendências',
+        cor: 'red',
+        bgColor: 'bg-red-100',
+        textColor: 'text-red-800',
+        borderColor: 'border-red-300',
+        icon: '⚠️'
+      };
+    }
+
+    if (estaVencida) {
+      return {
+        status: 'vencida',
+        texto: 'Vencida',
+        cor: 'orange',
+        bgColor: 'bg-orange-100',
+        textColor: 'text-orange-800',
+        borderColor: 'border-orange-300',
+        icon: '⏰'
+      };
+    }
+
+    // Certidão OK
+    return {
+      status: 'ok',
+      texto: 'OK',
+      cor: 'green',
+      bgColor: 'bg-green-100',
+      textColor: 'text-green-800',
+      borderColor: 'border-green-300',
+      icon: '✓'
+    };
+  }, []);
+
+  const navigateToCompanyDetails = useCallback((cnpj: string) => {
+    // Mudar para aba de empresas
+    setActiveTab('empresas');
+    
+    // Filtrar para mostrar apenas esta empresa
+    setFilteredCnpj(cnpj);
+    
+    // Expandir a empresa correspondente
+    setExpandedCompanies((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(cnpj);
+      return newSet;
+    });
+    
+    // Aguardar um pouco para garantir que o DOM foi atualizado antes de fazer scroll
+    setTimeout(() => {
+      // Fazer scroll até o elemento da empresa
+      const element = document.getElementById(`company-${cnpj}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Adicionar destaque visual temporário com animação
+        element.classList.add('ring-4', 'ring-blue-400', 'ring-offset-2', 'bg-blue-50', 'transition-all', 'duration-300');
+        setTimeout(() => {
+          element.classList.remove('ring-4', 'ring-blue-400', 'ring-offset-2', 'bg-blue-50');
+        }, 3000);
+      }
+    }, 200);
+  }, []);
+
+  const fetchArchivedProtocols = useCallback(async () => {
+    setLoadingProtocols(true);
+    try {
+      const res = await fetch('/api/situacao-fiscal/protocols/archived', {
+        cache: 'no-cache', // Forçar sempre buscar dados atualizados
+      });
+      // 304 Not Modified também é válido (cache hit), mas vamos ignorar para sempre buscar dados frescos
+      if (res.status === 304) {
+        // Se for cache, não fazer nada, manter dados atuais
+        setLoadingProtocols(false);
+        return;
+      }
+      if (!res.ok) throw new Error('Erro ao buscar protocolos arquivados');
+      const data = await res.json();
+      if (data.success) {
+        setArchivedProtocols(data.protocols || []);
+      }
+    } catch (err: any) {
+      console.error('Erro ao buscar protocolos arquivados:', err);
+      toast.error('Erro ao buscar protocolos arquivados');
+    } finally {
+      setLoadingProtocols(false);
+    }
+  }, [toast]);
+
+  const restoreProtocol = useCallback(async (cnpj: string, razaoSocial: string | null = null) => {
+    // Mostrar alerta de processamento
+    setRestoringProtocol({ cnpj, razao_social: razaoSocial });
+    
+    try {
+      const res = await fetch(`/api/situacao-fiscal/protocols/${cnpj}/restore`, {
+        method: 'POST',
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setRestoringProtocol(null);
+        toast.error(data.error || 'Erro ao restaurar protocolo');
+        return;
+      }
+      
+      if (res.status === 202) {
+        // Precisa aguardar - manter o alerta visível
+        toast.info(data.message || 'Aguardando processamento...');
+        // Atualizar lista de protocolos
+        await fetchArchivedProtocols();
+        
+        // Se houver retryAfter, aguardar e tentar novamente
+        if (data.retryAfter) {
+          setRetryAfter(data.retryAfter);
+          // Mudar para aba de consulta para ver o progresso
+          setActiveTab('consulta');
+          setCnpj(cnpj);
+          // Manter o alerta até que a consulta seja concluída
+          // O alerta será removido quando o histórico for atualizado
+        } else {
+          setRestoringProtocol(null);
+        }
+        return;
+      }
+      
+      // Sucesso - consulta iniciada ou concluída
+      if (data.step === 'concluido') {
+        setRestoringProtocol(null);
+        toast.success('Relatório gerado com sucesso usando protocolo restaurado!');
+        // Atualizar todas as listas
+        await Promise.all([
+          fetchArchivedProtocols(),
+          fetchHistory(),
+          fetchCompanies(),
+        ]);
+        // Mudar para aba de consulta para ver o resultado
+        setActiveTab('consulta');
+        setCnpj(cnpj);
+      } else {
+        toast.info(data.message || 'Protocolo restaurado. Aguardando processamento...');
+        // Atualizar lista de protocolos
+        await fetchArchivedProtocols();
+        
+        // Se houver retryAfter, aguardar e tentar novamente
+        if (data.retryAfter) {
+          setRetryAfter(data.retryAfter);
+          // Mudar para aba de consulta para ver o progresso
+          setActiveTab('consulta');
+          setCnpj(cnpj);
+        } else {
+          setRestoringProtocol(null);
+        }
+      }
+    } catch (err: any) {
+      console.error('Erro ao restaurar protocolo:', err);
+      setRestoringProtocol(null);
+      toast.error('Erro ao restaurar protocolo');
+    }
+  }, [toast, fetchArchivedProtocols, fetchHistory, fetchCompanies]);
+
   useEffect(() => {
     void fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'empresas') {
+      void fetchCompanies();
+    } else if (activeTab === 'lixeira') {
+      void fetchArchivedProtocols();
+      // Limpar filtro e busca quando sair da aba de empresas
+      setFilteredCnpj(null);
+      setSearchTerm('');
+    } else if (activeTab === 'consulta') {
+      // Limpar filtro e busca quando voltar para consulta
+      setFilteredCnpj(null);
+      setSearchTerm('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]); // Remover dependências das funções para evitar loop infinito
+
+  // Remover alerta de restauração quando histórico for atualizado e houver novos downloads
+  useEffect(() => {
+    if (restoringProtocol && history.length > 0) {
+      // Verificar se há um download recente para o CNPJ que está sendo restaurado
+      const recentDownload = history.find(h => h.cnpj === restoringProtocol.cnpj);
+      if (recentDownload) {
+        // Aguardar um pouco antes de remover o alerta para dar tempo do usuário ver
+        const timer = setTimeout(() => {
+          setRestoringProtocol(null);
+        }, 2000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [history, restoringProtocol]);
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl min-h-screen">
@@ -381,6 +700,64 @@ export default function SituacaoFiscal() {
         <p className="text-base text-gray-600">Consulte a situação fiscal de empresas através da Receita Federal</p>
       </div>
 
+      {/* Tabs */}
+      <div className="mb-6 border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('consulta')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'consulta'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <DocumentMagnifyingGlassIcon className="h-5 w-5" />
+              Nova Consulta
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('empresas')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'empresas'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <BuildingOfficeIcon className="h-5 w-5" />
+              Empresas
+              {companies.length > 0 && (
+                <span className="ml-2 py-0.5 px-2.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  {companies.length}
+                </span>
+              )}
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('lixeira')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'lixeira'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <DocumentMagnifyingGlassIcon className="h-5 w-5" />
+              Lixeira
+              {archivedProtocols.length > 0 && (
+                <span className="ml-2 py-0.5 px-2.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  {archivedProtocols.length}
+                </span>
+              )}
+            </div>
+          </button>
+        </nav>
+      </div>
+
+      {/* Conteúdo das Abas */}
+      {activeTab === 'consulta' && (
+        <>
       {/* Card de Consulta */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
         <div className="px-6 py-5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
@@ -465,7 +842,7 @@ export default function SituacaoFiscal() {
       </div>
 
       {/* Histórico de downloads */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
@@ -544,6 +921,14 @@ export default function SituacaoFiscal() {
                       <div className="flex items-center justify-end gap-2">
                         {(h.has_pdf_base64 || h.file_url) ? (
                           <>
+                            <button
+                              onClick={() => navigateToCompanyDetails(h.cnpj)}
+                              className="px-3 py-1.5 text-sm font-medium text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors flex items-center gap-1.5"
+                              title="Ver detalhes completos"
+                            >
+                              <DocumentTextIcon className="h-4 w-4" />
+                              Detalhes
+                            </button>
                             <a
                               href={`/api/situacao-fiscal/pdf/${h.id}`}
                               target="_blank"
@@ -580,6 +965,341 @@ export default function SituacaoFiscal() {
           </table>
         </div>
       </div>
+        </>
+      )}
+
+      {activeTab === 'empresas' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3 flex-1">
+                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                  <BuildingOfficeIcon className="h-5 w-5 text-gray-600" />
+                  Empresas com Registros
+                </h2>
+                {filteredCnpj && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                      Mostrando apenas: {formatCNPJ(filteredCnpj)}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setFilteredCnpj(null);
+                        setSearchTerm('');
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium underline"
+                      title="Mostrar todas as empresas"
+                    >
+                      Mostrar todas
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 max-w-md">
+                <div className="relative">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por CNPJ ou Razão Social..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      title="Limpar busca"
+                    >
+                      <XMarkIcon className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Cabeçalho das colunas */}
+          {!loadingCompanies && (() => {
+            // Filtrar empresas por CNPJ específico (quando vem de "Detalhes")
+            let filteredCompanies = filteredCnpj 
+              ? companies.filter(c => c.cnpj === filteredCnpj)
+              : companies;
+            
+            // Aplicar busca por CNPJ ou Razão Social
+            if (searchTerm.trim()) {
+              const searchLower = searchTerm.toLowerCase().trim();
+              const searchNumbers = searchLower.replace(/\D/g, ''); // Remove formatação do CNPJ (apenas números)
+              
+              filteredCompanies = filteredCompanies.filter(c => {
+                // Busca por CNPJ (apenas se houver números na busca)
+                const cnpjMatch = searchNumbers.length > 0 
+                  ? c.cnpj.replace(/\D/g, '').includes(searchNumbers)
+                  : false;
+                
+                // Busca por Razão Social (sempre verifica, mesmo se houver números)
+                const razaoSocial = (c.razao_social || '').toLowerCase().trim();
+                const razaoMatch = razaoSocial.includes(searchLower);
+                
+                return cnpjMatch || razaoMatch;
+              });
+            }
+            
+            if (filteredCompanies.length > 0) {
+              return (
+                <div className="px-6 py-3 bg-gray-100 border-b border-gray-200">
+                  <div className="grid grid-cols-12 gap-4 items-center">
+                    <div className="col-span-5">
+                      <span className="text-xs font-semibold text-gray-600 uppercase">Empresa</span>
+                    </div>
+                    <div className="col-span-3 flex items-center justify-center">
+                      <span className="text-xs font-semibold text-gray-600 uppercase">Status</span>
+                    </div>
+                    <div className="col-span-4 flex items-center justify-end">
+                      <span className="text-xs font-semibold text-gray-600 uppercase">Ações</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
+          <div className="divide-y divide-gray-200">
+            {loadingCompanies ? (
+              <div className="px-6 py-12 text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <p className="mt-2 text-sm text-gray-600">Carregando empresas...</p>
+              </div>
+            ) : (() => {
+              // Filtrar empresas por CNPJ específico (quando vem de "Detalhes")
+              let filteredCompanies = filteredCnpj 
+                ? companies.filter(c => c.cnpj === filteredCnpj)
+                : companies;
+              
+              // Aplicar busca por CNPJ ou Razão Social
+              if (searchTerm.trim()) {
+                const searchLower = searchTerm.toLowerCase().trim();
+                const searchNumbers = searchLower.replace(/\D/g, ''); // Remove formatação do CNPJ (apenas números)
+                
+                filteredCompanies = filteredCompanies.filter(c => {
+                  // Busca por CNPJ (apenas se houver números na busca)
+                  const cnpjMatch = searchNumbers.length > 0 
+                    ? c.cnpj.replace(/\D/g, '').includes(searchNumbers)
+                    : false;
+                  
+                  // Busca por Razão Social (sempre verifica, mesmo se houver números)
+                  const razaoSocial = (c.razao_social || '').toLowerCase().trim();
+                  const razaoMatch = razaoSocial.includes(searchLower);
+                  
+                  return cnpjMatch || razaoMatch;
+                });
+              }
+              
+              if (filteredCompanies.length === 0) {
+                return (
+                  <div className="px-6 py-12 text-center">
+                    <BuildingOfficeIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">
+                      {searchTerm ? 'Nenhuma empresa encontrada para a busca' : filteredCnpj ? 'Empresa não encontrada' : 'Nenhuma empresa encontrada'}
+                    </p>
+                    <p className="text-sm text-gray-400 mt-1">
+                      {searchTerm ? 'Tente buscar por CNPJ ou Razão Social' : filteredCnpj ? 'A empresa selecionada não possui registros' : 'Realize consultas para gerar registros'}
+                    </p>
+                  </div>
+                );
+              }
+              
+              return filteredCompanies.map((company) => {
+                const isExpanded = expandedCompanies.has(company.cnpj);
+                return (
+                  <div key={company.cnpj} id={`company-${company.cnpj}`} className="hover:bg-gray-50 transition-colors">
+                    <div
+                      className="px-6 py-4 cursor-pointer"
+                      onClick={() => toggleCompany(company.cnpj)}
+                    >
+                      <div className="grid grid-cols-12 gap-4 items-center">
+                        {/* Coluna do Chevron e Nome */}
+                        <div className="col-span-5 flex items-center gap-3 min-w-0">
+                          {isExpanded ? (
+                            <ChevronDownIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                          ) : (
+                            <ChevronRightIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <BuildingOfficeIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                              <span className="text-sm font-semibold text-gray-900 truncate">
+                                {company.razao_social || 'Empresa não cadastrada'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                              <span className="font-mono">{formatCNPJ(company.cnpj)}</span>
+                              <span className="flex items-center gap-1">
+                                <DocumentArrowDownIcon className="h-3.5 w-3.5" />
+                                {company.total_registros} registro{company.total_registros !== 1 ? 's' : ''}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <CalendarIcon className="h-3.5 w-3.5" />
+                                {new Date(company.ultimo_registro).toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Coluna Status */}
+                        <div className="col-span-3 flex items-center justify-center">
+                          {(() => {
+                            const certidaoStatus = getCertidaoStatus(company.registros);
+                            if (certidaoStatus) {
+                              return (
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${certidaoStatus.bgColor} ${certidaoStatus.textColor} ${certidaoStatus.borderColor} flex items-center gap-1 whitespace-nowrap flex-shrink-0`}
+                                  title={`Certidão Conjunta RFB/PGFN: ${certidaoStatus.texto}`}
+                                >
+                                  <span className="text-xs leading-none">{certidaoStatus.icon}</span>
+                                  <span>Certidão {certidaoStatus.texto}</span>
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="text-xs text-gray-400">Sem dados</span>
+                            );
+                          })()}
+                        </div>
+                        
+                        {/* Coluna Ações */}
+                        <div className="col-span-4 flex items-center justify-end">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleCompany(company.cnpj);
+                            }}
+                            className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
+                          >
+                            <EyeIcon className="h-4 w-4" />
+                            {isExpanded ? 'Ocultar' : 'Visualizar'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                      {isExpanded && (
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                          <div className="space-y-4">
+                            {company.registros.map((registro) => (
+                              <div
+                                key={registro.id}
+                                className="bg-white rounded-lg border border-gray-200 overflow-hidden"
+                              >
+                                {/* Header do Registro */}
+                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <CalendarIcon className="h-4 w-4 text-gray-400" />
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {new Date(registro.created_at).toLocaleString('pt-BR', {
+                                          day: '2-digit',
+                                          month: '2-digit',
+                                          year: 'numeric',
+                                          hour: '2-digit',
+                                          minute: '2-digit'
+                                        })}
+                                      </p>
+                                      <p className="text-xs text-gray-500">ID: {registro.id.substring(0, 8)}...</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {(registro.has_pdf_base64 || registro.file_url) ? (
+                                      <>
+                                        <a
+                                          href={`/api/situacao-fiscal/pdf/${registro.id}`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1.5"
+                                        >
+                                          <EyeIcon className="h-3.5 w-3.5" />
+                                          Visualizar PDF
+                                        </a>
+                                        <button
+                                          onClick={() => handleDownloadPDF(registro.id, company.cnpj)}
+                                          className="px-3 py-1.5 text-xs font-medium text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1.5"
+                                        >
+                                          <ArrowDownTrayIcon className="h-3.5 w-3.5" />
+                                          Baixar
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="text-xs text-gray-400">Indisponível</span>
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                {/* Dados Detalhados */}
+                                <div className="p-4">
+                                  <RegistroDetalhado registro={registro} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Alert de restauração em andamento */}
+      {restoringProtocol && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-toast-fade-in border-2 border-blue-200">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
+                  <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                  Restaurando Protocolo
+                </h3>
+                <p className="text-sm text-gray-600 mb-3 font-medium">
+                  {restoringProtocol.razao_social || formatCNPJ(restoringProtocol.cnpj)}
+                </p>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <span>Usando protocolo salvo para emitir novo relatório...</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                    <span>Consultando SERPRO...</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
+                    <span>Aguarde, isso pode levar alguns segundos</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div 
+                  className="h-2 rounded-full bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500"
+                  style={{ 
+                    width: '60%',
+                    backgroundSize: '200% 100%',
+                    animation: 'shimmer 2s linear infinite'
+                  }}
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Alert de exclusão pendente */}
       {pendingDelete.id && pendingDelete.countdown > 0 && (
@@ -620,6 +1340,140 @@ export default function SituacaoFiscal() {
         </div>
       )}
 
+      {activeTab === 'lixeira' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                <DocumentMagnifyingGlassIcon className="h-5 w-5 text-gray-600" />
+                Protocolos Arquivados
+              </h2>
+              <button
+                onClick={() => fetchArchivedProtocols()}
+                disabled={loadingProtocols}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm font-medium transition-colors"
+              >
+                <MagnifyingGlassIcon className="h-4 w-4" />
+                {loadingProtocols ? 'Atualizando...' : 'Atualizar'}
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mt-2">
+              Protocolos salvos que podem ser reutilizados para fazer novas consultas sem solicitar novo protocolo.
+            </p>
+          </div>
+
+          <div className="p-6">
+            {loadingProtocols ? (
+              <div className="text-center py-8">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <p className="mt-2 text-sm text-gray-600">Carregando protocolos...</p>
+              </div>
+            ) : archivedProtocols.length === 0 ? (
+              <div className="text-center py-12">
+                <DocumentMagnifyingGlassIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 font-medium">Nenhum protocolo arquivado encontrado</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Os protocolos aparecerão aqui após serem utilizados em consultas.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {archivedProtocols.map((protocol) => (
+                  <div
+                    key={protocol.cnpj}
+                    className={`border rounded-lg p-4 transition-all ${
+                      protocol.tempo_restante?.is_valid
+                        ? 'border-green-200 bg-green-50'
+                        : 'border-red-200 bg-red-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="font-semibold text-gray-900">
+                            {protocol.razao_social || 'Sem razão social'}
+                          </h3>
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            protocol.tempo_restante?.is_valid
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {protocol.tempo_restante?.is_valid ? 'Válido' : 'Expirado'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <span className="text-gray-500">CNPJ:</span>
+                            <p className="font-mono text-gray-900">{formatCNPJ(protocol.cnpj)}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Protocolo:</span>
+                            <p className="font-mono text-gray-900 text-xs">{protocol.protocolo_truncado || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Status:</span>
+                            <p className="text-gray-900 capitalize">{protocol.status}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Tempo Restante:</span>
+                            <p className={`font-medium ${
+                              protocol.tempo_restante?.is_valid
+                                ? 'text-green-700'
+                                : 'text-red-700'
+                            }`}>
+                              {protocol.tempo_restante?.texto_formatado || 'N/A'}
+                            </p>
+                          </div>
+                          {protocol.expires_at && (
+                            <div>
+                              <span className="text-gray-500">Expira em:</span>
+                              <p className="text-gray-900">
+                                {new Date(protocol.expires_at).toLocaleString('pt-BR')}
+                              </p>
+                            </div>
+                          )}
+                          {protocol.next_eligible_at && (
+                            <div>
+                              <span className="text-gray-500">Próxima consulta:</span>
+                              <p className="text-gray-900">
+                                {new Date(protocol.next_eligible_at).toLocaleString('pt-BR')}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => restoreProtocol(protocol.cnpj, protocol.razao_social)}
+                          disabled={!protocol.tempo_restante?.is_valid || loadingProtocols || restoringProtocol?.cnpj === protocol.cnpj}
+                          className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2 ${
+                            protocol.tempo_restante?.is_valid && !restoringProtocol
+                              ? 'bg-blue-600 text-white hover:bg-blue-700'
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          }`}
+                        >
+                          {restoringProtocol?.cnpj === protocol.cnpj ? (
+                            <>
+                              <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                              Restaurando...
+                            </>
+                          ) : (
+                            <>
+                              <ArrowDownTrayIcon className="h-4 w-4" />
+                              Restaurar
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes toast-slide-in {
           from {
@@ -639,6 +1493,14 @@ export default function SituacaoFiscal() {
           to {
             opacity: 1;
             transform: scale(1);
+          }
+        }
+        @keyframes shimmer {
+          0% {
+            background-position: -200% 0;
+          }
+          100% {
+            background-position: 200% 0;
           }
         }
         .animate-toast-slide-in {
