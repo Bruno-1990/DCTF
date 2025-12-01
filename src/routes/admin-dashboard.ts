@@ -5,6 +5,7 @@ import AdminDashboardReportController from '../controllers/AdminDashboardReportC
 const router = Router();
 
 router.get('/snapshot', (req, res) => AdminDashboardController.getSnapshot(req, res));
+router.get('/enhanced', (req, res) => AdminDashboardController.getEnhanced(req, res));
 router.get('/reports/history', (req, res) => AdminDashboardReportController.listHistory(req, res));
 router.get('/reports/history/:id/download', (req, res) => AdminDashboardReportController.downloadHistory(req, res));
 router.delete('/reports/history/:id', (req, res) => AdminDashboardReportController.deleteHistory(req, res));

@@ -70,7 +70,7 @@ export async function listarClientesSemMovimentacao(): Promise<ClienteSemMovimen
       GROUP BY c.cnpj_limpo, c.razao_social, ult_mov.ano, ult_mov.mes
       HAVING ultima_movimentacao IS NULL 
          OR (ult_mov.ano < ? OR (ult_mov.ano = ? AND ult_mov.mes < ?))
-      ORDER BY ult_mov.ano ASC NULLS LAST, ult_mov.mes ASC NULLS LAST
+      ORDER BY (ult_mov.ano IS NULL), ult_mov.ano ASC, (ult_mov.mes IS NULL), ult_mov.mes ASC
       `,
       [limiteAno, limiteAno, limiteMes]
     );

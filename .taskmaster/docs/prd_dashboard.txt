@@ -1,0 +1,428 @@
+<context>
+# Overview  
+O Dashboard Interativo e Inteligente é uma evolução do painel administrativo atual, transformando dados estáticos em insights acionáveis através de visualizações dinâmicas, interatividade inteligente e foco nos dados mais relevantes para tomada de decisão.
+
+**Problema que resolve:**
+- Usuários precisam navegar entre múltiplas telas para entender o estado completo do sistema
+- Dados importantes ficam escondidos em tabelas estáticas
+- Falta de contexto temporal e comparativo para identificar tendências
+- Informações de Situação Fiscal (SITF) não estão integradas ao dashboard principal
+- Dificuldade em identificar rapidamente problemas críticos e oportunidades
+
+**Público-alvo:**
+- Administradores do sistema
+- Contadores e gestores fiscais
+- Usuários que precisam de visão executiva rápida
+
+**Valor:**
+- Visão consolidada e inteligente de todos os dados importantes
+- Identificação proativa de problemas e tendências
+- Economia de tempo na análise de dados
+- Melhor tomada de decisão baseada em dados
+
+# Core Features  
+
+## 1. Visão Executiva Inteligente (Hero Section)
+**O que faz:** Cards principais com KPIs mais importantes, com indicadores visuais de tendência (setas para cima/baixo, cores dinâmicas).
+
+**Por que é importante:** Primeira impressão do estado do sistema, permite ação imediata.
+
+**Como funciona:**
+- 6 cards principais: Declarações Monitoradas, Saldo em Aberto, Alertas Críticos, Certidões Válidas (SITF), Taxa de Conclusão, Clientes Ativos
+- Cada card mostra: valor atual, variação % vs período anterior, indicador visual (verde/vermelho/cinza)
+- Cards são clicáveis para drill-down
+- Atualização automática a cada 5 minutos (opcional, com toggle)
+
+## 2. Gráfico de Evolução Financeira Interativo
+**O que faz:** Gráfico de linha/área mostrando evolução de débito apurado vs saldo a pagar ao longo do tempo.
+
+**Por que é importante:** Identifica tendências financeiras, mostra se situação está melhorando ou piorando.
+
+**Como funciona:**
+- Gráfico de área empilhada ou linhas duplas (Recharts)
+- Eixo X: períodos (últimos 6-12 meses)
+- Eixo Y: valores em R$
+- Duas séries: "Débito Apurado" e "Saldo a Pagar"
+- Tooltip interativo mostrando valores exatos ao passar mouse
+- Filtro de período: 3, 6, 12 meses (botões rápidos)
+- Zoom ao clicar e arrastar (opcional)
+
+## 3. Análise de Situação Fiscal (SITF) Integrada
+**O que faz:** Seção dedicada mostrando métricas de consultas fiscais, status de certidões e alertas de vencimento.
+
+**Por que é importante:** Dados de SITF são críticos mas estão isolados, precisam estar visíveis no dashboard principal.
+
+**Como funciona:**
+- Cards: Total Consultas, Certidões Válidas, Certidões Vencidas, Protocolos Ativos
+- Gráfico de pizza: Distribuição de tipos de certidão (Positiva, Negativa, Positiva c/ Efeitos)
+- Lista compacta: Top 5 empresas com certidões vencidas ou próximas do vencimento
+- Badge de status colorido (verde/amarelo/vermelho) em cada item
+- Link direto para aba Situação Fiscal
+
+## 4. Filtros Dinâmicos Inteligentes
+**O que faz:** Barra de filtros que permite refinar visualizações sem recarregar página.
+
+**Por que é importante:** Usuários precisam ver dados de períodos específicos, clientes específicos, ou status específicos.
+
+**Como funciona:**
+- Filtros: Período (dropdown com presets: Últimos 3/6/12 meses, Mês atual, Trimestre atual), Status (todos/pendente/concluído/erro), Cliente (busca autocomplete)
+- Aplicação em tempo real (sem reload)
+- Indicador visual de filtros ativos (badge com contador)
+- Botão "Limpar filtros" sempre visível
+- Filtros persistem na URL (permitem compartilhamento de links)
+
+## 5. Top 10 Clientes com Maior Saldo Pendente
+**O que faz:** Gráfico de barras horizontal mostrando os 10 clientes com maior saldo pendente.
+
+**Por que é importante:** Identifica rapidamente onde está concentrado o risco financeiro.
+
+**Como funciona:**
+- Gráfico de barras horizontal (Recharts)
+- Eixo Y: Nome/Razão Social do cliente (truncado se muito longo)
+- Eixo X: Valor em R$ (formatado)
+- Cores: gradiente de vermelho claro a vermelho escuro (maior = mais escuro)
+- Tooltip: mostra CNPJ, saldo exato, número de declarações pendentes
+- Clique na barra: navega para página DCTF filtrada por aquele CNPJ
+
+## 6. Comparativo Período Atual vs Anterior
+**O que faz:** Cards comparativos mostrando variação entre período atual e anterior.
+
+**Por que é importante:** Contexto é essencial - saber se números estão melhorando ou piorando.
+
+**Como funciona:**
+- Cards lado a lado: "Este Mês" vs "Mês Anterior"
+- Métricas: Total Declarações, Saldo Pendente, Taxa Conclusão, Alertas
+- Indicador de variação: % e seta (verde = melhorou, vermelho = piorou)
+- Gráfico pequeno de barras lado a lado para comparação visual
+
+## 7. Alertas Inteligentes Contextualizados
+**O que faz:** Seção de alertas melhorada com agrupamento inteligente e ações rápidas.
+
+**Por que é importante:** Alertas precisam ser acionáveis, não apenas informativos.
+
+**Como funciona:**
+- Mantém agrupamento por tipo
+- Adiciona: badge de contador em cada grupo
+- Botão "Resolver" em cada alerta (marca como visto/resolvido)
+- Filtro rápido: "Mostrar apenas críticos"
+- Indicador de novos alertas desde última visita (badge vermelho)
+- Link direto para ação corretiva quando aplicável
+
+# User Experience  
+
+## User Personas
+
+**Persona 1: Administrador do Sistema**
+- Precisa: visão geral rápida, identificar problemas críticos, monitorar saúde do sistema
+- Uso: diário, 5-10 minutos por sessão
+- Expectativa: dados atualizados, ações rápidas, sem poluição visual
+
+**Persona 2: Contador/Gestor Fiscal**
+- Precisa: entender situação financeira, identificar clientes com problemas, acompanhar prazos
+- Uso: várias vezes ao dia, 2-5 minutos por sessão
+- Expectativa: foco em dados financeiros e prazos, fácil navegação para detalhes
+
+## Key User Flows
+
+**Fluxo 1: Verificação Rápida Diária (2 minutos)**
+1. Usuário acessa dashboard
+2. Vê cards principais (identifica problemas imediatamente)
+3. Verifica alertas críticos (se houver, clica para ver detalhes)
+4. Verifica gráfico financeiro (vê tendência)
+5. Se tudo OK, fecha dashboard
+
+**Fluxo 2: Análise de Cliente Específico (5 minutos)**
+1. Usuário acessa dashboard
+2. Usa filtro de cliente (busca por CNPJ ou nome)
+3. Dashboard atualiza mostrando apenas dados daquele cliente
+4. Analisa gráficos e métricas filtradas
+5. Clica em item específico para drill-down
+6. Navega para página de detalhes
+
+## UI/UX Considerations
+
+**Design Principles:**
+- Menos é mais: máximo 3-4 seções visíveis por vez (scroll suave)
+- Hierarquia visual clara: informações mais importantes em destaque
+- Cores semânticas: verde (bom), amarelo (atenção), vermelho (problema)
+- Feedback imediato: loading states, animações suaves, transições
+- Responsivo: funciona bem em desktop e tablet (mobile: versão simplificada)
+
+**Interatividade:**
+- Hover states em todos elementos clicáveis
+- Tooltips informativos sem poluir
+- Animações suaves (fade, slide) para mudanças de estado
+- Loading skeletons (não spinners) durante carregamento
+- Transições entre estados de filtro
+</context>
+<PRD>
+# Technical Architecture  
+
+## System Components
+
+### Frontend Components (React/TypeScript)
+```
+Dashboard/
+├── DashboardLayout.tsx          # Layout principal com grid responsivo
+├── HeroSection.tsx              # Cards principais de KPIs
+├── FinancialEvolutionChart.tsx  # Gráfico de evolução financeira
+├── SitfMetricsSection.tsx       # Seção de métricas SITF
+├── TopClientsChart.tsx          # Gráfico top 10 clientes
+├── PeriodComparison.tsx         # Comparativo de períodos
+├── AlertsSection.tsx            # Seção de alertas (melhorado)
+├── DashboardFilters.tsx         # Barra de filtros
+└── hooks/
+    ├── useDashboardData.ts      # Hook para buscar dados
+    ├── useDashboardFilters.ts   # Hook para gerenciar filtros
+    └── useAutoRefresh.ts        # Hook para atualização automática
+```
+
+### Backend Services (Node.js/TypeScript)
+```
+services/
+├── EnhancedDashboardService.ts      # Serviço principal (novo)
+├── DashboardMetricsService.ts       # Métricas existentes (expandir)
+├── SitfDashboardService.ts          # Métricas SITF (novo)
+└── DashboardComparisonService.ts    # Comparativos (novo)
+```
+
+### API Routes
+```
+routes/
+└── dashboard/
+    ├── GET /api/dashboard/enhanced   # Endpoint principal (novo)
+    ├── GET /api/dashboard/sitf       # Métricas SITF (novo)
+    └── GET /api/dashboard/comparison  # Comparativos (novo)
+```
+
+## Data Models
+
+### Enhanced Dashboard Response
+```typescript
+interface EnhancedDashboardData {
+  meta: {
+    generatedAt: string;
+    period: string;
+    filters: DashboardFilters;
+  };
+  
+  hero: {
+    totalDeclarations: { value: number; change: number; trend: 'up' | 'down' | 'stable' };
+    totalBalance: { value: number; change: number; trend: 'up' | 'down' | 'stable' };
+    criticalAlerts: { value: number; change: number; trend: 'up' | 'down' | 'stable' };
+    validCertificates: { value: number; change: number; trend: 'up' | 'down' | 'stable' };
+    completionRate: { value: number; change: number; trend: 'up' | 'down' | 'stable' };
+    activeClients: { value: number; change: number; trend: 'up' | 'down' | 'stable' };
+  };
+  
+  financial: {
+    evolution: Array<{
+      period: string;
+      debitAmount: number;
+      balanceDue: number;
+    }>;
+    topClients: Array<{
+      clientId: string;
+      businessName: string;
+      cnpj: string;
+      balanceDue: number;
+      pendingDeclarations: number;
+    }>;
+  };
+  
+  sitf: {
+    totalConsultations: number;
+    validCertificates: number;
+    expiredCertificates: number;
+    activeProtocols: number;
+    certificateTypes: {
+      positiva: number;
+      negativa: number;
+      positivaComEfeitos: number;
+    };
+    topExpired: Array<{
+      cnpj: string;
+      businessName: string;
+      expirationDate: string;
+      daysUntilExpiration: number;
+    }>;
+  };
+  
+  comparisons: {
+    currentPeriod: PeriodMetrics;
+    previousPeriod: PeriodMetrics;
+    variations: {
+      declarations: number; // %
+      balance: number; // %
+      completionRate: number; // %
+      alerts: number; // %
+    };
+  };
+  
+  alerts: {
+    critical: Array<DashboardAlert>;
+    byType: Record<string, DashboardAlert[]>;
+    newSinceLastVisit: number;
+  };
+}
+```
+
+### Dashboard Filters
+```typescript
+interface DashboardFilters {
+  period: '3m' | '6m' | '12m' | 'current_month' | 'current_quarter' | 'custom';
+  customPeriodStart?: string;
+  customPeriodEnd?: string;
+  status?: 'all' | 'pending' | 'completed' | 'error';
+  clientId?: string;
+  clientSearch?: string;
+}
+```
+
+# Development Roadmap  
+
+## Fase 1: Fundação e Hero Section (MVP Essencial)
+**Objetivo:** Dashboard funcional com dados essenciais visíveis
+
+**Escopo:**
+1. Criar `EnhancedDashboardService` no backend
+2. Expandir `DashboardMetricsService` para incluir cálculos de tendência
+3. Criar componente `HeroSection` com 6 cards principais
+4. Implementar cálculo de variação % e tendência (up/down/stable)
+5. Adicionar indicadores visuais de tendência (setas, cores)
+6. Criar endpoint `/api/dashboard/enhanced`
+7. Integrar com frontend existente
+8. Testes básicos de renderização
+
+## Fase 2: Gráficos Interativos Essenciais
+**Objetivo:** Visualizações dinâmicas dos dados mais importantes
+
+**Escopo:**
+1. Criar `FinancialEvolutionChart` (gráfico de área/linha)
+2. Integrar com Recharts
+3. Implementar tooltips interativos
+4. Adicionar filtros de período (3/6/12 meses) no gráfico
+5. Criar `TopClientsChart` (barras horizontais)
+6. Implementar navegação ao clicar (drill-down)
+7. Adicionar animações suaves de entrada
+8. Testes de interatividade
+
+## Fase 3: Integração SITF e Filtros
+**Objetivo:** Dados SITF visíveis e filtros funcionais
+
+**Escopo:**
+1. Criar `SitfDashboardService` no backend
+2. Criar componente `SitfMetricsSection`
+3. Implementar gráfico de pizza de tipos de certidão
+4. Lista de top 5 empresas com certidões vencidas
+5. Criar componente `DashboardFilters`
+6. Implementar filtros de período, status, cliente
+7. Integrar filtros com URL (query params)
+8. Persistência de filtros no localStorage
+9. Testes de filtros e integração SITF
+
+## Fase 4: Comparativos e Melhorias Visuais
+**Objetivo:** Contexto comparativo e polish visual
+
+**Escopo:**
+1. Criar `PeriodComparison` component
+2. Implementar cálculo de comparação período atual vs anterior
+3. Melhorar `AlertsSection` com agrupamento inteligente
+4. Polimento visual (cores, espaçamentos, tipografia)
+5. Responsividade (tablet e mobile simplificado)
+6. Testes de UI/UX
+
+## Fase 5: Alertas Inteligentes e Exportação
+**Objetivo:** Alertas acionáveis e exportação de dados
+
+**Escopo:**
+1. Melhorar `AlertsSection` com ações rápidas
+2. Implementar ação "Resolver" em alertas
+3. Adicionar filtro "Apenas críticos"
+4. Implementar contador de novos alertas
+5. Criar endpoint de exportação (CSV/Excel)
+6. Adicionar botão de exportação em gráficos
+7. Implementar atualização automática (toggle)
+8. Testes finais e otimizações
+
+# Logical Dependency Chain
+
+## Ordem de Desenvolvimento (Foundation First)
+
+**1. Backend: Enhanced Dashboard Service (Fundação)**
+- Precisa ser feito primeiro pois frontend depende dos dados
+- Expandir `DashboardMetricsService` existente
+- Criar novos serviços (SITF, Comparativos)
+- Criar endpoints de API
+- **Resultado:** API funcional retornando dados estruturados
+
+**2. Frontend: Hero Section (Visibilidade Rápida)**
+- Primeiro componente visível
+- Usa dados do backend criado
+- Validação de integração backend-frontend
+- **Resultado:** Usuário vê dados importantes imediatamente
+
+**3. Frontend: Gráfico Financeiro (Primeira Visualização)**
+- Depende de Hero Section (mesma fonte de dados)
+- Valida biblioteca de gráficos (Recharts)
+- **Resultado:** Primeira visualização interativa funcionando
+
+**4. Frontend: Top Clientes (Segunda Visualização)**
+- Independente do gráfico financeiro
+- Valida padrão de criação de gráficos
+- **Resultado:** Segunda visualização, padrão estabelecido
+
+**5. Backend + Frontend: Integração SITF**
+- Backend: Criar `SitfDashboardService`
+- Frontend: Criar `SitfMetricsSection`
+- **Resultado:** Dados SITF integrados ao dashboard
+
+**6. Frontend: Filtros Dinâmicos**
+- Depende de todos componentes anteriores (aplica filtros neles)
+- Mais complexo, mas essencial para usabilidade
+- **Resultado:** Dashboard interativo e personalizável
+
+**7. Frontend: Comparativos e Melhorias**
+- Depende de dados estáveis
+- Polish e melhorias visuais
+- **Resultado:** Dashboard completo e polido
+
+**8. Frontend: Alertas e Exportação**
+- Features avançadas
+- Depende de tudo funcionando
+- **Resultado:** Dashboard completo com features avançadas
+
+# Risks and Mitigations  
+
+## Technical Challenges
+
+**Risco 1: Performance com muitos dados**
+- **Mitigação:** 
+  - Implementar paginação/carregamento lazy
+  - Cache agressivo (5 minutos)
+  - Queries otimizadas com índices
+  - Limitar dados por padrão (últimos 6 meses)
+
+**Risco 2: Complexidade de filtros**
+- **Mitigação:**
+  - Cache por combinação de filtros
+  - Debounce em mudanças de filtro
+  - Limitar filtros simultâneos inicialmente
+  - Queries parametrizadas eficientes
+
+**Risco 3: Integração SITF (dados em 2 bancos)**
+- **Mitigação:**
+  - Criar serviço unificado que agrega de ambos
+  - Cache de dados SITF (menos frequente)
+  - Tratamento de erros se um banco falhar
+
+## MVP Definition
+
+**MVP Mínimo Viável:**
+- Hero Section com 4-6 cards principais
+- Gráfico de evolução financeira básico
+- Integração SITF básica (cards apenas)
+- Filtros básicos (período apenas)
+
+</PRD>
+

@@ -213,7 +213,15 @@ export function ClientesSemMovimentacaoSection({ clientes, loading = false, erro
           </div>
         </div>
         <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-          <SeverityTag severity={clientes.length > 0 ? (clientes.length > 20 ? 'high' : 'medium') : 'low'} />
+          <div className="text-sm font-semibold text-gray-700 bg-white px-5 py-2.5 rounded-xl border-2 border-gray-300">
+            {loading ? (
+              <span className="text-gray-500">Carregando...</span>
+            ) : (
+              <>
+                Total: <span className="text-gray-900 font-bold">{clientes.length}</span> cliente{clientes.length !== 1 ? 's' : ''}
+              </>
+            )}
+          </div>
           {!loading && clientes.length > 0 && (
             <motion.button
               onClick={handleExportar}

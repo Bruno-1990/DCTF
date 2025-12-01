@@ -217,7 +217,15 @@ export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error
           </div>
         </div>
         <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-          <SeverityTag severity={dctfs.length > 0 ? (dctfs.length > 10 ? 'high' : 'medium') : 'low'} />
+          <div className="text-sm font-semibold text-gray-700 bg-white px-5 py-2.5 rounded-xl border-2 border-gray-300">
+            {loading ? (
+              <span className="text-gray-500">Carregando...</span>
+            ) : (
+              <>
+                Total: <span className="text-gray-900 font-bold">{dctfs.length}</span> DCTF{dctfs.length !== 1 ? 's' : ''}
+              </>
+            )}
+          </div>
           {!loading && dctfs.length > 0 && (
             <motion.button
               onClick={handleExportar}

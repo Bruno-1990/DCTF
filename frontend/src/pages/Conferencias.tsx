@@ -171,42 +171,64 @@ export default function Conferencias() {
                           </div>
                           
         {/* Estatísticas */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mt-6">
-          {/* Card 1: Total de Pendências (sempre visível) */}
-                              <button
+        <div className="flex flex-wrap gap-4 mt-6">
+          {/* Card 1: Total de Pendências (visão geral - sempre primeiro) */}
+          <button
             onClick={expandAllSections}
-            className="glow-card-blue bg-white rounded-xl p-6 shadow-md border-2 border-blue-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-blue-50 transition-colors cursor-pointer"
+            className="glow-card-blue bg-white rounded-xl p-6 shadow-md border-2 border-blue-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-blue-50 transition-colors cursor-pointer flex-1 min-w-[180px] max-w-[220px]"
           >
             <ChartBarIcon className="h-8 w-8 text-blue-600 mb-3" />
             <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Total de Pendências</p>
             <p className="text-4xl font-bold text-blue-600">{estatisticas.totalIssues}</p>
-                              </button>
+          </button>
 
-          {/* Card 2: Sem DCTF Vigente (sempre visível) */}
-        <button
+          {/* Card 2: Sem DCTF Vigente (crítico - sempre visível) */}
+          <button
             onClick={() => toggleSection('clientesSemDCTFVigente')}
-            className="glow-card-red bg-white rounded-xl p-6 shadow-md border-2 border-red-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-red-50 transition-colors cursor-pointer"
+            className="glow-card-red bg-white rounded-xl p-6 shadow-md border-2 border-red-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-red-50 transition-colors cursor-pointer flex-1 min-w-[180px] max-w-[220px]"
           >
             <BuildingOfficeIcon className="h-8 w-8 text-red-600 mb-3" />
             <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem DCTF Vigente</p>
             <p className="text-4xl font-bold text-red-600">{estatisticas.totalClientesSemDCTFVigente}</p>
-        </button>
+          </button>
 
-          {/* Card 3: Sem DCTF c/ Movimento (sempre visível) */}
-        <button
+          {/* Card 3: Sem DCTF c/ Movimento (crítico - sempre visível) */}
+          <button
             onClick={() => toggleSection('clientesSemDCTFComMovimento')}
-            className="glow-card-orange bg-white rounded-xl p-6 shadow-md border-2 border-orange-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-orange-50 transition-colors cursor-pointer"
+            className="glow-card-orange bg-white rounded-xl p-6 shadow-md border-2 border-orange-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-orange-50 transition-colors cursor-pointer flex-1 min-w-[180px] max-w-[220px]"
           >
             <ExclamationTriangleIcon className="h-8 w-8 text-orange-600 mb-3" />
             <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem DCTF c/ Movimento</p>
             <p className="text-4xl font-bold text-orange-600">{estatisticas.totalClientesSemDCTFComMovimento}</p>
-        </button>
-        
-          {/* Card 4: Fora do Prazo (oculto quando zerado) */}
+          </button>
+
+          {/* Card 4: Período Inconsistente (atenção - sempre visível) */}
+          <button
+            onClick={() => toggleSection('dctfsPeriodoInconsistente')}
+            className="glow-card-purple bg-white rounded-xl p-6 shadow-md border-2 border-purple-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-purple-50 transition-colors cursor-pointer flex-1 min-w-[180px] max-w-[220px]"
+          >
+            <DocumentTextIcon className="h-8 w-8 text-purple-600 mb-3" />
+            <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Período Inconsistente</p>
+            <p className="text-4xl font-bold text-purple-600">{estatisticas.totalDCTFsPeriodoInconsistente}</p>
+          </button>
+
+          {/* Card 5: Clientes Sem Obrigação (informativo - sempre visível) */}
+          <button
+            onClick={() => toggleSection('clientesDispensadosDCTF')}
+            className="glow-card-green bg-white rounded-xl p-6 shadow-md border-2 border-green-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-green-50 transition-colors cursor-pointer flex-1 min-w-[180px] max-w-[220px]"
+          >
+            <InformationCircleIcon className="h-8 w-8 text-green-600 mb-3" />
+            <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Sem Obrigação</p>
+            <p className="text-xs text-gray-500 mb-1">(Original s/ Mov.)</p>
+            <p className="text-4xl font-bold text-green-600">{estatisticas.totalClientesDispensadosDCTF}</p>
+            <p className="text-[10px] text-gray-400 mt-1">IN RFB 2.237/2024</p>
+          </button>
+
+          {/* Card 6: Fora do Prazo (condicional - aparece quando tem dados) */}
           {estatisticas.totalDCTFsForaDoPrazo > 0 && (
             <button
               onClick={() => toggleSection('dctfsForaDoPrazo')}
-              className="glow-card-yellow bg-white rounded-xl p-6 shadow-md border-2 border-yellow-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-yellow-50 transition-colors cursor-pointer"
+              className="glow-card-yellow bg-white rounded-xl p-6 shadow-md border-2 border-yellow-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-yellow-50 transition-colors cursor-pointer flex-1 min-w-[180px] max-w-[220px]"
             >
               <ClockIcon className="h-8 w-8 text-yellow-600 mb-3" />
               <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Fora do Prazo</p>
@@ -214,51 +236,30 @@ export default function Conferencias() {
             </button>
           )}
 
-          {/* Card 5: Período Inconsistente (sempre visível) */}
-          <button
-            onClick={() => toggleSection('dctfsPeriodoInconsistente')}
-            className="glow-card-purple bg-white rounded-xl p-6 shadow-md border-2 border-purple-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-purple-50 transition-colors cursor-pointer"
-          >
-            <DocumentTextIcon className="h-8 w-8 text-purple-600 mb-3" />
-            <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Período Inconsistente</p>
-            <p className="text-4xl font-bold text-purple-600">{estatisticas.totalDCTFsPeriodoInconsistente}</p>
-          </button>
-          
-          {/* Cards condicionais - aparecem apenas quando têm dados */}
+          {/* Card 7: Sem Movimentação (condicional - aparece quando tem dados) */}
           {estatisticas.totalClientesSemMovimentacao > 0 && (
-                              <button
+            <button
               onClick={() => toggleSection('clientesSemMovimentacao')}
-              className="glow-card-indigo bg-white rounded-xl p-6 shadow-md border-2 border-indigo-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-indigo-50 transition-colors cursor-pointer"
+              className="glow-card-indigo bg-white rounded-xl p-6 shadow-md border-2 border-indigo-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-indigo-50 transition-colors cursor-pointer flex-1 min-w-[180px] max-w-[220px]"
             >
               <XCircleIcon className="h-8 w-8 text-indigo-600 mb-3" />
               <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem Movimentação</p>
               <p className="text-4xl font-bold text-indigo-600">{estatisticas.totalClientesSemMovimentacao}</p>
-                              </button>
+            </button>
           )}
 
+          {/* Card 8: Histórico de Atraso (condicional - aparece quando tem dados) */}
           {estatisticas.totalClientesHistoricoAtraso > 0 && (
-          <button
+            <button
               onClick={() => toggleSection('clientesHistoricoAtraso')}
-              className="glow-card-pink bg-white rounded-xl p-6 shadow-md border-2 border-pink-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-pink-50 transition-colors cursor-pointer"
+              className="glow-card-pink bg-white rounded-xl p-6 shadow-md border-2 border-pink-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-pink-50 transition-colors cursor-pointer flex-1 min-w-[180px] max-w-[220px]"
             >
               <ClockIcon className="h-8 w-8 text-pink-600 mb-3" />
               <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Histórico de Atraso</p>
               <p className="text-4xl font-bold text-pink-600">{estatisticas.totalClientesHistoricoAtraso}</p>
-          </button>
+            </button>
           )}
-
-          {/* Card: Clientes Sem Obrigação (Original sem Movimento) - SEMPRE VISÍVEL */}
-                              <button
-            onClick={() => toggleSection('clientesDispensadosDCTF')}
-            className="glow-card-green bg-white rounded-xl p-6 shadow-md border-2 border-green-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-green-50 transition-colors cursor-pointer"
-          >
-            <InformationCircleIcon className="h-8 w-8 text-green-600 mb-3" />
-            <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Sem Obrigação</p>
-            <p className="text-xs text-gray-500 mb-1">(Original s/ Mov.)</p>
-            <p className="text-4xl font-bold text-green-600">{estatisticas.totalClientesDispensadosDCTF}</p>
-            <p className="text-[10px] text-gray-400 mt-1">IN RFB 2.237/2024</p>
-                              </button>
-                            </div>
+        </div>
               </div>
 
           {/* Módulos de Conferência */}
@@ -283,7 +284,16 @@ export default function Conferencias() {
               onToggle={() => toggleSection('clientesSemDCTFComMovimento')}
             />
 
-            {/* Módulo 2.1: DCTFs Enviadas Fora do Prazo (oculto quando zerado) */}
+            {/* Módulo 3: Clientes Dispensados de Transmitir DCTF - SEMPRE VISÍVEL */}
+            <ClientesDispensadosDCTFSection
+              clientes={modulos.clientesDispensadosDCTF}
+              loading={false}
+              error={null}
+              expanded={expandedSections.clientesDispensadosDCTF}
+              onToggle={() => toggleSection('clientesDispensadosDCTF')}
+            />
+
+            {/* Módulo 4: DCTFs Enviadas Fora do Prazo (oculto quando zerado) */}
             {modulos.dctfsForaDoPrazo.length > 0 && (
               <DCTFsForaDoPrazoSection
                 dctfs={modulos.dctfsForaDoPrazo}
@@ -294,7 +304,7 @@ export default function Conferencias() {
               />
             )}
 
-            {/* Módulo 2.2: DCTFs com Período Inconsistente */}
+            {/* Módulo 5: DCTFs com Período Inconsistente */}
             <DCTFsPeriodoInconsistenteSection
               dctfs={modulos.dctfsPeriodoInconsistente}
               loading={false}
@@ -303,7 +313,7 @@ export default function Conferencias() {
               onToggle={() => toggleSection('dctfsPeriodoInconsistente')}
             />
 
-            {/* Módulo 5.1: Clientes sem Movimentação há mais de 12 meses */}
+            {/* Módulo 6: Clientes sem Movimentação há mais de 12 meses */}
             {modulos.clientesSemMovimentacao.length > 0 && (
               <ClientesSemMovimentacaoSection
                 clientes={modulos.clientesSemMovimentacao}
@@ -314,7 +324,7 @@ export default function Conferencias() {
               />
             )}
 
-            {/* Módulo 6.2: Clientes com Histórico de Atraso */}
+            {/* Módulo 7: Clientes com Histórico de Atraso */}
             {modulos.clientesHistoricoAtraso.length > 0 && (
               <ClientesHistoricoAtrasoSection
                 clientes={modulos.clientesHistoricoAtraso}
@@ -324,15 +334,6 @@ export default function Conferencias() {
                 onToggle={() => toggleSection('clientesHistoricoAtraso')}
               />
             )}
-
-            {/* Módulo 7: Clientes Dispensados de Transmitir DCTF - SEMPRE VISÍVEL */}
-            <ClientesDispensadosDCTFSection
-              clientes={modulos.clientesDispensadosDCTF}
-              loading={false}
-              error={null}
-              expanded={expandedSections.clientesDispensadosDCTF}
-              onToggle={() => toggleSection('clientesDispensadosDCTF')}
-            />
         </div>
     </div>
   );
