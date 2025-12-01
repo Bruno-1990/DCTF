@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   BuildingOfficeIcon,
   ChevronDownIcon,
@@ -34,6 +35,8 @@ interface Props {
   competenciaVigente: string;
   loading?: boolean;
   error?: string | null;
+  expanded?: boolean;
+  onToggle?: () => void;
 }
 
 function formatDate(value?: string) {
@@ -80,9 +83,20 @@ export function ClientesSemDCTFVigenteSection({
   clientes, 
   competenciaVigente,
   loading = false,
-  error = null 
+  error = null,
+  expanded: expandedProp,
+  onToggle
 }: Props) {
-  const [expanded, setExpanded] = useState(true);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = expandedProp !== undefined ? expandedProp : internalExpanded;
+  
+  const handleToggle = () => {
+    if (onToggle) {
+      onToggle();
+    } else {
+      setInternalExpanded(!internalExpanded);
+    }
+  };
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -153,9 +167,9 @@ export function ClientesSemDCTFVigenteSection({
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+      <div
+        onClick={handleToggle}
+        className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 flex-1">
           {expanded ? (
@@ -173,32 +187,31 @@ export function ClientesSemDCTFVigenteSection({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+          <div className="text-sm font-semibold text-gray-700 bg-white px-5 py-2.5 rounded-xl border-2 border-gray-300">
             {loading ? (
               <span className="text-gray-500">Carregando...</span>
             ) : (
               <>
-                Total: <span className="text-gray-900">{clientes.length}</span> clientes
+                Total: <span className="text-gray-900 font-bold">{clientes.length}</span> clientes
               </>
             )}
           </div>
           {!loading && clientes.length > 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleExportar();
-              }}
+            <motion.button
+              onClick={handleExportar}
               disabled={exporting}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="glow-border-linear inline-flex items-center gap-2.5 px-5 py-2.5 bg-white text-emerald-600 text-sm font-semibold rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed relative z-0"
               title="Exportar para Excel"
             >
-              <ArrowDownTrayIcon className="h-4 w-4" />
-              {exporting ? 'Exportando...' : 'Exportar'}
-            </button>
+              <ArrowDownTrayIcon className="h-5 w-5 relative z-10" />
+              <span className="relative z-10">{exporting ? 'Exportando...' : 'Exportar'}</span>
+            </motion.button>
           )}
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <>

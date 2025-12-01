@@ -10,6 +10,31 @@ interface ExportOptions {
 }
 
 /**
+ * Sanitiza o nome da planilha removendo caracteres inválidos do Excel
+ * Caracteres inválidos: * ? : \ / [ ]
+ * Limite de 31 caracteres
+ */
+function sanitizeSheetName(name: string): string {
+  // Remove caracteres inválidos: * ? : \ / [ ]
+  let sanitized = name.replace(/[*?:\\\/\[\]]/g, ' ');
+  
+  // Remove espaços múltiplos
+  sanitized = sanitized.replace(/\s+/g, ' ').trim();
+  
+  // Limita a 31 caracteres (limite do Excel)
+  if (sanitized.length > 31) {
+    sanitized = sanitized.substring(0, 31).trim();
+  }
+  
+  // Se ficou vazio, usa um nome padrão
+  if (!sanitized) {
+    sanitized = 'Planilha';
+  }
+  
+  return sanitized;
+}
+
+/**
  * Função utilitária para exportar dados para Excel
  */
 export async function exportToExcel(options: ExportOptions): Promise<void> {
@@ -17,7 +42,8 @@ export async function exportToExcel(options: ExportOptions): Promise<void> {
 
   try {
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet(sheetName, {
+    const sanitizedSheetName = sanitizeSheetName(sheetName);
+    const sheet = workbook.addWorksheet(sanitizedSheetName, {
       views: [{ state: 'frozen', ySplit: 1 }], // Cabeçalho fixo
     });
 

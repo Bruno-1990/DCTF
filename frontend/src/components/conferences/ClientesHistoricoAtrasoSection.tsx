@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   BuildingOfficeIcon,
   ChevronDownIcon,
@@ -34,6 +35,8 @@ interface Props {
   clientes: ClienteHistoricoAtraso[];
   loading?: boolean;
   error?: string | null;
+  expanded?: boolean;
+  onToggle?: () => void;
 }
 
 function formatDate(value?: string | null) {
@@ -76,8 +79,17 @@ function SeverityTag({ severity }: { severity: 'high' | 'medium' | 'low' }) {
   );
 }
 
-export function ClientesHistoricoAtrasoSection({ clientes, loading = false, error = null }: Props) {
-  const [expanded, setExpanded] = useState(true);
+export function ClientesHistoricoAtrasoSection({ clientes, loading = false, error = null, expanded: expandedProp, onToggle }: Props) {
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = expandedProp !== undefined ? expandedProp : internalExpanded;
+  
+  const handleToggle = () => {
+    if (onToggle) {
+      onToggle();
+    } else {
+      setInternalExpanded(!internalExpanded);
+    }
+  };
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -182,45 +194,44 @@ export function ClientesHistoricoAtrasoSection({ clientes, loading = false, erro
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+      <div
+        onClick={handleToggle}
+        className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors cursor-pointer"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-1">
           {expanded ? (
-            <ChevronDownIcon className="h-5 w-5 text-gray-500" />
+            <ChevronDownIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
           ) : (
-            <ChevronRightIcon className="h-5 w-5 text-gray-500" />
+            <ChevronRightIcon className="h-5 w-5 text-gray-500 flex-shrink-0" />
           )}
-          <BuildingOfficeIcon className="h-6 w-6 text-red-600" />
-          <div className="text-left">
-            <h3 className="text-lg font-semibold text-gray-900">
+          <div className="flex-1 text-left">
+            <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
+              <BuildingOfficeIcon className="h-5 w-5 text-red-600" />
               Clientes com Histórico de Atraso
-            </h3>
-            <p className="text-sm text-gray-500">
+            </h2>
+            <p className="text-sm text-gray-600">
               {clientes.length} cliente{clientes.length !== 1 ? 's' : ''} com histórico de DCTFs enviadas fora do prazo
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
           <SeverityTag severity={clientes.length > 0 ? (clientes.length > 5 ? 'high' : 'medium') : 'low'} />
           {!loading && clientes.length > 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleExportar();
-              }}
+            <motion.button
+              onClick={handleExportar}
               disabled={exporting}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="glow-border-linear inline-flex items-center gap-2.5 px-5 py-2.5 bg-white text-emerald-600 text-sm font-semibold rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed relative z-0"
               title="Exportar para Excel"
             >
-              <ArrowDownTrayIcon className="h-4 w-4" />
-              {exporting ? 'Exportando...' : 'Exportar'}
-            </button>
+              <ArrowDownTrayIcon className="h-5 w-5 relative z-10" />
+              <span className="relative z-10">{exporting ? 'Exportando...' : 'Exportar'}</span>
+            </motion.button>
           )}
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-gray-200">

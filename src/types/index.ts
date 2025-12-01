@@ -317,6 +317,19 @@ export interface DCTFReportItem {
   debitAmount?: number | string | null;
   balanceDue?: number | string | null;
   origin?: string;
+  // Campos adicionais da tabela DCTF
+  tipo?: string | null;
+  periodoApuracao?: string | null;
+  dataDeclaracao?: string | null;
+  dataTransmissao?: string | null;
+  horaTransmissao?: string | null;
+  tipoNi?: string | null;
+  numeroIdentificacao?: string | null;
+  categoria?: string | null;
+  origem?: string | null;
+  observacoes?: string | null;
+  statusPagamento?: string | null;
+  dataPagamento?: string | null;
 }
 
 export interface DCTFReportData {

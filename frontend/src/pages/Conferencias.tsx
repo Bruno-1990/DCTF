@@ -18,6 +18,11 @@ import {
   ExclamationTriangleIcon,
   ArrowPathIcon,
   ChartBarIcon,
+  BuildingOfficeIcon,
+  ClockIcon,
+  DocumentTextIcon,
+  XCircleIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 
 export default function Conferencias() {
@@ -25,12 +30,50 @@ export default function Conferencias() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Estado para controlar quais seções estão expandidas
+  const [expandedSections, setExpandedSections] = useState<{
+    clientesSemDCTFVigente: boolean;
+    clientesSemDCTFComMovimento: boolean;
+    dctfsForaDoPrazo: boolean;
+    dctfsPeriodoInconsistente: boolean;
+    clientesSemMovimentacao: boolean;
+    clientesHistoricoAtraso: boolean;
+    clientesDispensadosDCTF: boolean;
+  }>({
+    clientesSemDCTFVigente: false,
+    clientesSemDCTFComMovimento: false,
+    dctfsForaDoPrazo: false,
+    dctfsPeriodoInconsistente: false,
+    clientesSemMovimentacao: false,
+    clientesHistoricoAtraso: false,
+    clientesDispensadosDCTF: false,
+  });
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
+
+  const expandAllSections = () => {
+    setExpandedSections({
+      clientesSemDCTFVigente: true,
+      clientesSemDCTFComMovimento: true,
+      dctfsForaDoPrazo: true,
+      dctfsPeriodoInconsistente: true,
+      clientesSemMovimentacao: true,
+      clientesHistoricoAtraso: true,
+      clientesDispensadosDCTF: true,
+    });
+  };
 
   const loadData = async (isRefresh = false) => {
     try {
       if (isRefresh) {
         setRefreshing(true);
-      } else {
+        } else {
         setLoading(true);
       }
       setError(null);
@@ -42,11 +85,11 @@ export default function Conferencias() {
       console.error('[Conferências] Erro ao carregar:', err);
       console.error('[Conferências] Stack:', err.stack);
       setError(err.message || 'Erro ao carregar conferências. Tente novamente.');
-    } finally {
+      } finally {
       setLoading(false);
       setRefreshing(false);
-    }
-  };
+        }
+    };
 
   useEffect(() => {
     loadData();
@@ -80,7 +123,7 @@ export default function Conferencias() {
           <div className="flex items-center gap-3 text-red-600 mb-4">
             <ExclamationTriangleIcon className="h-6 w-6" />
             <h1 className="text-2xl font-bold">Erro ao Carregar Conferências</h1>
-          </div>
+        </div>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
             onClick={handleRefresh}
@@ -89,8 +132,8 @@ export default function Conferencias() {
             <ArrowPathIcon className="h-5 w-5" />
             Tentar Novamente
           </button>
-        </div>
-      </div>
+              </div>
+            </div>
     );
   }
 
@@ -99,8 +142,8 @@ export default function Conferencias() {
       <div className="container mx-auto px-4 py-6 max-w-7xl min-h-screen">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <p className="text-gray-600">Carregando dados...</p>
-        </div>
-      </div>
+              </div>
+            </div>
     );
   }
 
@@ -111,93 +154,154 @@ export default function Conferencias() {
       {/* Cabeçalho */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
-          <div>
+                      <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Conferências</h1>
             <p className="text-gray-600">
               Competência vigente: <span className="font-semibold">{competenciaVigente.competencia}</span>
-            </p>
-          </div>
-          <button
+                        </p>
+                      </div>
+                              <button
             onClick={handleRefresh}
             disabled={refreshing}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ArrowPathIcon className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
             {refreshing ? 'Atualizando...' : 'Atualizar'}
-          </button>
-        </div>
-
+                              </button>
+                          </div>
+                          
         {/* Estatísticas */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <div className="flex items-center gap-2 mb-1">
-              <ChartBarIcon className="h-5 w-5 text-blue-600" />
-              <span className="text-sm font-medium text-blue-900">Total de Issues</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-900">{estatisticas.totalIssues}</p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <p className="text-sm font-medium text-gray-700 mb-1">Sem DCTF Vigente</p>
-            <p className="text-2xl font-bold text-gray-900">{estatisticas.totalClientesSemDCTFVigente}</p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <p className="text-sm font-medium text-gray-700 mb-1">Sem DCTF c/ Movimento</p>
-            <p className="text-2xl font-bold text-gray-900">{estatisticas.totalClientesSemDCTFComMovimento}</p>
-          </div>
-          <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-            <p className="text-sm font-medium text-amber-700 mb-1">Fora do Prazo</p>
-            <p className="text-2xl font-bold text-amber-900">{estatisticas.totalDCTFsForaDoPrazo}</p>
-          </div>
-          <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-            <p className="text-sm font-medium text-purple-700 mb-1">Período Inconsistente</p>
-            <p className="text-2xl font-bold text-purple-900">{estatisticas.totalDCTFsPeriodoInconsistente}</p>
-          </div>
-          <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
-            <p className="text-sm font-medium text-indigo-700 mb-1">Sem Movimentação</p>
-            <p className="text-2xl font-bold text-indigo-900">{estatisticas.totalClientesSemMovimentacao}</p>
-          </div>
-        </div>
-      </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mt-6">
+          {/* Card 1: Total de Pendências (sempre visível) */}
+                              <button
+            onClick={expandAllSections}
+            className="glow-card-blue bg-white rounded-xl p-6 shadow-md border-2 border-blue-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-blue-50 transition-colors cursor-pointer"
+          >
+            <ChartBarIcon className="h-8 w-8 text-blue-600 mb-3" />
+            <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Total de Pendências</p>
+            <p className="text-4xl font-bold text-blue-600">{estatisticas.totalIssues}</p>
+                              </button>
+
+          {/* Card 2: Sem DCTF Vigente (sempre visível) */}
+        <button
+            onClick={() => toggleSection('clientesSemDCTFVigente')}
+            className="glow-card-red bg-white rounded-xl p-6 shadow-md border-2 border-red-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-red-50 transition-colors cursor-pointer"
+          >
+            <BuildingOfficeIcon className="h-8 w-8 text-red-600 mb-3" />
+            <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem DCTF Vigente</p>
+            <p className="text-4xl font-bold text-red-600">{estatisticas.totalClientesSemDCTFVigente}</p>
+        </button>
+
+          {/* Card 3: Sem DCTF c/ Movimento (sempre visível) */}
+        <button
+            onClick={() => toggleSection('clientesSemDCTFComMovimento')}
+            className="glow-card-orange bg-white rounded-xl p-6 shadow-md border-2 border-orange-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-orange-50 transition-colors cursor-pointer"
+          >
+            <ExclamationTriangleIcon className="h-8 w-8 text-orange-600 mb-3" />
+            <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem DCTF c/ Movimento</p>
+            <p className="text-4xl font-bold text-orange-600">{estatisticas.totalClientesSemDCTFComMovimento}</p>
+        </button>
+        
+          {/* Card 4: Fora do Prazo (oculto quando zerado) */}
+          {estatisticas.totalDCTFsForaDoPrazo > 0 && (
+            <button
+              onClick={() => toggleSection('dctfsForaDoPrazo')}
+              className="glow-card-yellow bg-white rounded-xl p-6 shadow-md border-2 border-yellow-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-yellow-50 transition-colors cursor-pointer"
+            >
+              <ClockIcon className="h-8 w-8 text-yellow-600 mb-3" />
+              <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Fora do Prazo</p>
+              <p className="text-4xl font-bold text-yellow-600">{estatisticas.totalDCTFsForaDoPrazo}</p>
+            </button>
+          )}
+
+          {/* Card 5: Período Inconsistente (sempre visível) */}
+          <button
+            onClick={() => toggleSection('dctfsPeriodoInconsistente')}
+            className="glow-card-purple bg-white rounded-xl p-6 shadow-md border-2 border-purple-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-purple-50 transition-colors cursor-pointer"
+          >
+            <DocumentTextIcon className="h-8 w-8 text-purple-600 mb-3" />
+            <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Período Inconsistente</p>
+            <p className="text-4xl font-bold text-purple-600">{estatisticas.totalDCTFsPeriodoInconsistente}</p>
+          </button>
+          
+          {/* Cards condicionais - aparecem apenas quando têm dados */}
+          {estatisticas.totalClientesSemMovimentacao > 0 && (
+                              <button
+              onClick={() => toggleSection('clientesSemMovimentacao')}
+              className="glow-card-indigo bg-white rounded-xl p-6 shadow-md border-2 border-indigo-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-indigo-50 transition-colors cursor-pointer"
+            >
+              <XCircleIcon className="h-8 w-8 text-indigo-600 mb-3" />
+              <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem Movimentação</p>
+              <p className="text-4xl font-bold text-indigo-600">{estatisticas.totalClientesSemMovimentacao}</p>
+                              </button>
+          )}
+
+          {estatisticas.totalClientesHistoricoAtraso > 0 && (
+          <button
+              onClick={() => toggleSection('clientesHistoricoAtraso')}
+              className="glow-card-pink bg-white rounded-xl p-6 shadow-md border-2 border-pink-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-pink-50 transition-colors cursor-pointer"
+            >
+              <ClockIcon className="h-8 w-8 text-pink-600 mb-3" />
+              <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Histórico de Atraso</p>
+              <p className="text-4xl font-bold text-pink-600">{estatisticas.totalClientesHistoricoAtraso}</p>
+          </button>
+          )}
+
+          {/* Card: Clientes Sem Obrigação (Original sem Movimento) - SEMPRE VISÍVEL */}
+                              <button
+            onClick={() => toggleSection('clientesDispensadosDCTF')}
+            className="glow-card-green bg-white rounded-xl p-6 shadow-md border-2 border-green-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-green-50 transition-colors cursor-pointer"
+          >
+            <InformationCircleIcon className="h-8 w-8 text-green-600 mb-3" />
+            <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Sem Obrigação</p>
+            <p className="text-xs text-gray-500 mb-1">(Original s/ Mov.)</p>
+            <p className="text-4xl font-bold text-green-600">{estatisticas.totalClientesDispensadosDCTF}</p>
+            <p className="text-[10px] text-gray-400 mt-1">IN RFB 2.237/2024</p>
+                              </button>
+                            </div>
+              </div>
 
           {/* Módulos de Conferência */}
           <div className="space-y-6">
             {/* Módulo 1: Clientes sem DCTF Vigente */}
-            {modulos.clientesSemDCTFVigente.length > 0 && (
-              <ClientesSemDCTFVigenteSection
-                clientes={modulos.clientesSemDCTFVigente}
-                competenciaVigente={competenciaVigente.competencia}
-                loading={false}
-                error={null}
-              />
-            )}
+            <ClientesSemDCTFVigenteSection
+              clientes={modulos.clientesSemDCTFVigente}
+              competenciaVigente={competenciaVigente.competencia}
+              loading={false}
+              error={null}
+              expanded={expandedSections.clientesSemDCTFVigente}
+              onToggle={() => toggleSection('clientesSemDCTFVigente')}
+            />
 
             {/* Módulo 2: Clientes sem DCTF com Movimento */}
-            {modulos.clientesSemDCTFComMovimento.length > 0 && (
-              <ClientesSemDCTFComMovimentoSection
-                clientes={modulos.clientesSemDCTFComMovimento}
-                competenciaVigente={competenciaVigente.competencia}
-                loading={false}
-                error={null}
-              />
-            )}
+            <ClientesSemDCTFComMovimentoSection
+              clientes={modulos.clientesSemDCTFComMovimento}
+              competenciaVigente={competenciaVigente.competencia}
+              loading={false}
+              error={null}
+              expanded={expandedSections.clientesSemDCTFComMovimento}
+              onToggle={() => toggleSection('clientesSemDCTFComMovimento')}
+            />
 
-            {/* Módulo 2.1: DCTFs Enviadas Fora do Prazo */}
+            {/* Módulo 2.1: DCTFs Enviadas Fora do Prazo (oculto quando zerado) */}
             {modulos.dctfsForaDoPrazo.length > 0 && (
               <DCTFsForaDoPrazoSection
                 dctfs={modulos.dctfsForaDoPrazo}
                 loading={false}
                 error={null}
+                expanded={expandedSections.dctfsForaDoPrazo}
+                onToggle={() => toggleSection('dctfsForaDoPrazo')}
               />
             )}
 
             {/* Módulo 2.2: DCTFs com Período Inconsistente */}
-            {modulos.dctfsPeriodoInconsistente.length > 0 && (
-              <DCTFsPeriodoInconsistenteSection
-                dctfs={modulos.dctfsPeriodoInconsistente}
-                loading={false}
-                error={null}
-              />
-            )}
+            <DCTFsPeriodoInconsistenteSection
+              dctfs={modulos.dctfsPeriodoInconsistente}
+              loading={false}
+              error={null}
+              expanded={expandedSections.dctfsPeriodoInconsistente}
+              onToggle={() => toggleSection('dctfsPeriodoInconsistente')}
+            />
 
             {/* Módulo 5.1: Clientes sem Movimentação há mais de 12 meses */}
             {modulos.clientesSemMovimentacao.length > 0 && (
@@ -205,6 +309,8 @@ export default function Conferencias() {
                 clientes={modulos.clientesSemMovimentacao}
                 loading={false}
                 error={null}
+                expanded={expandedSections.clientesSemMovimentacao}
+                onToggle={() => toggleSection('clientesSemMovimentacao')}
               />
             )}
 
@@ -214,16 +320,20 @@ export default function Conferencias() {
                 clientes={modulos.clientesHistoricoAtraso}
                 loading={false}
                 error={null}
+                expanded={expandedSections.clientesHistoricoAtraso}
+                onToggle={() => toggleSection('clientesHistoricoAtraso')}
               />
             )}
 
-            {/* Módulo 7: Clientes Dispensados de Transmitir DCTF */}
+            {/* Módulo 7: Clientes Dispensados de Transmitir DCTF - SEMPRE VISÍVEL */}
             <ClientesDispensadosDCTFSection
               clientes={modulos.clientesDispensadosDCTF}
               loading={false}
               error={null}
+              expanded={expandedSections.clientesDispensadosDCTF}
+              onToggle={() => toggleSection('clientesDispensadosDCTF')}
             />
-          </div>
+        </div>
     </div>
   );
 }

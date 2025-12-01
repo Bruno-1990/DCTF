@@ -112,6 +112,7 @@ export class HostDadosObrigacaoService {
             )
             AND LOWER(d_sm.tipo) LIKE '%original%sem%movimento%'
             AND d_sm.data_transmissao IS NOT NULL
+            AND (d_sm.tipo IS NULL OR UPPER(d_sm.tipo) NOT LIKE '%RETIFICADORA%')
             -- Verificar se o período do "Original sem movimento" é anterior ou igual ao mês do movimento
             AND (
               -- Formato YYYY-MM
@@ -184,8 +185,13 @@ export class HostDadosObrigacaoService {
         )
       LEFT JOIN dctf_declaracoes d
         ON (
-          d.cliente_id = c.id
+          (
+            d.cliente_id = c.id
+            OR REPLACE(REPLACE(REPLACE(COALESCE(d.cnpj, ''), '.', ''), '/', ''), '-', '') = c.cnpj_limpo
+          )
           AND (d.periodo_apuracao = ? OR d.periodo_apuracao = ?)
+          -- Considerar tanto Original quanto Retificadora para verificar se TEM DCTF
+          -- Se tem retificadora, significa que já enviou original antes
         )
       WHERE h.ano = ? AND h.mes = ?
       GROUP BY
@@ -353,6 +359,7 @@ export class HostDadosObrigacaoService {
               WHERE d_sm.cliente_id = c.id
                 AND LOWER(d_sm.tipo) LIKE '%original%sem%movimento%'
                 AND d_sm.data_transmissao IS NOT NULL
+                AND (d_sm.tipo IS NULL OR UPPER(d_sm.tipo) NOT LIKE '%RETIFICADORA%')
                 -- Verificar se o período do "Original sem movimento" é anterior ou igual ao mês do movimento
                 AND (
                   -- Formato YYYY-MM
@@ -411,16 +418,23 @@ export class HostDadosObrigacaoService {
           AND h.movimentacao > 0
           -- Verificar que NÃO existe DCTF para a competência vigente
           -- Usar NOT EXISTS para garantir que não há DCTF (mais confiável que LEFT JOIN)
+          -- IMPORTANTE: Considerar tanto Original quanto Retificadora
+          -- Se tem retificadora, significa que já enviou original antes
+          -- IMPORTANTE: Verificar tanto por cliente_id quanto por CNPJ normalizado
+          -- (mesma lógica do Módulo 1 para garantir consistência)
           AND NOT EXISTS (
             SELECT 1
             FROM dctf_declaracoes d
-            WHERE d.cliente_id = c.id
-              AND (
-                -- Formato YYYY-MM (ex: 2025-10)
-                TRIM(d.periodo_apuracao) = ?
-                -- Formato MM/YYYY (ex: 10/2025)
-                OR TRIM(d.periodo_apuracao) = ?
-              )
+            WHERE (
+              d.cliente_id = c.id
+              OR REPLACE(REPLACE(REPLACE(COALESCE(d.cnpj, ''), '.', ''), '/', ''), '-', '') = c.cnpj_limpo
+            )
+            AND (
+              -- Formato YYYY-MM (ex: 2025-10)
+              TRIM(d.periodo_apuracao) = ?
+              -- Formato MM/YYYY (ex: 10/2025)
+              OR TRIM(d.periodo_apuracao) = ?
+            )
           )
         GROUP BY
           c.id,
@@ -469,14 +483,23 @@ export class HostDadosObrigacaoService {
             `
             SELECT COUNT(*) as count, GROUP_CONCAT(DISTINCT TRIM(d.periodo_apuracao) SEPARATOR ', ') as periodos
             FROM dctf_declaracoes d
-            INNER JOIN clientes c ON d.cliente_id = c.id
-            WHERE c.cnpj_limpo = ?
-              AND (
-                TRIM(d.periodo_apuracao) = ?
-                OR TRIM(d.periodo_apuracao) = ?
-              )
+            LEFT JOIN clientes c ON d.cliente_id = c.id
+            WHERE (
+              c.cnpj_limpo = ?
+              OR REPLACE(REPLACE(REPLACE(COALESCE(d.cnpj, ''), '.', ''), '/', ''), '-', '') = ?
+            )
+            AND (
+              TRIM(d.periodo_apuracao) = ?
+              OR TRIM(d.periodo_apuracao) = ?
+            )
+            AND (
+              c.id IS NOT NULL
+              OR d.cnpj IS NOT NULL
+            )
+            -- IMPORTANTE: Considerar tanto Original quanto Retificadora
+            -- Se tem retificadora, significa que já enviou original antes
             `,
-            [cnpj, periodoSql, competenciaObrigacao]
+            [cnpj, cnpj, periodoSql, competenciaObrigacao]
           );
           
           if (checkQuery.length > 0 && checkQuery[0].count > 0) {

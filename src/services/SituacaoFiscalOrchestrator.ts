@@ -170,15 +170,15 @@ async function upsertState(partial: Partial<SitfState> & { cnpj: string }) {
       
       if (date instanceof Date && !isNaN(date.getTime())) {
         // Converter para formato MySQL: YYYY-MM-DD HH:MM:SS
-        // Usar métodos locais para evitar problemas de timezone
-        const year = date.getUTCFullYear();
-        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(date.getUTCDate()).padStart(2, '0');
-        const hours = String(date.getUTCHours()).padStart(2, '0');
-        const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-        const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+        // Usar métodos locais para manter o timezone correto
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
         payload.next_eligible_at = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-        console.log('[Sitf] next_eligible_at convertido para MySQL:', payload.next_eligible_at);
+        console.log('[Sitf] next_eligible_at convertido para MySQL (local):', payload.next_eligible_at);
       } else {
         console.warn('[Sitf] next_eligible_at inválido, removendo:', payload.next_eligible_at);
         delete payload.next_eligible_at;
@@ -692,9 +692,9 @@ async function emitirRelatorio(protocolo: string, cnpj: string) {
       );
       const waitMs = parseTempoEspera(tempoMsg?.texto) ?? 5000;
       console.log('[Sitf] SERPRO retornou 304 (Not Modified - relatório ainda processando), waitMs:', waitMs);
-    // Tratar 304 como 202 para manter consistência
-    return { status: 202 as const, waitMs, raw: res.data };
-  }
+      // Tratar 304 como 202 para manter consistência
+      return { status: 202 as const, waitMs, raw: res.data };
+    }
   
   // Tratar 204 (No Content) - relatório ainda não está pronto
   if (res.status === 204) {
@@ -732,20 +732,37 @@ async function emitirRelatorio(protocolo: string, cnpj: string) {
   }
   
   if (res.status >= 500) {
-    const mensagemClara = 'Erro no servidor da Receita Federal. Tente novamente em alguns instantes.';
+    // Verificar se o erro indica que o protocolo está inválido
+    const mensagens = res.data?.mensagens || [];
+    const errorMsg = mensagens[0]?.texto || '';
+    const isProtocolInvalid = errorMsg.includes('Inicie uma nova solicitação') || 
+                              errorMsg.includes('ER05') ||
+                              errorMsg.includes('protocolo');
+    
+    let mensagemClara = 'Erro no servidor da Receita Federal. Tente novamente em alguns instantes.';
+    if (isProtocolInvalid) {
+      mensagemClara = 'O protocolo utilizado não é mais válido. É necessário solicitar um novo protocolo.';
+    }
+    
     console.error('[Sitf] SERPRO retornou erro do servidor ao emitir relatório:', {
       status: res.status,
+      mensagem: errorMsg,
+      isProtocolInvalid,
       responseData: res.data,
     });
-    throw new SerproError(mensagemClara, res.status, res.data);
+    
+    const error = new SerproError(mensagemClara, res.status, res.data);
+    // Adicionar flag para indicar que o protocolo está inválido
+    (error as any).isProtocolInvalid = isProtocolInvalid;
+    throw error;
   }
   
   console.warn('[Sitf] Status inesperado do SERPRO ao emitir relatório:', res.status);
-  return { status: res.status as any, raw: res.data };
+    return { status: res.status as any, raw: res.data };
   } catch (e: any) {
     // Se já é um erro tratado, re-lançar
     if (e instanceof SerproError || e instanceof AuthorizationError || e instanceof NetworkError) {
-      throw e;
+    throw e;
     }
     
     // Tratar erros de rede/timeout
@@ -799,6 +816,7 @@ export class SituacaoFiscalOrchestrator {
     // 3) Tentar emitir se já há protocolo
     if (state.protocolo) {
       console.log('[Sitf] Tentando emitir relatório com protocolo existente...');
+      try {
       const emit = await emitirRelatorio(state.protocolo, clean);
       if (emit.status === 200) {
         // Upload opcional para storage (pode falhar se não tiver Supabase Storage configurado)
@@ -882,13 +900,13 @@ export class SituacaoFiscalOrchestrator {
         // ✅ NOVA LÓGICA: Verificar se já existe registro para este CNPJ
         // Buscar o registro mais recente para o CNPJ
         const { data: existingRecords, error: checkError } = await client
-          .from('sitf_downloads')
+            .from('sitf_downloads')
           .select('id, created_at, file_url, pdf_base64')
-          .eq('cnpj', clean)
-          .order('created_at', { ascending: false })
-          .limit(1);
-        
-        if (checkError) {
+            .eq('cnpj', clean)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          
+          if (checkError) {
           console.warn('[Sitf] Erro ao verificar registros existentes:', checkError);
         }
         
@@ -939,18 +957,18 @@ export class SituacaoFiscalOrchestrator {
           downloadId = randomUUID();
           isUpdate = false;
           
-          const insertData: any = { 
+              const insertData: any = { 
             id: downloadId,
-            cnpj: clean, 
+                cnpj: clean, 
             file_url: url || null,
             pdf_base64: emit.pdfBase64,
-          };
-          
+              };
+              
           console.log('[Sitf] Salvando novo PDF base64 no banco para extração sob demanda');
           try {
             const { data: insertedData, error: insertError } = await client.from('sitf_downloads').insert(insertData);
-            if (insertError) {
-              if (insertError.code === '23505' || insertError.message?.includes('duplicate') || insertError.message?.includes('unique')) {
+              if (insertError) {
+                if (insertError.code === '23505' || insertError.message?.includes('duplicate') || insertError.message?.includes('unique')) {
                 console.log('[Sitf] Registro duplicado detectado pelo banco (constraint), tentando atualizar...');
                 // Se deu erro de duplicata, tentar buscar o ID existente e atualizar
                 const { data: existingRecords } = await client
@@ -974,7 +992,7 @@ export class SituacaoFiscalOrchestrator {
                   
                   if (updateErr) {
                     console.error('[Sitf] Erro ao atualizar após duplicata:', updateErr);
-                  } else {
+                } else {
                     console.log('[Sitf] Registro atualizado após detecção de duplicata');
                   }
                 }
@@ -984,10 +1002,10 @@ export class SituacaoFiscalOrchestrator {
                   message: insertError.message,
                   details: 'O PDF foi gerado com sucesso, mas não foi possível salvar no histórico. O usuário ainda pode visualizar o relatório.'
                 });
+                }
+              } else {
+                console.log('[Sitf] Download salvo com sucesso no banco (com base64)');
               }
-            } else {
-              console.log('[Sitf] Download salvo com sucesso no banco (com base64)');
-            }
           } catch (saveError: any) {
             console.error('[Sitf] Erro ao salvar download no banco:', {
               message: saveError?.message,
@@ -1088,9 +1106,34 @@ export class SituacaoFiscalOrchestrator {
       }
       
       throw new SerproError(mensagemClara, emit.status, emit.raw);
+      } catch (emitError: any) {
+        // Verificar se o erro indica que o protocolo está inválido
+        if (emitError instanceof SerproError && (emitError as any).isProtocolInvalid) {
+          console.log('[Sitf] ⚠️ Protocolo inválido detectado, invalidando e solicitando novo protocolo...');
+          
+          // Invalidar o protocolo no banco de dados
+          try {
+            await upsertState({
+              cnpj: clean,
+              protocolo: null, // Remover protocolo inválido
+              status: 'erro',
+            });
+            console.log('[Sitf] ✅ Protocolo inválido removido do banco de dados');
+          } catch (invalidateError) {
+            console.error('[Sitf] Erro ao invalidar protocolo:', invalidateError);
+            // Continuar mesmo com erro ao invalidar
+          }
+          
+          // Continuar para solicitar um novo protocolo
+          console.log('[Sitf] Solicitando novo protocolo após detectar protocolo inválido...');
+        } else {
+          // Se não for erro de protocolo inválido, re-lançar o erro
+          throw emitError;
+        }
+      }
     }
 
-    // 4) Solicitar protocolo (primeira vez - ainda não temos protocolo)
+    // 4) Solicitar protocolo (primeira vez - ainda não temos protocolo OU protocolo foi invalidado)
     console.log('[Sitf] Solicitando protocolo pela primeira vez...');
     const req = await solicitarProtocolo(clean);
     console.log('[Sitf] Protocolo obtido com sucesso, waitMs:', req.waitMs);
@@ -1187,8 +1230,8 @@ export async function extractDataFromPdfBase64(base64Pdf: string): Promise<{
       try {
         const uint8Array = new Uint8Array(buffer);
         if (PDFParse) {
-          const parser = new PDFParse(uint8Array);
-          await parser.load();
+    const parser = new PDFParse(uint8Array);
+    await parser.load();
           const textRaw = await parser.getText();
           const parserInfo = parser.getInfo() || {};
           
@@ -1217,6 +1260,17 @@ export async function extractDataFromPdfBase64(base64Pdf: string): Promise<{
     if (typeof text !== 'string') {
       text = String(text || '');
     }
+    
+    // Log para debug: verificar se texto foi extraído de todas as páginas
+    console.log('[Sitf Extract] 📄 Texto extraído do PDF:', {
+      totalCaracteres: text.length,
+      numPages: numPages,
+      primeiros500: text.substring(0, 500),
+      ultimos500: text.substring(Math.max(0, text.length - 500)),
+      contemCertidao: text.includes('Certidão'),
+      contemPositiva: text.includes('Positiva'),
+      contemNegativa: text.includes('Negativa'),
+    });
     
     console.log('[Sitf Extract] Texto extraído:', {
       textLength: text.length,
@@ -1296,23 +1350,78 @@ function extractDebitos(text: string): Array<{
     return debitos;
   }
   
+  // Log inicial para debug
+  console.log('[Sitf extractDebitos] Iniciando extração de débitos:', {
+    textLength: text.length,
+    contemPendencia: text.includes('Pendência'),
+    contemDebito: text.includes('Débito'),
+    contemSIEF: text.includes('SIEF'),
+    contemExigibilidade: text.includes('Exigibilidade'),
+  });
+  
   // ============================================
   // SEÇÃO 1: "Pendência - Débito (SIEF)"
   // Formato: Receita | PA/Exerc. | Dt. Vcto | Vl. Original | Sdo. Devedor | Multa | Juros | Sdo. Dev. Cons. | Situação
   // ============================================
-  const secaoPendenciaMatch = text.match(/Pendência\s*-\s*Débito[^\n]*\(SIEF\)[^\n]*\n([\s\S]*?)(?=Débito com Exigibilidade Suspensa|Diagnóstico Fiscal|Final do Relatório|$)/i);
-  if (secaoPendenciaMatch) {
-    const secaoPendenciaTexto = secaoPendenciaMatch[1];
-    console.log('[Sitf extractDebitos] Seção "Pendência - Débito" encontrada, tamanho:', secaoPendenciaTexto.length);
-    console.log('[Sitf extractDebitos] Preview da seção:', secaoPendenciaTexto.substring(0, 500));
+  // Melhorar regex para capturar mesmo quando está em múltiplas páginas
+  // Buscar o índice de início da seção - tentar múltiplas variações
+  let secaoPendenciaIndex = text.search(/Pendência\s*-\s*Débito[^\n]*\(SIEF\)/i);
+  if (secaoPendenciaIndex === -1) {
+    // Tentar variação sem hífen
+    secaoPendenciaIndex = text.search(/Pendência\s+Débito[^\n]*\(SIEF\)/i);
+  }
+  if (secaoPendenciaIndex === -1) {
+    // Tentar variação com "Pendência" e "Débito" em linhas diferentes
+    secaoPendenciaIndex = text.search(/Pendência[^\n]*Débito[^\n]*\(SIEF\)/i);
+  }
+  
+  let secaoPendenciaTexto = '';
+  
+  if (secaoPendenciaIndex !== -1) {
+    // Encontrar onde a seção termina - buscar por marcadores de fim de seção
+    const marcadoresFim = [
+      /Débito com Exigibilidade Suspensa[^\n]*\(SIEF\)/i,
+      /Parcelamento com Exigibilidade Suspensa/i,
+      /Inscrição com Exigibilidade Suspensa/i,
+      /Diagnóstico Fiscal na (?:Receita Federal|Procuradoria)/i,
+      /Final do Relatório/i,
+    ];
+    
+    let fimIndex = text.length; // Por padrão, vai até o fim do texto
+    
+    // Encontrar o primeiro marcador de fim após o início da seção
+    for (const marcador of marcadoresFim) {
+      const matchFim = text.substring(secaoPendenciaIndex).match(marcador);
+      if (matchFim && matchFim.index !== undefined) {
+        const novoFim = secaoPendenciaIndex + matchFim.index;
+        if (novoFim < fimIndex) {
+          fimIndex = novoFim;
+        }
+      }
+    }
+    
+    // Extrair o texto da seção (pular o cabeçalho)
+    const inicioTexto = text.indexOf('\n', secaoPendenciaIndex) + 1;
+    secaoPendenciaTexto = text.substring(inicioTexto, fimIndex);
+    
+    console.log('[Sitf extractDebitos] Seção "Pendência - Débito" encontrada:', {
+      inicio: secaoPendenciaIndex,
+      fim: fimIndex,
+      tamanho: secaoPendenciaTexto.length,
+      previewPrimeiros500: secaoPendenciaTexto.substring(0, 500),
+      previewUltimos500: secaoPendenciaTexto.substring(Math.max(0, secaoPendenciaTexto.length - 500))
+    });
+  }
+  
+  if (secaoPendenciaTexto) {
     
     // Regex para capturar linhas da tabela de PENDÊNCIA (com multa, juros e saldo consolidado)
     // Formato: código-tipo (ex: 8109-02) + tipo (ex: PIS) + período + data + valor1 + valor2 + multa + juros + saldo_cons + situação
     // Exemplo: "8109-02 PIS 08/2025 25/09/2025 189,28 189,28 37,85 4,31 231,44 DEVEDOR"
     // Exemplo com trimestre: "2089-01 IRPJ 3° TRIM/2025 31/10/2025 3.755,60 3.755,60 347,01 37,55 4.140,16 DEVEDOR"
     const linhaPendenciaPattern = /(\d{4}-\d{2})\s+([A-Z\s-]+?)\s+(\d{1,2}\s*(?:°|º)?\s*(?:TRIM|TRIMESTRE)?\/\d{4}|\d{1,2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([A-Z\s-]+(?:\s+[A-Z\s-]+)*)/g;
-    
-    let match;
+  
+  let match;
     let matchCount = 0;
     while ((match = linhaPendenciaPattern.exec(secaoPendenciaTexto)) !== null) {
       const codigoReceita = match[1].trim();
@@ -1333,9 +1442,9 @@ function extractDebitos(text: string): Array<{
         console.log('[Sitf extractDebitos] Ignorando linha que parece ser cabeçalho:', match[0].substring(0, 100));
         continue;
       }
-      
-      const valorOriginal = parseFloat(valorOriginalStr) || 0;
-      const saldoDevedor = parseFloat(saldoDevedorStr) || 0;
+    
+    const valorOriginal = parseFloat(valorOriginalStr) || 0;
+    const saldoDevedor = parseFloat(saldoDevedorStr) || 0;
       const multa = parseFloat(multaStr) || 0;
       const juros = parseFloat(jurosStr) || 0;
       const saldoDevedorConsolidado = parseFloat(saldoConsolidadoStr) || 0;
@@ -1345,18 +1454,18 @@ function extractDebitos(text: string): Array<{
         console.log('[Sitf extractDebitos] Ignorando linha sem valores válidos:', match[0].substring(0, 100));
         continue;
       }
-      
-      debitos.push({
-        codigoReceita,
-        tipoReceita,
-        periodo,
-        dataVencimento,
-        valorOriginal,
-        saldoDevedor,
+    
+    debitos.push({
+      codigoReceita,
+      tipoReceita,
+      periodo,
+      dataVencimento,
+      valorOriginal,
+      saldoDevedor,
         multa,
         juros,
         saldoDevedorConsolidado,
-        situacao,
+      situacao,
         tipo: 'pendencia',
       });
       matchCount++;
@@ -1367,17 +1476,84 @@ function extractDebitos(text: string): Array<{
     console.log(`[Sitf extractDebitos] ✅ Extraídos ${debitos.length} débitos da seção "Pendência - Débito"`);
   } else {
     console.log('[Sitf extractDebitos] ⚠️ Seção "Pendência - Débito" não encontrada no texto');
+    // Buscar qualquer ocorrência de "Pendência" ou "Débito" para debug
+    const indicesPendencia = [];
+    const indicesDebito = [];
+    let searchIndex = 0;
+    while ((searchIndex = text.indexOf('Pendência', searchIndex)) !== -1) {
+      indicesPendencia.push(searchIndex);
+      searchIndex += 1;
+    }
+    searchIndex = 0;
+    while ((searchIndex = text.indexOf('Débito', searchIndex)) !== -1) {
+      indicesDebito.push(searchIndex);
+      searchIndex += 1;
+    }
+    console.log('[Sitf extractDebitos] Debug - Ocorrências encontradas:', {
+      indicesPendencia: indicesPendencia.slice(0, 5),
+      indicesDebito: indicesDebito.slice(0, 5),
+      previewPendencia: indicesPendencia.length > 0 ? text.substring(indicesPendencia[0], indicesPendencia[0] + 200) : null,
+      previewDebito: indicesDebito.length > 0 ? text.substring(indicesDebito[0], indicesDebito[0] + 200) : null,
+    });
   }
   
   // ============================================
   // SEÇÃO 2: "Débito com Exigibilidade Suspensa (SIEF)"
   // Formato: Receita | PA/Exerc. | Dt. Vcto | Vl. Original | Sdo. Devedor | Situação
   // ============================================
-  const secaoSuspensaMatch = text.match(/Débito com Exigibilidade Suspensa[^\n]*\(SIEF\)[^\n]*\n([\s\S]*?)(?=Parcelamento|Diagnóstico Fiscal|Final do Relatório|$)/i);
+  // Melhorar regex para capturar mesmo quando está em múltiplas páginas
+  // Buscar o índice de início da seção - tentar múltiplas variações
+  let secaoSuspensaIndex = text.search(/Débito com Exigibilidade Suspensa[^\n]*\(SIEF\)/i);
+  if (secaoSuspensaIndex === -1) {
+    // Tentar variação sem "com"
+    secaoSuspensaIndex = text.search(/Débito\s+Exigibilidade\s+Suspensa[^\n]*\(SIEF\)/i);
+  }
+  if (secaoSuspensaIndex === -1) {
+    // Tentar variação com "Exigibilidade Suspensa" separado
+    secaoSuspensaIndex = text.search(/Exigibilidade\s+Suspensa[^\n]*\(SIEF\)/i);
+  }
+  let secaoSuspensaTexto = '';
+  
+  if (secaoSuspensaIndex !== -1) {
+    // Encontrar onde a seção termina - buscar por marcadores de fim de seção
+    const marcadoresFim = [
+      /Pendência\s*-\s*Débito[^\n]*\(SIEF\)/i,
+      /Parcelamento com Exigibilidade Suspensa/i,
+      /Inscrição com Exigibilidade Suspensa/i,
+      /Diagnóstico Fiscal na (?:Receita Federal|Procuradoria)/i,
+      /Final do Relatório/i,
+    ];
+    
+    let fimIndex = text.length; // Por padrão, vai até o fim do texto
+    
+    // Encontrar o primeiro marcador de fim após o início da seção
+    for (const marcador of marcadoresFim) {
+      const matchFim = text.substring(secaoSuspensaIndex).match(marcador);
+      if (matchFim && matchFim.index !== undefined) {
+        const novoFim = secaoSuspensaIndex + matchFim.index;
+        if (novoFim < fimIndex) {
+          fimIndex = novoFim;
+        }
+      }
+    }
+    
+    // Extrair o texto da seção (pular o cabeçalho)
+    const inicioTexto = text.indexOf('\n', secaoSuspensaIndex) + 1;
+    secaoSuspensaTexto = text.substring(inicioTexto, fimIndex);
+    
+    console.log('[Sitf extractDebitos] Seção "Débito com Exigibilidade Suspensa" encontrada:', {
+      inicio: secaoSuspensaIndex,
+      fim: fimIndex,
+      tamanho: secaoSuspensaTexto.length
+    });
+  }
+  
+  const secaoSuspensaMatch = secaoSuspensaTexto ? { 1: secaoSuspensaTexto } : null;
   if (secaoSuspensaMatch) {
     const secaoSuspensaTexto = secaoSuspensaMatch[1];
     console.log('[Sitf extractDebitos] Seção "Débito com Exigibilidade Suspensa" encontrada, tamanho:', secaoSuspensaTexto.length);
-    console.log('[Sitf extractDebitos] Preview da seção:', secaoSuspensaTexto.substring(0, 500));
+    console.log('[Sitf extractDebitos] Preview da seção (primeiros 500):', secaoSuspensaTexto.substring(0, 500));
+    console.log('[Sitf extractDebitos] Preview da seção (últimos 500):', secaoSuspensaTexto.substring(Math.max(0, secaoSuspensaTexto.length - 500)));
     
     // Regex para capturar linhas da tabela de EXIGIBILIDADE SUSPENSA (sem multa/juros)
     // Formato: código-tipo + tipo + período + data + valor1 + valor2 + situação
@@ -1430,9 +1606,336 @@ function extractDebitos(text: string): Array<{
     
     console.log(`[Sitf extractDebitos] Processadas ${matchCount} linhas da seção "Débito com Exigibilidade Suspensa"`);
     
-    console.log(`[Sitf extractDebitos] ✅ Extraídos ${debitos.length - (secaoPendenciaMatch ? debitos.filter(d => d.tipo === 'pendencia').length : 0)} débitos da seção "Débito com Exigibilidade Suspensa"`);
+    console.log(`[Sitf extractDebitos] ✅ Extraídos ${debitos.length - debitos.filter(d => d.tipo === 'pendencia').length} débitos da seção "Débito com Exigibilidade Suspensa"`);
   } else {
     console.log('[Sitf extractDebitos] ⚠️ Seção "Débito com Exigibilidade Suspensa" não encontrada no texto');
+  }
+  
+  // ============================================
+  // SEÇÃO 3: "Diagnóstico Fiscal na Procuradoria-Geral da Fazenda Nacional"
+  // Buscar débitos após esta seção quando há "Exigibilidade Suspensa"
+  // ============================================
+  const secaoProcuradoriaIndex = text.search(/Diagnóstico Fiscal na Procuradoria-Geral da Fazenda Nacional/i);
+  
+  if (secaoProcuradoriaIndex !== -1) {
+    console.log('[Sitf extractDebitos] 🔍 Seção "Diagnóstico Fiscal na Procuradoria" encontrada na posição:', secaoProcuradoriaIndex);
+    
+    // Buscar por "Exigibilidade Suspensa" após o diagnóstico
+    const textoAposDiagnostico = text.substring(secaoProcuradoriaIndex);
+    
+    // Procurar por diferentes variações de "Exigibilidade Suspensa"
+    const variacoesExigibilidade = [
+      /Inscrição com Exigibilidade Suspensa[^\n]*\(SIDA\)/i,
+      /Parcelamento com Exigibilidade Suspensa[^\n]*\(SISPAR\)/i,
+      /Exigibilidade\s+Suspensa/i,
+    ];
+    
+    let exigibilidadeIndex = -1;
+    let variacaoEncontrada = '';
+    
+    for (const variacao of variacoesExigibilidade) {
+      const match = textoAposDiagnostico.match(variacao);
+      if (match && match.index !== undefined) {
+        exigibilidadeIndex = match.index;
+        variacaoEncontrada = match[0];
+        break;
+      }
+    }
+    
+    if (exigibilidadeIndex !== -1) {
+      console.log('[Sitf extractDebitos] ✅ "Exigibilidade Suspensa" encontrada após diagnóstico:', variacaoEncontrada);
+      
+      // Encontrar onde começa a seção de débitos (após o título da seção)
+      const inicioSecao = secaoProcuradoriaIndex + exigibilidadeIndex;
+      const textoSecao = text.substring(inicioSecao);
+      
+      // Buscar marcadores de fim de seção
+      const marcadoresFim = [
+        /Diagnóstico Fiscal na Receita Federal/i,
+        /Final do Relatório/i,
+        /Página:\s*\d+\s*\/\s*\d+/i,
+        /Não foram detectadas pendências/i,
+      ];
+      
+      let fimSecao = text.length;
+      for (const marcador of marcadoresFim) {
+        const matchFim = textoSecao.match(marcador);
+        if (matchFim && matchFim.index !== undefined) {
+          const novoFim = inicioSecao + matchFim.index;
+          if (novoFim < fimSecao && novoFim > inicioSecao) {
+            fimSecao = novoFim;
+          }
+        }
+      }
+      
+      const secaoTexto = text.substring(inicioSecao, fimSecao);
+      console.log('[Sitf extractDebitos] 📄 Seção de Exigibilidade Suspensa (Procuradoria):', {
+        inicio: inicioSecao,
+        fim: fimSecao,
+        tamanho: secaoTexto.length,
+        preview: secaoTexto.substring(0, 500),
+      });
+      
+      // Extrair débitos desta seção usando busca global na seção específica
+      const chavesExistentes = new Set(debitos.map(d => 
+        `${d.codigoReceita || ''}-${d.periodo || ''}-${d.dataVencimento || ''}`
+      ));
+      
+      // Padrão completo (com multa/juros) - 10 campos
+      const padraoCompleto = /(\d{4}-\d{2})\s+([A-Z\s-]+?)\s+(\d{1,2}\s*(?:°|º)?\s*(?:TRIM|TRIMESTRE)?\/\d{4}|\d{1,2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([A-Z\s-]+(?:\s+[A-Z\s-]+)*)/g;
+      
+      let match;
+      let matchCount = 0;
+      while ((match = padraoCompleto.exec(secaoTexto)) !== null) {
+        const codigoReceita = match[1].trim();
+        const tipoReceita = match[2].trim();
+        const periodo = match[3].trim().replace(/\s+/g, ' ');
+        const dataVencimento = match[4].trim();
+        
+        // Validar que não é cabeçalho
+        if (codigoReceita.includes('Receita') || tipoReceita.includes('Receita') || 
+            periodo.includes('PA') || periodo.includes('Exerc') || 
+            dataVencimento.includes('Vcto') || dataVencimento.includes('Dt') ||
+            codigoReceita.includes('Inscrição') || codigoReceita.includes('Conta')) {
+          continue;
+        }
+        
+        // Verificar se já existe
+        const chave = `${codigoReceita}-${periodo}-${dataVencimento}`;
+        if (chavesExistentes.has(chave)) {
+          continue;
+        }
+        chavesExistentes.add(chave);
+        
+        const valorOriginalStr = match[5].trim().replace(/\./g, '').replace(',', '.');
+        const saldoDevedorStr = match[6].trim().replace(/\./g, '').replace(',', '.');
+        const multaStr = match[7].trim().replace(/\./g, '').replace(',', '.');
+        const jurosStr = match[8].trim().replace(/\./g, '').replace(',', '.');
+        const saldoConsolidadoStr = match[9].trim().replace(/\./g, '').replace(',', '.');
+        const situacao = match[10].trim();
+        
+        const valorOriginal = parseFloat(valorOriginalStr) || 0;
+        const saldoDevedor = parseFloat(saldoDevedorStr) || 0;
+        const multa = parseFloat(multaStr) || 0;
+        const juros = parseFloat(jurosStr) || 0;
+        const saldoDevedorConsolidado = parseFloat(saldoConsolidadoStr) || 0;
+        
+        // Validar valores
+        if (valorOriginal === 0 && saldoDevedor === 0 && multa === 0 && juros === 0 && saldoDevedorConsolidado === 0) {
+          continue;
+        }
+        
+        debitos.push({
+          codigoReceita,
+          tipoReceita,
+          periodo,
+          dataVencimento,
+          valorOriginal,
+          saldoDevedor,
+          multa,
+          juros,
+          saldoDevedorConsolidado,
+          situacao,
+          tipo: 'exigibilidade_suspensa',
+        });
+        matchCount++;
+      }
+      
+      // Se não encontrou com padrão completo, tentar padrão simplificado (sem multa/juros)
+      if (matchCount === 0) {
+        console.log('[Sitf extractDebitos] Tentando padrão simplificado (sem multa/juros)...');
+        const padraoSimplificado = /(\d{4}-\d{2})\s+([A-Z\s-]+?)\s+(\d{1,2}\s*(?:°|º)?\s*(?:TRIM|TRIMESTRE)?\/\d{4}|\d{1,2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+([\d.,]+)\s+([A-Z\s-]+(?:\s+[A-Z\s-]+)*)/g;
+        
+        while ((match = padraoSimplificado.exec(secaoTexto)) !== null) {
+          const codigoReceita = match[1].trim();
+          const tipoReceita = match[2].trim();
+          const periodo = match[3].trim().replace(/\s+/g, ' ');
+          const dataVencimento = match[4].trim();
+          
+          // Validar que não é cabeçalho
+          if (codigoReceita.includes('Receita') || tipoReceita.includes('Receita') || 
+              periodo.includes('PA') || periodo.includes('Exerc') || 
+              dataVencimento.includes('Vcto') || dataVencimento.includes('Dt') ||
+              codigoReceita.includes('Inscrição') || codigoReceita.includes('Conta')) {
+            continue;
+          }
+          
+          // Verificar se já existe
+          const chave = `${codigoReceita}-${periodo}-${dataVencimento}`;
+          if (chavesExistentes.has(chave)) {
+            continue;
+          }
+          chavesExistentes.add(chave);
+          
+          const valorOriginalStr = match[5].trim().replace(/\./g, '').replace(',', '.');
+          const saldoDevedorStr = match[6].trim().replace(/\./g, '').replace(',', '.');
+          const situacao = match[7].trim();
+          
+          const valorOriginal = parseFloat(valorOriginalStr) || 0;
+          const saldoDevedor = parseFloat(saldoDevedorStr) || 0;
+          
+          if (valorOriginal === 0 && saldoDevedor === 0) {
+            continue;
+          }
+          
+          debitos.push({
+            codigoReceita,
+            tipoReceita,
+            periodo,
+            dataVencimento,
+            valorOriginal,
+            saldoDevedor,
+            multa: 0,
+            juros: 0,
+            saldoDevedorConsolidado: saldoDevedor,
+            situacao,
+            tipo: 'exigibilidade_suspensa',
+          });
+          matchCount++;
+        }
+      }
+      
+      console.log(`[Sitf extractDebitos] ✅ Extraídos ${matchCount} débitos da seção "Diagnóstico Fiscal na Procuradoria"`);
+    } else {
+      console.log('[Sitf extractDebitos] ⚠️ "Exigibilidade Suspensa" não encontrada após diagnóstico da Procuradoria');
+    }
+  } else {
+    console.log('[Sitf extractDebitos] ℹ️ Seção "Diagnóstico Fiscal na Procuradoria" não encontrada');
+  }
+  
+  // ============================================
+  // ESTRATÉGIA COMPLEMENTAR: Busca global em TODO o texto
+  // Aplicar apenas se não encontrou seções OU encontrou poucos débitos
+  // ============================================
+  const debitosPorBuscaGlobal: typeof debitos = [];
+  const precisaBuscaGlobal = debitos.length === 0 || debitos.length < 3;
+  
+  if (precisaBuscaGlobal) {
+    console.log('[Sitf extractDebitos] 🔍 Fazendo busca global complementar em TODO o texto...');
+    
+    // Criar Set para evitar duplicatas (usando chave única: codigo-periodo-data)
+    const chavesExistentes = new Set(debitos.map(d => 
+      `${d.codigoReceita || ''}-${d.periodo || ''}-${d.dataVencimento || ''}`
+    ));
+    
+    // Padrão 1: Débitos com multa/juros (formato completo - 10 campos)
+    const padraoCompleto = /(\d{4}-\d{2})\s+([A-Z\s-]+?)\s+(\d{1,2}\s*(?:°|º)?\s*(?:TRIM|TRIMESTRE)?\/\d{4}|\d{1,2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([A-Z\s-]+(?:\s+[A-Z\s-]+)*)/g;
+    
+    let match;
+    while ((match = padraoCompleto.exec(text)) !== null) {
+      const codigoReceita = match[1].trim();
+      const tipoReceita = match[2].trim();
+      const periodo = match[3].trim().replace(/\s+/g, ' ');
+      const dataVencimento = match[4].trim();
+      
+      // Validar que não é cabeçalho
+      if (codigoReceita.includes('Receita') || tipoReceita.includes('Receita') || 
+          periodo.includes('PA') || periodo.includes('Exerc') || 
+          dataVencimento.includes('Vcto') || dataVencimento.includes('Dt')) {
+        continue;
+      }
+      
+      // Verificar se já existe (evitar duplicatas)
+      const chave = `${codigoReceita}-${periodo}-${dataVencimento}`;
+      if (chavesExistentes.has(chave)) {
+        continue;
+      }
+      chavesExistentes.add(chave);
+      
+      const valorOriginalStr = match[5].trim().replace(/\./g, '').replace(',', '.');
+      const saldoDevedorStr = match[6].trim().replace(/\./g, '').replace(',', '.');
+      const multaStr = match[7].trim().replace(/\./g, '').replace(',', '.');
+      const jurosStr = match[8].trim().replace(/\./g, '').replace(',', '.');
+      const saldoConsolidadoStr = match[9].trim().replace(/\./g, '').replace(',', '.');
+      const situacao = match[10].trim();
+      
+      const valorOriginal = parseFloat(valorOriginalStr) || 0;
+      const saldoDevedor = parseFloat(saldoDevedorStr) || 0;
+      const multa = parseFloat(multaStr) || 0;
+      const juros = parseFloat(jurosStr) || 0;
+      const saldoDevedorConsolidado = parseFloat(saldoConsolidadoStr) || 0;
+      
+      // Validar valores
+      if (valorOriginal === 0 && saldoDevedor === 0 && multa === 0 && juros === 0 && saldoDevedorConsolidado === 0) {
+        continue;
+      }
+      
+      debitosPorBuscaGlobal.push({
+        codigoReceita,
+        tipoReceita,
+        periodo,
+        dataVencimento,
+        valorOriginal,
+        saldoDevedor,
+        multa,
+        juros,
+        saldoDevedorConsolidado,
+        situacao,
+        tipo: 'pendencia',
+      });
+    }
+    
+    // Padrão 2: Débitos sem multa/juros (formato simplificado - 7 campos)
+    // Aplicar apenas se não encontrou com padrão completo
+    if (debitosPorBuscaGlobal.length === 0) {
+      const padraoSimplificado = /(\d{4}-\d{2})\s+([A-Z\s-]+?)\s+(\d{1,2}\s*(?:°|º)?\s*(?:TRIM|TRIMESTRE)?\/\d{4}|\d{1,2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+([\d.,]+)\s+([A-Z\s-]+(?:\s+[A-Z\s-]+)*)/g;
+      
+      while ((match = padraoSimplificado.exec(text)) !== null) {
+        const codigoReceita = match[1].trim();
+        const tipoReceita = match[2].trim();
+        const periodo = match[3].trim().replace(/\s+/g, ' ');
+        const dataVencimento = match[4].trim();
+        
+        // Validar que não é cabeçalho
+        if (codigoReceita.includes('Receita') || tipoReceita.includes('Receita') || 
+            periodo.includes('PA') || periodo.includes('Exerc') || 
+            dataVencimento.includes('Vcto') || dataVencimento.includes('Dt')) {
+          continue;
+        }
+        
+        // Verificar se já existe
+        const chave = `${codigoReceita}-${periodo}-${dataVencimento}`;
+        if (chavesExistentes.has(chave)) {
+          continue;
+        }
+        chavesExistentes.add(chave);
+        
+        const valorOriginalStr = match[5].trim().replace(/\./g, '').replace(',', '.');
+        const saldoDevedorStr = match[6].trim().replace(/\./g, '').replace(',', '.');
+        const situacao = match[7].trim();
+        
+        const valorOriginal = parseFloat(valorOriginalStr) || 0;
+        const saldoDevedor = parseFloat(saldoDevedorStr) || 0;
+        
+        if (valorOriginal === 0 && saldoDevedor === 0) {
+          continue;
+        }
+        
+        debitosPorBuscaGlobal.push({
+          codigoReceita,
+          tipoReceita,
+          periodo,
+          dataVencimento,
+          valorOriginal,
+          saldoDevedor,
+          multa: 0,
+          juros: 0,
+          saldoDevedorConsolidado: saldoDevedor,
+          situacao,
+          tipo: 'exigibilidade_suspensa',
+        });
+      }
+    }
+    
+    // Adicionar débitos encontrados na busca global ao array principal
+    if (debitosPorBuscaGlobal.length > 0) {
+      console.log(`[Sitf extractDebitos] ✅ Busca global encontrou ${debitosPorBuscaGlobal.length} débitos adicionais`);
+      debitos.push(...debitosPorBuscaGlobal);
+    } else {
+      console.log('[Sitf extractDebitos] ⚠️ Busca global não encontrou débitos adicionais');
+    }
+  } else {
+    console.log('[Sitf extractDebitos] ℹ️ Busca global não necessária (já encontrou débitos suficientes por seções)');
   }
   
   console.log(`[Sitf extractDebitos] 📊 RESUMO: Total de ${debitos.length} débitos extraídos (${debitos.filter(d => d.tipo === 'pendencia').length} pendências + ${debitos.filter(d => d.tipo === 'exigibilidade_suspensa').length} exigibilidade suspensa)`);
@@ -1518,17 +2021,34 @@ async function extractDataAndSave(
     }
     
     // Salvar dados extraídos (texto, débitos, pendências) no campo extracted_data do sitf_downloads
+    // Garantir que débitos e pendências estão incluídos
+    const extractedDataToSave = {
+      ...extractedData,
+      debitos: extractedData.debitos || [],
+      pendencias: extractedData.pendencias || [],
+    };
+    
+    console.log('[Sitf Extract] Salvando dados extraídos:', {
+      id: downloadId,
+      debitosCount: extractedDataToSave.debitos?.length || 0,
+      pendenciasCount: extractedDataToSave.pendencias?.length || 0,
+      debitosPreview: extractedDataToSave.debitos?.slice(0, 2),
+    });
+    
     const client = supabaseAdmin || supabase;
     const { error: updateError } = await client
       .from('sitf_downloads')
-      .update({ extracted_data: extractedData })
+      .update({ extracted_data: extractedDataToSave })
       .eq('id', downloadId);
     
     if (updateError) {
       console.error('[Sitf Extract] Erro ao salvar dados extraídos no sitf_downloads:', updateError);
       throw updateError;
     } else {
-      console.log('[Sitf Extract] ✅ Dados salvos no banco com sucesso para ID:', downloadId);
+      console.log('[Sitf Extract] ✅ Dados salvos no banco com sucesso para ID:', downloadId, {
+        debitosCount: extractedDataToSave.debitos?.length || 0,
+        pendenciasCount: extractedDataToSave.pendencias?.length || 0,
+      });
     }
   } catch (error: any) {
     // Log do erro mas não propagar (não é crítico)
@@ -1797,22 +2317,111 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
       };
     }
     
-    // Extrair certidão (melhorar regex para capturar melhor)
-    // Buscar a seção completa da certidão primeiro
-    const certidaoSecaoMatch = text.match(/Certidão\s+(?:Positiva|Negativa)[^\n]*(?:com\s+Efeitos\s+de\s+Negativa)?[^\n]*\n(?:[^\n]*\n){0,10}?(?:Emissão|Data\s+de\s+Emissão)[^\n]*:?\s*(\d{2}\/\d{2}\/\d{4})[^\n]*\n(?:[^\n]*\n){0,5}?(?:Validade|Data\s+de\s+Validade)[^\n]*:?\s*(\d{2}\/\d{2}\/\d{4})/is);
+    // Extrair certidão - buscar em TODO o texto do PDF (não apenas contexto limitado)
+    // Primeiro, buscar todas as ocorrências de "Certidão" no texto completo
+    const certidaoMatches: Array<{ tipo: string; index: number; texto: string }> = [];
     
-    const certidaoPositivaMatch = text.match(/Certidão\s+Positiva[^\n]*(?:com\s+Efeitos\s+de\s+Negativa)?/i);
-    const certidaoNegativaMatch = text.match(/Certidão\s+Negativa[^\n]*/i);
+    // Buscar "Certidão Positiva" - verificar se tem "Efeitos de Negativa" no contexto
+    // Primeiro, encontrar todas as ocorrências de "Certidão Positiva"
+    const certidaoPositivaRegex = /Certidão\s+Positiva/gi;
+    const matchesPositiva: Array<{ index: number; contexto: string }> = [];
+    let matchPositiva: RegExpExecArray | null;
     
-    if (certidaoPositivaMatch || certidaoNegativaMatch) {
-      // Buscar número da certidão (formato: E258.0FE9.EBC9.B129 ou similar)
-      // Procurar próximo à seção de certidão
-      const certidaoIndex = (certidaoPositivaMatch?.index || certidaoNegativaMatch?.index || 0);
-      const certidaoContexto = text.substring(certidaoIndex, certidaoIndex + 500);
+    while ((matchPositiva = certidaoPositivaRegex.exec(text)) !== null) {
+      // Pegar contexto maior (até 300 caracteres) para verificar se tem "Efeitos"
+      const contextoStart = matchPositiva.index;
+      const contextoEnd = Math.min(contextoStart + 300, text.length);
+      const contexto = text.substring(contextoStart, contextoEnd);
       
-      const numeroMatch = certidaoContexto.match(/(?:Número|Certidão)[^\n]*:?\s*([A-Z0-9\.]+(?:\.[A-Z0-9]+)*)/i);
+      matchesPositiva.push({
+        index: matchPositiva.index,
+        contexto: contexto
+      });
+    }
+    
+    // Processar cada ocorrência encontrada
+    for (const matchPositiva of matchesPositiva) {
+      // Verificar se no contexto tem "Efeitos de Negativa" (pode estar em linhas diferentes)
+      const temEfeitos = /Efeitos\s+de\s+Negativa/i.test(matchPositiva.contexto) || 
+                        /com\s+Efeitos\s+de\s+Negativa/i.test(matchPositiva.contexto);
       
-      // Usar as datas da seção completa se encontradas, senão buscar individualmente
+      if (temEfeitos) {
+        // Verificar se já não foi adicionada
+        const jaAdicionada = certidaoMatches.some(m => 
+          m.index === matchPositiva.index || 
+          (matchPositiva.index >= m.index && matchPositiva.index < m.index + 300)
+        );
+        if (!jaAdicionada) {
+          certidaoMatches.push({
+            tipo: 'Certidão Positiva com Efeitos de Negativa',
+            index: matchPositiva.index,
+            texto: matchPositiva.contexto.substring(0, 150)
+          });
+        }
+      } else {
+        // É Positiva simples - verificar se já não foi adicionada como "com Efeitos"
+        const jaAdicionada = certidaoMatches.some(m => 
+          m.tipo === 'Certidão Positiva com Efeitos de Negativa' &&
+          (matchPositiva.index >= m.index && matchPositiva.index < m.index + 300)
+        );
+        if (!jaAdicionada) {
+          certidaoMatches.push({
+            tipo: 'Certidão Positiva',
+            index: matchPositiva.index,
+            texto: 'Certidão Positiva'
+          });
+        }
+      }
+    }
+    
+    // Buscar "Certidão Negativa" (apenas se não encontrou Positiva com Efeitos)
+    const certidaoNegativaRegex = /Certidão\s+Negativa[^\n]*/gi;
+    let matchNegativa;
+    while ((matchNegativa = certidaoNegativaRegex.exec(text)) !== null) {
+      // Verificar se já não foi adicionada como Positiva com Efeitos
+      const jaAdicionada = certidaoMatches.some(m => 
+        m.tipo === 'Certidão Positiva com Efeitos de Negativa' &&
+        (matchNegativa.index >= m.index && matchNegativa.index < m.index + 300)
+      );
+      if (!jaAdicionada) {
+        certidaoMatches.push({
+          tipo: 'Certidão Negativa',
+          index: matchNegativa.index,
+          texto: matchNegativa[0]
+        });
+      }
+    }
+    
+    // Se encontrou alguma certidão, usar a primeira ocorrência (mais provável de ser a principal)
+    if (certidaoMatches.length > 0) {
+      // Ordenar por índice (primeira ocorrência no texto)
+      certidaoMatches.sort((a, b) => a.index - b.index);
+      const certidaoMatch = certidaoMatches[0];
+      
+      console.log('[Sitf Extract] 📋 Certidão encontrada:', {
+        tipo: certidaoMatch.tipo,
+        index: certidaoMatch.index,
+        totalOcorrencias: certidaoMatches.length,
+        todasOcorrencias: certidaoMatches.map(m => ({ tipo: m.tipo, index: m.index }))
+      });
+      
+      // Buscar informações da certidão em TODO o texto (não apenas contexto limitado)
+      // Número da certidão - buscar em todo o texto, procurar padrões comuns
+      // Formato 1: Número com pontos (ex: 29DC.9064.5D16.BF5F ou E258.0FE9.EBC9.B129)
+      const numeroMatch1 = text.match(/(?:Certidão|Número|Certidão\s+Emitida)[^\n]*:?\s*([A-Z0-9]{2,}\.[A-Z0-9]{2,}\.[A-Z0-9]{2,}\.[A-Z0-9]{2,})/i);
+      // Formato 2: Número sem pontos mas com formato similar
+      const numeroMatch2 = text.match(/(?:Certidão|Número|Certidão\s+Emitida)[^\n]*:?\s*([A-Z0-9]{8,})/i);
+      // Formato 3: Buscar próximo à palavra "Certidão" (até 200 caracteres depois)
+      const certidaoIndex = certidaoMatch.index;
+      const contextoCertidao = text.substring(certidaoIndex, Math.min(certidaoIndex + 500, text.length));
+      const numeroMatch3 = contextoCertidao.match(/(?:Número|Certidão)[^\n]*:?\s*([A-Z0-9\.]+(?:\.[A-Z0-9]+){2,})/i);
+      
+      const numeroCertidao = numeroMatch1?.[1] || numeroMatch3?.[1] || numeroMatch2?.[1];
+      
+      // Buscar datas - procurar em todo o texto, mas priorizar as que estão próximas à seção de certidão
+      // Primeiro, tentar encontrar na seção completa da certidão (aumentar range para até 50 linhas)
+      const certidaoSecaoMatch = text.match(/Certidão\s+(?:Positiva|Negativa)[^\n]*(?:com\s+Efeitos\s+de\s+Negativa)?[^\n]*\n(?:[^\n]*\n){0,50}?(?:Emissão|Data\s+de\s+Emissão)[^\n]*:?\s*(\d{2}\/\d{2}\/\d{4})[^\n]*\n(?:[^\n]*\n){0,50}?(?:Validade|Data\s+de\s+Validade)[^\n]*:?\s*(\d{2}\/\d{2}\/\d{4})/is);
+      
       let dataEmissao: string | undefined;
       let dataValidade: string | undefined;
       
@@ -1825,28 +2434,35 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
           validade: dataValidade
         });
       } else {
-        // Fallback: buscar individualmente no contexto da certidão
-        const dataEmissaoMatch = certidaoContexto.match(/(?:Emissão|Data\s+de\s+Emissão)[^\n]*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
-        const dataValidadeMatch = certidaoContexto.match(/(?:Validade|Data\s+de\s+Validade)[^\n]*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
-        dataEmissao = dataEmissaoMatch?.[1];
-        dataValidade = dataValidadeMatch?.[1];
-        console.log('[Sitf Extract] ⚠️ Datas da certidão extraídas individualmente:', {
+        // Fallback: buscar individualmente em TODO o texto
+        // Buscar todas as ocorrências de "Data de Emissão" e "Data de Validade"
+        const todasEmissoes = [...text.matchAll(/(?:Emissão|Data\s+de\s+Emissão)[^\n]*:?\s*(\d{2}\/\d{2}\/\d{4})/gi)];
+        const todasValidades = [...text.matchAll(/(?:Validade|Data\s+de\s+Validade)[^\n]*:?\s*(\d{2}\/\d{2}\/\d{4})/gi)];
+        
+        // Usar a primeira ocorrência de cada (mais provável de ser da certidão principal)
+        dataEmissao = todasEmissoes[0]?.[1];
+        dataValidade = todasValidades[0]?.[1];
+        
+        console.log('[Sitf Extract] ⚠️ Datas da certidão extraídas de busca global:', {
           emissao: dataEmissao,
-          validade: dataValidade
+          validade: dataValidade,
+          totalEmissoes: todasEmissoes.length,
+          totalValidades: todasValidades.length
         });
       }
       
-      // Verificar se há pendências (buscar por "COM PENDÊNCIAS" ou "SEM PENDÊNCIAS")
-      const pendenciasText = certidaoContexto.match(/(?:Pendências|Pendência)[^\n]*(?:Detectadas|Encontradas)?[^\n]*:?\s*(Sim|Não|COM|SEM|true|false)/i);
+      // Verificar se há pendências - buscar em TODO o texto
+      const pendenciasText = text.match(/(?:Pendências|Pendência)[^\n]*(?:Detectadas|Encontradas)?[^\n]*:?\s*(Sim|Não|COM|SEM|true|false)/i);
       const pendenciasDetectadas = pendenciasText?.[1]?.toUpperCase().includes('SIM') || 
                                    pendenciasText?.[1]?.toUpperCase().includes('COM') ||
                                    pendenciasText?.[1]?.toLowerCase() === 'true';
-      // Buscar observação
-      const observacaoMatch = certidaoContexto.match(/(?:Observação|Obs)[^\n]*:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\n|$)/i);
+      
+      // Buscar observação - buscar em TODO o texto
+      const observacaoMatch = text.match(/(?:Observação|Obs)[^\n]*:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\n|$)/i);
       
       data.certidao_conjunta_rfb_pgfn = {
-        tipo: certidaoPositivaMatch ? 'Certidão Positiva' : 'Certidão Negativa',
-        numero: numeroMatch?.[1]?.trim() || undefined,
+        tipo: certidaoMatch.tipo,
+        numero: numeroCertidao?.trim() || undefined,
         data_emissao: dataEmissao,
         data_validade: dataValidade,
         pendencias_detectadas: pendenciasDetectadas,

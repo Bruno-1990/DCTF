@@ -145,8 +145,8 @@ const RelatoriosPage: React.FC = () => {
         setPage(1);
         return;
       }
-      // Para DCTFs Em Aberto, preferir backend (usa conferências/prazos vigentes); passamos months=6 por padrão
-      const extraFilters = reportType === 'pendentes' ? { months: 6 } : {};
+      // Para DCTFs Em Aberto, buscar todas as pendentes independente da vigência
+      const extraFilters = reportType === 'pendentes' ? { months: 12 } : {};
       const blob = await relatoriosService.generateAndDownload({ reportType, format, ...(extraFilters as any) });
 
       // Se o backend retornar JSON (erro), exibir mensagem
@@ -427,13 +427,20 @@ const RelatoriosPage: React.FC = () => {
   };
 
   const reportCards = [
-    { key: 'gerencial', title: 'Relatório Gerencial', description: 'Visão consolidada das DCTFs monitoradas', icon: ChartBarIcon, color: 'blue' },
-    { key: 'conferencia', title: 'Relatório de Conferências', description: 'Pendências legais e conferência de prazos', icon: DocumentCheckIcon, color: 'purple' },
-    { key: 'clientes', title: 'Relatório de Clientes', description: 'Resumo por contribuinte com saldos e status', icon: BuildingOfficeIcon, color: 'indigo' },
-    { key: 'dctf', title: 'Relatório DCTF', description: 'Lista detalhada das declarações transmitidas', icon: DocumentTextIcon, color: 'green' },
-    { key: 'pendentes', title: 'DCTFs Em Aberto', description: 'Declarações em aberto com prazo vigente', icon: ExclamationTriangleIcon, color: 'orange' },
-    { key: 'pagamentos-pendentes', title: 'Pagamentos Pendentes', description: 'Pagamentos em aberto por cliente', icon: CurrencyDollarIcon, color: 'red' },
+    { key: 'gerencial', title: 'Relatório Gerencial', description: 'Visão consolidada das DCTFs monitoradas', icon: ChartBarIcon, color: 'blue', anchor: 'historico' },
+    { key: 'conferencia', title: 'Relatório de Conferências', description: 'Pendências legais e conferência de prazos', icon: DocumentCheckIcon, color: 'purple', anchor: 'historico' },
+    { key: 'clientes', title: 'Relatório de Clientes', description: 'Resumo por contribuinte com saldos e status', icon: BuildingOfficeIcon, color: 'indigo', anchor: 'historico' },
+    { key: 'dctf', title: 'Relatório DCTF', description: 'Lista detalhada das declarações transmitidas', icon: DocumentTextIcon, color: 'green', anchor: 'historico' },
+    { key: 'pendentes', title: 'DCTFs Em Aberto', description: 'Declarações em aberto com prazo vigente', icon: ExclamationTriangleIcon, color: 'orange', anchor: 'historico' },
+    { key: 'pagamentos-pendentes', title: 'Pagamentos Pendentes', description: 'Pagamentos em aberto por cliente', icon: CurrencyDollarIcon, color: 'red', anchor: 'historico' },
   ];
+
+  const scrollToAnchor = (anchorId: string) => {
+    const element = document.getElementById(anchorId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   const colorClasses = {
     blue: 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100',
@@ -462,10 +469,12 @@ const RelatoriosPage: React.FC = () => {
           {reportCards.map(card => {
             const Icon = card.icon;
             const isGenerating = generatingTarget === `${card.key}-xlsx`;
+            const glowClass = `glow-button-${card.color}`;
             return (
               <div
                 key={card.key}
-                className={`bg-white border-2 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden ${colorClasses[card.color as keyof typeof colorClasses]}`}
+                onClick={() => scrollToAnchor(card.anchor)}
+                className={`bg-white border-2 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden cursor-pointer ${colorClasses[card.color as keyof typeof colorClasses]}`}
               >
                 <div className="p-5">
                   <div className="flex items-start gap-4 mb-4">
@@ -478,22 +487,26 @@ const RelatoriosPage: React.FC = () => {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleGenerate(card.key as any, 'xlsx')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleGenerate(card.key as any, 'xlsx');
+                      setTimeout(() => scrollToAnchor(card.anchor), 500);
+                    }}
                     disabled={isGenerating}
-                    className="w-full px-4 py-2.5 bg-white border-2 border-current rounded-lg font-medium hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    className={`${glowClass} w-full px-4 py-2.5 bg-white border-2 border-current rounded-lg font-medium hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 relative z-0`}
                   >
                     {isGenerating ? (
                       <>
-                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-4 w-4 relative z-10" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        Gerando...
+                        <span className="relative z-10">Gerando...</span>
                       </>
                     ) : (
                       <>
-                        <TableCellsIcon className="h-4 w-4" />
-                        Gerar XLSX
+                        <TableCellsIcon className="h-4 w-4 relative z-10" />
+                        <span className="relative z-10">Gerar XLSX</span>
                       </>
                     )}
                   </button>
@@ -505,7 +518,7 @@ const RelatoriosPage: React.FC = () => {
       </div>
 
       {/* Filtros e Histórico */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div id="historico" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
             <FunnelIcon className="h-5 w-5 text-gray-600" />
@@ -649,27 +662,27 @@ const RelatoriosPage: React.FC = () => {
                         {r.downloadUrl ? (
                           <button
                             onClick={() => handleDownload(r.id, r.titulo, r.formato ?? 'pdf')}
-                            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="glow-border-linear px-3 py-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors border-2 border-emerald-600 relative z-0"
                           >
-                            Baixar {r.formato?.toUpperCase() ?? 'PDF'}
+                            <span className="relative z-10">Baixar {r.formato?.toUpperCase() ?? 'PDF'}</span>
                           </button>
                         ) : r.arquivoPdf && !r.downloadUrl ? (
                           <a
                             href={r.arquivoPdf}
                             target="_blank"
                             rel="noreferrer"
-                            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="glow-border-linear px-3 py-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors border-2 border-emerald-600 relative z-0 inline-block"
                           >
-                            Baixar PDF
+                            <span className="relative z-10">Baixar PDF</span>
                           </a>
                         ) : r.arquivoXlsx ? (
                           <a
                             href={r.arquivoXlsx}
                             target="_blank"
                             rel="noreferrer"
-                            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="glow-border-linear px-3 py-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors border-2 border-emerald-600 relative z-0 inline-block"
                           >
-                            Baixar XLSX
+                            <span className="relative z-10">Baixar XLSX</span>
                           </a>
                         ) : (
                           <span className="text-sm text-gray-400">Sem arquivo</span>

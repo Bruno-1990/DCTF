@@ -1,0 +1,909 @@
+/* Efeito de brilho animado nas bordas - Reutilizável */
+
+/* Versão com efeito que percorre toda a borda de forma contínua - MAIS VISÍVEL */
+.glow-border-circuit {
+  position: relative;
+  background: white;
+  border: 2px solid #10b981;
+  isolation: isolate;
+}
+
+.glow-border-circuit::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 50deg,
+    #10b981 60deg,
+    #34d399 70deg,
+    #6ee7b7 80deg,
+    #a7f3d0 90deg,
+    #ecfdf5 100deg,
+    #a7f3d0 110deg,
+    #6ee7b7 120deg,
+    #34d399 130deg,
+    #10b981 140deg,
+    transparent 150deg,
+    transparent 360deg
+  );
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: rotateGlow 8s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-border-circuit:hover::before {
+  opacity: 1;
+}
+
+.glow-border-circuit::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+@keyframes rotateGlow {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Versão alternativa mais simples e visível */
+.glow-border-simple {
+  position: relative;
+  background: white;
+  border: 2px solid #10b981;
+  isolation: isolate;
+}
+
+.glow-border-simple::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 50deg,
+    #10b981 60deg,
+    #34d399 70deg,
+    #6ee7b7 80deg,
+    #a7f3d0 90deg,
+    #ecfdf5 100deg,
+    #a7f3d0 110deg,
+    #6ee7b7 120deg,
+    #34d399 130deg,
+    #10b981 140deg,
+    transparent 150deg,
+    transparent 360deg
+  );
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: rotateGlow 8s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-border-simple:hover::before {
+  opacity: 1;
+}
+
+.glow-border-simple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+/* Versão alternativa com brilho linear que percorre horizontalmente - MAIS VISÍVEL */
+.glow-border-linear {
+  position: relative;
+  overflow: visible;
+  background: white;
+  border: 2px solid #10b981;
+  isolation: isolate;
+}
+
+.glow-border-linear::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #10b981 25%,
+    #34d399 35%,
+    #6ee7b7 45%,
+    #a7f3d0 50%,
+    #ecfdf5 55%,
+    #a7f3d0 60%,
+    #6ee7b7 65%,
+    #34d399 70%,
+    #10b981 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-border-linear:hover::before {
+  opacity: 1;
+}
+
+.glow-border-linear::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+@keyframes borderGlowHorizontal {
+  0% {
+    background-position: -400% 0;
+  }
+  100% {
+    background-position: 400% 0;
+  }
+}
+
+/* Efeitos de brilho para botões de relatórios com cores específicas */
+.glow-button-blue {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-button-blue::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #3b82f6 25%,
+    #60a5fa 35%,
+    #93c5fd 45%,
+    #bfdbfe 50%,
+    #dbeafe 55%,
+    #bfdbfe 60%,
+    #93c5fd 65%,
+    #60a5fa 70%,
+    #3b82f6 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-button-blue:hover::before {
+  opacity: 1;
+}
+
+.glow-button-blue::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+.glow-button-purple {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-button-purple::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #a855f7 25%,
+    #c084fc 35%,
+    #d8b4fe 45%,
+    #e9d5ff 50%,
+    #f3e8ff 55%,
+    #e9d5ff 60%,
+    #d8b4fe 65%,
+    #c084fc 70%,
+    #a855f7 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-button-purple:hover::before {
+  opacity: 1;
+}
+
+.glow-button-purple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+.glow-button-indigo {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-button-indigo::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #6366f1 25%,
+    #818cf8 35%,
+    #a5b4fc 45%,
+    #c7d2fe 50%,
+    #e0e7ff 55%,
+    #c7d2fe 60%,
+    #a5b4fc 65%,
+    #818cf8 70%,
+    #6366f1 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-button-indigo:hover::before {
+  opacity: 1;
+}
+
+.glow-button-indigo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+.glow-button-green {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-button-green::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #22c55e 25%,
+    #4ade80 35%,
+    #86efac 45%,
+    #bbf7d0 50%,
+    #dcfce7 55%,
+    #bbf7d0 60%,
+    #86efac 65%,
+    #4ade80 70%,
+    #22c55e 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-button-green:hover::before {
+  opacity: 1;
+}
+
+.glow-button-green::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+.glow-button-orange {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-button-orange::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #f97316 25%,
+    #fb923c 35%,
+    #fdba74 45%,
+    #fed7aa 50%,
+    #ffedd5 55%,
+    #fed7aa 60%,
+    #fdba74 65%,
+    #fb923c 70%,
+    #f97316 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-button-orange:hover::before {
+  opacity: 1;
+}
+
+.glow-button-orange::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+.glow-button-red {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-button-red::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #ef4444 25%,
+    #f87171 35%,
+    #fca5a5 45%,
+    #fecaca 50%,
+    #fee2e2 55%,
+    #fecaca 60%,
+    #fca5a5 65%,
+    #f87171 70%,
+    #ef4444 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-button-red:hover::before {
+  opacity: 1;
+}
+
+.glow-button-red::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+/* Efeitos de brilho para cards com cores específicas */
+.glow-card-blue {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card-blue::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #3b82f6 25%,
+    #60a5fa 35%,
+    #93c5fd 45%,
+    #bfdbfe 50%,
+    #dbeafe 55%,
+    #bfdbfe 60%,
+    #93c5fd 65%,
+    #60a5fa 70%,
+    #3b82f6 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-card-blue:hover::before {
+  opacity: 1;
+}
+
+.glow-card-red {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card-red::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #ef4444 25%,
+    #f87171 35%,
+    #fca5a5 45%,
+    #fecaca 50%,
+    #fee2e2 55%,
+    #fecaca 60%,
+    #fca5a5 65%,
+    #f87171 70%,
+    #ef4444 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-card-red:hover::before {
+  opacity: 1;
+}
+
+.glow-card-orange {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card-orange::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #f97316 25%,
+    #fb923c 35%,
+    #fdba74 45%,
+    #fed7aa 50%,
+    #ffedd5 55%,
+    #fed7aa 60%,
+    #fdba74 65%,
+    #fb923c 70%,
+    #f97316 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-card-orange:hover::before {
+  opacity: 1;
+}
+
+.glow-card-yellow {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card-yellow::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #eab308 25%,
+    #facc15 35%,
+    #fde047 45%,
+    #fef08a 50%,
+    #fef9c3 55%,
+    #fef08a 60%,
+    #fde047 65%,
+    #facc15 70%,
+    #eab308 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-card-yellow:hover::before {
+  opacity: 1;
+}
+
+.glow-card-purple {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card-purple::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #a855f7 25%,
+    #c084fc 35%,
+    #d8b4fe 45%,
+    #e9d5ff 50%,
+    #f3e8ff 55%,
+    #e9d5ff 60%,
+    #d8b4fe 65%,
+    #c084fc 70%,
+    #a855f7 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-card-purple:hover::before {
+  opacity: 1;
+}
+
+.glow-card-indigo {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card-indigo::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #6366f1 25%,
+    #818cf8 35%,
+    #a5b4fc 45%,
+    #c7d2fe 50%,
+    #e0e7ff 55%,
+    #c7d2fe 60%,
+    #a5b4fc 65%,
+    #818cf8 70%,
+    #6366f1 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-card-indigo:hover::before {
+  opacity: 1;
+}
+
+.glow-card-pink {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card-pink::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #ec4899 25%,
+    #f472b6 35%,
+    #f9a8d4 45%,
+    #fbcfe8 50%,
+    #fce7f3 55%,
+    #fbcfe8 60%,
+    #f9a8d4 65%,
+    #f472b6 70%,
+    #ec4899 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-card-pink:hover::before {
+  opacity: 1;
+}
+
+.glow-card-green {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card-green::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    #22c55e 25%,
+    #4ade80 35%,
+    #86efac 45%,
+    #bbf7d0 50%,
+    #dcfce7 55%,
+    #bbf7d0 60%,
+    #86efac 65%,
+    #4ade80 70%,
+    #22c55e 75%,
+    transparent 85%,
+    transparent 100%
+  );
+  background-size: 400% 100%;
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlowHorizontal 6s linear infinite;
+  mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 2px;
+  filter: blur(1px);
+}
+
+.glow-card-green:hover::before {
+  opacity: 1;
+}

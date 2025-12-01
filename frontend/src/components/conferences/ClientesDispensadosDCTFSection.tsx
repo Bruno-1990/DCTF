@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   CheckCircleIcon,
   ChevronDownIcon,
@@ -34,6 +35,8 @@ interface Props {
   clientes: ClienteDispensadoDCTF[];
   loading?: boolean;
   error?: string | null;
+  expanded?: boolean;
+  onToggle?: () => void;
 }
 
 function formatDate(value?: string) {
@@ -59,9 +62,20 @@ function formatCNPJ(cnpj?: string | null) {
 export function ClientesDispensadosDCTFSection({ 
   clientes, 
   loading = false,
-  error = null 
+  error = null,
+  expanded: expandedProp,
+  onToggle
 }: Props) {
-  const [expanded, setExpanded] = useState(true);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = expandedProp !== undefined ? expandedProp : internalExpanded;
+  
+  const handleToggle = () => {
+    if (onToggle) {
+      onToggle();
+    } else {
+      setInternalExpanded(!internalExpanded);
+    }
+  };
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -104,14 +118,14 @@ export function ClientesDispensadosDCTFSection({
         cliente.periodo_original_sem_movimento,
         formatDate(cliente.data_transmissao_original),
         cliente.competencia_vigente,
-        cliente.tem_movimentacao_atual ? 'Sim' : 'Não',
+        cliente.tem_movimentacao_atual ? '⚠️ Obrigação Retornou (Movimento detectado)' : '✓ Dispensado (Obrigação retorna com movimento)',
         cliente.mensagem,
       ]);
 
       await exportToExcel({
         filename: `clientes-dispensados-dctf-${new Date().toISOString().split('T')[0]}.xlsx`,
         sheetName: 'Clientes Dispensados DCTF',
-        headers: ['Empresa', 'CNPJ', 'Período Original sem Movimento', 'Data Transmissão Original', 'Competência Vigente', 'Tem Movimentação Atual', 'Mensagem'],
+        headers: ['Empresa', 'CNPJ', 'Período Original sem Movimento', 'Data Transmissão Original', 'Competência Vigente', 'Status da Dispensa', 'Mensagem'],
         data,
         title: 'Clientes Dispensados de Transmitir DCTF',
         metadata: {
@@ -129,9 +143,9 @@ export function ClientesDispensadosDCTFSection({
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors"
+      <div
+        onClick={handleToggle}
+        className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 flex-1">
           {expanded ? (
@@ -142,39 +156,39 @@ export function ClientesDispensadosDCTFSection({
           <div className="flex-1 text-left">
             <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-1">
               <CheckCircleIcon className="h-5 w-5 text-green-600" />
-              Clientes Dispensados de Transmitir DCTF
+              Clientes Sem Obrigação de Transmitir DCTF
             </h2>
             <p className="text-sm text-gray-600">
-              Clientes que não têm obrigação de transmitir DCTF na competência vigente porque já transmitiram "Original sem movimento" anteriormente e não tiveram movimentação no mês atual.
+              Clientes que transmitiram "Original sem movimento" e estão <strong>dispensados</strong> conforme <strong>IN RFB 2.237/2024, Art. 3º, § 3º</strong>. 
+              A obrigação <strong>retorna automaticamente</strong> quando houver movimentação no mês.
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-sm font-medium text-gray-700 bg-white px-4 py-2 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+          <div className="text-sm font-semibold text-gray-700 bg-white px-5 py-2.5 rounded-xl border-2 border-gray-300">
             {loading ? (
               <span className="text-gray-500">Carregando...</span>
             ) : (
               <>
-                Total: <span className="text-gray-900">{clientes.length}</span> clientes
+                Total: <span className="text-gray-900 font-bold">{clientes.length}</span> clientes
               </>
             )}
           </div>
           {!loading && clientes.length > 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleExportar();
-              }}
+            <motion.button
+              onClick={handleExportar}
               disabled={exporting}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="glow-border-linear inline-flex items-center gap-2.5 px-5 py-2.5 bg-white text-emerald-600 text-sm font-semibold rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed relative z-0"
               title="Exportar para Excel"
             >
-              <ArrowDownTrayIcon className="h-4 w-4" />
-              {exporting ? 'Exportando...' : 'Exportar'}
-            </button>
+              <ArrowDownTrayIcon className="h-5 w-5 relative z-10" />
+              <span className="relative z-10">{exporting ? 'Exportando...' : 'Exportar'}</span>
+            </motion.button>
           )}
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <>
@@ -192,12 +206,30 @@ export function ClientesDispensadosDCTFSection({
           ) : clientes.length === 0 ? (
             <div className="px-6 py-8 text-center">
               <InformationCircleIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 mb-2">
                 Nenhum cliente dispensado encontrado.
+              </p>
+              <p className="text-xs text-gray-500">
+                Todos os clientes têm obrigação de transmitir DCTF ou não se enquadram nos critérios de dispensa conforme IN RFB 2.237/2024.
               </p>
             </div>
           ) : (
             <>
+              {/* Nota Informativa sobre a Legislação */}
+              <div className="px-6 py-4 bg-blue-50 border-b border-blue-200">
+                <div className="flex items-start gap-3">
+                  <InformationCircleIcon className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-blue-900 mb-1">
+                      Dispensa de Transmissão - IN RFB 2.237/2024, Art. 3º, § 3º
+                    </p>
+                    <p className="text-xs text-blue-800 leading-relaxed">
+                      Clientes que transmitiram <strong>"Original sem movimento"</strong> em vigência passada estão <strong>dispensados</strong> de transmitir DCTF 
+                      nos meses seguintes, desde que não tenham movimentação. A obrigação <strong>retorna automaticamente</strong> quando houver movimentação no mês.
+                    </p>
+                  </div>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 text-xs">
                   <thead className="bg-gray-50">
@@ -207,7 +239,7 @@ export function ClientesDispensadosDCTFSection({
                       <th className="px-4 py-3 text-left font-medium text-gray-600">Período Original sem Movimento</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">Data Transmissão</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-600">Competência Vigente</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Movimentação Atual</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Status da Dispensa</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -242,15 +274,27 @@ export function ClientesDispensadosDCTFSection({
                             <span className="font-semibold text-gray-800">{cliente.competencia_vigente}</span>
                           </td>
                           <td className="px-4 py-3 text-xs">
-                            {cliente.tem_movimentacao_atual ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                Sim
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                Não
-                              </span>
-                            )}
+                            <div className="flex flex-col gap-1">
+                              {cliente.tem_movimentacao_atual ? (
+                                <>
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 w-fit">
+                                    ⚠️ Obrigação Retornou
+                                  </span>
+                                  <span className="text-[10px] text-red-600">
+                                    Movimento detectado
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 w-fit">
+                                    ✓ Dispensado
+                                  </span>
+                                  <span className="text-[10px] text-gray-500">
+                                    Obrigação retorna com movimento
+                                  </span>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}

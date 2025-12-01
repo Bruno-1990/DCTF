@@ -288,9 +288,15 @@ class QueryBuilder implements SupabaseQueryBuilder {
           conditions.push(`\`${cond.column}\` <= ?`);
           params.push(cond.value);
         } else if (cond.type === 'in') {
-          const placeholders = (cond.value as any[]).map(() => '?').join(',');
-          conditions.push(`\`${cond.column}\` IN (${placeholders})`);
-          params.push(...(cond.value as any[]));
+          const values = cond.value as any[];
+          if (values.length === 0) {
+            // Se a lista está vazia, adicionar condição que sempre retorna false
+            conditions.push('1 = 0'); // Sempre falso, não retorna nenhum resultado
+          } else {
+            const placeholders = values.map(() => '?').join(',');
+            conditions.push(`\`${cond.column}\` IN (${placeholders})`);
+            params.push(...values);
+          }
         } else if (cond.type === 'like') {
           conditions.push(`\`${cond.column}\` LIKE ?`);
           params.push(cond.value);
@@ -509,9 +515,15 @@ class QueryBuilder implements SupabaseQueryBuilder {
           conditions.push(`\`${cond.column}\` <= ?`);
           params.push(cond.value);
         } else if (cond.type === 'in') {
-          const placeholders = cond.value.map(() => '?').join(', ');
-          conditions.push(`\`${cond.column}\` IN (${placeholders})`);
-          params.push(...cond.value);
+          const values = cond.value as any[];
+          if (values.length === 0) {
+            // Se a lista está vazia, adicionar condição que sempre retorna false
+            conditions.push('1 = 0'); // Sempre falso, não retorna nenhum resultado
+          } else {
+            const placeholders = values.map(() => '?').join(', ');
+            conditions.push(`\`${cond.column}\` IN (${placeholders})`);
+            params.push(...values);
+          }
         } else if (cond.type === 'is') {
           if (cond.value === null) {
             conditions.push(`\`${cond.column}\` IS NULL`);

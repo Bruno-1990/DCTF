@@ -92,3 +92,4 @@ export function formatarPeriodo(mes: number, ano: number): string {
   return `${String(mes).padStart(2, '0')}/${ano}`;
 }
 
+

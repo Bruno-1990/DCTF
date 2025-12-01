@@ -13,6 +13,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   DocumentTextIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import RegistroDetalhado from '../components/SituacaoFiscal/RegistroDetalhado';
 
@@ -475,6 +476,25 @@ export default function SituacaoFiscal() {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
+    // Obter tipo da certidão (Positiva, Negativa, ou Positiva com Efeitos de Negativa)
+    const tipoCertidao = certidao.certidao_tipo || '';
+    const tipoLower = tipoCertidao.toLowerCase();
+    const isPositivaComEfeitos = tipoLower.includes('efeitos') || tipoLower.includes('positiva com efeitos');
+    const isPositiva = tipoLower.includes('positiva');
+    const isNegativa = tipoLower.includes('negativa') && !isPositivaComEfeitos;
+    
+    // Determinar texto base do tipo
+    let tipoTexto = '';
+    if (isPositivaComEfeitos) {
+      tipoTexto = 'Positiva c/ Efeitos';
+    } else if (isPositiva) {
+      tipoTexto = 'Positiva';
+    } else if (isNegativa) {
+      tipoTexto = 'Negativa';
+    } else {
+      tipoTexto = 'OK'; // Fallback se não conseguir determinar o tipo
+    }
+
     // Verificar se há pendências detectadas
     const temPendencias = certidao.certidao_pendencias_detectadas === true;
 
@@ -490,11 +510,11 @@ export default function SituacaoFiscal() {
       }
     }
 
-    // Determinar status e cores
+    // Determinar status e cores - prioridade: pendências > vencida > tipo (Positiva/Negativa)
     if (temPendencias) {
       return {
         status: 'pendencia',
-        texto: 'Com Pendências',
+        texto: tipoTexto ? `${tipoTexto} - Com Pendências` : 'Com Pendências',
         cor: 'red',
         bgColor: 'bg-red-100',
         textColor: 'text-red-800',
@@ -506,7 +526,7 @@ export default function SituacaoFiscal() {
     if (estaVencida) {
       return {
         status: 'vencida',
-        texto: 'Vencida',
+        texto: tipoTexto ? `${tipoTexto} - Vencida` : 'Vencida',
         cor: 'orange',
         bgColor: 'bg-orange-100',
         textColor: 'text-orange-800',
@@ -515,10 +535,10 @@ export default function SituacaoFiscal() {
       };
     }
 
-    // Certidão OK
+    // Certidão OK - mostrar tipo (Positiva ou Negativa)
     return {
       status: 'ok',
-      texto: 'OK',
+      texto: tipoTexto,
       cor: 'green',
       bgColor: 'bg-green-100',
       textColor: 'text-green-800',
@@ -594,7 +614,19 @@ export default function SituacaoFiscal() {
       
       if (!res.ok) {
         setRestoringProtocol(null);
-        toast.error(data.error || 'Erro ao restaurar protocolo');
+        
+        // Verificar se o protocolo está inválido
+        if (res.status === 400 && data.protocolInvalid) {
+          toast.error('Protocolo inválido', 'O protocolo utilizado não é mais válido. É necessário fazer uma nova consulta.');
+          // Atualizar lista de protocolos para remover o inválido
+          await fetchArchivedProtocols();
+        } else if (res.status === 400) {
+          toast.error('Protocolo expirado', data.error || 'O protocolo expirou. É necessário solicitar um novo protocolo.');
+          // Atualizar lista de protocolos
+          await fetchArchivedProtocols();
+        } else {
+          toast.error(data.error || 'Erro ao restaurar protocolo');
+        }
         return;
       }
       
@@ -649,7 +681,16 @@ export default function SituacaoFiscal() {
     } catch (err: any) {
       console.error('Erro ao restaurar protocolo:', err);
       setRestoringProtocol(null);
-      toast.error('Erro ao restaurar protocolo');
+      
+      // Verificar se é erro de protocolo inválido
+      const errorMessage = err?.message || '';
+      if (errorMessage.includes('protocolo') && errorMessage.includes('não é mais válido')) {
+        toast.error('Protocolo inválido', 'O protocolo utilizado não é mais válido. É necessário fazer uma nova consulta.');
+        // Atualizar lista de protocolos
+        await fetchArchivedProtocols();
+      } else {
+        toast.error('Erro ao restaurar protocolo', errorMessage || 'Erro desconhecido');
+      }
     }
   }, [toast, fetchArchivedProtocols, fetchHistory, fetchCompanies]);
 
@@ -743,7 +784,7 @@ export default function SituacaoFiscal() {
             }`}
           >
             <div className="flex items-center gap-2">
-              <DocumentMagnifyingGlassIcon className="h-5 w-5" />
+              <TrashIcon className="h-5 w-5" />
               Lixeira
               {archivedProtocols.length > 0 && (
                 <span className="ml-2 py-0.5 px-2.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -894,7 +935,7 @@ export default function SituacaoFiscal() {
               ) : (
                 history.map((h) => (
                   <tr key={h.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900">{formatCNPJ(h.cnpj)}</span>
                     </td>
                     <td className="px-6 py-4">
@@ -1158,7 +1199,7 @@ export default function SituacaoFiscal() {
                                   title={`Certidão Conjunta RFB/PGFN: ${certidaoStatus.texto}`}
                                 >
                                   <span className="text-xs leading-none">{certidaoStatus.icon}</span>
-                                  <span>Certidão {certidaoStatus.texto}</span>
+                                  <span>{certidaoStatus.texto}</span>
                                 </span>
                               );
                             }
@@ -1432,11 +1473,49 @@ export default function SituacaoFiscal() {
                               </p>
                             </div>
                           )}
-                          {protocol.next_eligible_at && (
+                          {protocol.created_at && (
                             <div>
-                              <span className="text-gray-500">Próxima consulta:</span>
+                              <span className="text-gray-500">Primeira consulta:</span>
                               <p className="text-gray-900">
-                                {new Date(protocol.next_eligible_at).toLocaleString('pt-BR')}
+                                {(() => {
+                                  try {
+                                    // A data vem do MySQL no formato YYYY-MM-DD HH:MM:SS (timezone local)
+                                    // Converter para Date interpretando como local (não UTC)
+                                    const dateStr = protocol.created_at;
+                                    let date: Date;
+                                    
+                                    if (dateStr.includes('T') || dateStr.includes('Z')) {
+                                      // Formato ISO - já tem timezone
+                                      date = new Date(dateStr);
+                                    } else {
+                                      // Formato MySQL: YYYY-MM-DD HH:MM:SS
+                                      // Interpretar como local time (não UTC)
+                                      const [datePart, timePart] = dateStr.split(' ');
+                                      const [year, month, day] = datePart.split('-').map(Number);
+                                      const [hours, minutes, seconds] = (timePart || '00:00:00').split(':').map(Number);
+                                      date = new Date(year, month - 1, day, hours, minutes, seconds || 0);
+                                    }
+                                    
+                                    // Verificar se a data é válida
+                                    if (isNaN(date.getTime())) {
+                                      return dateStr; // Retornar string original se inválida
+                                    }
+                                    
+                                    // Formatar com timezone local do Brasil
+                                    return date.toLocaleString('pt-BR', {
+                                      timeZone: 'America/Sao_Paulo',
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit',
+                                    });
+                                  } catch (error) {
+                                    console.error('Erro ao formatar created_at:', error);
+                                    return protocol.created_at;
+                                  }
+                                })()}
                               </p>
                             </div>
                           )}

@@ -461,15 +461,17 @@ export class ReportDataFactory {
   }
 
   private static async buildPendentesData(filters: ReportFilterOptions): Promise<ReportDataEnvelope<PendentesReportData>> {
-    const months = filters.months && filters.months > 0 ? filters.months : 6;
+    // Buscar todas as pendentes, independente da vigência
+    const months = filters.months && filters.months > 0 ? filters.months : 12; // Buscar 12 meses por padrão
     const conferenceSummary = await getConferenceSummary(months);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     console.log('[ReportDataFactory] Total de issues encontradas:', conferenceSummary.rules.dueDate.length);
 
-    // Filtrar declarações pendentes com prazo vigente ou vencidas
+    // Filtrar apenas declarações pendentes (em aberto)
     // Inclui: low (vigente), medium (próximo do vencimento) e high (vencidas)
+    // Não filtra por mês - traz todas as pendentes
     const pendentes: DashboardConferenceIssue[] = conferenceSummary.rules.dueDate.filter((issue) => {
       // Não estão concluídas (status não é 'concluido')
       const status = (issue.status ?? '').toLowerCase();
@@ -479,21 +481,10 @@ export class ReportDataFactory {
       // low = vigente, medium = próximo do vencimento, high = vencido
       const isPending = issue.severity === 'low' || issue.severity === 'medium' || issue.severity === 'high';
       
-      const matches = notCompleted && isPending;
-      
-      if (matches) {
-        console.log('[ReportDataFactory] Issue pendente encontrada:', {
-          identification: issue.identification,
-          status,
-          dueDate: issue.dueDate,
-          severity: issue.severity,
-        });
-      }
-      
-      return matches;
+      return notCompleted && isPending;
     });
 
-    console.log('[ReportDataFactory] Total de pendentes filtradas:', pendentes.length);
+    console.log('[ReportDataFactory] Total de pendentes (todas):', pendentes.length);
 
     // Buscar todos os registros DCTF para poder filtrar por CNPJ
     const dctfResponse = await dctfModel.findAll();
@@ -504,48 +495,163 @@ export class ReportDataFactory {
       pendentes.map(async (pendente) => {
         const cnpjLimpo = this.cleanIdentification(pendente.identification);
         
+        console.log('[ReportDataFactory] Buscando registros para CNPJ:', cnpjLimpo, 'Identification original:', pendente.identification);
+        
         // Buscar cliente pelo CNPJ
         const clientesResponse = await clienteModel.findAll();
         const clientes = clientesResponse.success && clientesResponse.data ? clientesResponse.data : [];
-        const cliente = clientes.find(c => c.cnpj_limpo === cnpjLimpo);
+        const cliente = clientes.find(c => {
+          const clienteCnpjLimpo = String(c.cnpj_limpo || '').replace(/\D/g, '');
+          return clienteCnpjLimpo === cnpjLimpo;
+        });
 
-        // Buscar registros DCTF deste CNPJ (através do cliente ou pelo identification)
+        console.log('[ReportDataFactory] Cliente encontrado:', cliente ? `Sim (ID: ${cliente.id})` : 'Não');
+
+        // Buscar registros DCTF deste CNPJ (através do cliente E por identification para garantir)
         let registrosDctf: IDCTF[] = [];
+        const registrosPorCliente: IDCTF[] = [];
+        const registrosPorId: IDCTF[] = [];
+        
+        // Buscar via cliente se existir
+        // FILTRAR APENAS REGISTROS COM SITUAÇÃO "EM ANDAMENTO"
         if (cliente) {
           const dctfPorCliente = await dctfModel.findByCliente(cliente.id);
           if (dctfPorCliente.success && dctfPorCliente.data) {
-            registrosDctf = dctfPorCliente.data;
+            // Filtrar apenas registros com situação "Em andamento"
+            const registrosFiltrados = dctfPorCliente.data.filter(record => {
+              const situacao = (record.situacao || '').toLowerCase().trim();
+              // Verificar se contém "andamento" (case-insensitive)
+              return situacao.includes('andamento');
+            });
+            registrosPorCliente.push(...registrosFiltrados);
+            console.log('[ReportDataFactory] Registros encontrados via cliente (em andamento):', registrosPorCliente.length, 'de', dctfPorCliente.data.length);
           }
+        }
+        
+        // SEMPRE buscar também por identification nos registros (mesmo se encontrou via cliente)
+        // Isso garante que pegamos todos os registros, mesmo se houver inconsistências
+        // FILTRAR APENAS REGISTROS COM SITUAÇÃO "EM ANDAMENTO"
+        registrosPorId.push(...allDctfRecords.filter(record => {
+          // Filtrar apenas registros com situação "Em andamento"
+          const situacao = (record.situacao || '').toLowerCase().trim();
+          const isEmAndamento = situacao.includes('andamento');
+          
+          if (!isEmAndamento) {
+            return false; // Pular registros que não estão em andamento
+          }
+          
+          // Tentar múltiplas formas de identificar o CNPJ
+          const dashboardRecord = mapToDashboardRecord(record);
+          const recordId = this.cleanIdentification(dashboardRecord.identification ?? '');
+          
+          // Também verificar numeroIdentificacao se existir
+          const recordNumId = record.numeroIdentificacao ? this.cleanIdentification(record.numeroIdentificacao) : '';
+          
+          // Verificar se o clienteId corresponde (se tiver cliente)
+          const matchesId = recordId === cnpjLimpo;
+          const matchesNumId = recordNumId && recordNumId === cnpjLimpo;
+          const matchesCliente = cliente && record.clienteId === cliente.id;
+          
+          return matchesId || matchesNumId || matchesCliente;
+        }));
+        console.log('[ReportDataFactory] Registros encontrados via identification:', registrosPorId.length);
+        
+        // Combinar ambos os resultados e remover duplicatas por ID
+        const registrosMap = new Map<string, IDCTF>();
+        [...registrosPorCliente, ...registrosPorId].forEach(record => {
+          if (!registrosMap.has(record.id)) {
+            registrosMap.set(record.id, record);
+          }
+        });
+        registrosDctf = Array.from(registrosMap.values());
+        
+        console.log('[ReportDataFactory] Total de registros únicos encontrados:', registrosDctf.length);
+        
+        // Log de amostra dos registros encontrados
+        if (registrosDctf.length > 0) {
+          console.log('[ReportDataFactory] Amostra de registros encontrados:', registrosDctf.slice(0, 2).map(r => ({
+            id: r.id,
+            periodo: r.periodo,
+            status: r.status,
+            numeroIdentificacao: r.numeroIdentificacao,
+          })));
         } else {
-          // Se não encontrou cliente, buscar por identification nos registros
-          registrosDctf = allDctfRecords.filter(record => {
-            const dashboardRecord = mapToDashboardRecord(record);
-            const recordId = this.cleanIdentification(dashboardRecord.identification ?? '');
-            return recordId === cnpjLimpo;
-          });
+          console.log('[ReportDataFactory] ⚠️ Nenhum registro encontrado para CNPJ:', cnpjLimpo);
         }
 
-        // Ordenar por data de transmissão (mais recentes primeiro) e pegar os últimos 5
+        // Ordenar por data de transmissão (mais recentes primeiro) e pegar os últimos registros
+        // Aumentar para 10 registros para garantir que temos dados suficientes
         const ultimosRegistros = registrosDctf
-          .map(record => this.normalizeDctfRecord(record))
+          .map(record => {
+            try {
+              const normalized = this.normalizeDctfRecord(record);
+              const dashboardRecord = mapToDashboardRecord(record);
+              
+              // Formatar datas
+              const formatDateValue = (date: Date | string | null | undefined): string | null => {
+                if (!date) return null;
+                if (typeof date === 'string') {
+                  // Se já é uma string ISO, retornar como está
+                  if (date.includes('T') || date.includes('Z')) return date;
+                  // Tentar parsear e formatar
+                  try {
+                    const parsed = new Date(date);
+                    if (!isNaN(parsed.getTime())) return parsed.toISOString();
+                  } catch {
+                    return date; // Retornar string original se não conseguir parsear
+                  }
+                  return date;
+                }
+                try {
+                  return date.toISOString();
+                } catch {
+                  return null;
+                }
+              };
+              
+              return {
+                id: normalized.id,
+                identification: this.formatIdentifier(normalized.identification),
+                businessName: normalized.businessName,
+                period: normalized.period ?? '',
+                transmissionDate: normalized.transmissionDate,
+                status: normalized.status,
+                situation: normalized.situation ?? undefined,
+                debitAmount: normalized.debitAmount,
+                balanceDue: normalized.balanceDue,
+                origin: 'Plataforma',
+                // Incluir todos os campos disponíveis do record original
+                tipo: record.tipo || record.tipoDeclaracao || dashboardRecord.declarationType || null,
+                periodoApuracao: record.periodoApuracao || dashboardRecord.periodApuracao || null,
+                dataDeclaracao: formatDateValue(record.dataDeclaracao),
+                dataTransmissao: formatDateValue(record.dataTransmissao) || normalized.transmissionDate || null,
+                horaTransmissao: record.horaTransmissao || null,
+                tipoNi: record.tipoNi || null,
+                numeroIdentificacao: record.numeroIdentificacao || null,
+                categoria: record.categoria || dashboardRecord.category || null,
+                origem: record.origem || dashboardRecord.origin || null,
+                observacoes: record.observacoes || null,
+                statusPagamento: record.statusPagamento || null,
+                dataPagamento: formatDateValue(record.dataPagamento),
+              };
+            } catch (error) {
+              console.error('[ReportDataFactory] Erro ao processar registro DCTF:', error, record);
+              return null;
+            }
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null)
           .sort((a, b) => {
-            const aDate = a.transmissionDate ? Date.parse(a.transmissionDate) : 0;
-            const bDate = b.transmissionDate ? Date.parse(b.transmissionDate) : 0;
+            // Ordenar por data de transmissão (mais recentes primeiro)
+            // Se não tiver data de transmissão, usar data de declaração
+            const aDate = a.transmissionDate ? Date.parse(a.transmissionDate) : 
+                         (a.dataTransmissao ? Date.parse(a.dataTransmissao) : 
+                         (a.dataDeclaracao ? Date.parse(a.dataDeclaracao) : 0));
+            const bDate = b.transmissionDate ? Date.parse(b.transmissionDate) : 
+                         (b.dataTransmissao ? Date.parse(b.dataTransmissao) : 
+                         (b.dataDeclaracao ? Date.parse(b.dataDeclaracao) : 0));
             return bDate - aDate;
           })
-          .slice(0, 5)
-          .map(record => ({
-            id: record.id,
-            identification: this.formatIdentifier(record.identification),
-            businessName: record.businessName,
-            period: record.period ?? '',
-            transmissionDate: record.transmissionDate,
-            status: record.status,
-            situation: record.situation ?? undefined,
-            debitAmount: record.debitAmount,
-            balanceDue: record.balanceDue,
-            origin: 'Plataforma',
-          }));
+          .slice(0, 10); // Aumentar para 10 registros
 
         const dueDate = new Date(pendente.dueDate);
         dueDate.setHours(0, 0, 0, 0);

@@ -653,7 +653,7 @@ router.get('/protocols/archived', async (req, res, next) => {
     console.log('[Sitf Protocols Archived] Protocolos encontrados:', protocols?.length || 0);
     
     // Processar protocolos e calcular tempo restante
-    const archivedProtocols = (protocols || []).map((p: any) => {
+    const allArchivedProtocols = (protocols || []).map((p: any) => {
       let tempoRestante = calcularTempoRestante(p.expires_at);
       
       // Se não tem expires_at, calcular baseado na data de criação ou atualização (protocolos antigos)
@@ -707,6 +707,13 @@ router.get('/protocols/archived', async (req, res, next) => {
         tempo_restante: tempoRestante,
       };
     });
+    
+    // Filtrar apenas protocolos válidos (is_valid === true)
+    const archivedProtocols = allArchivedProtocols.filter((p) => {
+      return p.tempo_restante?.is_valid === true;
+    });
+    
+    console.log('[Sitf Protocols Archived] Total encontrados:', allArchivedProtocols.length, '| Válidos:', archivedProtocols.length);
     
     // Desabilitar cache para evitar problemas com 304
     res.set({
@@ -861,6 +868,35 @@ router.post('/protocols/:cnpj/restore', async (req, res, next) => {
         });
       } catch (error: any) {
         console.error('[Sitf Protocols Restore] Erro ao fazer consulta:', error);
+        
+        // Verificar se o erro indica que o protocolo está inválido
+        const isProtocolInvalid = error.isProtocolInvalid || 
+                                  (error.message && (
+                                    error.message.includes('protocolo') && 
+                                    error.message.includes('não é mais válido')
+                                  ));
+        
+        if (isProtocolInvalid) {
+          // Invalidar o protocolo no banco de dados
+          try {
+            const invalidateQuery = `
+              UPDATE sitf_protocols
+              SET protocolo = NULL, status = 'erro'
+              WHERE cnpj = ?
+            `;
+            await executeQuery(invalidateQuery, [cnpjLimpo]);
+            console.log('[Sitf Protocols Restore] Protocolo invalidado no banco de dados');
+          } catch (invalidateError) {
+            console.error('[Sitf Protocols Restore] Erro ao invalidar protocolo:', invalidateError);
+          }
+          
+          return res.status(400).json({
+            success: false,
+            error: 'O protocolo utilizado não é mais válido. É necessário solicitar um novo protocolo.',
+            protocolInvalid: true,
+          });
+        }
+        
         return res.status(500).json({
           success: false,
           error: 'Erro ao fazer consulta com protocolo restaurado',
