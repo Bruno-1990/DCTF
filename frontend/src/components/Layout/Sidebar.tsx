@@ -7,7 +7,7 @@ import {
   DocumentTextIcon,
   UsersIcon,
   ChartBarIcon,
-  Cog6ToothIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 
 const navigation = [
@@ -18,7 +18,7 @@ const navigation = [
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },
   { name: 'Relatórios', href: '/relatorios', icon: ChartBarIcon },
   { name: 'Situação Fiscal', href: '/situacao-fiscal', icon: DocumentTextIcon },
-  { name: 'Administração', href: '/administracao', icon: Cog6ToothIcon },
+  { name: 'SCI', href: '/sci/banco-horas', icon: ClockIcon },
 ];
 
 interface SidebarProps {

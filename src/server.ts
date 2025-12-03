@@ -26,6 +26,7 @@ import conferenciasRoutes from './routes/conferencias';
 import conferencesRoutes from './routes/conferences';
 import situacaoFiscalRoutes from './routes/situacao-fiscal';
 import hostDadosRoutes from './routes/host-dados';
+import sciRoutes from './routes/sci';
 
 class Server {
   private app: express.Application;
@@ -34,9 +35,9 @@ class Server {
 
   private port: number;
 
-  constructor() {
+  constructor(customPort?: number) {
     this.app = express();
-    this.port = config.port;
+    this.port = customPort || config.port;
     this.httpServer = createServer(this.app);
     this.setupMiddleware();
     this.setupRoutes();
@@ -134,6 +135,7 @@ class Server {
     this.app.use('/api/conferences', conferencesRoutes);
     this.app.use('/api/situacao-fiscal', situacaoFiscalRoutes);
     this.app.use('/api/host-dados', hostDadosRoutes);
+    this.app.use('/api/sci', sciRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

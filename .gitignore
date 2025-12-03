@@ -122,3 +122,13 @@ playwright/.cache/
 
 # Task Master
 .taskmaster/state.json
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Excel files
+*.xlsx
+*.xls

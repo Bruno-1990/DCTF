@@ -10,12 +10,29 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     base: '/',
     server: {
+      host: '0.0.0.0',
+      port: 5173,
+      strictPort: false,
+      hmr: {
+        overlay: true,
+      },
+      fs: {
+        strict: true,
+      },
       proxy: {
         '/api': {
           target,
           changeOrigin: true,
         },
       },
+    },
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
+    },
+    clearScreen: false,
+    optimizeDeps: {
+      force: true,
     },
   }
 })

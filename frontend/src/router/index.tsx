@@ -13,6 +13,7 @@ import AdminDashboard from '../pages/AdminDashboard';
 import Conferencias from '../pages/Conferencias';
 import Administracao from '../pages/Administracao';
 import SituacaoFiscal from '../pages/SituacaoFiscal';
+import BancoHoras from '../pages/BancoHoras';
 
 const router = createBrowserRouter([
   {
@@ -67,6 +68,10 @@ const router = createBrowserRouter([
       {
         path: 'upload',
         element: <UploadDCTF />,
+      },
+      {
+        path: 'sci/banco-horas',
+        element: <BancoHoras />,
       },
     ],
   },

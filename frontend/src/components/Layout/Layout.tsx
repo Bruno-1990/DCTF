@@ -97,10 +97,9 @@ const Layout: React.FC = () => {
               style={{
                 scrollbarWidth: 'none', // Firefox
                 msOverflowStyle: 'none', // IE and Edge
-                maxHeight: 'calc(100vh - 4rem - 350px)', // Altura máxima respeitando header e footer
+                maxHeight: 'calc(100vh - 4rem)', // Altura máxima respeitando apenas o header
                 overflowY: 'auto',
                 borderRadius: '0 20px 20px 0', // Quinas arredondadas no conteúdo também
-                overflow: 'hidden', // Garante que o conteúdo respeite as bordas arredondadas
               }}
             >
               <style>{`

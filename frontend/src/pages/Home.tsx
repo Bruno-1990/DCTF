@@ -6,9 +6,9 @@ import {
   DocumentTextIcon,
   UsersIcon,
   ChartBarIcon,
-  Cog6ToothIcon,
   CreditCardIcon,
   DocumentMagnifyingGlassIcon,
+  ClockIcon,
   ArrowRightIcon,
 } from '@heroicons/react/24/outline';
 
@@ -56,10 +56,10 @@ const cards = [
     icon: DocumentMagnifyingGlassIcon,
   },
   {
-    title: "Administração",
-    description: "Configure e gerencie as opções administrativas do sistema.",
-    href: "/administracao",
-    icon: Cog6ToothIcon,
+    title: "SCI",
+    description: "Gerencie o banco de horas e relatórios do sistema SCI.",
+    href: "/sci/banco-horas",
+    icon: ClockIcon,
   },
 ];
 
