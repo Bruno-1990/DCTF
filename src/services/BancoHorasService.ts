@@ -16,56 +16,39 @@ interface GerarRelatorioParams {
 interface GerarRelatorioResult {
   success: boolean;
   filePath?: string;
-  arquivoFormatado?: string;  // Caminho do arquivo formatado (opcional)
-  relatorioId?: string;
+  arquivoFormatado?: string;
   error?: string;
 }
 
 /**
- * Serviço para gerar relatório de banco de horas do SCI
- * Executa o script Python do projeto BANCO SCI
- * 
- * Melhorias implementadas:
- * - Filtro de colaboradores ativos: inclui colaboradores com registros de folha no período
- *   (verba 5 ou horas extras - verbas 603, 605, 608, 613, 615), garantindo que todos os 
- *   colaboradores que trabalharam sejam incluídos
- * - Otimização de performance: query de colaboradores ativos agora filtra apenas verbas relevantes,
- *   evitando processamento desnecessário de milhões de registros
- * - Cálculo do total geral corrigido: converte cada valor mensal de horas extras para horas decimais
- *   antes de somar, garantindo precisão e que o total bata exatamente com a soma das colunas mensais
- * - Logs de performance: adicionados logs detalhados para identificar gargalos de performance
+ * Serviço simplificado para gerar relatório de banco de horas do SCI
+ * Executa o script Python de forma síncrona e retorna o arquivo diretamente
  */
 export class BancoHorasService {
   private scriptPath: string;
-  private relatorioModel: BancoHorasRelatorioModel;
+  public relatorioModel: BancoHorasRelatorioModel;
 
   constructor() {
     this.relatorioModel = new BancoHorasRelatorioModel();
-    // Caminho para o script Python banco_horas_sci.py
-    // Prioridade: variável de ambiente > script local no projeto > caminho externo
+    
+    // Caminho para o script Python
     let scriptPath = process.env['BANCO_SCI_SCRIPT_PATH'];
     
     if (!scriptPath) {
-      // Tentar script local no projeto DCTF_MPC primeiro
       scriptPath = path.join(process.cwd(), 'python', 'banco_horas_sci.py');
       
-      // Se não encontrar localmente, tentar caminho externo (compatibilidade)
       if (!fs.existsSync(scriptPath)) {
         const userHome = process.env['USERPROFILE'] || process.env['HOME'] || '';
         if (userHome) {
           scriptPath = path.join(userHome, 'Desktop', 'BANCO SCI', 'banco_horas_sci.py');
-        } else {
-          // Fallback: relativo ao projeto
-          scriptPath = path.join(process.cwd(), '..', '..', 'Desktop', 'BANCO SCI', 'banco_horas_sci.py');
         }
       }
     }
     
-    // Verificar se o arquivo existe
     if (!fs.existsSync(scriptPath)) {
-      console.warn(`⚠️  Script Python banco_horas_sci.py não encontrado em: ${scriptPath}`);
+      console.warn(`⚠️  Script Python não encontrado em: ${scriptPath}`);
     } else {
-      console.log(`✅ Script Python banco_horas_sci.py encontrado: ${scriptPath}`);
+      console.log(`✅ Script Python encontrado: ${scriptPath}`);
     }
     
     this.scriptPath = scriptPath;
@@ -73,37 +56,13 @@ export class BancoHorasService {
 
   /**
    * Gera relatório de banco de horas executando o script Python
-   * 
-   * @param params Parâmetros para geração do relatório
-   * @returns Caminho do arquivo gerado ou erro
+   * Versão simplificada: executa e retorna o arquivo diretamente
    */
   async gerarRelatorio(params: GerarRelatorioParams): Promise<GerarRelatorioResult> {
-    // Criar registro inicial no histórico com status "gerando"
-    let relatorioId: string | undefined;
-    try {
-      const relatorioInicial = await this.relatorioModel.createRelatorio({
-        cnpj: params.cnpj,
-        razaoSocial: params.razaoSocial,
-        dataInicial: params.dataInicial,
-        dataFinal: params.dataFinal,
-        arquivoPath: '',
-        nomeArquivo: '',
-        status: 'gerando',
-      });
-
-      if (relatorioInicial.success && relatorioInicial.data?.id) {
-        relatorioId = relatorioInicial.data.id;
-        console.log(`✅ Registro de histórico criado: ID ${relatorioId}`);
-      } else {
-        console.warn('⚠️  Falha ao criar registro inicial:', relatorioInicial.error);
-      }
-    } catch (error: any) {
-      console.error('❌ Erro ao criar registro inicial:', error.message);
-    }
     if (!fs.existsSync(this.scriptPath)) {
       return {
         success: false,
-        error: `Script Python não encontrado em: ${this.scriptPath}. Configure a variável BANCO_SCI_SCRIPT_PATH ou verifique o caminho padrão.`,
+        error: `Script Python não encontrado em: ${this.scriptPath}`,
       };
     }
 
@@ -114,11 +73,9 @@ export class BancoHorasService {
       const dataInicialFormatada = `${dataInicialParts[2]}/${dataInicialParts[1]}/${dataInicialParts[0]}`;
       const dataFinalFormatada = `${dataFinalParts[2]}/${dataFinalParts[1]}/${dataFinalParts[0]}`;
 
-      // Criar script Python temporário que chama a função diretamente
+      // Criar script Python temporário
       const scriptDir = path.dirname(this.scriptPath);
       const tempScriptPath = path.join(scriptDir, `temp_gerar_relatorio_${Date.now()}.py`);
-      
-      // Escapar barras invertidas para o script Python
       const scriptDirEscaped = scriptDir.replace(/\\/g, '\\\\');
       
       const scriptContent = `
@@ -130,23 +87,22 @@ from banco_horas_sci import gerar_ficha_horas
 from datetime import date
 
 try:
-    # Converter datas
     data_inicial_parts = '${params.dataInicial}'.split('-')
     data_final_parts = '${params.dataFinal}'.split('-')
     data_inicial = date(int(data_inicial_parts[0]), int(data_inicial_parts[1]), int(data_inicial_parts[2]))
     data_final = date(int(data_final_parts[0]), int(data_final_parts[1]), int(data_final_parts[2]))
     
-    # Gerar relatório
+    print("[SCRIPT] Iniciando geracao...", flush=True)
     df = gerar_ficha_horas('${params.cnpj}', data_inicial=data_inicial, data_final=data_final)
     
-    if df is not None:
-        print("SUCCESS")
+    if df is not None and not df.empty:
+        print("SUCCESS", flush=True)
         sys.exit(0)
     else:
-        print("ERROR: Falha ao gerar relatório")
+        print("ERROR: DataFrame vazio", flush=True)
         sys.exit(1)
 except Exception as e:
-    print(f"ERROR: {str(e)}")
+    print(f"ERROR: {str(e)}", flush=True)
     import traceback
     traceback.print_exc()
     sys.exit(1)
@@ -155,59 +111,66 @@ except Exception as e:
       // Escrever script temporário
       fs.writeFileSync(tempScriptPath, scriptContent, 'utf-8');
 
-      // Executar script Python
+      // Executar script Python com timeout de 30 minutos
       const pythonCommand = process.env['PYTHON_COMMAND'] || 'python';
       const command = `"${pythonCommand}" "${tempScriptPath}"`;
       
-      console.log(`Executando: ${command}`);
-      console.log(`Diretório de trabalho: ${scriptDir}`);
+      console.log(`[BancoHoras] Executando: ${command}`);
+      console.log(`[BancoHoras] CNPJ: ${params.cnpj}, Período: ${params.dataInicial} a ${params.dataFinal}`);
       
-      let stdout = '';
-      let stderr = '';
+      const startTime = Date.now();
+      const timeoutMs = 30 * 60 * 1000; // 30 minutos
       
       try {
-        const result = await execAsync(command, {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Timeout: Script demorou mais de ${timeoutMs / 1000 / 60} minutos`));
+          }, timeoutMs);
+        });
+        
+        const execPromise = execAsync(command, {
           cwd: scriptDir,
           maxBuffer: 10 * 1024 * 1024, // 10MB
           env: { ...process.env, PYTHONUNBUFFERED: '1' },
         });
-        stdout = result.stdout || '';
-        stderr = result.stderr || '';
+        
+        const result = await Promise.race([execPromise, timeoutPromise]);
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`[BancoHoras] Script executado em ${elapsedTime}s`);
+        
+        // Verificar se houve erro
+        if (result.stderr && !result.stdout.includes('SUCCESS')) {
+          throw new Error(result.stderr.substring(0, 500));
+        }
+        
+        if (result.stdout.includes('ERROR')) {
+          const errorMatch = result.stdout.match(/ERROR: (.+)/);
+          throw new Error(errorMatch ? errorMatch[1] : 'Erro ao gerar relatório');
+        }
+        
+        if (!result.stdout.includes('SUCCESS')) {
+          throw new Error('Script não retornou SUCCESS');
+        }
       } catch (execError: any) {
-        stdout = execError.stdout || '';
-        stderr = execError.stderr || '';
-        // Se o erro não for de execução do script, relançar
-        if (!stdout.includes('ERROR') && !stderr.includes('ERROR')) {
-          throw execError;
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        
+        if (execError.message && execError.message.includes('Timeout')) {
+          throw new Error(`Timeout após ${elapsedTime}s: O relatório está muito grande ou o servidor está sobrecarregado.`);
+        }
+        
+        throw execError;
+      } finally {
+        // Remover script temporário
+        try {
+          if (fs.existsSync(tempScriptPath)) {
+            fs.unlinkSync(tempScriptPath);
+          }
+        } catch (e) {
+          console.warn('[BancoHoras] Erro ao remover script temporário:', e);
         }
       }
 
-      // Remover script temporário
-      try {
-        if (fs.existsSync(tempScriptPath)) {
-          fs.unlinkSync(tempScriptPath);
-        }
-      } catch (e) {
-        console.warn('Erro ao remover script temporário:', e);
-      }
-
-      if (stderr && !stdout.includes('SUCCESS')) {
-        console.error('Erro no script Python:', stderr);
-        return {
-          success: false,
-          error: stderr || 'Erro ao executar script Python',
-        };
-      }
-
-      if (stdout.includes('ERROR')) {
-        const errorMatch = stdout.match(/ERROR: (.+)/);
-        return {
-          success: false,
-          error: errorMatch ? errorMatch[1] : 'Erro ao gerar relatório',
-        };
-      }
-
-      // Buscar arquivos gerados (o script gera com timestamp)
+      // Buscar arquivos gerados (mais recentes primeiro)
       const arquivos = fs.readdirSync(scriptDir)
         .filter(f => f.startsWith('Banco_Horas_SCI_') && f.endsWith('.xlsx'))
         .map(f => ({
@@ -215,13 +178,10 @@ except Exception as e:
           path: path.join(scriptDir, f),
           time: fs.statSync(path.join(scriptDir, f)).mtime.getTime(),
         }))
-        .sort((a, b) => b.time - a.time); // Mais recente primeiro
+        .sort((a, b) => b.time - a.time);
 
       if (arquivos.length === 0) {
-        return {
-          success: false,
-          error: 'Arquivo Excel não foi gerado',
-        };
+        throw new Error('Arquivo Excel não foi gerado');
       }
 
       // Identificar arquivo completo e formatado
@@ -229,57 +189,24 @@ except Exception as e:
       const arquivoFormatado = arquivos.find(f => f.name.includes('_FORMATADO'));
 
       if (!arquivoCompleto) {
-        return {
-          success: false,
-          error: 'Arquivo completo não encontrado',
-        };
+        throw new Error('Arquivo completo não encontrado');
       }
 
-      const filePath = arquivoCompleto.path; // Retornar o completo como principal
-      const stats = fs.statSync(filePath);
-
-      // Atualizar registro no histórico com status "concluido"
-      if (relatorioId) {
-        // Atualizar informações do arquivo (mapear para snake_case)
-        const dbUpdates: any = {
-          status: 'concluido',
-          arquivo_path: filePath,
-          nome_arquivo: arquivoCompleto.name,
-          tamanho_arquivo: stats.size,
-        };
-        
-        // Se houver arquivo formatado, salvar também
-        if (arquivoFormatado) {
-          dbUpdates.arquivoFormatadoPath = arquivoFormatado.path;
-          dbUpdates.arquivoFormatadoNome = arquivoFormatado.name;
-        }
-        
-        await this.relatorioModel.update(relatorioId, dbUpdates);
-        console.log(`✅ Histórico atualizado: ID ${relatorioId}, arquivo: ${arquivoCompleto.name}`);
-        if (arquivoFormatado) {
-          console.log(`✅ Arquivo formatado salvo: ${arquivoFormatado.name}`);
-        }
+      console.log(`✅ [BancoHoras] Arquivo gerado: ${arquivoCompleto.name}`);
+      if (arquivoFormatado) {
+        console.log(`✅ [BancoHoras] Arquivo formatado: ${arquivoFormatado.name}`);
       }
 
-      // Retornar o arquivo completo (principal)
       return {
         success: true,
-        filePath, // Arquivo completo (principal)
-        arquivoFormatado: arquivoFormatado?.path, // Arquivo formatado (opcional)
-        relatorioId,
+        filePath: arquivoCompleto.path,
+        arquivoFormatado: arquivoFormatado?.path,
       };
     } catch (error: any) {
-      console.error('Erro ao gerar relatório:', error);
-      
-      // Atualizar registro no histórico com status "erro"
-      if (relatorioId) {
-        await this.relatorioModel.updateStatus(relatorioId, 'erro', error.message);
-      }
-
+      console.error('[BancoHoras] Erro ao gerar relatório:', error);
       return {
         success: false,
         error: error.message || 'Erro desconhecido ao executar script Python',
-        relatorioId,
       };
     }
   }
@@ -311,11 +238,111 @@ except Exception as e:
   }
 
   /**
+   * Corrige relatórios que têm arquivo gerado mas status está incorreto
+   * Esta função SEMPRE verifica se o arquivo existe e corrige o status
+   */
+  async corrigirRelatoriosComArquivo(): Promise<{ success: boolean; corrigidos: number }> {
+    try {
+      const todosRelatorios = await this.listarRelatorios();
+      let corrigidos = 0;
+      
+      for (const relatorio of todosRelatorios) {
+        // Se tem arquivo mas status não está "concluido", corrigir
+        if (relatorio.arquivoPath && relatorio.arquivoPath !== '' && relatorio.id) {
+          const arquivoExiste = fs.existsSync(relatorio.arquivoPath);
+          
+          if (arquivoExiste && relatorio.status !== 'concluido') {
+            console.log(`[BancoHoras] Corrigindo relatório ${relatorio.id}: tem arquivo mas status é "${relatorio.status}"`);
+            await this.relatorioModel.updateStatus(relatorio.id, 'concluido');
+            corrigidos++;
+          }
+        }
+      }
+      
+      if (corrigidos > 0) {
+        console.log(`[BancoHoras] ${corrigidos} relatório(s) corrigido(s)`);
+      }
+      
+      return { success: true, corrigidos };
+    } catch (error: any) {
+      console.error('[BancoHoras] Erro ao corrigir relatórios:', error);
+      return { success: false, corrigidos: 0 };
+    }
+  }
+
+  /**
+   * Limpa relatórios antigos que estão travados em "gerando"
+   * ATENÇÃO: Só marca como erro se NÃO tiver arquivo E estiver há mais de 60 minutos
+   */
+  async limparRelatoriosTravados(): Promise<{ success: boolean; atualizados: number; error?: string }> {
+    try {
+      const todosRelatorios = await this.listarRelatorios();
+      const agora = new Date();
+      let atualizados = 0;
+      
+      for (const relatorio of todosRelatorios) {
+        if (relatorio.status === 'gerando' && relatorio.id) {
+          // Converter createdAt para Date
+          let dataCriacao: Date | null = null;
+          
+          if (relatorio.createdAt) {
+            if (typeof relatorio.createdAt === 'string') {
+              dataCriacao = new Date(relatorio.createdAt);
+            } else if (relatorio.createdAt instanceof Date) {
+              dataCriacao = relatorio.createdAt;
+            }
+          }
+          
+          // Validar se a data é válida
+          if (!dataCriacao || isNaN(dataCriacao.getTime())) {
+            continue;
+          }
+          
+          const tempoDesdeCriacao = agora.getTime() - dataCriacao.getTime();
+          const minutosDesdeCriacao = tempoDesdeCriacao / (60 * 1000);
+          
+          // Só processar se foi criado há mais de 60 minutos
+          if (minutosDesdeCriacao < 60) {
+            continue;
+          }
+          
+          // Verificar se o arquivo existe no sistema de arquivos
+          const arquivoExiste = relatorio.arquivoPath && relatorio.arquivoPath !== '' && fs.existsSync(relatorio.arquivoPath);
+          
+          if (arquivoExiste) {
+            // Tem arquivo mas status ainda está "gerando" - atualizar status para "concluido"
+            console.log(`[BancoHoras] Relatório ${relatorio.id} tem arquivo mas status está "gerando", atualizando para "concluido"`);
+            await this.relatorioModel.updateStatus(relatorio.id, 'concluido');
+            atualizados++;
+          } else {
+            // Não tem arquivo e está há mais de 60 minutos - marcar como erro
+            console.log(`[BancoHoras] Relatório travado detectado: ID ${relatorio.id}, criado há ${minutosDesdeCriacao.toFixed(1)} minutos (sem arquivo)`);
+            await this.relatorioModel.updateStatus(
+              relatorio.id,
+              'erro',
+              'Geração interrompida ou travada. Tente gerar novamente.'
+            );
+            atualizados++;
+          }
+        }
+      }
+      
+      return { success: true, atualizados };
+    } catch (error: any) {
+      console.error('[BancoHoras] Erro ao limpar relatórios travados:', error);
+      return {
+        success: false,
+        atualizados: 0,
+        error: error.message || 'Erro ao limpar relatórios travados',
+      };
+    }
+  }
+
+  /**
    * Deleta um relatório do histórico
    */
   async deletarRelatorio(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // Buscar relatório para obter o caminho do arquivo
       const relatorio = await this.buscarRelatorioPorId(id);
       
       if (!relatorio) {
@@ -326,10 +353,8 @@ except Exception as e:
       if (relatorio.arquivoPath && fs.existsSync(relatorio.arquivoPath)) {
         try {
           fs.unlinkSync(relatorio.arquivoPath);
-          console.log(`Arquivo completo deletado: ${relatorio.arquivoPath}`);
         } catch (fileError: any) {
           console.warn(`Erro ao deletar arquivo completo: ${fileError.message}`);
-          // Continuar mesmo se não conseguir deletar o arquivo
         }
       }
 
@@ -340,15 +365,12 @@ except Exception as e:
       if (arquivoFormatadoPath && fs.existsSync(arquivoFormatadoPath)) {
         try {
           fs.unlinkSync(arquivoFormatadoPath);
-          console.log(`Arquivo formatado deletado: ${arquivoFormatadoPath}`);
         } catch (fileError: any) {
           console.warn(`Erro ao deletar arquivo formatado: ${fileError.message}`);
-          // Continuar mesmo se não conseguir deletar o arquivo
         }
       }
 
       // Deletar registro do banco
-      // O modelo herda de DatabaseService que delega para MySQLDatabaseService
       const result = await this.relatorioModel.delete(id);
       
       if (!result || !result.success) {

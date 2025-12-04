@@ -1,14 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  ClockIcon, 
-  ArrowDownTrayIcon, 
-  ExclamationTriangleIcon, 
-  CheckCircleIcon,
-  XMarkIcon
-} from '@heroicons/react/24/outline';
+import { ClockIcon } from '@heroicons/react/24/outline';
 import { bancoHorasService } from '../services/bancoHoras';
-import type { BancoHorasRelatorio } from '../services/bancoHoras';
 import { useToast } from '../hooks/useToast';
+import { ProgressModal } from '../components/BancoHoras/ProgressModal';
 
 const BancoHorasPage: React.FC = () => {
   const { success, error: showError } = useToast();
@@ -16,36 +10,11 @@ const BancoHorasPage: React.FC = () => {
   const [dataInicial, setDataInicial] = useState('');
   const [dataFinal, setDataFinal] = useState('');
   const [loading, setLoading] = useState(false);
-  const [historico, setHistorico] = useState<BancoHorasRelatorio[]>([]);
-  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<{ id: string | null; nomeArquivo?: string; countdown: number }>({ id: null, nomeArquivo: undefined, countdown: 0 });
-  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
+  const [progressRelatorioId, setProgressRelatorioId] = useState<string | null>(null);
+  const [progressCnpj, setProgressCnpj] = useState<string>('');
+  const [progressPeriodo, setProgressPeriodo] = useState<string>('');
 
-  // Carregar histórico ao montar componente
-  useEffect(() => {
-    // Usar setTimeout para garantir que o componente esteja totalmente montado
-    const timer = setTimeout(() => {
-      carregarHistorico();
-    }, 100);
-    
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const carregarHistorico = async () => {
-    setCarregandoHistorico(true);
-    try {
-      const relatorios = await bancoHorasService.listarHistorico();
-      setHistorico(Array.isArray(relatorios) ? relatorios : []);
-    } catch (error) {
-      console.error('Erro ao carregar histórico:', error);
-      // Não mostrar erro ao usuário, apenas logar
-      // O histórico é opcional, não deve quebrar a página
-      setHistorico([]); // Garantir que o estado seja um array vazio
-    } finally {
-      setCarregandoHistorico(false);
-    }
-  };
 
   const formatarCNPJ = (value: string) => {
     const numbers = value.replace(/\D/g, '');
@@ -103,33 +72,50 @@ const BancoHorasPage: React.FC = () => {
     setLoading(true);
     try {
       const cnpjLimpo = cnpj.replace(/\D/g, '');
+      const periodoFormatado = `${dataInicial} a ${dataFinal}`;
       
-      const blob = await bancoHorasService.gerarRelatorio({
+      const resultado = await bancoHorasService.gerarRelatorio({
         cnpj: cnpjLimpo,
         dataInicial,
         dataFinal,
       });
 
-      // Criar link de download
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      link.href = url;
-      link.download = `Banco_Horas_${cnpjLimpo}_${timestamp}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      // Se o relatório foi gerado imediatamente (blob disponível - caso raro)
+      if (resultado.blob) {
+        const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        exportarArquivo(resultado.blob, `Banco_Horas_${cnpjLimpo}_${timestamp}.xlsx`);
+        success('Relatório gerado com sucesso!');
+      } else if (resultado.relatorioId) {
+        // Relatório está sendo gerado em background - mostrar modal de progresso
+        setProgressRelatorioId(resultado.relatorioId);
+        setProgressCnpj(cnpj);
+        setProgressPeriodo(periodoFormatado);
+        setShowProgress(true);
+      }
 
-      success('Relatório gerado com sucesso!');
-      
-      // Limpar formulário e recarregar histórico
+      // Limpar formulário (mas manter dados do progresso)
       setCnpj('');
       setDataInicial('');
       setDataFinal('');
-      await carregarHistorico();
     } catch (error: any) {
-      const errorMessage = error?.response?.data?.error || error?.message || 'Erro ao gerar relatório';
+      // Tentar extrair mensagem de erro
+      let errorMessage = 'Erro ao gerar relatório';
+      if (error?.response?.data) {
+        if (error.response.data instanceof Blob) {
+          // Se for blob, tentar ler como JSON
+          try {
+            const text = await error.response.data.text();
+            const json = JSON.parse(text);
+            errorMessage = json.error || errorMessage;
+          } catch {
+            errorMessage = error?.message || errorMessage;
+          }
+        } else {
+          errorMessage = error.response.data.error || error.response.data.message || errorMessage;
+        }
+      } else {
+        errorMessage = error?.message || errorMessage;
+      }
       showError(errorMessage);
       console.error('Erro ao gerar relatório:', error);
     } finally {
@@ -137,147 +123,16 @@ const BancoHorasPage: React.FC = () => {
     }
   };
 
-  const handleBaixarHistorico = async (id: string, nomeArquivo: string) => {
-    try {
-      const blob = await bancoHorasService.baixarDoHistorico(id);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = nomeArquivo;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      success('Relatório completo baixado com sucesso!');
-    } catch (error: any) {
-      const errorMessage = error?.response?.data?.error || error?.message || 'Erro ao baixar relatório';
-      showError(errorMessage);
-    }
-  };
-
-  const handleBaixarFormatado = async (id: string, nomeArquivo?: string) => {
-    try {
-      const blob = await bancoHorasService.baixarFormatadoDoHistorico(id);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = nomeArquivo || 'Banco_Horas_FORMATADO.xlsx';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      success('Relatório formatado baixado com sucesso!');
-    } catch (error: any) {
-      const errorMessage = error?.response?.data?.error || error?.message || 'Erro ao baixar relatório formatado';
-      showError(errorMessage);
-    }
-  };
-
-  const handleDeletarClick = (id: string, nomeArquivo?: string) => {
-    // Limpar timer anterior se existir
-    if (deleteTimer) {
-      clearInterval(deleteTimer);
-      setDeleteTimer(null);
-    }
-    
-    // Iniciar contagem regressiva de 3 segundos
-    setPendingDelete({ id, nomeArquivo, countdown: 3 });
-    
-    let countdown = 3;
-    const timer = setInterval(() => {
-      countdown -= 1;
-      setPendingDelete(prev => ({ ...prev, countdown }));
-      
-      if (countdown <= 0) {
-        clearInterval(timer);
-        setDeleteTimer(null);
-        // Executar exclusão automaticamente
-        executeDelete(id);
-      }
-    }, 1000);
-    
-    setDeleteTimer(timer);
-  };
-
-  const cancelDelete = () => {
-    if (deleteTimer) {
-      clearInterval(deleteTimer);
-      setDeleteTimer(null);
-    }
-    setPendingDelete({ id: null, nomeArquivo: undefined, countdown: 0 });
-  };
-
-  const executeDelete = async (id: string) => {
-    // Limpar estado de exclusão pendente
-    setPendingDelete({ id: null, nomeArquivo: undefined, countdown: 0 });
-    
-    try {
-      await bancoHorasService.deletarHistorico(id);
-      success('Relatório excluído com sucesso!');
-      await carregarHistorico();
-    } catch (error: any) {
-      const errorMessage = error?.response?.data?.error || error?.message || 'Erro ao excluir relatório';
-      showError(errorMessage);
-    }
-  };
-
-  // Limpar timer ao desmontar componente
-  useEffect(() => {
-    return () => {
-      if (deleteTimer) {
-        clearInterval(deleteTimer);
-      }
-    };
-  }, [deleteTimer]);
-
-  const formatarData = (dataStr?: string) => {
-    if (!dataStr) return '-';
-    const data = new Date(dataStr);
-    return data.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatarTamanho = (bytes?: number) => {
-    if (!bytes) return '-';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'concluido':
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            <CheckCircleIcon className="w-4 h-4 mr-1" />
-            Concluído
-          </span>
-        );
-      case 'gerando':
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-            <svg className="animate-spin -ml-1 mr-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            Gerando...
-          </span>
-        );
-      case 'erro':
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            <ExclamationTriangleIcon className="w-4 h-4 mr-1" />
-            Erro
-          </span>
-        );
-      default:
-        return null;
-    }
+  // Função simples para exportar arquivo
+  const exportarArquivo = (blob: Blob, nomeArquivo: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = nomeArquivo;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   };
 
   return (
@@ -326,7 +181,7 @@ const BancoHorasPage: React.FC = () => {
             <div className="flex items-center space-x-3">
               <ClockIcon className="h-8 w-8 text-blue-600" />
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Banco de Horas SCI</h1>
+                <h1 className="text-2xl font-bold text-gray-900">Horas-Homem Trabalhadas</h1>
                 <p className="text-sm text-gray-500 mt-1">
                   Gere relatórios de horas trabalhadas e horas extras por colaborador
                 </p>
@@ -425,175 +280,24 @@ const BancoHorasPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Histórico */}
-        <div className="bg-white shadow rounded-lg">
-          <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Histórico de Relatórios</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Acesse relatórios gerados anteriormente
-              </p>
-            </div>
-            <button
-              onClick={carregarHistorico}
-              disabled={carregandoHistorico}
-              className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 disabled:opacity-50"
-            >
-              {carregandoHistorico ? 'Atualizando...' : 'Atualizar'}
-            </button>
-          </div>
-
-          <div className="px-6 py-4">
-            {carregandoHistorico && historico.length === 0 ? (
-              <div className="text-center py-8">
-                <svg
-                  className="animate-spin h-8 w-8 text-blue-600 mx-auto"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                <p className="mt-2 text-sm text-gray-500">Carregando histórico...</p>
-              </div>
-            ) : historico.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-gray-500">Nenhum relatório gerado ainda</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        CNPJ
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Período
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Tamanho
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Data
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Ações
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {historico.map((relatorio) => (
-                      <tr key={relatorio.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                          {relatorio.cnpj}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(relatorio.dataInicial).toLocaleDateString('pt-BR')} - {new Date(relatorio.dataFinal).toLocaleDateString('pt-BR')}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {getStatusBadge(relatorio.status)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {formatarTamanho(relatorio.tamanhoArquivo)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {formatarData(relatorio.createdAt)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                          <div className="flex items-center justify-end space-x-3">
-                            {relatorio.status === 'concluido' && relatorio.id ? (
-                              <>
-                                <button
-                                  onClick={() => handleBaixarHistorico(relatorio.id!, relatorio.nomeArquivo)}
-                                  className="text-blue-600 hover:text-blue-900 inline-flex items-center transition-colors"
-                                  title="Baixar planilha completa"
-                                >
-                                  <ArrowDownTrayIcon className="w-5 h-5 mr-1" />
-                                  Completo
-                                </button>
-                                {/* Mostrar botão formatado se existir no banco OU tentar inferir do nome do arquivo completo */}
-                                {(relatorio.arquivoFormatadoPath || relatorio.arquivoFormatadoNome || 
-                                  (relatorio.nomeArquivo && !relatorio.nomeArquivo.includes('_FORMATADO'))) && (
-                                  <button
-                                    onClick={() => handleBaixarFormatado(
-                                      relatorio.id!, 
-                                      relatorio.arquivoFormatadoNome || 
-                                      (relatorio.nomeArquivo ? relatorio.nomeArquivo.replace('.xlsx', '_FORMATADO.xlsx') : undefined)
-                                    )}
-                                    className="text-green-600 hover:text-green-900 inline-flex items-center transition-colors"
-                                    title="Baixar planilha formatada"
-                                  >
-                                    <ArrowDownTrayIcon className="w-5 h-5 mr-1" />
-                                    Formatado
-                                  </button>
-                                )}
-                              </>
-                            ) : relatorio.status === 'erro' ? (
-                              <span className="text-red-600 text-xs">{relatorio.erro || 'Erro ao gerar'}</span>
-                            ) : null}
-                            {relatorio.id && (
-                              <button
-                                onClick={() => handleDeletarClick(relatorio.id!, relatorio.nomeArquivo)}
-                                className="text-red-600 hover:text-red-900 inline-flex items-center transition-colors"
-                                title="Excluir relatório"
-                              >
-                                <XMarkIcon className="w-5 h-5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* Notificação de exclusão pendente com contagem regressiva */}
-      {pendingDelete.id && pendingDelete.countdown > 0 && (
-        <div className="fixed top-4 right-4 z-50 animate-toast-slide-in">
-          <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-lg shadow-2xl px-6 py-4 min-w-[320px] animate-toast-fade-in">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-white">
-                  Exclusão em {pendingDelete.countdown} segundo{pendingDelete.countdown !== 1 ? 's' : ''}
-                </p>
-                <p className="text-sm text-white/90 mt-1">
-                  {pendingDelete.nomeArquivo || 'Relatório'}
-                </p>
-              </div>
-            </div>
-            
-            {/* Barra de progresso */}
-            <div className="w-full bg-yellow-200/30 rounded-full h-2 mb-3">
-              <div 
-                className="bg-white h-2 rounded-full transition-all duration-1000 ease-linear"
-                style={{ width: `${(pendingDelete.countdown / 3) * 100}%` }}
-              />
-            </div>
-            
-            {/* Botão de cancelar */}
-            <button
-              onClick={cancelDelete}
-              className="w-full px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors font-medium"
-            >
-              Cancelar Exclusão
-            </button>
-          </div>
-        </div>
+      {/* Modal de Progresso */}
+      {showProgress && progressRelatorioId && (
+        <ProgressModal
+          relatorioId={progressRelatorioId}
+          cnpj={progressCnpj}
+          periodo={progressPeriodo}
+          onClose={() => {
+            setShowProgress(false);
+            setProgressRelatorioId(null);
+            setProgressCnpj('');
+            setProgressPeriodo('');
+          }}
+          onComplete={() => {
+            // Nada a fazer após completar
+          }}
+        />
       )}
     </div>
   );

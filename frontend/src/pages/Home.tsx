@@ -57,7 +57,7 @@ const cards = [
   },
   {
     title: "SCI",
-    description: "Gerencie o banco de horas e relatórios do sistema SCI.",
+    description: "Gere relatórios de horas-homem trabalhadas do sistema SCI.",
     href: "/sci/banco-horas",
     icon: ClockIcon,
   },

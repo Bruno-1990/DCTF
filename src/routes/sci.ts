@@ -18,23 +18,19 @@ router.post('/banco-horas/gerar', (req, res) => {
   bancoHorasController.gerarRelatorio(req, res);
 });
 
-// GET /api/sci/banco-horas/historico - Listar histórico de relatórios
-router.get('/banco-horas/historico', (req, res) => {
-  bancoHorasController.listarHistorico(req, res);
+// GET /api/sci/banco-horas/gerar/:relatorioId/logs - Stream de logs em tempo real (SSE)
+router.get('/banco-horas/gerar/:relatorioId/logs', (req, res) => {
+  bancoHorasController.streamLogs(req, res);
 });
 
-// GET /api/sci/banco-horas/historico/:id/download - Baixar relatório do histórico
-router.get('/banco-horas/historico/:id/download', (req, res) => {
-  bancoHorasController.baixarDoHistorico(req, res);
+// GET /api/sci/banco-horas/download/:id - Baixar arquivo de relatório
+router.get('/banco-horas/download/:id', (req, res) => {
+  bancoHorasController.downloadArquivo(req, res);
 });
 
-// GET /api/sci/banco-horas/historico/:id/download-formatado - Baixar relatório formatado do histórico
-router.get('/banco-horas/historico/:id/download-formatado', (req, res) => {
-  bancoHorasController.baixarFormatadoDoHistorico(req, res);
-});
-
-router.delete('/banco-horas/historico/:id', (req, res) => {
-  bancoHorasController.deletarHistorico(req, res);
+// GET /api/sci/banco-horas/download-formatado/:id - Baixar arquivo formatado
+router.get('/banco-horas/download-formatado/:id', (req, res) => {
+  bancoHorasController.downloadArquivoFormatado(req, res);
 });
 
 export default router;
