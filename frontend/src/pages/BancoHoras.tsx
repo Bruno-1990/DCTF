@@ -3,6 +3,7 @@ import { ClockIcon } from '@heroicons/react/24/outline';
 import { bancoHorasService } from '../services/bancoHoras';
 import { useToast } from '../hooks/useToast';
 import { ProgressModal } from '../components/BancoHoras/ProgressModal';
+import { FileUploader } from '../components/BancoHoras/FileUploader';
 
 const BancoHorasPage: React.FC = () => {
   const { success, error: showError } = useToast();
@@ -275,6 +276,44 @@ const BancoHorasPage: React.FC = () => {
                 <li>Horas trabalhadas são calculadas a partir da verba 5</li>
                 <li>Horas extras incluem as verbas 603, 605, 608, 613 e 615</li>
                 <li>O arquivo será baixado automaticamente após a geração</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Seção de Formatação de Planilha */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Formatar Planilha Existente
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Envie uma planilha Excel gerada anteriormente para aplicar a formatação profissional
+            </p>
+          </div>
+
+          <div className="px-6 py-6">
+            <FileUploader 
+              onFileUploaded={(file) => {
+                console.log('Arquivo enviado:', file.name);
+              }}
+              onFormatComplete={(blob) => {
+                success('Planilha formatada com sucesso! O download começará automaticamente.');
+              }}
+              onError={(error) => {
+                showError(error);
+              }}
+            />
+          </div>
+
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <div className="text-sm text-gray-600">
+              <p className="font-medium mb-2">Sobre a formatação:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>A formatação aplica estilos profissionais à planilha</li>
+                <li>Cabeçalhos são destacados com cores e formatação adequada</li>
+                <li>Colunas são ajustadas automaticamente para melhor visualização</li>
+                <li>A planilha formatada será baixada automaticamente</li>
               </ul>
             </div>
           </div>

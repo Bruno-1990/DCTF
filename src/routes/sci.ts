@@ -6,9 +6,26 @@
 import { Router } from 'express';
 import { BancoHorasController } from '../controllers/BancoHorasController';
 import { sanitizeData } from '../middleware/validation';
+import multer from 'multer';
 
 const router = Router();
 const bancoHorasController = new BancoHorasController();
+
+// Configurar multer para upload de arquivos
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.mimetype === 'application/vnd.ms-excel' ||
+        file.originalname.endsWith('.xlsx') ||
+        file.originalname.endsWith('.xls')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas arquivos Excel são permitidos (.xlsx ou .xls)'));
+    }
+  }
+});
 
 // Middleware de sanitização global
 router.use(sanitizeData);
@@ -31,6 +48,11 @@ router.get('/banco-horas/download/:id', (req, res) => {
 // GET /api/sci/banco-horas/download-formatado/:id - Baixar arquivo formatado
 router.get('/banco-horas/download-formatado/:id', (req, res) => {
   bancoHorasController.downloadArquivoFormatado(req, res);
+});
+
+// POST /api/sci/banco-horas/formatar - Formatar planilha enviada
+router.post('/banco-horas/formatar', upload.single('file'), (req, res) => {
+  bancoHorasController.formatarPlanilha(req, res);
 });
 
 export default router;

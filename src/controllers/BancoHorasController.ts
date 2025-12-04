@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { BancoHorasService } from '../services/BancoHorasService';
 import * as fs from 'fs';
+import ExcelJS from 'exceljs';
 
 export class BancoHorasController {
   private bancoHorasService: BancoHorasService;
@@ -434,6 +435,325 @@ export class BancoHorasController {
       res.status(500).setHeader('Content-Type', 'application/json').json({
         success: false,
         error: error.message || 'Erro ao baixar arquivo formatado',
+      });
+    }
+  }
+
+  /**
+   * Converte formato HH:MM para horas decimais (ex: '220:30' -> 220.5)
+   */
+  private converterHorasParaDecimal(horasStr: string): number {
+    if (!horasStr || horasStr === '0:00' || horasStr === '') {
+      return 0.0;
+    }
+    
+    try {
+      const partes = horasStr.toString().split(':');
+      if (partes.length !== 2) {
+        return 0.0;
+      }
+      const horas = parseInt(partes[0], 10);
+      const minutos = parseInt(partes[1], 10);
+      return horas + (minutos / 60.0);
+    } catch {
+      return 0.0;
+    }
+  }
+
+  /**
+   * Converte horas decimais para formato HH:MM (ex: 220.5 -> '220:30')
+   */
+  private formatarHoras(valor: number): string {
+    if (!valor || valor === 0) {
+      return '0:00';
+    }
+    
+    const horas = Math.floor(valor);
+    const minutos = Math.round((valor - horas) * 60);
+    return `${horas}:${minutos.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Formata planilha Excel enviada pelo frontend
+   * Consolida Horas Trabalhadas + Horas Extras em uma única coluna por mês
+   * POST /api/sci/banco-horas/formatar
+   */
+  async formatarPlanilha(req: Request, res: Response): Promise<void> {
+    try {
+      const file = req.file as Express.Multer.File;
+      if (!file) {
+        res.status(400).json({ error: 'Nenhum arquivo enviado' });
+        return;
+      }
+
+      // Ler planilha do buffer
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(file.buffer);
+
+      const worksheet = workbook.getWorksheet(1); // Primeira aba
+
+      if (!worksheet) {
+        res.status(400).json({ error: 'Planilha vazia' });
+        return;
+      }
+
+      const headerRow = worksheet.getRow(1);
+      const totalRows = worksheet.rowCount;
+      
+      // Identificar colunas base (que não são horas trabalhadas/extras)
+      const colunasBase = [
+        'cnpj_empresa', 'razao_social_empresa', 'codigo_centro_custo',
+        'descricao_centro_custo', 'matricula_colaborador', 'nome_colaborador',
+        'carga_horaria_regime'
+      ];
+
+      // Mapear nomes de colunas para índices
+      const colunasMap: { [key: string]: number } = {};
+      const colunasHorasTrabalhadas: { [mes: string]: number } = {};
+      const colunasHorasExtras: { [mes: string]: number } = {};
+      const mesesDetectados: string[] = [];
+
+      headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+        const headerValue = cell.value?.toString().toLowerCase() || '';
+        colunasMap[headerValue] = colNumber;
+
+        // Detectar colunas de horas trabalhadas e extras
+        if (headerValue.startsWith('horas_trabalhadas_')) {
+          const mes = headerValue.replace('horas_trabalhadas_', '').toUpperCase();
+          colunasHorasTrabalhadas[mes] = colNumber;
+          if (!mesesDetectados.includes(mes)) {
+            mesesDetectados.push(mes);
+          }
+        } else if (headerValue.startsWith('horas_extras_')) {
+          const mes = headerValue.replace('horas_extras_', '').toUpperCase();
+          colunasHorasExtras[mes] = colNumber;
+        }
+      });
+
+      // Ordenar meses detectados
+      const mesesOrdem = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 
+                          'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+      mesesDetectados.sort((a, b) => {
+        const indexA = mesesOrdem.indexOf(a);
+        const indexB = mesesOrdem.indexOf(b);
+        return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+      });
+
+      // Criar novo workbook com estrutura consolidada
+      const novoWorkbook = new ExcelJS.Workbook();
+      const novaWorksheet = novoWorkbook.addWorksheet('Planilha Formatada');
+
+      // Definir cabeçalhos
+      const novosCabecalhos = [
+        'CNPJ',
+        'Razão Social',
+        'Cód. Centro Custo',
+        'Centro de Custo',
+        'Matrícula',
+        'Nome do Colaborador',
+        'Carga Horária',
+        ...mesesDetectados,
+        'Total de Horas'
+      ];
+
+      // Escrever cabeçalhos
+      const novaHeaderRow = novaWorksheet.getRow(1);
+      novosCabecalhos.forEach((header, index) => {
+        novaHeaderRow.getCell(index + 1).value = header;
+      });
+
+      // Processar cada linha de dados
+      for (let rowNum = 2; rowNum <= totalRows; rowNum++) {
+        const row = worksheet.getRow(rowNum);
+        const novaRow = novaWorksheet.addRow([]);
+
+        // Copiar colunas base
+        let colIndex = 1;
+        if (colunasMap['cnpj_empresa']) {
+          novaRow.getCell(colIndex++).value = row.getCell(colunasMap['cnpj_empresa']).value;
+        }
+        if (colunasMap['razao_social_empresa']) {
+          novaRow.getCell(colIndex++).value = row.getCell(colunasMap['razao_social_empresa']).value;
+        }
+        if (colunasMap['codigo_centro_custo']) {
+          novaRow.getCell(colIndex++).value = row.getCell(colunasMap['codigo_centro_custo']).value;
+        }
+        if (colunasMap['descricao_centro_custo']) {
+          novaRow.getCell(colIndex++).value = row.getCell(colunasMap['descricao_centro_custo']).value;
+        }
+        if (colunasMap['matricula_colaborador']) {
+          novaRow.getCell(colIndex++).value = row.getCell(colunasMap['matricula_colaborador']).value;
+        }
+        if (colunasMap['nome_colaborador']) {
+          novaRow.getCell(colIndex++).value = row.getCell(colunasMap['nome_colaborador']).value;
+        }
+        if (colunasMap['carga_horaria_regime']) {
+          novaRow.getCell(colIndex++).value = row.getCell(colunasMap['carga_horaria_regime']).value;
+        }
+
+        // Consolidar horas por mês (Trabalhadas + Extras)
+        let totalGeralDecimal = 0.0;
+
+        mesesDetectados.forEach((mes) => {
+          let horasTrabalhadasDecimal = 0.0;
+          let horasExtrasDecimal = 0.0;
+
+          // Obter horas trabalhadas
+          if (colunasHorasTrabalhadas[mes]) {
+            const horasTrabalhadasCell = row.getCell(colunasHorasTrabalhadas[mes]);
+            const horasTrabalhadasStr = horasTrabalhadasCell.value?.toString() || '0:00';
+            horasTrabalhadasDecimal = this.converterHorasParaDecimal(horasTrabalhadasStr);
+          }
+
+          // Obter horas extras
+          if (colunasHorasExtras[mes]) {
+            const horasExtrasCell = row.getCell(colunasHorasExtras[mes]);
+            const horasExtrasStr = horasExtrasCell.value?.toString() || '0:00';
+            horasExtrasDecimal = this.converterHorasParaDecimal(horasExtrasStr);
+          }
+
+          // Somar e adicionar à linha
+          const totalMesDecimal = horasTrabalhadasDecimal + horasExtrasDecimal;
+          totalGeralDecimal += totalMesDecimal;
+          novaRow.getCell(colIndex++).value = this.formatarHoras(totalMesDecimal);
+        });
+
+        // Adicionar total de horas
+        novaRow.getCell(colIndex).value = this.formatarHoras(totalGeralDecimal);
+      }
+
+      // Aplicar formatação
+      const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 
+                     'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+
+      // Formatar cabeçalho
+      const novaHeaderRowFormat = novaWorksheet.getRow(1);
+      novaHeaderRowFormat.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      novaHeaderRowFormat.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF366092' }
+      };
+      novaHeaderRowFormat.height = 25;
+      
+      // Centralizar TODAS as células do cabeçalho
+      novaHeaderRowFormat.eachCell((cell) => {
+        cell.alignment = { 
+          horizontal: 'center', 
+          vertical: 'middle', 
+          wrapText: true 
+        };
+      });
+
+      // Verificar quais colunas têm conteúdo (para ocultar vazias)
+      const colunasComConteudo: Set<number> = new Set();
+      novaWorksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return; // Pular cabeçalho
+        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          const value = cell.value;
+          if (value !== null && value !== undefined && value !== '') {
+            colunasComConteudo.add(colNumber);
+          }
+        });
+      });
+
+      // Ocultar colunas vazias (exceto as colunas base que sempre devem aparecer)
+      const colunasBaseCount = 7; // CNPJ, Razão Social, Cód. Centro Custo, Centro de Custo, Matrícula, Nome, Carga Horária
+      novaWorksheet.columns.forEach((column, index) => {
+        const colNumber = index + 1;
+        // Sempre mostrar colunas base e coluna Total de Horas
+        const headerValue = novaHeaderRowFormat.getCell(colNumber).value?.toString() || '';
+        if (colNumber <= colunasBaseCount || headerValue === 'Total de Horas') {
+          column.hidden = false;
+        } else {
+          // Ocultar colunas de meses que não têm conteúdo
+          column.hidden = !colunasComConteudo.has(colNumber);
+        }
+      });
+
+      // Aplicar bordas, alinhamento e altura das linhas
+      novaWorksheet.eachRow((row, rowNumber) => {
+        // Altura das linhas: cabeçalho 25, demais 20
+        row.height = rowNumber === 1 ? 25 : 20;
+
+        row.eachCell((cell, colNumber) => {
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+
+          const headerValue = novaHeaderRowFormat.getCell(colNumber).value?.toString() || '';
+          
+          // Formatação especial para "Razão Social"
+          if (headerValue === 'Razão Social') {
+            cell.alignment = { 
+              horizontal: 'left', 
+              vertical: 'top',
+              wrapText: true 
+            };
+          } else if (rowNumber === 1) {
+            // Cabeçalho: tudo centralizado
+            cell.alignment = { 
+              horizontal: 'center', 
+              vertical: 'middle',
+              wrapText: true 
+            };
+          } else {
+            // Linhas de dados
+            if (meses.includes(headerValue) || headerValue === 'Total de Horas' || 
+                headerValue === 'Matrícula' || headerValue === 'Carga Horária') {
+              // Horários, Matrícula e Carga Horária: centralizados
+              cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            } else if (headerValue === 'Cód. Centro Custo') {
+              // Código Centro Custo: à direita
+              cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            } else {
+              // Demais colunas: à esquerda
+              cell.alignment = { horizontal: 'left', vertical: 'middle' };
+            }
+          }
+        });
+      });
+
+      // Ajustar larguras das colunas
+      novaWorksheet.columns.forEach((column, index) => {
+        const header = novaHeaderRowFormat.getCell(index + 1).value?.toString() || '';
+        
+        if (header === 'CNPJ') column.width = 18;
+        else if (header === 'Razão Social') column.width = 40;
+        else if (header === 'Cód. Centro Custo') column.width = 18;
+        else if (header === 'Centro de Custo') column.width = 30;
+        else if (header === 'Matrícula') column.width = 12;
+        else if (header === 'Nome do Colaborador') column.width = 35;
+        else if (header === 'Carga Horária') column.width = 15;
+        else if (meses.includes(header)) column.width = 12;
+        else if (header === 'Total de Horas') column.width = 18;
+        else column.width = 15;
+      });
+
+      // Congelar apenas a primeira linha (cabeçalho)
+      novaWorksheet.views = [{
+        state: 'frozen',
+        ySplit: 1,
+        xSplit: 0, // Não congela colunas, apenas a linha do cabeçalho
+      }];
+
+      // Gerar buffer da planilha formatada
+      const buffer = await novoWorkbook.xlsx.writeBuffer();
+
+      res.setHeader('Content-Type', 
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 
+        `attachment; filename="${file.originalname.replace(/\.(xlsx|xls)$/i, '_FORMATADO.xlsx')}"`);
+      
+      res.send(buffer);
+    } catch (error) {
+      console.error('[BancoHoras] Erro ao formatar planilha:', error);
+      res.status(500).json({ 
+        error: 'Erro ao formatar planilha',
+        details: error instanceof Error ? error.message : 'Erro desconhecido'
       });
     }
   }

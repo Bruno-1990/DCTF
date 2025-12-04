@@ -573,8 +573,7 @@ def criar_planilha_enxuta_formatada(nome_arquivo_completo: str, meses_periodo: l
             linha_enxuta[col] = row.get(col, '')
         
         # Consolidar horas por mês (Horas Trabalhadas + Horas Extras)
-        total_horas_trabalhadas_decimal = 0.0  # Apenas horas trabalhadas (sem extras)
-        total_geral_decimal = 0.0  # Horas trabalhadas + extras
+        total_geral_decimal = 0.0  # Total geral (horas trabalhadas + extras)
         
         for mes_num, mes_nome in meses_periodo:
             col_horas = f'horas_trabalhadas_{mes_nome}'
@@ -588,28 +587,24 @@ def criar_planilha_enxuta_formatada(nome_arquivo_completo: str, meses_periodo: l
             horas_decimal = converter_horas_para_decimal(horas_str)
             extras_decimal = converter_extras_para_decimal(extras_str)
             
-            # Somar para total geral
+            # Somar horas trabalhadas + extras para o mês
             total_mes_decimal = horas_decimal + extras_decimal
             total_geral_decimal += total_mes_decimal
-            total_horas_trabalhadas_decimal += horas_decimal  # Apenas horas trabalhadas
             
             # Formatar e adicionar à linha (apenas uma coluna por mês)
             linha_enxuta[mes_nome.upper()] = formatar_horas(total_mes_decimal)
         
-        # Adicionar total de horas trabalhadas (sem extras)
-        linha_enxuta['TOTAL_HORAS_TRABALHADAS'] = formatar_horas(total_horas_trabalhadas_decimal)
-        
-        # Adicionar total geral (com extras)
-        linha_enxuta['TOTAL'] = formatar_horas(total_geral_decimal)
+        # Adicionar apenas o total geral (horas trabalhadas + extras)
+        linha_enxuta['Total de Horas'] = formatar_horas(total_geral_decimal)
         
         dados_enxutos.append(linha_enxuta)
     
     # Criar DataFrame enxuto
     df_enxuto = pd.DataFrame(dados_enxutos)
     
-    # Reordenar colunas: base + meses + total_horas_trabalhadas + total
+    # Reordenar colunas: base + meses + total
     colunas_meses = [mes_nome.upper() for _, mes_nome in meses_periodo]
-    colunas_ordenadas = colunas_base + colunas_meses + ['TOTAL_HORAS_TRABALHADAS', 'TOTAL']
+    colunas_ordenadas = colunas_base + colunas_meses + ['Total de Horas']
     
     # Garantir que todas as colunas existem
     for col in colunas_ordenadas:
@@ -617,6 +612,22 @@ def criar_planilha_enxuta_formatada(nome_arquivo_completo: str, meses_periodo: l
             df_enxuto[col] = ""
     
     df_enxuto = df_enxuto[colunas_ordenadas]
+    
+    # Mapear nomes das colunas para nomes legíveis em português
+    mapeamento_colunas = {
+        'cnpj_empresa': 'CNPJ',
+        'razao_social_empresa': 'Razão Social',
+        'codigo_centro_custo': 'Cód. Centro Custo',
+        'descricao_centro_custo': 'Centro de Custo',
+        'matricula_colaborador': 'Matrícula',
+        'nome_colaborador': 'Nome do Colaborador',
+        'carga_horaria_regime': 'Carga Horária',
+        'Total de Horas': 'Total de Horas'
+    }
+    
+    # Renomear colunas base (apenas as que existem no DataFrame)
+    colunas_para_renomear = {k: v for k, v in mapeamento_colunas.items() if k in df_enxuto.columns}
+    df_enxuto = df_enxuto.rename(columns=colunas_para_renomear)
     
     # Nome do arquivo formatado
     nome_arquivo_formatado = nome_arquivo_completo.replace('.xlsx', '_FORMATADO.xlsx')
@@ -656,14 +667,14 @@ def formatar_excel(nome_arquivo: str, meses_periodo: list):
         cell.alignment = center_align
         cell.border = border
     
-    # Ajustar largura das colunas
+    # Ajustar largura das colunas (após renomeação)
     larguras_padrao = {
         'A': 18,  # CNPJ
         'B': 40,  # Razão Social
-        'C': 15,  # Código Centro Custo
-        'D': 30,  # Descrição Centro Custo
+        'C': 18,  # Cód. Centro Custo
+        'D': 30,  # Centro de Custo
         'E': 12,  # Matrícula
-        'F': 30,  # Nome
+        'F': 35,  # Nome do Colaborador
         'G': 15,  # Carga Horária
     }
     
@@ -677,11 +688,9 @@ def formatar_excel(nome_arquivo: str, meses_periodo: list):
         col_letter = get_column_letter(col_inicial_meses + idx)
         ws.column_dimensions[col_letter].width = 12
     
-    # Largura para colunas de totais
-    col_total_horas = get_column_letter(col_inicial_meses + len(meses_periodo))
-    col_total_geral = get_column_letter(col_inicial_meses + len(meses_periodo) + 1)
-    ws.column_dimensions[col_total_horas].width = 20  # Total Horas Trabalhadas
-    ws.column_dimensions[col_total_geral].width = 15  # Total Geral
+    # Largura para coluna de total
+    col_total = get_column_letter(col_inicial_meses + len(meses_periodo))
+    ws.column_dimensions[col_total].width = 18  # Total de Horas
     
     # Congelar primeira linha e primeiras colunas (até nome)
     ws.freeze_panes = 'H2'  # Congela até coluna G (nome) e linha 1
@@ -696,12 +705,12 @@ def formatar_excel(nome_arquivo: str, meses_periodo: list):
             
             if col_name and isinstance(col_name, str):
                 col_name_upper = col_name.upper()
-                # Colunas de horas (meses e totais) - alinhar à direita
+                # Colunas de horas (meses e total) - alinhar à direita
                 if (col_name_upper in [mes.upper() for _, mes in meses_periodo] or 
-                    col_name_upper in ['TOTAL_HORAS_TRABALHADAS', 'TOTAL']):
+                    col_name_upper == 'TOTAL DE HORAS'):
                     cell.alignment = right_align
                 # Colunas numéricas (matrícula, código centro custo) - alinhar à direita
-                elif col_name_upper in ['MATRICULA_COLABORADOR', 'CODIGO_CENTRO_CUSTO']:
+                elif col_name_upper in ['MATRÍCULA', 'CÓD. CENTRO CUSTO', 'CÓDIGO_CENTRO_CUSTO', 'MATRICULA_COLABORADOR']:
                     cell.alignment = right_align
                 # Demais colunas - alinhar à esquerda
                 else:
@@ -715,5 +724,7 @@ def formatar_excel(nome_arquivo: str, meses_periodo: list):
     # Salvar
     wb.save(nome_arquivo)
     print("[OK] Formatação aplicada com sucesso")
+
+
 
 
