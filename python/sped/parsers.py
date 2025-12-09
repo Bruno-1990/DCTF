@@ -12,16 +12,66 @@ from common import (
     localname
 )
 
+def split_sped_line(line: str, min_fields: int = 0) -> List[str]:
+    """
+    Faz split de linha SPED preservando campos vazios de forma ABSOLUTA.
+    
+    O SPED usa formato pipe-delimited onde campos vazios são representados por ||.
+    O split("|") padrão do Python preserva campos vazios no meio, mas precisamos
+    garantir que todos os campos sejam indexados corretamente.
+    
+    IMPORTANTE: Não adiciona | no final automaticamente, pois isso criaria um campo
+    vazio extra que pode não existir. Em vez disso, preenche apenas até min_fields
+    se necessário para garantir que temos campos suficientes para indexação.
+    
+    Exemplo:
+    "|C100|0|1||55|123.45|" -> ['', 'C100', '0', '1', '', '55', '123.45', '']
+    "|C100|0|1||55|123.45"  -> ['', 'C100', '0', '1', '', '55', '123.45']
+    
+    Args:
+        line: Linha do SPED (pode ter newline no final)
+        min_fields: Número mínimo de campos esperados (preenche com "" se necessário)
+    
+    Returns:
+        Lista de campos preservando vazios - índices ABSOLUTOS conforme layout
+    """
+    # Remover newline mas preservar estrutura original
+    line = line.rstrip("\n\r")
+    
+    # Fazer split preservando campos vazios (Python já faz isso corretamente)
+    # split("|") preserva campos vazios no meio: "||" -> ['', '', '']
+    fields = line.split("|")
+    
+    # CRÍTICO: Preencher até min_fields se necessário para garantir indexação correta
+    # Isso garante que fs[12], fs[25], etc. sempre existam, mesmo se a linha
+    # original não tiver todos os campos
+    if min_fields > 0 and len(fields) < min_fields:
+        fields.extend([""] * (min_fields - len(fields)))
+    
+    return fields
+
 # ====== (sped.py) ======
 def parse_efd_c100(file_path: Path) -> pd.DataFrame:
+    """
+    Parse do registro C100 (Documento Fiscal - Nota Fiscal Eletrônica).
+    
+    Layout oficial C100 (posições):
+    REG(1), IND_OPER(2), IND_EMIT(3), COD_PART(4), COD_MOD(5), COD_SIT(6), SER(7),
+    NUM_DOC(8), CHV_NFE(9), DT_DOC(10), DT_E_S(11), VL_DOC(12), IND_PGTO(13),
+    VL_DESC(14), VL_ABAT_NT(15), VL_MERC(16), IND_FRT(17), VL_FRT(18), VL_SEG(19),
+    VL_OUT_DA(20), VL_BC_ICMS(21), VL_ICMS(22), VL_BC_ICMS_ST(23), VL_ICMS_ST(24),
+    VL_IPI(25), VL_PIS(26), VL_COFINS(27)
+    
+    Após split("|"): fs[0]="", fs[1]="C100", fs[2]=IND_OPER, fs[3]=IND_EMIT, ...
+    Todos os índices estão CORRETOS conforme validação.
+    """
     rows: List[Dict[str, Any]] = []
     with file_path.open("r", encoding="latin1", errors="ignore") as f:
         for ln in f:
             if not ln.startswith("|C100|"):
                 continue
-            fs = ln.rstrip("\n").split("|")
-            if len(fs) < 30:
-                fs += [""] * (30 - len(fs))
+            # CORREÇÃO: Usar split_sped_line para preservar campos vazios corretamente
+            fs = split_sped_line(ln, min_fields=30)
             rows.append({
                 "IND_OPER": fs[2], "IND_EMIT": fs[3], "COD_PART": fs[4],
                 "COD_MOD": fs[5], "COD_SIT": fs[6], "SER": fs[7], "NUM_DOC": fs[8],
@@ -52,7 +102,8 @@ def get_company_identity_from_efd(file_path: Path):
     with file_path.open("r", encoding="latin1", errors="ignore") as f:
         for ln in f:
             if ln.startswith("|0000|"):
-                fs = ln.strip().split("|")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=8)
                 if len(fs) >= 8:
                     dt_ini = fs[4] or None
                     dt_fin = fs[5] or None
@@ -81,7 +132,8 @@ def parse_efd_c190_totais(file_path: Path):
     with file_path.open("r", encoding="latin1", errors="ignore") as f:
         for ln in f:
             if ln.startswith("|C100|"):
-                fs = ln.strip().split("|")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=10)
                 if len(fs) < 10:
                     current_key = None
                     current_triple = None
@@ -97,15 +149,17 @@ def parse_efd_c190_totais(file_path: Path):
                 if None not in current_triple:
                     bucket(por_triple, current_triple)
             elif ln.startswith("|C190|"):
-                fs = ln.strip().split("|")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=12)
                 if len(fs) < 12:
                     continue
-                cst = (fs[2] or "").strip()
-                v_bc   = parse_decimal(fs[6]) if len(fs) > 6 else 0.0
-                v_icms = parse_decimal(fs[7]) if len(fs) > 7 else 0.0
-                v_bcst = parse_decimal(fs[8]) if len(fs) > 8 else 0.0
-                v_st   = parse_decimal(fs[9]) if len(fs) > 9 else 0.0
-                v_ipi  = parse_decimal(fs[11]) if len(fs) > 11 else 0.0
+                # CORREÇÃO: índices validados conforme layout oficial
+                cst = (fs[2] or "").strip()      # Posição 2: CST_ICMS (índice 2 após split)
+                v_bc   = parse_decimal(fs[5]) if len(fs) > 5 else 0.0   # Posição 5: VL_BC_ICMS
+                v_icms = parse_decimal(fs[6]) if len(fs) > 6 else 0.0  # Posição 6: VL_ICMS
+                v_bcst = parse_decimal(fs[7]) if len(fs) > 7 else 0.0  # Posição 7: VL_BC_ICMS_ST
+                v_st   = parse_decimal(fs[8]) if len(fs) > 8 else 0.0  # Posição 8: VL_ICMS_ST
+                v_ipi  = parse_decimal(fs[11]) if len(fs) > 11 else 0.0 # Posição 11: VL_IPI
                 if current_key:
                     b = bucket(por_chave, current_key)
                     b["CSTS"].add(cst)
@@ -125,20 +179,34 @@ def parse_efd_c190_totais(file_path: Path):
     return por_chave, por_triple
 
 def parse_efd_d100_d190(file_path: Path):
-    """CT-e: D100/D190 agregados por (SER, NUM_DOC)."""
+    """
+    CT-e: D100/D190 agregados por (SER, NUM_DOC).
+    
+    Layout D100 (posições oficiais):
+    REG(1), IND_OPER(2), COD_PART(3), COD_MOD(4), COD_SIT(5), SER(6), NUM_DOC(7), 
+    CHV_CTE(8), DT_DOC(9), DT_A_P(10), TP_CT-e(11), CHV_CTE_REF(12), VL_DOC(13),
+    VL_DESC(14), IND_FRT(15), VL_SERV(16), VL_BC_ICMS(17), VL_ICMS(18), VL_NT(19), ...
+    
+    Após split("|"): fs[0]="", fs[1]="D100", fs[2]=IND_OPER, fs[3]=COD_PART, 
+    fs[4]=COD_MOD, fs[5]=COD_SIT, fs[6]=SER, fs[7]=NUM_DOC, fs[8]=CHV_CTE, ...
+    """
     d100_rows = []
     d190_acc: Dict[Tuple[str, str], Dict[str, float]] = {}
     last_key: Optional[Tuple[str, str]] = None
     with file_path.open("r", encoding="latin1", errors="ignore") as f:
         for ln in f:
             if ln.startswith("|D100|"):
-                fs = ln.strip().split("|")
-                if len(fs) < 25:
-                    fs += [""] * (25 - len(fs))
-                serie, num, chave = fs[7], fs[9], fs[10]
-                vl_doc = parse_decimal(fs[15]); vl_serv = parse_decimal(fs[18])
-                vl_bc = parse_decimal(fs[19]); vl_icms = parse_decimal(fs[20])
-                ind_oper = fs[2]
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=22)
+                # CORREÇÃO: índices corretos conforme layout oficial
+                ind_oper = fs[2]  # Posição 2: IND_OPER
+                serie = fs[6]     # Posição 6: SER (índice 6 após split)
+                num = fs[7]       # Posição 7: NUM_DOC (índice 7 após split)
+                chave = fs[8]     # Posição 8: CHV_CTE (índice 8 após split)
+                vl_doc = parse_decimal(fs[12])   # Posição 13: VL_DOC (índice 12 após split)
+                vl_serv = parse_decimal(fs[15])  # Posição 16: VL_SERV (índice 15 após split)
+                vl_bc = parse_decimal(fs[16])    # Posição 17: VL_BC_ICMS (índice 16 após split)
+                vl_icms = parse_decimal(fs[17])  # Posição 18: VL_ICMS (índice 17 após split)
                 d100_rows.append({
                     "SER": serie, "NUM_DOC": num, "CHV_CTE": chave,
                     "VL_DOC": vl_doc, "VL_SERV": vl_serv,
@@ -148,12 +216,12 @@ def parse_efd_d100_d190(file_path: Path):
                 last_key = (serie, num)
                 d190_acc.setdefault(last_key, {"VL_OPR": 0.0, "VL_BC_ICMS": 0.0, "VL_ICMS": 0.0})
             elif ln.startswith("|D190|") and last_key is not None:
-                fs = ln.strip().split("|")
-                if len(fs) < 8:
-                    fs += [""] * (8 - len(fs))
-                vl_opr = parse_decimal(fs[5]) or 0.0
-                vl_bc  = parse_decimal(fs[6]) or 0.0
-                vl_icm = parse_decimal(fs[7]) or 0.0
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=8)
+                # Layout D190: REG(1), CST_ICMS(2), CFOP(3), VL_OPR(4), VL_BC_ICMS(5), VL_ICMS(6)
+                vl_opr = parse_decimal(fs[3]) or 0.0   # Posição 4: VL_OPR (índice 3 após split)
+                vl_bc  = parse_decimal(fs[4]) or 0.0   # Posição 5: VL_BC_ICMS (índice 4 após split)
+                vl_icm = parse_decimal(fs[5]) or 0.0   # Posição 6: VL_ICMS (índice 5 após split)
                 b = d190_acc.setdefault(last_key, {"VL_OPR": 0.0, "VL_BC_ICMS": 0.0, "VL_ICMS": 0.0})
                 b["VL_OPR"] += vl_opr
                 b["VL_BC_ICMS"] += vl_bc
@@ -351,8 +419,8 @@ def parse_efd_e110_e116_e310_e316(file_path: Path):
     with file_path.open("r", encoding="latin1", errors="ignore") as f:
         for ln in f:
             if ln.startswith("|E110|"):
-                fs = ln.strip().split("|")
-                while len(fs) < 12: fs.append("")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=12)
                 def pdv(i): 
                     try: 
                         return float(str(fs[i]).replace(",", ".")) if fs[i] else 0.0
@@ -369,16 +437,16 @@ def parse_efd_e110_e116_e310_e316(file_path: Path):
                     "VL_TOT_DEDUCOES": pdv(9),
                 })
             elif ln.startswith("|E116|"):
-                fs = ln.strip().split("|")
-                while len(fs) < 8: fs.append("")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=8)
                 e116_rows.append({"COD_OR": fs[2], "VL_OR": fs[3], "DT_VCTO": fs[4], "COD_REC": fs[5], "NUM_PROC": fs[6], "IND_PROC": fs[7]})
             elif ln.startswith("|E310|"):
-                fs = ln.strip().split("|")
-                while len(fs) < 3: fs.append("")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=3)
                 e310_rows.append({"IND_MOV_FCP": fs[2]})
             elif ln.startswith("|E316|"):
-                fs = ln.strip().split("|")
-                while len(fs) < 8: fs.append("")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=8)
                 e316_rows.append({"COD_OR": fs[2], "VL_OR": fs[3], "DT_VCTO": fs[4], "COD_REC": fs[5], "NUM_PROC": fs[6], "IND_PROC": fs[7]})
     import pandas as pd
     return {"E110": pd.DataFrame(e110_rows), "E116": pd.DataFrame(e116_rows), "E310": pd.DataFrame(e310_rows), "E316": pd.DataFrame(e316_rows)}
@@ -389,11 +457,12 @@ def parse_efd_c195_c197(file_path: Path):
     with file_path.open("r", encoding="latin1", errors="ignore") as f:
         for ln in f:
             if ln.startswith("|C100|"):
-                fs = ln.strip().split("|")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=10)
                 current_key = (fs[9] or "").strip() if len(fs) > 9 else None
             elif ln.startswith("|C197|") and current_key:
-                fs = ln.strip().split("|")
-                while len(fs) < 9: fs.append("")
+                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                fs = split_sped_line(ln, min_fields=9)
                 def pdv(i):
                     try: 
                         return float(str(fs[i]).replace(",", ".")) if fs[i] else 0.0

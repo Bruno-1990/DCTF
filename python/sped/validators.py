@@ -181,12 +181,19 @@ def _has_any_line(file_path: Path, prefix: str) -> bool:
 
 
 def _parse_rows(file_path: Path, prefix: str) -> List[List[str]]:
+    """
+    Parse linhas do SPED preservando campos vazios.
+    Usa split_sped_line do parsers para garantir indexação correta.
+    """
+    from parsers import split_sped_line
     rows: List[List[str]] = []
     try:
         with file_path.open("r", encoding="latin1", errors="ignore") as f:
             for ln in f:
                 if ln.startswith(prefix):
-                    rows.append(ln.rstrip("\n").split("|"))
+                    # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                    fields = split_sped_line(ln)
+                    rows.append(fields)
     except Exception:
         return []
     return rows
@@ -556,8 +563,9 @@ def check_c100_must_have_children(efd_txt: Path):
                                 rows.append({**current, "FALTA": "C170"})
                             if not has_c190:
                                 rows.append({**current, "FALTA": "C190"})
-                    fs = ln.strip().split("|")
-                    while len(fs) < 10: fs.append("")
+                    # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                    from parsers import split_sped_line
+                    fs = split_sped_line(ln, min_fields=10)
                     current = {
                         "COD_MOD": fs[5], "COD_SIT": fs[6], "SER": fs[7],
                         "NUM_DOC": fs[8], "CHV_NFE": fs[9]
@@ -601,13 +609,15 @@ def check_items_require_0200_0190(efd_txt: Path):
         have_0190 = { (fs[2] or "").strip().upper() for fs in _parse_rows(efd_txt, "|0190|") if len(fs) > 2 }
         current = {"SER": "", "NUM_DOC": ""}
         with efd_txt.open("r", encoding="latin1", errors="ignore") as f:
+            from parsers import split_sped_line
             for ln in f:
                 if ln.startswith("|C100|"):
-                    fs = ln.strip().split("|")
+                    # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                    fs = split_sped_line(ln, min_fields=10)
                     current = {"SER": fs[7] if len(fs)>7 else "", "NUM_DOC": fs[8] if len(fs)>8 else ""}
                 elif ln.startswith("|C170|"):
-                    fs = ln.strip().split("|")
-                    while len(fs) < 8: fs.append("")
+                    # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                    fs = split_sped_line(ln, min_fields=8)
                     cod_item = (fs[3] or "").strip()
                     unid = (fs[6] or "").strip().upper()
                     if cod_item and cod_item not in have_0200:
@@ -625,17 +635,25 @@ def _sum_c170_by_c100(efd_txt: Path) -> Dict[Tuple[str,str], float]:
     current_key: Optional[Tuple[str,str]] = None
     try:
         with efd_txt.open("r", encoding="latin1", errors="ignore") as f:
+            from parsers import split_sped_line
             for ln in f:
                 if ln.startswith("|C100|"):
-                    fs = ln.strip().split("|")
+                    # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                    fs = split_sped_line(ln, min_fields=10)
                     ser, num = (fs[7] if len(fs)>7 else ""), (fs[8] if len(fs)>8 else "")
                     current_key = (ser, num)
                     acc.setdefault(current_key, 0.0)
                 elif ln.startswith("|C170|") and current_key is not None:
-                    fs = ln.strip().split("|")
-                    while len(fs) < 8: fs.append("")
+                    # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                    fs = split_sped_line(ln, min_fields=9)
                     try:
-                        vl_item = float(str((fs[6] or "0")).replace(".", "").replace(",", ".")) if fs[6] else 0.0
+                        # CORREÇÃO CRÍTICA: Layout C170 - VL_ITEM está na posição 7 (índice 7 após split)
+                        # Layout oficial: REG(1), NUM_ITEM(2), COD_ITEM(3), DESCR_COMPL(4), QTD(5), UNID(6), VL_ITEM(7), VL_DESC(8)
+                        # Após split("|"): fs[0]="", fs[1]="C170", fs[2]=NUM_ITEM, fs[3]=COD_ITEM, fs[4]=DESCR_COMPL, 
+                        #                  fs[5]=QTD, fs[6]=UNID, fs[7]=VL_ITEM, fs[8]=VL_DESC
+                        # ANTES: estava usando fs[6] (UNID) - ERRADO!
+                        # AGORA: usando fs[7] (VL_ITEM) - CORRETO!
+                        vl_item = float(str((fs[7] or "0")).replace(".", "").replace(",", ".")) if len(fs) > 7 and fs[7] else 0.0
                     except Exception:
                         vl_item = 0.0
                     acc[current_key] = acc.get(current_key, 0.0) + (vl_item or 0.0)
@@ -705,17 +723,19 @@ def _parse_c190_totais(file_path: Path):
         return d[k]
     try:
         with file_path.open("r", encoding="latin1", errors="ignore") as f:
+            from parsers import split_sped_line
             for ln in f:
                 if ln.startswith("|C100|"):
-                    fs = ln.strip().split("|")
+                    # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                    fs = split_sped_line(ln, min_fields=10)
                     cod_mod = _only_int(fs[5] if len(fs)>5 else "")
                     ser = _only_int(fs[7] if len(fs)>7 else "")
                     num = _only_int(fs[8] if len(fs)>8 else "")
                     current_triple = (cod_mod, ser, num)
                     bucket(por_triple, current_triple)
                 elif ln.startswith("|C190|") and current_triple is not None:
-                    fs = ln.strip().split("|")
-                    while len(fs) < 12: fs.append("")
+                    # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                    fs = split_sped_line(ln, min_fields=12)
                     def pf(i):
                         try:
                             return float(str(fs[i]).replace(".", "").replace(",", ".")) if fs[i] else 0.0

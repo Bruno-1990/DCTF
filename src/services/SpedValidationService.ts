@@ -194,15 +194,24 @@ export class SpedValidationService {
             .replace(/:\s*Infinity\b/g, ': null')
             .replace(/:\s*-Infinity\b/g, ': null');
           resultado = JSON.parse(cleanedData);
+          
+          console.log(`[${validationId}] Resultado carregado:`, {
+            hasEmpresa: !!resultado.empresa,
+            validacoesKeys: resultado.validacoes ? Object.keys(resultado.validacoes) : [],
+            reportsKeys: resultado.reports ? Object.keys(resultado.reports) : []
+          });
         } catch (parseError: any) {
+          console.error(`[${validationId}] Erro ao processar resultado JSON:`, parseError);
           throw new Error(`Erro ao processar resultado JSON: ${parseError.message}`);
         }
       } else {
+        console.error(`[${validationId}] Arquivo de resultado não encontrado: ${outputPath}`);
         throw new Error('Arquivo de resultado não foi gerado');
       }
 
       // Marcar como completo
       this.updateStatus(validationId, 100, 'Validação concluída', resultado);
+      console.log(`[${validationId}] Status atualizado para completed com resultado`);
 
     } catch (error: any) {
       console.error(`Erro no processamento ${validationId}:`, error);

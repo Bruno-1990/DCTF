@@ -113,10 +113,33 @@ class SpedService {
    * Obtém resultado da validação
    */
   async obterResultado(validationId: string): Promise<ValidationResult> {
-    const response = await axios.get<ValidationResult>(
-      `${API_BASE_URL}/api/sped/validacao/${validationId}`
-    );
-    return response.data;
+    try {
+      const response = await axios.get<ValidationStatus & { resultado?: ValidationResult }>(
+        `${API_BASE_URL}/api/sped/validacao/${validationId}`
+      );
+      
+      console.log('Resposta completa do backend:', response.data);
+      
+      // Se o status é completed, o resultado vem dentro do objeto de resposta
+      if (response.data.status === 'completed') {
+        if (response.data.resultado) {
+          console.log('Resultado encontrado no response.data.resultado');
+          return response.data.resultado;
+        }
+        // Se não tem resultado mas está completed, pode ser que o resultado está no próprio objeto
+        if (response.data.empresa || response.data.validacoes || response.data.reports) {
+          console.log('Resultado encontrado diretamente no response.data');
+          return response.data as ValidationResult;
+        }
+      }
+      
+      // Se não há resultado ainda, retornar estrutura vazia
+      console.warn('Nenhum resultado encontrado na resposta');
+      return response.data.resultado || {};
+    } catch (error: any) {
+      console.error('Erro ao obter resultado:', error);
+      throw error;
+    }
   }
 
   /**

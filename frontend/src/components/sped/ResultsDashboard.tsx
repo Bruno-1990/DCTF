@@ -34,10 +34,48 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   const carregarResultado = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
+      // Primeiro verificar o status para garantir que está completo
+      const status = await spedService.obterStatus(validationId);
+      
+      if (!status) {
+        setError('Validação não encontrada');
+        setLoading(false);
+        return;
+      }
+      
+      if (status.status !== 'completed') {
+        setError(`Validação ainda não concluída. Status: ${status.status}`);
+        setLoading(false);
+        return;
+      }
+      
+      // Aguardar um pouco para garantir que o resultado está disponível
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const data = await spedService.obterResultado(validationId);
+      
+      console.log('Resultado carregado:', data);
+      console.log('Tipo do resultado:', typeof data);
+      console.log('Chaves do resultado:', data ? Object.keys(data) : 'null');
+      
+      if (!data) {
+        setError('Resultado não disponível. A validação pode não ter sido concluída com sucesso.');
+        setLoading(false);
+        return;
+      }
+      
+      if (typeof data !== 'object' || Object.keys(data).length === 0) {
+        setError('Resultado vazio ou em formato inválido');
+        setLoading(false);
+        return;
+      }
+      
       setResultado(data);
       setError(null);
     } catch (err: any) {
+      console.error('Erro ao carregar resultado:', err);
       setError(err.message || 'Erro ao carregar resultados');
     } finally {
       setLoading(false);
@@ -72,13 +110,33 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   if (!resultado) {
     return (
       <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg">
-        Nenhum resultado disponível
+        <p className="font-semibold">Nenhum resultado disponível</p>
+        <p className="text-sm mt-2">A validação pode não ter gerado resultados ou os dados ainda não estão disponíveis.</p>
+        <button
+          onClick={carregarResultado}
+          className="mt-3 px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700"
+        >
+          Tentar novamente
+        </button>
       </div>
     );
   }
 
-  const divergencias = resultado.validacoes?.['Divergencias (todas)'] || [];
-  const checklist = resultado.reports?.['Checklist'] || [];
+  // Extrair dados do resultado - pode vir em diferentes formatos
+  const validacoes = resultado.validacoes || resultado.Validacoes || {};
+  const reports = resultado.reports || resultado.Reports || {};
+  
+  const divergencias = validacoes['Divergencias (todas)'] || validacoes['divergencias'] || [];
+  const checklist = reports['Checklist'] || reports['checklist'] || [];
+  
+  // Debug: mostrar estrutura do resultado
+  console.log('Estrutura do resultado:', {
+    hasEmpresa: !!resultado.empresa,
+    validacoesKeys: Object.keys(validacoes),
+    reportsKeys: Object.keys(reports),
+    divergenciasCount: divergencias.length,
+    checklistCount: checklist.length
+  });
 
   return (
     <div className="space-y-6">
@@ -117,7 +175,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
       </div>
 
       {/* Checklist/Resumo */}
-      {checklist.length > 0 && (
+      {checklist.length > 0 ? (
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-xl font-semibold mb-4 flex items-center">
             <ChartBarIcon className="h-6 w-6 mr-2 text-blue-600" />
@@ -134,11 +192,21 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
             ))}
           </div>
         </div>
+      ) : (
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg">
+          <p className="font-semibold">Nenhum resumo disponível</p>
+          <p className="text-sm mt-1">O checklist não foi gerado ou está vazio.</p>
+        </div>
       )}
 
       {/* Divergências */}
-      {divergencias.length > 0 && (
+      {divergencias.length > 0 ? (
         <DivergenciasTable divergencias={divergencias} />
+      ) : (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+          <p className="font-semibold">✓ Nenhuma divergência encontrada</p>
+          <p className="text-sm mt-1">A validação não encontrou divergências nos dados analisados.</p>
+        </div>
       )}
 
       {/* Outras abas de relatórios */}
