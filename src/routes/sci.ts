@@ -1,15 +1,17 @@
 /**
  * Rotas para operações do SCI (Sistema de Controle Interno)
- * Endpoints para gerenciamento de banco de horas
+ * Endpoints para gerenciamento de banco de horas e catálogo
  */
 
 import { Router } from 'express';
 import { BancoHorasController } from '../controllers/BancoHorasController';
+import { CatalogController } from '../controllers/CatalogController';
 import { sanitizeData } from '../middleware/validation';
 import multer from 'multer';
 
 const router = Router();
 const bancoHorasController = new BancoHorasController();
+const catalogController = new CatalogController();
 
 // Configurar multer para upload de arquivos
 const upload = multer({ 
@@ -53,6 +55,26 @@ router.get('/banco-horas/download-formatado/:id', (req, res) => {
 // POST /api/sci/banco-horas/formatar - Formatar planilha enviada
 router.post('/banco-horas/formatar', upload.single('file'), (req, res) => {
   bancoHorasController.formatarPlanilha(req, res);
+});
+
+// POST /api/sci/catalog/buscar - Buscar objetos no catálogo
+router.post('/catalog/buscar', (req, res) => {
+  catalogController.buscarTabelas(req, res);
+});
+
+// POST /api/sci/catalog/gerar-sql - Gerar SQL baseado em objeto do catálogo
+router.post('/catalog/gerar-sql', (req, res) => {
+  catalogController.gerarSQL(req, res);
+});
+
+// POST /api/sci/catalog/executar-sql - Executar SQL no banco SCI
+router.post('/catalog/executar-sql', (req, res) => {
+  catalogController.executarSQL(req, res);
+});
+
+// POST /api/sci/catalog/consulta-centro-custo - Consulta personalizada de centro de custo
+router.post('/catalog/consulta-centro-custo', (req, res) => {
+  catalogController.consultaCentroCusto(req, res);
 });
 
 export default router;

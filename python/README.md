@@ -73,3 +73,5 @@ df = gerar_ficha_horas(
 - A planilha formatada tem sufixo `_FORMATADO.xlsx`
 
 
+
+

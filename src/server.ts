@@ -27,6 +27,7 @@ import conferencesRoutes from './routes/conferences';
 import situacaoFiscalRoutes from './routes/situacao-fiscal';
 import hostDadosRoutes from './routes/host-dados';
 import sciRoutes from './routes/sci';
+import spedRoutes from './routes/sped';
 
 class Server {
   private app: express.Application;
@@ -136,6 +137,7 @@ class Server {
     this.app.use('/api/situacao-fiscal', situacaoFiscalRoutes);
     this.app.use('/api/host-dados', hostDadosRoutes);
     this.app.use('/api/sci', sciRoutes);
+    this.app.use('/api/sped', spedRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

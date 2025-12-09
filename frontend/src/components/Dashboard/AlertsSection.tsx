@@ -211,3 +211,5 @@ const AlertsSection: React.FC<AlertsSectionProps> = ({ data }) => {
 
 export default AlertsSection;
 
+
+

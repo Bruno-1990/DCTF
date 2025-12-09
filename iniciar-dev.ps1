@@ -45,3 +45,5 @@ Write-Host "   4. Use Ctrl+Shift+R para forçar atualização do cache do navega
 Write-Host ""
 
 
+
+

@@ -259,6 +259,7 @@ export default function Conferencias() {
               <p className="text-4xl font-bold text-pink-600">{estatisticas.totalClientesHistoricoAtraso}</p>
             </button>
           )}
+
         </div>
               </div>
 
@@ -334,6 +335,7 @@ export default function Conferencias() {
                 onToggle={() => toggleSection('clientesHistoricoAtraso')}
               />
             )}
+
         </div>
     </div>
   );

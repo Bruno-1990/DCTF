@@ -76,3 +76,13 @@ SHOW COLUMNS FROM clientes;
 
 
 
+
+
+
+
+
+
+
+
+
+

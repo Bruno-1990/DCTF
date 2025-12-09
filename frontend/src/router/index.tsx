@@ -14,6 +14,8 @@ import Conferencias from '../pages/Conferencias';
 import Administracao from '../pages/Administracao';
 import SituacaoFiscal from '../pages/SituacaoFiscal';
 import BancoHoras from '../pages/BancoHoras';
+import GeradorSQL from '../pages/GeradorSQL';
+import SpedValidacao from '../pages/SpedValidacao';
 
 const router = createBrowserRouter([
   {
@@ -72,6 +74,14 @@ const router = createBrowserRouter([
       {
         path: 'sci/banco-horas',
         element: <BancoHoras />,
+      },
+      {
+        path: 'sci/gerador-sql',
+        element: <GeradorSQL />,
+      },
+      {
+        path: 'sped',
+        element: <SpedValidacao />,
       },
     ],
   },

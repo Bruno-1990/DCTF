@@ -1,0 +1,17 @@
+Este arquivo foi criado em: 2025-12-03
+Se você está vendo este arquivo, o build está usando os arquivos fonte corretos.
+
+Arquivos verificados:
+- Sidebar.tsx: SCI configurado na linha 21
+- Home.tsx: Card SCI presente
+- SituacaoFiscal.tsx: 3 abas (consulta, empresas, lixeira)
+- Router: Rota /sci/banco-horas configurada
+
+Se as alterações não aparecem:
+1. Limpe o cache do navegador (Ctrl+Shift+R)
+2. Verifique se está usando npm run dev (não npm start)
+3. Verifique se o Vite está rodando na porta 5173
+
+
+
+

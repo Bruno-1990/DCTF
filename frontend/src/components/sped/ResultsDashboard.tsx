@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { ChartBarIcon, ArrowDownTrayIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, ArrowDownTrayIcon, ArrowPathIcon, DocumentCheckIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { spedService } from '../../services/sped';
 import DivergenciasTable from './DivergenciasTable';
+import DivergenciasValoresConferencia from './DivergenciasValoresConferencia';
 
 interface ResultsDashboardProps {
   validationId: string;
@@ -26,6 +27,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   const [resultado, setResultado] = useState<ValidationResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'resumo' | 'divergencias' | 'conferencia'>('resumo');
 
   useEffect(() => {
     carregarResultado();
@@ -129,6 +131,9 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   const divergencias = validacoes['Divergencias (todas)'] || validacoes['divergencias'] || [];
   const checklist = reports['Checklist'] || reports['checklist'] || [];
   
+  // Buscar notes_df para divergências de valores (contém colunas Delta)
+  const notesDf = reports['Notas (+Natureza)'] || reports['Notas Saídas'] || reports['Notas Entradas'] || [];
+  
   // Debug: mostrar estrutura do resultado
   console.log('Estrutura do resultado:', {
     hasEmpresa: !!resultado.empresa,
@@ -174,43 +179,166 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
         </div>
       </div>
 
-      {/* Checklist/Resumo */}
-      {checklist.length > 0 ? (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-xl font-semibold mb-4 flex items-center">
-            <ChartBarIcon className="h-6 w-6 mr-2 text-blue-600" />
+      {/* Abas de navegação */}
+      <div className="bg-white rounded-lg shadow-md border-b border-gray-200">
+        <nav className="flex space-x-1 px-6" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab('resumo')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'resumo'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <ChartBarIcon className="h-5 w-5 inline-block mr-2" />
             Resumo
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {checklist.map((item: any, index: number) => (
-              <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">{item.Item || item[0]}</p>
-                <p className="text-lg font-semibold text-gray-900 mt-1">
-                  {item.Valor || item[1] || 'N/D'}
-                </p>
+          </button>
+          <button
+            onClick={() => setActiveTab('divergencias')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'divergencias'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <ArrowPathIcon className="h-5 w-5 inline-block mr-2" />
+            Divergências
+            {divergencias.length > 0 && (
+              <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                {divergencias.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('conferencia')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'conferencia'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <DocumentCheckIcon className="h-5 w-5 inline-block mr-2" />
+            Conferência de Valores
+            {divergencias.length > 0 && (
+              <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-800">
+                {new Set(divergencias.map((d: any) => d['Chave NF-e'] || d.CHAVE || d.chaveNf).filter(Boolean)).size}
+              </span>
+            )}
+          </button>
+        </nav>
+      </div>
+
+      {/* Conteúdo das abas */}
+      <div className="mt-6">
+        {activeTab === 'resumo' && (
+          <>
+            {checklist.length > 0 ? (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h3 className="text-xl font-semibold mb-4 flex items-center">
+                  <ChartBarIcon className="h-6 w-6 mr-2 text-blue-600" />
+                  Resumo
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {checklist.map((item: any, index: number) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-sm text-gray-600">{item.Item || item[0]}</p>
+                      <p className="text-lg font-semibold text-gray-900 mt-1">
+                        {item.Valor || item[1] || 'N/D'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg">
-          <p className="font-semibold">Nenhum resumo disponível</p>
-          <p className="text-sm mt-1">O checklist não foi gerado ou está vazio.</p>
-        </div>
-      )}
+            ) : (
+              <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg">
+                <p className="font-semibold">Nenhum resumo disponível</p>
+                <p className="text-sm mt-1">O checklist não foi gerado ou está vazio.</p>
+              </div>
+            )}
+          </>
+        )}
 
-      {/* Divergências */}
-      {divergencias.length > 0 ? (
-        <DivergenciasTable divergencias={divergencias} />
-      ) : (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-          <p className="font-semibold">✓ Nenhuma divergência encontrada</p>
-          <p className="text-sm mt-1">A validação não encontrou divergências nos dados analisados.</p>
-        </div>
-      )}
+        {activeTab === 'divergencias' && (
+          <>
+            {divergencias.length > 0 ? (
+              <DivergenciasTable divergencias={divergencias} />
+            ) : (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h3 className="text-xl font-semibold mb-4 flex items-center">
+                  <ExclamationTriangleIcon className="h-6 w-6 mr-2 text-blue-600" />
+                  Exemplos de Divergências Averiguadas
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  O sistema verifica os seguintes tipos de confrontos entre XML e SPED:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">📋 Cadastro (0150) x XML</h4>
+                    <p className="text-sm text-gray-600">
+                      Confronta dados cadastrais de empresas/fornecedores entre o registro 0150 do SPED e as informações dos XMLs.
+                    </p>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">📦 Unidades (0190) Faltantes</h4>
+                    <p className="text-sm text-gray-600">
+                      Identifica unidades de medida referenciadas nos XMLs que não estão cadastradas no registro 0190 do SPED.
+                    </p>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">💰 FCP (Indícios)</h4>
+                    <p className="text-sm text-gray-600">
+                      Detecta possíveis valores de Fundo de Combate à Pobreza que podem estar faltando ou incorretos.
+                    </p>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">📊 Apuração (E110)</h4>
+                    <p className="text-sm text-gray-600">
+                      Verifica a consistência dos valores de apuração do ICMS entre os registros E110 e os totais das notas fiscais.
+                    </p>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">💳 Recolhimentos (E116)</h4>
+                    <p className="text-sm text-gray-600">
+                      Confronta valores de recolhimentos informados no registro E116 com os valores calculados.
+                    </p>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">🔍 Notas Não Escrituradas</h4>
+                    <p className="text-sm text-gray-600">
+                      Identifica notas fiscais presentes nos XMLs que não foram encontradas no SPED Fiscal.
+                    </p>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">📝 Valores Divergentes</h4>
+                    <p className="text-sm text-gray-600">
+                      Compara valores de ICMS, IPI, ST e bases de cálculo entre XML e SPED, identificando diferenças significativas.
+                    </p>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">✅ Regras: CFOP x CST</h4>
+                    <p className="text-sm text-gray-600">
+                      Valida a combinação de CFOP e CST/CSOSN conforme regras de negócio definidas no arquivo rules.yml.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-green-800 font-semibold">✓ Nenhuma divergência encontrada</p>
+                  <p className="text-sm text-green-700 mt-1">
+                    Todos os confrontos foram realizados e não foram identificadas divergências nos dados analisados.
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
-      {/* Outras abas de relatórios */}
-      {resultado.reports && Object.keys(resultado.reports).length > 0 && (
+        {activeTab === 'conferencia' && (
+          <DivergenciasValoresConferencia divergencias={divergencias} notesDf={notesDf} />
+        )}
+      </div>
+
+      {/* Outras abas de relatórios - apenas para aba Resumo */}
+      {activeTab === 'resumo' && resultado.reports && Object.keys(resultado.reports).length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-xl font-semibold mb-4">Relatórios Disponíveis</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">

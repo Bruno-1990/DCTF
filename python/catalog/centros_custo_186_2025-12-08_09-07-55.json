@@ -1,0 +1,191 @@
+{
+  "empresa": {
+    "codigo": 186,
+    "nome": null,
+    "cnpj": null
+  },
+  "plano_contas": 186,
+  "total_centros": 45,
+  "centros": [
+    {
+      "codigo": 4,
+      "descricao": "GGGG"
+    },
+    {
+      "codigo": 16,
+      "descricao": "WOOD GROUP ENGINEERING AND FACILITES BRA"
+    },
+    {
+      "codigo": 48,
+      "descricao": "VALE SA 33592510016409 ITABIRA"
+    },
+    {
+      "codigo": 54,
+      "descricao": "VALE SA 33592510016409 ITABIRA"
+    },
+    {
+      "codigo": 106,
+      "descricao": "CONDOMINIO COMFORT ART HOTEL MACAE"
+    },
+    {
+      "codigo": 121,
+      "descricao": "WOOD GROUP ENGINEERING AND FACILITES BRA"
+    },
+    {
+      "codigo": 138,
+      "descricao": "THIAGO MOTTA LIBERATO"
+    },
+    {
+      "codigo": 145,
+      "descricao": "CONDOMINIO COMFORT ART HOTEL MACAE"
+    },
+    {
+      "codigo": 228,
+      "descricao": "THIAGO MOTTA LIBERATO"
+    },
+    {
+      "codigo": 303,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1001,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1010,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1054,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1127,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1128,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1129,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1138,
+      "descricao": "TMT Construtora - Matriz"
+    },
+    {
+      "codigo": 1186,
+      "descricao": "Matriz"
+    },
+    {
+      "codigo": 1248,
+      "descricao": "Matriz"
+    },
+    {
+      "codigo": 1304,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1320,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1322,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1325,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1328,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1331,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1334,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1335,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1336,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1349,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1350,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1356,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1360,
+      "descricao": "MATRIZ - F0270"
+    },
+    {
+      "codigo": 1376,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1379,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1388,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1396,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1397,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1398,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1400,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1403,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1412,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 1413,
+      "descricao": "MATRIZ"
+    },
+    {
+      "codigo": 90011,
+      "descricao": "Administrativo"
+    },
+    {
+      "codigo": 90012,
+      "descricao": "FILIAL 02"
+    },
+    {
+      "codigo": 90013,
+      "descricao": "MATRIZ"
+    }
+  ]
+}

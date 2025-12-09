@@ -134,3 +134,5 @@ Se houve movimento entre outubro e novembro, a dispensa foi quebrada (correto).
 
 Após essas correções, teste novamente e verifique os logs no console. Os logs agora mostrarão exatamente onde os registros estão sendo filtrados e por quê.
 
+
+

@@ -39,3 +39,5 @@ export function compararCNPJ(cnpj1: string | null | undefined, cnpj2: string | n
 }
 
 
+
+

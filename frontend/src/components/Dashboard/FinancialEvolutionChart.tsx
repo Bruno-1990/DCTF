@@ -155,3 +155,5 @@ const FinancialEvolutionChart: React.FC<FinancialEvolutionChartProps> = ({ data 
 
 export default FinancialEvolutionChart;
 
+
+

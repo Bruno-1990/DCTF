@@ -1,1 +1,1 @@
-show tables;
+select * from dctf_declaracoes;

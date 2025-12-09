@@ -1,0 +1,588 @@
+{
+  "VW_VRH_SISQUAL_COL_CENTROCUSTO": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "CODCENTROCUSTO",
+        "tipo": "VARCHAR",
+        "nullable": true,
+        "posicao": 3,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [
+      {
+        "nome": "CODEMPREGADO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 0,
+        "tags": [
+          "empresa",
+          "codigo"
+        ]
+      }
+    ],
+    "todas_colunas": [
+      "CODEMPREGADO",
+      "CODEMPRESASALARIO",
+      "DATAINICIO",
+      "CODCENTROCUSTO"
+    ]
+  },
+  "VW_VRH_BASE_TCUSTOM_GPS_PGTO": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 6,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [],
+    "todas_colunas": [
+      "BDCODGPS",
+      "BDCODRECTRANSP",
+      "BDCODFPASTERC",
+      "BDCODMEN",
+      "BDCODENQFED",
+      "BDCODCNAE",
+      "BDCODCENTRO",
+      "BDCODTPCC",
+      "BDREFCUSTO",
+      "BDEMPTOM",
+      "BDAUTTOM",
+      "BDCOLTOM",
+      "BDTAXSERTOM",
+      "BDDADCADTOM",
+      "BDDADPERTOM",
+      "BDFAPTOM",
+      "BDSIMPLESGPSTOM",
+      "BDCODFPAS",
+      "BDCODTERC",
+      "BDPERTERC",
+      "BDCODRECTERC",
+      "BDCODRECOF",
+      "BDATVANEXOSSN",
+      "BDCOMERCIO",
+      "BDINDUSTRIA",
+      "BDSERVICO",
+      "BDANEXOIII",
+      "BDANEXOIV",
+      "BDANEXOV",
+      "BDANEXOVI",
+      "BDDESONOBRA",
+      "BDRAT",
+      "BDCODIGOTERC",
+      "BDSALEDU",
+      "BDINCRA",
+      "BDSENAI",
+      "BDSESI",
+      "BDSENAC",
+      "BDSESC",
+      "BDSEBRAE",
+      "BDDPC",
+      "BDFUNAERO",
+      "BDSENAR",
+      "BDSEST",
+      "BDSENAT",
+      "BDSESCOOP",
+      "BDATUTAB"
+    ]
+  },
+  "VW_VRH_BASE_TCUSTOM_GPS": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 6,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [],
+    "todas_colunas": [
+      "BDCODGPS",
+      "BDCODRECTRANSP",
+      "BDCODFPASTERC",
+      "BDCODMEN",
+      "BDCODENQFED",
+      "BDCODCNAE",
+      "BDCODCENTRO",
+      "BDCODTPCC",
+      "BDREFCUSTO",
+      "BDEMPTOM",
+      "BDAUTTOM",
+      "BDCOLTOM",
+      "BDTAXSERTOM",
+      "BDDADCADTOM",
+      "BDDADPERTOM",
+      "BDFAPTOM",
+      "BDSIMPLESGPSTOM",
+      "BDCODFPAS",
+      "BDCODTERC",
+      "BDPERTERC",
+      "BDCODRECTERC",
+      "BDCODRECOF",
+      "BDATVANEXOSSN",
+      "BDCOMERCIO",
+      "BDINDUSTRIA",
+      "BDSERVICO",
+      "BDANEXOIII",
+      "BDANEXOIV",
+      "BDANEXOV",
+      "BDANEXOVI",
+      "BDDESONOBRA",
+      "BDRAT",
+      "BDCODIGOTERC",
+      "BDSALEDU",
+      "BDINCRA",
+      "BDSENAI",
+      "BDSESI",
+      "BDSENAC",
+      "BDSESC",
+      "BDSEBRAE",
+      "BDDPC",
+      "BDFUNAERO",
+      "BDSENAR",
+      "BDSEST",
+      "BDSENAT",
+      "BDSESCOOP",
+      "BDATUTAB"
+    ]
+  },
+  "VW_TOMADORES_REF_ATU": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 0,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [],
+    "todas_colunas": [
+      "BDCODCENTRO",
+      "BDCODTPCC",
+      "BDTIPOTOM",
+      "BDCNPJTOM",
+      "BDNOMETOM",
+      "BDREFCUSTO",
+      "BDCODCID",
+      "BDLOGRTOM",
+      "BDENDTOM",
+      "BDNUMCTOM",
+      "BDBAITOM",
+      "BDCEPTOM",
+      "BDDDDTOM",
+      "BDFONETOM",
+      "BDCOMPLTOM",
+      "BDCODGPS",
+      "BDCODRECTRANSP",
+      "BDCODENQFED",
+      "BDCODCNAE",
+      "BDEMPTOM",
+      "BDAUTTOM",
+      "BDCOLTOM",
+      "BDTAXSERTOM",
+      "BDDADCADTOM",
+      "BDDADPERTOM",
+      "BDCODFPAS",
+      "BDCODTERC",
+      "BDCODRECTERC",
+      "BDCODRECOF",
+      "BDFAPTOM",
+      "BDCODFPASTERC",
+      "BDSIMPLESGPSTOM",
+      "BDPERTERC",
+      "BDATVANEXOSSN",
+      "BDCOMERCIO",
+      "BDINDUSTRIA",
+      "BDSERVICO",
+      "BDANEXOIII",
+      "BDANEXOIV",
+      "BDANEXOV",
+      "BDANEXOVI",
+      "BDDESONOBRA",
+      "BDCODIGOTERC",
+      "BDSALEDU",
+      "BDINCRA",
+      "BDSENAI",
+      "BDSESI",
+      "BDSENAC",
+      "BDSESC",
+      "BDSEBRAE",
+      "BDDPC",
+      "BDFUNAERO",
+      "BDSENAR",
+      "BDSEST",
+      "BDSENAT",
+      "BDSESCOOP",
+      "BDATUTAB"
+    ]
+  },
+  "VW_VRHF_EMP_TPROVISAOFERIAS_CC": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 7,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [
+      {
+        "nome": "BDCODEMP",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 0,
+        "tags": [
+          "empresa",
+          "codigo"
+        ]
+      },
+      {
+        "nome": "BDCODCOL",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 1,
+        "tags": [
+          "colaborador",
+          "codigo"
+        ]
+      }
+    ],
+    "todas_colunas": [
+      "BDCODEMP",
+      "BDCODCOL",
+      "BDLINHAPFER",
+      "BDREFPFER",
+      "BDINIPERAQUISPFER",
+      "BDORDEMCCPFER",
+      "BDPLANOCC",
+      "BDCODCENTRO",
+      "BDSALBASEPFER",
+      "BDADICIONAISPFER",
+      "BDMEDIASPFER",
+      "BDOUTRASBASESPFER",
+      "BDCODTPCC",
+      "BDFERIASPFER",
+      "BDUMTERCOPFER",
+      "BDFGTSPFER",
+      "BDINSSPFER",
+      "BDTERCFPASPFER",
+      "BDCNAERATPFER",
+      "BDRATAPOPFER",
+      "BDPISPFER",
+      "BDBASEFGTSPFER",
+      "BDBASEINSSPFER",
+      "BDRESCISAOPFER",
+      "BDBASEPISPFER",
+      "BDPROPPFER",
+      "BDTOTPFER",
+      "BDPORTOMADORPFER",
+      "BDFALTASPFER",
+      "BDDATAVENCPFER",
+      "BDMVPFER",
+      "BDPRPFER",
+      "BDSDPFER",
+      "BDCENTROTPCC",
+      "BDOBSERVACAO"
+    ]
+  },
+  "VW_VRHF_EMP_TPROVISAO13_CC": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 6,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [
+      {
+        "nome": "BDCODEMP",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 0,
+        "tags": [
+          "empresa",
+          "codigo"
+        ]
+      },
+      {
+        "nome": "BDCODCOL",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 1,
+        "tags": [
+          "colaborador",
+          "codigo"
+        ]
+      }
+    ],
+    "todas_colunas": [
+      "BDCODEMP",
+      "BDCODCOL",
+      "BDLINHAP13",
+      "BDREFP13",
+      "BDORDEMCCP13",
+      "BDPLANOCC",
+      "BDCODCENTRO",
+      "BDCODHIST",
+      "BDSALBASEP13",
+      "BDADICIONAISP13",
+      "BDMEDIASP13",
+      "BDOUTRASBASESP13",
+      "BDCODTPCC",
+      "BDVLR13SALP13",
+      "BDFGTSP13",
+      "BDINSSP13",
+      "BDTERCFPASP13",
+      "BDCNAERATP13",
+      "BDRATAPOP13",
+      "BDPISP13",
+      "BDBASEFGTSP13",
+      "BDBASEINSSP13",
+      "BDRESCISAOP13",
+      "BDBASEPISP13",
+      "BDPROPP13",
+      "BDTOTP13",
+      "BDPORTOMADORP13",
+      "BDOBSERVACAO",
+      "BDORDEM"
+    ]
+  },
+  "VW_VRHF_EMP_TPREPFN_ATU": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 2,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [
+      {
+        "nome": "BDCODEMP",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 0,
+        "tags": [
+          "empresa",
+          "codigo"
+        ]
+      },
+      {
+        "nome": "BDCODCOL",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 1,
+        "tags": [
+          "colaborador",
+          "codigo"
+        ]
+      }
+    ],
+    "todas_colunas": [
+      "BDCODEMP",
+      "BDCODCOL",
+      "BDCODCENTRO",
+      "BDCODTPCC",
+      "BDCODCENCUS",
+      "BDDATAENTRADA",
+      "BDHORAENTRADA",
+      "BDORDEM",
+      "BDNOMCC",
+      "BDNOMTOM",
+      "BDCNPJTOM"
+    ]
+  },
+  "VW_VRHF_EMP_TPREPFN": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 3,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [
+      {
+        "nome": "BDCODEMP",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 0,
+        "tags": [
+          "empresa",
+          "codigo"
+        ]
+      },
+      {
+        "nome": "BDCODCOL",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 1,
+        "tags": [
+          "colaborador",
+          "codigo"
+        ]
+      }
+    ],
+    "todas_colunas": [
+      "BDCODEMP",
+      "BDCODCOL",
+      "BDORDEM",
+      "BDCODCENTRO",
+      "BDCODTPCC",
+      "BDDATAENTRADA",
+      "BDHORAENTRADA",
+      "BDTIPO",
+      "BDQTDTEMPO",
+      "BDREF"
+    ]
+  },
+  "VW_TOMADORES_REF": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 0,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [],
+    "todas_colunas": [
+      "BDCODCENTRO",
+      "BDCODTPCC",
+      "BDCODCID",
+      "BDLOGRTOM",
+      "BDENDTOM",
+      "BDNUMCTOM",
+      "BDBAITOM",
+      "BDCEPTOM",
+      "BDDDDTOM",
+      "BDFONETOM",
+      "BDCOMPLTOM",
+      "BDCODREC",
+      "BDCODRECTRANSP",
+      "BDCODENQFED",
+      "BDCODCNAE",
+      "BDEMPTOM",
+      "BDAUTTOM",
+      "BDCOLTOM",
+      "BDTAXSERTOM",
+      "BDDADCADTOM",
+      "BDDADPERTOM",
+      "BDCODFPAS",
+      "BDPERTERC",
+      "BDCODRECTERC",
+      "BDCODRECOF",
+      "BDINATIVO"
+    ]
+  },
+  "VW_VRHF_FGTSSEFIP": {
+    "encontrada": true,
+    "campos_cc": [
+      {
+        "nome": "BDCODCENTRO",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 5,
+        "tags": [
+          "centro_custo",
+          "codigo"
+        ]
+      }
+    ],
+    "campos_col": [
+      {
+        "nome": "BDCODEMP",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 1,
+        "tags": [
+          "empresa",
+          "codigo"
+        ]
+      },
+      {
+        "nome": "BDCODCOL",
+        "tipo": "INTEGER",
+        "nullable": true,
+        "posicao": 2,
+        "tags": [
+          "colaborador",
+          "codigo"
+        ]
+      }
+    ],
+    "todas_colunas": [
+      "BDSOMA",
+      "BDCODEMP",
+      "BDCODCOL",
+      "BDREF",
+      "BDCODTPCC",
+      "BDCODCENTRO",
+      "BDBASEFGTSFN",
+      "BDBASEFGTS13",
+      "BDFGTSFN",
+      "BDFGTS13",
+      "BDINSSFN",
+      "BDINSS13",
+      "BDBINSSFN",
+      "BDBINSS13",
+      "BDBINSS13R",
+      "BDSALFAMFN",
+      "BDBINSSC13",
+      "BDBINSSAPFN",
+      "BDBINSS13APFN",
+      "BDINSSAPFN",
+      "BDINSS13APFN",
+      "BDINSS13DT",
+      "BDINSSC13",
+      "BDINSSMV"
+    ]
+  }
+}

@@ -298,7 +298,7 @@ const BancoHorasPage: React.FC = () => {
                 console.log('Arquivo enviado:', file.name);
               }}
               onFormatComplete={(blob) => {
-                success('Planilha formatada com sucesso! O download começará automaticamente.');
+                success('Planilha formatada com sucesso! Clique no botão para baixar.');
               }}
               onError={(error) => {
                 showError(error);
@@ -313,7 +313,7 @@ const BancoHorasPage: React.FC = () => {
                 <li>A formatação aplica estilos profissionais à planilha</li>
                 <li>Cabeçalhos são destacados com cores e formatação adequada</li>
                 <li>Colunas são ajustadas automaticamente para melhor visualização</li>
-                <li>A planilha formatada será baixada automaticamente</li>
+                <li>O processamento inicia automaticamente ao enviar o arquivo. Aguarde a conclusão e baixe a planilha formatada</li>
               </ul>
             </div>
           </div>
