@@ -735,13 +735,21 @@ def _parse_c190_totais(file_path: Path):
                     bucket(por_triple, current_triple)
                 elif ln.startswith("|C190|") and current_triple is not None:
                     # CORREÇÃO: Usar split_sped_line para preservar campos vazios
-                    fs = split_sped_line(ln, min_fields=12)
+                    # C190 tem 12 campos (REG até COD_OBS), então precisamos de min_fields=13 (incluindo fs[0])
+                    fs = split_sped_line(ln, min_fields=13)
                     def pf(i):
                         try:
                             return float(str(fs[i]).replace(".", "").replace(",", ".")) if fs[i] else 0.0
                         except Exception:
                             return 0.0
                     b = bucket(por_triple, current_triple)
+                    # CORREÇÃO CRÍTICA: Layout oficial do C190 inclui ALIQ_ICMS na posição 4!
+                    # Layout C190 oficial: REG(1), CST_ICMS(2), CFOP(3), ALIQ_ICMS(4), VL_OPR(5), VL_BC_ICMS(6),
+                    #                       VL_ICMS(7), VL_BC_ICMS_ST(8), VL_ICMS_ST(9), VL_RED_BC(10), VL_IPI(11), COD_OBS(12)
+                    # Após split("|"): fs[0]="", fs[1]="C190", fs[2]=CST_ICMS, fs[3]=CFOP, fs[4]=ALIQ_ICMS,
+                    #                  fs[5]=VL_OPR, fs[6]=VL_BC_ICMS, fs[7]=VL_ICMS, fs[8]=VL_BC_ICMS_ST,
+                    #                  fs[9]=VL_ICMS_ST, fs[10]=VL_RED_BC, fs[11]=VL_IPI, fs[12]=COD_OBS
+                    # CORREÇÃO: Todos os índices ajustados +1 devido ao campo ALIQ_ICMS na posição 4
                     b["VL_BC_ICMS"] += pf(6); b["VL_ICMS"] += pf(7)
                     b["VL_BC_ICMS_ST"] += pf(8); b["VL_ICMS_ST"] += pf(9)
                     b["VL_IPI"] += pf(11)

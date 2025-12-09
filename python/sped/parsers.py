@@ -17,16 +17,14 @@ def split_sped_line(line: str, min_fields: int = 0) -> List[str]:
     Faz split de linha SPED preservando campos vazios de forma ABSOLUTA.
     
     O SPED usa formato pipe-delimited onde campos vazios são representados por ||.
-    O split("|") padrão do Python preserva campos vazios no meio, mas precisamos
-    garantir que todos os campos sejam indexados corretamente.
-    
-    IMPORTANTE: Não adiciona | no final automaticamente, pois isso criaria um campo
-    vazio extra que pode não existir. Em vez disso, preenche apenas até min_fields
-    se necessário para garantir que temos campos suficientes para indexação.
+    CRÍTICO: Se a linha não termina com |, o último campo vazio pode ser perdido,
+    causando deslocamento de índices! Por isso, garantimos que a linha termine com |
+    antes do split para preservar todos os campos vazios.
     
     Exemplo:
     "|C100|0|1||55|123.45|" -> ['', 'C100', '0', '1', '', '55', '123.45', '']
-    "|C100|0|1||55|123.45"  -> ['', 'C100', '0', '1', '', '55', '123.45']
+    "|C100|0|1||55|123.45"  -> ['', 'C100', '0', '1', '', '55', '123.45', ''] (adiciona |)
+    "|C190|110|2403|0|727,74|0|0|00|00||" -> preserva todos os campos corretamente
     
     Args:
         line: Linha do SPED (pode ter newline no final)
@@ -37,6 +35,13 @@ def split_sped_line(line: str, min_fields: int = 0) -> List[str]:
     """
     # Remover newline mas preservar estrutura original
     line = line.rstrip("\n\r")
+    
+    # CRÍTICO: Garantir que a linha termine com | para preservar último campo vazio
+    # Isso é essencial para registros que têm campos vazios no final (como C190)
+    # Se a linha não termina com |, o último campo vazio seria perdido no split,
+    # causando deslocamento de índices em todos os campos subsequentes
+    if line and not line.endswith("|"):
+        line = line + "|"
     
     # Fazer split preservando campos vazios (Python já faz isso corretamente)
     # split("|") preserva campos vazios no meio: "||" -> ['', '', '']
@@ -115,7 +120,13 @@ def get_company_identity_from_efd(file_path: Path):
 def parse_efd_c190_totais(file_path: Path):
     """
     Agrega totais do C190 por chave (C100.CHV_NFE) e por (COD_MOD,SER,NUM_DOC),
-    usando layout correto: VL_BC_ICMS=fs[6], VL_ICMS=fs[7], VL_BC_ICMS_ST=fs[8], VL_ICMS_ST=fs[9], VL_IPI=fs[11].
+    usando layout correto conforme EFD-ICMS/IPI:
+    - Layout C190: REG(1), CST_ICMS(2), CFOP(3), VL_OPR(4), VL_BC_ICMS(5), VL_ICMS(6),
+                    VL_BC_ICMS_ST(7), VL_ICMS_ST(8), VL_RED_BC(9), COD_OBS(10), VL_IPI(11)
+    - Após split("|"): fs[0]="", fs[1]="C190", fs[2]=CST_ICMS, fs[3]=CFOP, fs[4]=VL_OPR,
+                        fs[5]=VL_BC_ICMS, fs[6]=VL_ICMS, fs[7]=VL_BC_ICMS_ST, fs[8]=VL_ICMS_ST,
+                        fs[9]=VL_RED_BC, fs[10]=COD_OBS, fs[11]=VL_IPI
+    - Índices corretos: VL_BC_ICMS=fs[5], VL_ICMS=fs[6], VL_BC_ICMS_ST=fs[7], VL_ICMS_ST=fs[8], VL_IPI=fs[11]
     """
     por_chave, por_triple = {}, {}
     def bucket(d, k):
@@ -150,16 +161,23 @@ def parse_efd_c190_totais(file_path: Path):
                     bucket(por_triple, current_triple)
             elif ln.startswith("|C190|"):
                 # CORREÇÃO: Usar split_sped_line para preservar campos vazios
-                fs = split_sped_line(ln, min_fields=12)
-                if len(fs) < 12:
+                # C190 tem 12 campos (REG até COD_OBS), então precisamos de min_fields=13 (incluindo fs[0])
+                fs = split_sped_line(ln, min_fields=13)
+                if len(fs) < 13:
                     continue
-                # CORREÇÃO: índices validados conforme layout oficial
+                # CORREÇÃO CRÍTICA: Layout oficial do C190 inclui ALIQ_ICMS na posição 4!
+                # Layout C190 oficial: REG(1), CST_ICMS(2), CFOP(3), ALIQ_ICMS(4), VL_OPR(5), VL_BC_ICMS(6),
+                #                       VL_ICMS(7), VL_BC_ICMS_ST(8), VL_ICMS_ST(9), VL_RED_BC(10), VL_IPI(11), COD_OBS(12)
+                # Após split("|"): fs[0]="", fs[1]="C190", fs[2]=CST_ICMS, fs[3]=CFOP, fs[4]=ALIQ_ICMS,
+                #                  fs[5]=VL_OPR, fs[6]=VL_BC_ICMS, fs[7]=VL_ICMS, fs[8]=VL_BC_ICMS_ST,
+                #                  fs[9]=VL_ICMS_ST, fs[10]=VL_RED_BC, fs[11]=VL_IPI, fs[12]=COD_OBS
                 cst = (fs[2] or "").strip()      # Posição 2: CST_ICMS (índice 2 após split)
-                v_bc   = parse_decimal(fs[5]) if len(fs) > 5 else 0.0   # Posição 5: VL_BC_ICMS
-                v_icms = parse_decimal(fs[6]) if len(fs) > 6 else 0.0  # Posição 6: VL_ICMS
-                v_bcst = parse_decimal(fs[7]) if len(fs) > 7 else 0.0  # Posição 7: VL_BC_ICMS_ST
-                v_st   = parse_decimal(fs[8]) if len(fs) > 8 else 0.0  # Posição 8: VL_ICMS_ST
-                v_ipi  = parse_decimal(fs[11]) if len(fs) > 11 else 0.0 # Posição 11: VL_IPI
+                # CORREÇÃO: Todos os índices ajustados +1 devido ao campo ALIQ_ICMS na posição 4
+                v_bc   = parse_decimal(fs[6]) if len(fs) > 6 else 0.0   # Posição 6: VL_BC_ICMS (era fs[5], agora fs[6])
+                v_icms = parse_decimal(fs[7]) if len(fs) > 7 else 0.0  # Posição 7: VL_ICMS (era fs[6], agora fs[7])
+                v_bcst = parse_decimal(fs[8]) if len(fs) > 8 else 0.0  # Posição 8: VL_BC_ICMS_ST (era fs[7], agora fs[8])
+                v_st   = parse_decimal(fs[9]) if len(fs) > 9 else 0.0  # Posição 9: VL_ICMS_ST (era fs[8], agora fs[9])
+                v_ipi  = parse_decimal(fs[11]) if len(fs) > 11 else 0.0 # Posição 11: VL_IPI (mantém fs[11])
                 if current_key:
                     b = bucket(por_chave, current_key)
                     b["CSTS"].add(cst)
