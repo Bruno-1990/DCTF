@@ -155,3 +155,4 @@ fs[20] = VL_ICMS     ✓ CORRETO (posição 18 no layout = índice 20)
 
 **PROBLEMA ENCONTRADO:** D100 está usando índices incorretos para SER, NUM_DOC e CHV_CTE!
 
+

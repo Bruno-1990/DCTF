@@ -101,3 +101,4 @@ A função `split_sped_line()` garante que:
 
 A função `parse_decimal()` já trata corretamente campos vazios retornando `None`, o que é o comportamento esperado. O problema não estava no tratamento de valores vazios, mas sim na **indexação incorreta** causada por campos vazios não preservados no final das linhas.
 
+
