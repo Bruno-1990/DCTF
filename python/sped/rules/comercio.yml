@@ -1,0 +1,154 @@
+# Regras específicas para COMÉRCIO
+version: 1
+features:
+  validate:
+    cfop_cst_coherence: true
+    cest_required: true
+
+cfop_expected:
+
+  # ---- Vendas internas ----
+  "5102":
+    expected_cst:
+      - code: "000"
+        notes: "Tributado integralmente"
+      - code: "020"
+        condition: "hasReduction()"
+        notes: "Redução de base"
+      - code: "060"
+        condition: "hasST()"
+        notes: "ST"
+      - code: "070"
+        condition: "hasST() and hasReduction()"
+        notes: "ST + redução"
+      - code: "040"
+        condition: "hasDesoneracao()"
+        notes: "Isenção/desoneração"
+      - code: "041"
+        condition: "hasDesoneracao()"
+        notes: "Não tributada"
+      - code: "050"
+        condition: "hasDesoneracao()"
+        notes: "Suspensão"
+      - code: "102"
+      - code: "103"
+      - code: "500"
+        notes: "ST retida anteriormente"
+      - code: "900"
+    notes: ["Venda de mercadoria adquirida ou recebida de terceiros"]
+
+  # ---- Vendas interestaduais ----
+  "6102":
+    expected_cst:
+      - code: "000"
+      - code: "020"
+        condition: "hasReduction()"
+      - code: "060"
+        condition: "hasST()"
+      - code: "070"
+        condition: "hasST() and hasReduction()"
+      - code: "040"
+        condition: "hasDesoneracao()"
+      - code: "041"
+        condition: "hasDesoneracao()"
+      - code: "050"
+        condition: "hasDesoneracao()"
+      - code: "102"
+      - code: "103"
+      - code: "500"
+        notes: "ST retida anteriormente"
+      - code: "900"
+    notes: ["Venda de mercadoria adquirida ou recebida de terceiros - fora do estado"]
+
+  # ---- Devoluções (internas) ----
+  "1202":
+    expected_cst:
+      - code: "000"
+      - code: "020"
+        condition: "hasReduction()"
+      - code: "060"
+        condition: "hasST()"
+      - code: "070"
+        condition: "hasST() and hasReduction()"
+      - code: "040"
+        condition: "hasDesoneracao()"
+      - code: "041"
+        condition: "hasDesoneracao()"
+      - code: "050"
+        condition: "hasDesoneracao()"
+      - code: "102"
+      - code: "103"
+      - code: "500"
+        notes: "ST retida anteriormente"
+      - code: "900"
+    notes: ["Devolução de venda de mercadoria adquirida ou recebida de terceiros"]
+
+  # ---- Devoluções (interestaduais) ----
+  "2202":
+    expected_cst:
+      - code: "000"
+      - code: "020"
+        condition: "hasReduction()"
+      - code: "060"
+        condition: "hasST()"
+      - code: "070"
+        condition: "hasST() and hasReduction()"
+      - code: "040"
+        condition: "hasDesoneracao()"
+      - code: "041"
+        condition: "hasDesoneracao()"
+      - code: "050"
+        condition: "hasDesoneracao()"
+      - code: "102"
+      - code: "103"
+      - code: "500"
+        notes: "ST retida anteriormente"
+      - code: "900"
+    notes: ["Devolução interestadual de mercadoria adquirida de terceiros"]
+
+  # ---- Vendas com ST ----
+  "5405":   # interna com ST
+    expected_cst:
+      - code: "060"
+        condition: "hasST()"
+      - code: "070"
+        condition: "hasST() and hasReduction()"
+
+  "6404":   # interestadual com ST
+    expected_cst:
+      - code: "060"
+        condition: "hasST()"
+      - code: "070"
+        condition: "hasST() and hasReduction()"
+
+  # ---- Bonificação/brinde ----
+  "5910":
+    expected_cst:
+      - code: "000"
+      - code: "040"
+        condition: "hasDesoneracao()"
+      - code: "041"
+        condition: "hasDesoneracao()"
+      - code: "050"
+        condition: "hasDesoneracao()"
+      - code: "102"
+      - code: "900"
+
+  "6910":
+    expected_cst:
+      - code: "000"
+      - code: "040"
+        condition: "hasDesoneracao()"
+      - code: "041"
+        condition: "hasDesoneracao()"
+      - code: "050"
+        condition: "hasDesoneracao()"
+      - code: "102"
+      - code: "900"
+
+ncm_st:
+  # NCMs do comércio que exigem CEST
+  "22021000":
+    requires_cest: true
+  "33030010":
+    requires_cest: true

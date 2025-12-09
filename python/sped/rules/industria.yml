@@ -1,0 +1,27 @@
+# Regras específicas para INDÚSTRIA
+version: 1
+features:
+  validate:
+    cfop_cst_coherence: true
+    cest_required: true
+
+cfop_expected:
+  # CFOPs típicos de industrialização
+  "5901":
+    expected_cst: ["000", "010", "060"]
+    notes: ["Remessa para industrialização por encomenda"]
+  "1901":
+    expected_cst: ["000", "010", "060"]
+    notes: ["Entrada de mercadoria recebida para industrialização"]
+
+  # Retorno de industrialização
+  "5902":
+    expected_cst: ["000", "010", "060"]
+    notes: ["Retorno de mercadoria remetida para industrialização"]
+
+ncm_st:
+  # Exemplos: pneumáticos e peças automotivas industrializadas
+  "40111000":
+    requires_cest: true
+  "84082020":
+    requires_cest: true

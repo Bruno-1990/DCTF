@@ -1,0 +1,8 @@
+ncm_st:
+  "22021000": { requires_cest: true, cest: "0300100" }
+  "22029900": { requires_cest: true, cest: "0300200" }
+  "22030000": { requires_cest: true, cest: "0300300" }
+
+cfop_expected:
+  "5405": { expected_cst: ["060"], notes: ["Venda com ST - bebidas"] }
+  "6403": { expected_cst: ["060"], notes: ["Venda com ST interestadual - bebidas"] }

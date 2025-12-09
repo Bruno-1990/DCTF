@@ -1,0 +1,8 @@
+ncm_st:
+  "39269090": { requires_cest: true, cest: "1000100" }
+  "73079990": { requires_cest: true, cest: "1000200" }
+  "73089090": { requires_cest: true, cest: "1000300" }
+
+cfop_expected:
+  "1403": { expected_cst: ["060"], notes: ["Compra com ST - construção"] }
+  "5405": { expected_cst: ["060"], notes: ["Venda com ST - construção"] }

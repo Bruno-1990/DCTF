@@ -1,0 +1,8 @@
+ncm_st:
+  "33030020": { requires_cest: true, cest: "2000100" }
+  "33049910": { requires_cest: true, cest: "2000200" }
+  "33051000": { requires_cest: true, cest: "2000300" }
+
+cfop_expected:
+  "1403": { expected_cst: ["060"], notes: ["Compra com ST - cosméticos"] }
+  "5405": { expected_cst: ["060"], notes: ["Venda com ST - cosméticos"] }

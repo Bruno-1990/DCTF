@@ -1,0 +1,9 @@
+cfop_expected:
+  "5353": { expected_cst: ["000"], notes: ["Prestação de serviço de transporte (interna)"] }
+  "6353": { expected_cst: ["000"], notes: ["Prestação de serviço de transporte (interestadual)"] }
+  "5933": { expected_cst: ["000"], notes: ["Redespacho transporte (interna)"] }
+  "6933": { expected_cst: ["000"], notes: ["Redespacho transporte (interestadual)"] }
+
+cfop_st:
+  requires: []
+  prohibits: ["5353","6353","5933","6933"]   # não devem gerar ST de mercadorias

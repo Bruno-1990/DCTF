@@ -1,0 +1,225 @@
+version: "2025-09-03"
+sources:
+  - name: "Guia Prático EFD ICMS/IPI (versão vigente)"
+  - name: "Ato COTEPE 44/2018 (layout EFD)"
+tolerances:
+  money_abs: 0.02
+  percent_rel: 0.001
+
+rules:
+
+# ───────────────────────────
+# 1) Estrutura & Hierarquia
+# ───────────────────────────
+- id: C100.must_have_children
+  description: "Para C100 válido (não cancelado/denegado/inutilizado), exigir pelo menos um C170 e um C190 (observadas exceções do Guia)."
+  refs: [C100, C170, C190]
+  severity: error
+  type: efd
+
+- id: hierarchy.order
+  description: "Registros filhos imediatamente após o pai (arquivo hierárquico)."
+  refs: [0000.., C100.., E100..]
+  severity: error
+  type: efd
+
+- id: participants.required
+  description: "COD_PART usado em C100 deve existir em 0150."
+  refs: [0150, C100]
+  severity: error
+  type: efd
+
+- id: items.require_0200
+  description: "Todo COD_ITEM usado em C170 deve existir no 0200."
+  refs: [0200, C170]
+  severity: error
+  type: efd
+
+- id: units.require_0190
+  description: "Toda UNID usada em C170 deve existir no 0190."
+  refs: [0190, C170]
+  severity: error
+  type: efd
+
+- id: factor_conv_0220
+  description: "Se informado fator de conversão no item, a unidade de referência deve existir no 0190 e o 0220 deve amarrar C170↔0190."
+  refs: [0220, 0190, C170]
+  severity: warning
+  type: efd
+
+# ───────────────────────────
+# 2) Amarrações C100 ↔ C170 ↔ C190
+# ───────────────────────────
+- id: sum.C170_equals_C100_VL_MERC
+  description: "Σ(VL_ITEM dos C170 do C100) == VL_MERC do C100 (tolerância money_abs)."
+  refs: [C100, C170]
+  severity: error
+  type: efd
+
+- id: sum.C190_IPI_equals_C100_VL_IPI
+  description: "Σ(VL_IPI dos C190 do C100) == VL_IPI do C100 (tolerância money_abs)."
+  refs: [C100, C190]
+  severity: error
+  type: efd
+
+- id: group.C170_to_C190
+  description: "Totais por CFOP/CST agregados dos C170 devem bater com os respectivos C190 (bases, impostos e quantidades, naquilo que for aplicável)."
+  refs: [C170, C190]
+  severity: error
+  type: efd
+
+- id: canceled.docs.without_children
+  description: "C100 cancelado/denegado/inutilizado não deve possuir itens e seus totais devem ser zero, conforme regra do registro."
+  refs: [C100]
+  severity: error
+  type: efd
+
+# ───────────────────────────
+# 3) Bloco E – Apurações
+# ───────────────────────────
+- id: E110.required_when_activity
+  description: "Havendo movimento no período, exigir E100/E110 preenchidos (ainda que com zeros na falta de débitos/créditos)."
+  refs: [E100, E110]
+  severity: error
+  type: efd
+
+- id: E111.details_for_E110_adjusts
+  description: "Ajustes lançados no E110 devem estar detalhados no E111; quando houver processo/DARE, detalhar no E112."
+  refs: [E110, E111, E112]
+  severity: warning
+  type: efd
+
+- id: ST.apuracao
+  description: "Se houver ICMS-ST escriturado, exigir E210/E220 consistentes."
+  refs: [E210, E220]
+  severity: error
+  type: efd
+
+- id: DIFAL_FCP.apuracao
+  description: "Se houver operações com DIFAL/FCP, exigir E300/E310 e seus detalhamentos (E311/E312) por UF origem/destino."
+  refs: [E300, E310, E311, E312]
+  severity: error
+  type: efd
+
+- id: IPI.consolid_and_apur
+  description: "Existindo IPI nos documentos, exigir E500 (período), E510 (consolidação) e E520 (apurações) consistentes."
+  refs: [E500, E510, E520, C190]
+  severity: error
+  type: efd
+
+# ───────────────────────────
+# 4) Observações/Ajustes por documento
+# ───────────────────────────
+- id: obs.C195_requires_0460
+  description: "Código de observação usado em C195 deve existir no 0460."
+  refs: [C195, 0460]
+  severity: warning
+  type: efd
+
+- id: adj.C197_cod_valid
+  description: "Código de ajuste em C197 deve existir na tabela de códigos vigente da UF/Regra (benefício/incentivo/ajuste)."
+  refs: [C197, Tabelas_UF]
+  severity: error
+  type: efd
+
+# ───────────────────────────
+# 5) Bloco K – Estoques/Produção (se obrigado)
+# ───────────────────────────
+- id: K200.required_if_profile
+  description: "Contribuinte obrigado ao Bloco K deve apresentar K200 (estoque escriturado) coerente com as entradas/saídas do período."
+  refs: [K200, C170, K2xx]
+  severity: error
+  type: efd
+
+- id: Kx.mov_relationships
+  description: "Movimentações internas/terceiros coerentes com o mapa oficial (K220/K230/K235/K250…); correções via K270/K275/K280."
+  refs: [K210..K280]
+  severity: warning
+  type: efd
+
+# ───────────────────────────
+# 6) Regras “derivadas” (apoio NF-e × EFD)
+# ───────────────────────────
+- id: nf.mod55.requires_key
+  description: "Se C100 corresponder a NF-e (mod 55), exigir CHV_NFE válida (44 dígitos) quando aplicável."
+  refs: [C100]
+  severity: warning
+  type: derived
+
+- id: nf.cfop_vs_destination
+  description: "Conferir CFOP (5xxx interno / 6xxx interestadual) x UF de destino do documento."
+  refs: [C100, C170]
+  severity: warning
+  type: derived
+
+- id: pis_cofins_on_bonificacao_flag
+  description: "Operação de bonificação (p.ex., CFOP 5910) deve refletir a regra tributária coerente (sem PIS/COFINS quando não incidentes) e ICMS conforme regime."
+  refs: [C100, C170, C190]
+  severity: info
+  type: derived
+
+# ───────────────────────────
+# 7) Validação de Fórmulas de Cálculo (EFD Vigente)
+# ───────────────────────────
+- id: formulas.icms_base
+  description: "Base de cálculo ICMS: vBC = vProd + vFrete + vSeg + vOutro - vDesc"
+  refs: [C170, XML]
+  severity: error
+  type: efd
+
+- id: formulas.icms_value
+  description: "Valor ICMS: vICMS = vBC × (pICMS / 100)"
+  refs: [C170, XML]
+  severity: error
+  type: efd
+
+- id: formulas.icms_reduction
+  description: "Redução de base (CST 020/070): vBCRed = vBC × (1 - pRedBC / 100); vICMS = vBCRed × (pICMS / 100)"
+  refs: [C170, XML]
+  severity: error
+  type: efd
+
+- id: formulas.st_calculation
+  description: "ST: vBCST = (vProd+vIPI+...) × (1 + pMVAST/100); vICMSST = (vBCST × pICMSST/100) - vICMS"
+  refs: [C170, C190, XML]
+  severity: error
+  type: efd
+
+- id: formulas.difal_calculation
+  description: "DIFAL/FCP: vBCFCP = vProd + vFrete + ...; vDIFAL = vBCFCP × (pDIFAL/100) × (pPartilha/100)"
+  refs: [C170, E310, E311, XML]
+  severity: error
+  type: efd
+
+- id: formulas.ipi_calculation
+  description: "IPI: vBCIPI = vProd + vFrete + ...; vIPI = vBCIPI × (pIPI / 100)"
+  refs: [C170, C190, E500, E510, E520, XML]
+  severity: error
+  type: efd
+
+- id: formulas.desoneration
+  description: "Desoneração (CST 040/041/050): deve ter vICMSDeson > 0 OU motDesICMS preenchido, e vICMS = 0"
+  refs: [C170, XML]
+  severity: error
+  type: efd
+
+- id: formulas.monofasico
+  description: "Produtos monofásicos (CST 060/500): vICMS deve ser zero (ICMS já recolhido anteriormente por ST), vBC pode ser informada para controle"
+  refs: [C170, XML]
+  severity: error
+  type: efd
+
+- id: formulas.zero_rate
+  description: "Alíquota zero (pICMS=0): vICMS deve ser zero, CST deve ser apropriado (040/041/050/060/500/101/102/103), CST 040/041 exige desoneração"
+  refs: [C170, XML]
+  severity: error
+  type: efd
+
+# ───────────────────────────
+# 8) Validação de Notas Canceladas
+# ───────────────────────────
+- id: canceled.notes.consistency
+  description: "Verificar consistência entre notas canceladas no XML (evento tpEvento=110111) e no SPED (COD_SIT=02). Notas canceladas no XML devem ter COD_SIT=02 no SPED."
+  refs: [C100, XML]
+  severity: error
+  type: efd

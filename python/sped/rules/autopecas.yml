@@ -1,0 +1,8 @@
+ncm_st:
+  "87089990": { requires_cest: true, cest: "0100300" }
+  "87082999": { requires_cest: true, cest: "0100100" }
+  "84099190": { requires_cest: true, cest: "0100200" }
+
+cfop_expected:
+  "1403": { expected_cst: ["060"], notes: ["Compra com ST - autopeças"] }
+  "5405": { expected_cst: ["060"], notes: ["Venda com ST - autopeças"] }
