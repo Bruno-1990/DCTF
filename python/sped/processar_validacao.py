@@ -62,7 +62,7 @@ def main():
         
         # Gerar relatórios
         print(json.dumps({"progress": 85, "message": "Gerando relatórios..."}), flush=True)
-        reports = make_reports(materiais, rules)
+        reports = make_reports(materiais, rules, sped_path)
         
         # Converter DataFrames para dicionários, substituindo NaN por None
         import math

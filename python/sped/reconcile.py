@@ -105,7 +105,7 @@ def build_dataframes(efd_path, xml_folder) -> Materiais:
     )
 
 
-def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None) -> Dict[str, pd.DataFrame]:
+def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_path: Optional[Path] = None) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
     efd = data.efd_c100
     c190_by_key = data.c190_by_key
@@ -117,6 +117,13 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None) -> Dic
     xml_parse_errors = data.xml_errors
     emp = data.empresa
     tol = TOL if "TOL" in globals() else 0.02
+    
+    # Garantir que efd_path seja um Path se fornecido
+    from pathlib import Path
+    if efd_path is not None:
+        efd_path = Path(efd_path)
+    else:
+        logging.warning("efd_path não fornecido para make_reports - algumas verificações podem falhar")
 
     def _fmt_periodo(ini: Optional[str], fim: Optional[str]) -> str:
         import re
@@ -801,33 +808,37 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None) -> Dic
         # Divergências C170 x C190
         try:
             from validators import check_c170_equals_c190, check_divergencias_legitimas_c170_c190
-            divergencias_c170_c190 = check_c170_equals_c190(efd_path)
-            
-            # Verificar se houve erro na verificação (campo CAMPO == "ERRO")
-            tem_erro = False
-            if not divergencias_c170_c190.empty and "CAMPO" in divergencias_c170_c190.columns:
-                tem_erro = (divergencias_c170_c190["CAMPO"] == "ERRO").any()
-                if tem_erro:
-                    # Extrair mensagem de erro se disponível
-                    erro_row = divergencias_c170_c190[divergencias_c170_c190["CAMPO"] == "ERRO"].iloc[0]
-                    mensagem_erro = erro_row.get("MENSAGEM_ERRO", "Erro desconhecido") if "MENSAGEM_ERRO" in divergencias_c170_c190.columns else "Erro ao processar C170 x C190"
-                    logging.error(f"Erro na verificação C170 x C190: {mensagem_erro}")
-                    checklist.append(("Divergências C170 x C190", f"Erro: {mensagem_erro[:50]}"))
-            
-            # Processar normalmente se não houver erro
-            if not tem_erro:
-                if not divergencias_c170_c190.empty:
-                    divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
-                    # Contar divergências não legítimas (que requerem atenção)
-                    if "E_LEGITIMA" in divergencias_legitimas.columns:
-                        div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
-                        checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
+            if efd_path is None:
+                logging.warning("efd_path não disponível - pulando verificação C170 x C190")
+                checklist.append(("Divergências C170 x C190", "N/D (efd_path não disponível)"))
+            else:
+                divergencias_c170_c190 = check_c170_equals_c190(efd_path)
+                
+                # Verificar se houve erro na verificação (campo CAMPO == "ERRO")
+                tem_erro = False
+                if not divergencias_c170_c190.empty and "CAMPO" in divergencias_c170_c190.columns:
+                    tem_erro = (divergencias_c170_c190["CAMPO"] == "ERRO").any()
+                    if tem_erro:
+                        # Extrair mensagem de erro se disponível
+                        erro_row = divergencias_c170_c190[divergencias_c170_c190["CAMPO"] == "ERRO"].iloc[0]
+                        mensagem_erro = erro_row.get("MENSAGEM_ERRO", "Erro desconhecido") if "MENSAGEM_ERRO" in divergencias_c170_c190.columns else "Erro ao processar C170 x C190"
+                        logging.error(f"Erro na verificação C170 x C190: {mensagem_erro}")
+                        checklist.append(("Divergências C170 x C190", f"Erro: {mensagem_erro[:50]}"))
+                
+                # Processar normalmente se não houver erro
+                if not tem_erro:
+                    if not divergencias_c170_c190.empty:
+                        divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
+                        # Contar divergências não legítimas (que requerem atenção)
+                        if "E_LEGITIMA" in divergencias_legitimas.columns:
+                            div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
+                            checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
+                        else:
+                            checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
+                        # Adicionar ao relatório
+                        out["C170 x C190 (Divergências)"] = divergencias_legitimas
                     else:
-                        checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
-                    # Adicionar ao relatório
-                    out["C170 x C190 (Divergências)"] = divergencias_legitimas
-                else:
-                    checklist.append(("Divergências C170 x C190", 0))
+                        checklist.append(("Divergências C170 x C190", 0))
         except Exception as e:
             error_msg = str(e)
             logging.error(f"Erro ao verificar C170 x C190: {error_msg}")
@@ -839,7 +850,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None) -> Dic
         # Classificação de Divergências de Valores (Erro Humano vs Desconto Legítimo)
         try:
             from validators import check_divergencias_valores_legitimas
-            if xml_total and not notes_df.empty:
+            if xml_total and not notes_df.empty and efd_path is not None:
                 logging.info("Iniciando classificação de divergências de valores...")
                 divergencias_valores_classificadas = check_divergencias_valores_legitimas(notes_df, efd_path)
                 logging.info(f"Classificação concluída. Encontradas {len(divergencias_valores_classificadas)} divergências classificadas.")

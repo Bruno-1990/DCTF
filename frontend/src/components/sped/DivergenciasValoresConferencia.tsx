@@ -290,6 +290,7 @@ function converterDivergenciasDeValores(
   const classificacoesMap = new Map<string, any>();
   if (divergenciasClassificadas && divergenciasClassificadas.length > 0) {
     console.log('[DivergenciasValoresConferencia] Classificações recebidas:', divergenciasClassificadas.length);
+    console.log('[DivergenciasValoresConferencia] Primeira classificação:', divergenciasClassificadas[0]);
     for (const classif of divergenciasClassificadas) {
       const chave = classif.CHAVE || '';
       const campo = classif.CAMPO || '';
@@ -297,8 +298,14 @@ function converterDivergenciasDeValores(
       // Criar chave usando chave + deltaCol (mais confiável que campo nome)
       const key = `${chave}_${deltaCol}`;
       classificacoesMap.set(key, classif);
+      // Também criar mapeamento alternativo por chave + campo para maior compatibilidade
+      const keyAlt = `${chave}_${campo}`;
+      if (!classificacoesMap.has(keyAlt)) {
+        classificacoesMap.set(keyAlt, classif);
+      }
     }
     console.log('[DivergenciasValoresConferencia] Mapa de classificações criado com', classificacoesMap.size, 'entradas');
+    console.log('[DivergenciasValoresConferencia] Exemplo de chaves no mapa:', Array.from(classificacoesMap.keys()).slice(0, 3));
   } else {
     console.log('[DivergenciasValoresConferencia] Nenhuma classificação recebida');
   }
@@ -329,11 +336,32 @@ function converterDivergenciasDeValores(
 
         // Buscar classificação se disponível (usar chave + deltaCol)
         const key = `${chaveNf}_${campo.delta}`;
-        const classificacao = classificacoesMap.get(key);
+        let classificacao = classificacoesMap.get(key);
+        
+        // Se não encontrar, tentar mapeamento alternativo por nome do campo
+        if (!classificacao) {
+          // Mapear nome do campo do frontend para o nome do backend
+          const campoMap: Record<string, string> = {
+            'Total (vNF)': 'Total NF',
+            'Desconto': 'Desconto',
+            'BC ICMS': 'BC ICMS',
+            'ICMS': 'ICMS',
+            'BC ST': 'BC ST',
+            'ST': 'ST',
+            'IPI': 'IPI',
+            'Frete': 'Frete'
+          };
+          const campoBackend = campoMap[campo.nome] || campo.nome;
+          const keyAlt = `${chaveNf}_${campoBackend}`;
+          classificacao = classificacoesMap.get(keyAlt);
+        }
         
         // Debug: log quando encontrar classificação
         if (classificacao) {
-          console.log('[DivergenciasValoresConferencia] Classificação encontrada para', key, ':', classificacao.TIPO_DIVERGENCIA);
+          console.log('[DivergenciasValoresConferencia] Classificação encontrada para', chaveNf, campo.nome, ':', classificacao.TIPO_DIVERGENCIA);
+        } else {
+          // Log apenas para debug quando não encontrar (comentar depois)
+          // console.log('[DivergenciasValoresConferencia] Classificação NÃO encontrada para', key, 'campo:', campo.nome);
         }
         
         // Mapear tipo de divergência do backend para o frontend
