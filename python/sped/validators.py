@@ -937,6 +937,12 @@ def check_c170_equals_c190(efd_txt: Path) -> pd.DataFrame:
     """
     rows: List[Dict[str, Any]] = []
     try:
+        # Importar TOL se não estiver disponível
+        try:
+            from common import TOL
+        except ImportError:
+            TOL = 0.02  # tolerância padrão
+        
         # Importar parse_efd_c170_agregado de parsers
         try:
             from parsers import parse_efd_c170_agregado
@@ -949,8 +955,17 @@ def check_c170_equals_c190(efd_txt: Path) -> pd.DataFrame:
                 sys.path.insert(0, str(parent_dir))
             from parsers import parse_efd_c170_agregado
         
+        # Verificar se o arquivo existe
+        if not efd_txt.exists():
+            logging.warning(f"Arquivo SPED não encontrado: {efd_txt}")
+            return _df([], columns=["CHAVE", "CFOP", "CST", "CAMPO", "C170", "C190", "DIFERENCA", "SEVERIDADE"])
+        
         c170_agregados = parse_efd_c170_agregado(efd_txt)
         c190_por_chave_cfop_cst = _parse_c190_por_cfop_cst(efd_txt)
+        
+        # Se não houver dados C170 ou C190, retornar DataFrame vazio
+        if not c170_agregados and not c190_por_chave_cfop_cst:
+            return _df([], columns=["CHAVE", "CFOP", "CST", "CAMPO", "C170", "C190", "DIFERENCA", "SEVERIDADE"])
         
         # Comparar C170 com C190
         for (chave, cfop, cst), valores_c170 in c170_agregados.items():
@@ -977,9 +992,22 @@ def check_c170_equals_c190(efd_txt: Path) -> pd.DataFrame:
                         "SEVERIDADE": severidade
                     })
     except Exception as e:
-        logging.warning(f"Erro ao verificar C170 x C190: {e}")
+        logging.error(f"Erro ao verificar C170 x C190: {e}")
         import traceback
-        traceback.print_exc()
+        error_details = traceback.format_exc()
+        logging.error(f"Traceback completo: {error_details}")
+        # Retornar DataFrame com informação de erro ao invés de vazio
+        return _df([{
+            "CHAVE": "",
+            "CFOP": "",
+            "CST": "",
+            "CAMPO": "ERRO",
+            "C170": 0.0,
+            "C190": 0.0,
+            "DIFERENCA": 0.0,
+            "SEVERIDADE": "alta",
+            "MENSAGEM_ERRO": str(e)[:200]  # Limitar tamanho da mensagem
+        }], columns=["CHAVE", "CFOP", "CST", "CAMPO", "C170", "C190", "DIFERENCA", "SEVERIDADE", "MENSAGEM_ERRO"])
     
     return _df(rows, columns=["CHAVE", "CFOP", "CST", "CAMPO", "C170", "C190", "DIFERENCA", "SEVERIDADE"])
 

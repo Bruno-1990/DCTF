@@ -802,23 +802,39 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None) -> Dic
         try:
             from validators import check_c170_equals_c190, check_divergencias_legitimas_c170_c190
             divergencias_c170_c190 = check_c170_equals_c190(efd_path)
-            if not divergencias_c170_c190.empty:
-                divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
-                # Contar divergências não legítimas (que requerem atenção)
-                if "E_LEGITIMA" in divergencias_legitimas.columns:
-                    div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
-                    checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
+            
+            # Verificar se houve erro na verificação (campo CAMPO == "ERRO")
+            tem_erro = False
+            if not divergencias_c170_c190.empty and "CAMPO" in divergencias_c170_c190.columns:
+                tem_erro = (divergencias_c170_c190["CAMPO"] == "ERRO").any()
+                if tem_erro:
+                    # Extrair mensagem de erro se disponível
+                    erro_row = divergencias_c170_c190[divergencias_c170_c190["CAMPO"] == "ERRO"].iloc[0]
+                    mensagem_erro = erro_row.get("MENSAGEM_ERRO", "Erro desconhecido") if "MENSAGEM_ERRO" in divergencias_c170_c190.columns else "Erro ao processar C170 x C190"
+                    logging.error(f"Erro na verificação C170 x C190: {mensagem_erro}")
+                    checklist.append(("Divergências C170 x C190", f"Erro: {mensagem_erro[:50]}"))
+            
+            # Processar normalmente se não houver erro
+            if not tem_erro:
+                if not divergencias_c170_c190.empty:
+                    divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
+                    # Contar divergências não legítimas (que requerem atenção)
+                    if "E_LEGITIMA" in divergencias_legitimas.columns:
+                        div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
+                        checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
+                    else:
+                        checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
+                    # Adicionar ao relatório
+                    out["C170 x C190 (Divergências)"] = divergencias_legitimas
                 else:
-                    checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
-                # Adicionar ao relatório
-                out["C170 x C190 (Divergências)"] = divergencias_legitimas
-            else:
-                checklist.append(("Divergências C170 x C190", 0))
+                    checklist.append(("Divergências C170 x C190", 0))
         except Exception as e:
-            logging.warning(f"Erro ao verificar C170 x C190: {e}")
+            error_msg = str(e)
+            logging.error(f"Erro ao verificar C170 x C190: {error_msg}")
             import traceback
             traceback.print_exc()
-            checklist.append(("Divergências C170 x C190", "Erro"))
+            # Mensagem mais descritiva no checklist
+            checklist.append(("Divergências C170 x C190", f"Erro: {error_msg[:50]}"))
 
         # Classificação de Divergências de Valores (Erro Humano vs Desconto Legítimo)
         try:
