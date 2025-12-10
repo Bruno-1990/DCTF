@@ -211,3 +211,4 @@ class MatrizRegrasFiscais:
         regra = self.obter_regra(cfop, cst)
         return regra.gera_icms_st if regra else False
 
+

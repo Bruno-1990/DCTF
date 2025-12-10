@@ -196,6 +196,68 @@ def parse_efd_c190_totais(file_path: Path):
                     b2["VL_IPI"] += v_ipi or 0.0
     return por_chave, por_triple
 
+def parse_efd_c170_agregado(file_path: Path) -> Dict[Tuple[str, str, str], Dict[str, float]]:
+    """
+    Agrega valores dos C170 por (CHAVE_NF, CFOP, CST)
+    Retorna: {(chave_nf, cfop, cst): {"VL_BC_ICMS": ..., "VL_ICMS": ..., ...}}
+    
+    Layout C170 oficial:
+    REG(1), NUM_ITEM(2), COD_ITEM(3), DESCR_COMPL(4), QTD(5), UNID(6), VL_ITEM(7), VL_DESC(8),
+    VL_ACMO(9), CST_ICMS(10), CFOP(11), VL_BC_ICMS(12), ALIQ_ICMS(13), VL_ICMS(14),
+    VL_BC_ICMS_ST(15), ALIQ_ST(16), VL_ICMS_ST(17), VL_IPI(18), VL_BC_IPI(19), ALIQ_IPI(20)
+    
+    Após split("|"): fs[0]="", fs[1]="C170", fs[2]=NUM_ITEM, fs[3]=COD_ITEM, fs[4]=DESCR_COMPL,
+                     fs[5]=QTD, fs[6]=UNID, fs[7]=VL_ITEM, fs[8]=VL_DESC, fs[9]=VL_ACMO,
+                     fs[10]=CST_ICMS, fs[11]=CFOP, fs[12]=VL_BC_ICMS, fs[13]=ALIQ_ICMS,
+                     fs[14]=VL_ICMS, fs[15]=VL_BC_ICMS_ST, fs[16]=ALIQ_ST, fs[17]=VL_ICMS_ST,
+                     fs[18]=VL_IPI, fs[19]=VL_BC_IPI, fs[20]=ALIQ_IPI
+    """
+    agregados = {}
+    current_key: Optional[str] = None
+    
+    with file_path.open("r", encoding="latin1", errors="ignore") as f:
+        for ln in f:
+            if ln.startswith("|C100|"):
+                fs = split_sped_line(ln, min_fields=10)
+                if len(fs) >= 10:
+                    current_key = (fs[9] or "").strip() or None
+            
+            elif ln.startswith("|C170|") and current_key:
+                fs = split_sped_line(ln, min_fields=21)  # C170 tem até 20 campos + fs[0]
+                if len(fs) < 21:
+                    continue
+                
+                # Extrair campos do C170
+                cst = (fs[10] or "").strip() if len(fs) > 10 else ""
+                cfop = (fs[11] or "").strip() if len(fs) > 11 else ""
+                
+                if not cfop or not cst:
+                    continue
+                
+                # Chave de agregação: (CHAVE_NF, CFOP, CST)
+                key = (current_key, cfop, cst)
+                if key not in agregados:
+                    agregados[key] = {
+                        "VL_BC_ICMS": 0.0,
+                        "VL_ICMS": 0.0,
+                        "VL_BC_ICMS_ST": 0.0,
+                        "VL_ICMS_ST": 0.0,
+                        "VL_IPI": 0.0,
+                        "VL_ITEM": 0.0,
+                        "VL_DESC": 0.0
+                    }
+                
+                # Somar valores (usar parse_decimal para converter corretamente)
+                agregados[key]["VL_BC_ICMS"] += parse_decimal(fs[12] or "0") or 0.0
+                agregados[key]["VL_ICMS"] += parse_decimal(fs[14] or "0") or 0.0
+                agregados[key]["VL_BC_ICMS_ST"] += parse_decimal(fs[15] or "0") or 0.0
+                agregados[key]["VL_ICMS_ST"] += parse_decimal(fs[17] or "0") or 0.0
+                agregados[key]["VL_IPI"] += parse_decimal(fs[18] or "0") or 0.0
+                agregados[key]["VL_ITEM"] += parse_decimal(fs[7] or "0") or 0.0
+                agregados[key]["VL_DESC"] += parse_decimal(fs[8] or "0") or 0.0
+    
+    return agregados
+
 def parse_efd_d100_d190(file_path: Path):
     """
     CT-e: D100/D190 agregados por (SER, NUM_DOC).

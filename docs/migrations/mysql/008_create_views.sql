@@ -115,3 +115,4 @@ GROUP BY d.cliente_id, d.periodo_apuracao, d.cnpj;
 
 
 
+
