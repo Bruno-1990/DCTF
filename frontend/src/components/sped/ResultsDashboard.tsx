@@ -135,13 +135,22 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   // Buscar notes_df para divergências de valores (contém colunas Delta)
   const notesDf = reports['Notas (+Natureza)'] || reports['Notas Saídas'] || reports['Notas Entradas'] || [];
   
+  // Buscar divergências C170 x C190
+  const divergenciasC170C190 = validacoes['C170 x C190 (Divergências)'] || reports['C170 x C190 (Divergências)'] || [];
+  // Buscar divergências de valores classificadas (Erro Humano vs Desconto Legítimo)
+  // A chave está em 'reports' (retornado por make_reports)
+  const divergenciasClassificadas = reports['Divergências de Valores (Classificadas)'] || 
+                                    validacoes['Divergências de Valores (Classificadas)'] || [];
+  
   // Debug: mostrar estrutura do resultado
   console.log('Estrutura do resultado:', {
     hasEmpresa: !!resultado.empresa,
     validacoesKeys: Object.keys(validacoes),
     reportsKeys: Object.keys(reports),
     divergenciasCount: divergencias.length,
-    checklistCount: checklist.length
+    checklistCount: checklist.length,
+    divergenciasClassificadasCount: divergenciasClassificadas.length,
+    divergenciasClassificadasKeys: divergenciasClassificadas.length > 0 ? Object.keys(divergenciasClassificadas[0] || {}) : []
   });
 
   return (
@@ -345,7 +354,12 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
         )}
 
         {activeTab === 'conferencia' && (
-          <DivergenciasValoresConferencia divergencias={divergencias} notesDf={notesDf} />
+          <DivergenciasValoresConferencia 
+            divergencias={divergencias} 
+            notesDf={notesDf}
+            divergenciasC170C190={Array.isArray(divergenciasC170C190) ? divergenciasC170C190 : []}
+            divergenciasClassificadas={Array.isArray(divergenciasClassificadas) ? divergenciasClassificadas : []}
+          />
         )}
 
         {activeTab === 'ajuste' && (

@@ -159,20 +159,21 @@ SETOR_PATTERNS = {
 }
 
 
-def detectar_setor(sped_path: Path, xml_dir: Optional[Path] = None) -> Optional[str]:
+def detectar_setor(sped_path: Path, xml_dir: Optional[Path] = None) -> List[str]:
     """
-    Detecta o setor baseado no conteúdo do arquivo SPED e XMLs.
+    Detecta o(s) setor(es) baseado no conteúdo do arquivo SPED e XMLs.
     Usa análise ponderada baseada em CFOPs específicos, NCMs, CSTs e keywords.
+    Retorna múltiplos setores quando houver evidências claras de mais de um setor.
     
     Args:
         sped_path: Caminho para o arquivo SPED
         xml_dir: Caminho opcional para diretório com XMLs
         
     Returns:
-        Nome do setor detectado ou None se não conseguir detectar
+        Lista de setores detectados (pode ser vazia se não conseguir detectar)
     """
     if not sped_path.exists():
-        return None
+        return []
     
     scores: Dict[str, int] = {setor: 0 for setor in SETOR_PATTERNS.keys()}
     cfops_encontrados: Set[str] = set()
@@ -347,8 +348,8 @@ def detectar_setor(sped_path: Path, xml_dir: Optional[Path] = None) -> Optional[
                 except Exception:
                     pass
             
-            # Encontrar setor com maior score
-            max_score = max(scores.values())
+            # Encontrar setores com scores significativos
+            max_score = max(scores.values()) if scores.values() else 0
             
             # Threshold mínimo baseado no tipo de setor
             thresholds = {
@@ -363,34 +364,81 @@ def detectar_setor(sped_path: Path, xml_dir: Optional[Path] = None) -> Optional[
             }
             
             if max_score > 0:
-                # Verificar se o score máximo atende ao threshold
-                for setor, score in scores.items():
-                    if score == max_score and score >= thresholds.get(setor, 5):
-                        # Verificar se há outro setor com score muito próximo (margem de 20%)
-                        segundo_maior = sorted(scores.values(), reverse=True)[1] if len(scores) > 1 else 0
-                        if segundo_maior > 0 and (max_score - segundo_maior) / max_score < 0.2:
-                            # Se houver empate técnico, preferir setor com CFOPs mais específicos
-                            if setor in ['industria', 'transporte', 'autopecas', 'bebidas', 'construcao', 'cosmeticos']:
-                                return setor
+                setores_detectados: List[str] = []
+                
+                # Ordenar setores por score (maior primeiro)
+                setores_ordenados = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+                
+                # Adicionar setor com maior score se atender threshold
+                for setor, score in setores_ordenados:
+                    threshold = thresholds.get(setor, 5)
+                    
+                    # Se o score atender o threshold mínimo
+                    if score >= threshold:
+                        # Se for o primeiro (maior score), sempre adicionar
+                        if len(setores_detectados) == 0:
+                            setores_detectados.append(setor)
+                        # Se houver outros setores com score muito próximo (dentro de 30% do máximo)
+                        elif score >= max_score * 0.7:
+                            # Verificar se não é um setor muito genérico que pode ser falso positivo
+                            # Comércio e e-commerce são muito genéricos, só adicionar se tiver score muito alto
+                            if setor in ['comercio', 'ecommerce']:
+                                if score >= max_score * 0.9:  # Precisa estar muito próximo do máximo
+                                    setores_detectados.append(setor)
+                            else:
+                                setores_detectados.append(setor)
                         else:
-                            return setor
+                            # Se o score for muito menor, parar de adicionar
+                            break
+                
+                # Se detectou múltiplos setores, verificar se faz sentido combiná-los
+                if len(setores_detectados) > 1:
+                    # Remover combinações que não fazem sentido
+                    # Ex: industria + comercio pode fazer sentido (indústria que também comercializa)
+                    # Ex: transporte + comercio pode fazer sentido
+                    # Ex: autopecas + bebidas não faz sentido
+                    
+                    setores_finais = []
+                    for setor in setores_detectados:
+                        # Se já adicionou um setor muito específico, não adicionar genéricos
+                        if len(setores_finais) > 0:
+                            setores_especificos = ['industria', 'transporte', 'autopecas', 'bebidas', 'construcao', 'cosmeticos']
+                            setores_genericos = ['comercio', 'ecommerce']
+                            
+                            # Se já tem um específico e este é genérico, só adicionar se o genérico tiver score muito alto
+                            if setor in setores_genericos:
+                                if any(s in setores_especificos for s in setores_finais):
+                                    # Só adicionar genérico se seu score for pelo menos 80% do máximo
+                                    if scores[setor] >= max_score * 0.8:
+                                        setores_finais.append(setor)
+                                else:
+                                    setores_finais.append(setor)
+                            else:
+                                setores_finais.append(setor)
+                        else:
+                            setores_finais.append(setor)
+                    
+                    return setores_finais
+                elif len(setores_detectados) == 1:
+                    return setores_detectados
     
     except Exception as e:
+        import logging
+        logging.warning(f"Erro ao detectar setor: {e}")
         pass
     
-    return None
+    return []
 
 
 if __name__ == '__main__':
     import sys
+    import json
     if len(sys.argv) < 2:
-        print("Uso: python detectar_setor.py <caminho_sped> [caminho_xml_dir]")
+        print(json.dumps({"setores": []}))
         sys.exit(1)
     
     sped_path = Path(sys.argv[1])
     xml_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else None
-    setor = detectar_setor(sped_path, xml_dir)
-    if setor:
-        print(setor)
-    else:
-        print("")
+    setores = detectar_setor(sped_path, xml_dir)
+    # Retornar como JSON para facilitar parsing no backend
+    print(json.dumps({"setores": setores}))

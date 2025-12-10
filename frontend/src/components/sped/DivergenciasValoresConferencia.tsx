@@ -32,6 +32,11 @@ export interface DivergenciaValor {
   severidade: 'high' | 'medium' | 'low';
   categoria?: string;
   descricao?: string;
+  tipoDivergencia?: 'ERRO_HUMANO' | 'DESCONTO_CONSISTENTE' | 'LEGITIMA_OPERACAO' | 
+                    'ARREDONDAMENTO' | 'CONSISTENTE_COM_DESCONTO' | 'ERRO_SISTEMATICO' |
+                    'POSSIVEL_ERRO_SPED' | 'POSSIVEL_ERRO_XML';
+  motivoClassificacao?: string;
+  confianca?: 'ALTA' | 'MEDIA' | 'BAIXA';
 }
 
 export interface DivergenciaPorChave {
@@ -41,9 +46,26 @@ export interface DivergenciaPorChave {
   severidadeMaxima: 'high' | 'medium' | 'low';
 }
 
+interface DivergenciaC170C190 {
+  CHAVE: string;
+  CFOP: string;
+  CST: string;
+  CAMPO: string;
+  C170: number;
+  C190: number;
+  DIFERENCA: number;
+  TIPO_OPERACAO: string;
+  E_LEGITIMA: boolean;
+  MOTIVO_LEGITIMO?: string;
+  SEVERIDADE: string;
+  COD_SIT?: string;
+}
+
 interface Props {
   divergencias: any[]; // Divergências no formato do SPED
   notesDf?: any[]; // DataFrame de notas com colunas Delta (opcional, usado para divergências de valores)
+  divergenciasC170C190?: DivergenciaC170C190[]; // Divergências C170 x C190
+  divergenciasClassificadas?: any[]; // Divergências classificadas (Erro Humano vs Desconto Legítimo)
 }
 
 function formatChaveNF(chave: string): string {
@@ -81,49 +103,130 @@ function DivergenciaRow({ divergencia }: { divergencia: DivergenciaValor }) {
   const isPositive = delta !== undefined && delta !== null && delta > 0;
   const deltaFormatado = delta !== undefined && delta !== null ? formatarValor(delta) : '—';
 
-  return (
-    <div className="pl-6 pr-4 py-3 border-b border-gray-200 bg-white hover:bg-gray-50 transition-colors grid grid-cols-4 gap-4 items-center">
-      {/* Campo */}
-      <div className="flex items-center gap-2 min-w-[120px]">
-        <SeverityTag severity={divergencia.severidade} />
-        <span className="text-sm font-semibold text-gray-700">
-          {divergencia.campo}
+  const getTipoDivergenciaBadge = () => {
+    if (!divergencia.tipoDivergencia) return null;
+    
+    const tipos: Record<string, { label: string; color: string; bgColor: string }> = {
+      'ERRO_HUMANO': { 
+        label: 'Erro Humano', 
+        color: 'text-red-800', 
+        bgColor: 'bg-red-100 border-red-300' 
+      },
+      'DESCONTO_CONSISTENTE': { 
+        label: 'Desconto Legítimo', 
+        color: 'text-green-800', 
+        bgColor: 'bg-green-100 border-green-300' 
+      },
+      'LEGITIMA_OPERACAO': { 
+        label: 'Operação Legítima', 
+        color: 'text-blue-800', 
+        bgColor: 'bg-blue-100 border-blue-300' 
+      },
+      'ARREDONDAMENTO': { 
+        label: 'Arredondamento', 
+        color: 'text-gray-800', 
+        bgColor: 'bg-gray-100 border-gray-300' 
+      },
+      'CONSISTENTE_COM_DESCONTO': { 
+        label: 'Consistente', 
+        color: 'text-amber-800', 
+        bgColor: 'bg-amber-100 border-amber-300' 
+      },
+      'ERRO_SISTEMATICO': { 
+        label: 'Erro Sistemático', 
+        color: 'text-red-900', 
+        bgColor: 'bg-red-200 border-red-400' 
+      },
+      'POSSIVEL_ERRO_SPED': { 
+        label: 'Possível Erro SPED', 
+        color: 'text-orange-800', 
+        bgColor: 'bg-orange-100 border-orange-300' 
+      },
+      'POSSIVEL_ERRO_XML': { 
+        label: 'Possível Erro XML', 
+        color: 'text-purple-800', 
+        bgColor: 'bg-purple-100 border-purple-300' 
+      },
+    };
+    
+    const tipo = tipos[divergencia.tipoDivergencia];
+    if (!tipo) return null;
+    
+    return (
+      <div className="mt-2 flex items-start gap-2">
+        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${tipo.bgColor} ${tipo.color}`}>
+          {tipo.label}
         </span>
-      </div>
-
-      {/* XML */}
-      <div className="min-w-[150px]">
-        <p className="text-sm font-mono font-semibold text-gray-900">
-          {divergencia.valorEncontrado || '—'}
-        </p>
-      </div>
-
-      {/* SPED */}
-      <div className="min-w-[150px]">
-        <p className="text-sm font-mono font-semibold text-gray-900">
-          {divergencia.valorEsperado || '—'}
-        </p>
-      </div>
-
-      {/* Diferença */}
-      <div className="min-w-[180px]">
-        {delta !== undefined && delta !== null ? (
-          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${
-            isPositive ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'
+        {divergencia.confianca && (
+          <span className={`text-xs px-1.5 py-0.5 rounded ${
+            divergencia.confianca === 'ALTA' ? 'bg-green-50 text-green-700' :
+            divergencia.confianca === 'MEDIA' ? 'bg-yellow-50 text-yellow-700' :
+            'bg-gray-50 text-gray-700'
           }`}>
-            <span className={`text-sm font-mono font-bold ${
-              isPositive ? 'text-red-700' : 'text-blue-700'
-            }`}>
-              {isPositive ? '+' : ''}{deltaFormatado}
-            </span>
-            <span className="text-xs text-gray-600">
-              ({isPositive ? 'XML maior' : 'SPED maior'})
-            </span>
-          </div>
-        ) : (
-          <p className="text-sm font-mono text-gray-500">—</p>
+            Confiança: {divergencia.confianca}
+          </span>
         )}
       </div>
+    );
+  };
+
+  return (
+    <div className="pl-6 pr-4 py-3 border-b border-gray-200 bg-white hover:bg-gray-50 transition-colors">
+      <div className="grid grid-cols-4 gap-4 items-center">
+        {/* Campo */}
+        <div className="flex items-center gap-2 min-w-[120px]">
+          <SeverityTag severity={divergencia.severidade} />
+          <span className="text-sm font-semibold text-gray-700">
+            {divergencia.campo}
+          </span>
+        </div>
+
+        {/* XML */}
+        <div className="min-w-[150px]">
+          <p className="text-sm font-mono font-semibold text-gray-900">
+            {divergencia.valorEncontrado || '—'}
+          </p>
+        </div>
+
+        {/* SPED */}
+        <div className="min-w-[150px]">
+          <p className="text-sm font-mono font-semibold text-gray-900">
+            {divergencia.valorEsperado || '—'}
+          </p>
+        </div>
+
+        {/* Diferença */}
+        <div className="min-w-[180px]">
+          {delta !== undefined && delta !== null ? (
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${
+              isPositive ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'
+            }`}>
+              <span className={`text-sm font-mono font-bold ${
+                isPositive ? 'text-red-700' : 'text-blue-700'
+              }`}>
+                {isPositive ? '+' : ''}{deltaFormatado}
+              </span>
+              <span className="text-xs text-gray-600">
+                ({isPositive ? 'XML maior' : 'SPED maior'})
+              </span>
+            </div>
+          ) : (
+            <p className="text-sm font-mono text-gray-500">—</p>
+          )}
+        </div>
+      </div>
+      
+      {/* Classificação da divergência */}
+      {getTipoDivergenciaBadge()}
+      
+      {/* Motivo da classificação */}
+      {divergencia.motivoClassificacao && (
+        <div className="mt-1.5 ml-0">
+          <p className="text-xs text-gray-600 italic">
+            {divergencia.motivoClassificacao}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -175,9 +278,30 @@ function formatarValor(valor: any): string {
 
 /**
  * Converte dados do notes_df (DataFrame de notas) para divergências de valores
+ * Inclui classificações quando disponíveis (Erro Humano vs Desconto Legítimo)
  */
-function converterDivergenciasDeValores(notesDf: any[]): DivergenciaValor[] {
+function converterDivergenciasDeValores(
+  notesDf: any[], 
+  divergenciasClassificadas?: any[]
+): DivergenciaValor[] {
   const divergencias: DivergenciaValor[] = [];
+  
+  // Criar mapa de classificações por chave e campo para busca rápida
+  const classificacoesMap = new Map<string, any>();
+  if (divergenciasClassificadas && divergenciasClassificadas.length > 0) {
+    console.log('[DivergenciasValoresConferencia] Classificações recebidas:', divergenciasClassificadas.length);
+    for (const classif of divergenciasClassificadas) {
+      const chave = classif.CHAVE || '';
+      const campo = classif.CAMPO || '';
+      const deltaCol = classif.DELTA_COLUNA || '';
+      // Criar chave usando chave + deltaCol (mais confiável que campo nome)
+      const key = `${chave}_${deltaCol}`;
+      classificacoesMap.set(key, classif);
+    }
+    console.log('[DivergenciasValoresConferencia] Mapa de classificações criado com', classificacoesMap.size, 'entradas');
+  } else {
+    console.log('[DivergenciasValoresConferencia] Nenhuma classificação recebida');
+  }
 
   for (const nota of notesDf) {
     const chaveNf = nota.CHAVE || nota['Chave NF-e'] || nota.chaveNf || '';
@@ -203,6 +327,21 @@ function converterDivergenciasDeValores(notesDf: any[]): DivergenciaValor[] {
           severidade = 'low';
         }
 
+        // Buscar classificação se disponível (usar chave + deltaCol)
+        const key = `${chaveNf}_${campo.delta}`;
+        const classificacao = classificacoesMap.get(key);
+        
+        // Debug: log quando encontrar classificação
+        if (classificacao) {
+          console.log('[DivergenciasValoresConferencia] Classificação encontrada para', key, ':', classificacao.TIPO_DIVERGENCIA);
+        }
+        
+        // Mapear tipo de divergência do backend para o frontend
+        let tipoDivergencia: DivergenciaValor['tipoDivergencia'] = undefined;
+        if (classificacao && classificacao.TIPO_DIVERGENCIA) {
+          tipoDivergencia = classificacao.TIPO_DIVERGENCIA as DivergenciaValor['tipoDivergencia'];
+        }
+
         divergencias.push({
           chaveNf,
           motivo: `Divergência em ${campo.nome}`,
@@ -213,6 +352,9 @@ function converterDivergenciasDeValores(notesDf: any[]): DivergenciaValor[] {
           severidade,
           categoria: 'Diferença de valores',
           descricao: `Diferença de ${formatarValor(deltaNum)} (${deltaNum > 0 ? 'XML maior' : 'SPED maior'})`,
+          tipoDivergencia,
+          motivoClassificacao: classificacao?.MOTIVO_CLASSIFICACAO || undefined,
+          confianca: classificacao?.CONFIANCA as 'ALTA' | 'MEDIA' | 'BAIXA' | undefined,
         });
       }
     }
@@ -263,7 +405,7 @@ function agruparPorChave(divergencias: DivergenciaValor[]): DivergenciaPorChave[
   return resultado;
 }
 
-const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf }) => {
+const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf, divergenciasC170C190, divergenciasClassificadas }) => {
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [expandedChaves, setExpandedChaves] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
@@ -301,7 +443,8 @@ const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf
   
   if (notesDf && notesDf.length > 0) {
     // Usar notesDf para extrair divergências de valores
-    divergenciasConvertidas = converterDivergenciasDeValores(notesDf);
+    // Passar também as classificações se disponíveis
+    divergenciasConvertidas = converterDivergenciasDeValores(notesDf, divergenciasClassificadas);
   } else {
     // Fallback: tentar converter das divergências padrão
     divergenciasConvertidas = divergencias
@@ -580,6 +723,110 @@ const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf
             </div>
           )}
         </>
+      )}
+
+      {/* Seção de Divergências C170 x C190 */}
+      {divergenciasC170C190 && divergenciasC170C190.length > 0 && (
+        <div className="mt-8 pt-8 border-t-2 border-gray-300">
+          <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <DocumentTextIcon className="h-5 w-5 text-blue-600" />
+            Divergências C170 x C190 (Consolidação por CFOP/CST)
+          </h4>
+          <p className="text-sm text-gray-600 mb-4">
+            Verificação se os valores dos itens (C170) batem com os totais consolidados (C190) por CFOP e CST.
+            Divergências legítimas são marcadas conforme legislação EFD-ICMS/IPI.
+          </p>
+          
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Chave NF
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      CFOP / CST
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Campo
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      C170
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      C190
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Diferença
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tipo Operação
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Motivo
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {divergenciasC170C190.map((div, index) => {
+                    const severidade = (div.SEVERIDADE || 'medium').toLowerCase() as 'high' | 'medium' | 'low';
+                    return (
+                      <tr key={index} className={div.E_LEGITIMA ? 'bg-green-50' : 'bg-red-50'}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                          {formatChaveNF(div.CHAVE || '')}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {div.CFOP} / {div.CST}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {div.CAMPO}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">
+                          {formatarValor(div.C170)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">
+                          {formatarValor(div.C190)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold">
+                          <span className={div.DIFERENCA > 0 ? 'text-red-600' : 'text-blue-600'}>
+                            {div.DIFERENCA > 0 ? '+' : ''}{formatarValor(div.DIFERENCA)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {div.E_LEGITIMA ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              ✓ Legítima
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              ⚠ Atenção
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {div.TIPO_OPERACAO || 'NORMAL'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-md">
+                          <div className="truncate" title={div.MOTIVO_LEGITIMO || 'Divergência requer verificação'}>
+                            {div.E_LEGITIMA ? (
+                              <span className="text-green-700">{div.MOTIVO_LEGITIMO || '—'}</span>
+                            ) : (
+                              <span className="text-red-700">Divergência requer verificação manual</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

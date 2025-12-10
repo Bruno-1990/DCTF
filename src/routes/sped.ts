@@ -75,7 +75,23 @@ router.post('/detectar-setor', upload.fields([
         maxBuffer: 10 * 1024 * 1024 // 10MB
       });
 
-      const setor = stdout.trim();
+      // Tentar parsear como JSON (novo formato com múltiplos setores)
+      let setores: string[] = [];
+      try {
+        const resultado = JSON.parse(stdout.trim());
+        if (resultado.setores && Array.isArray(resultado.setores)) {
+          setores = resultado.setores;
+        } else if (typeof resultado.setores === 'string' && resultado.setores) {
+          // Compatibilidade com formato antigo (string única)
+          setores = [resultado.setores];
+        }
+      } catch (parseError) {
+        // Se não for JSON, tentar como string única (compatibilidade)
+        const setor = stdout.trim();
+        if (setor) {
+          setores = [setor];
+        }
+      }
       
       // Limpar arquivos temporários
       try {
@@ -84,11 +100,11 @@ router.post('/detectar-setor', upload.fields([
         // Ignorar erro ao deletar
       }
 
-      if (setor) {
-        res.json({ setor });
-      } else {
-        res.json({ setor: null });
-      }
+      // Retornar lista de setores (pode ser vazia)
+      res.json({ 
+        setores: setores,
+        setor: setores.length > 0 ? setores[0] : null  // Compatibilidade com formato antigo
+      });
     } catch (execError: any) {
       // Limpar arquivos temporários em caso de erro
       try {
@@ -97,8 +113,11 @@ router.post('/detectar-setor', upload.fields([
         // Ignorar erro ao deletar
       }
 
-      // Se não conseguir detectar, retornar null (não é erro)
-      res.json({ setor: null });
+      // Se não conseguir detectar, retornar lista vazia (não é erro)
+      res.json({ 
+        setores: [],
+        setor: null  // Compatibilidade com formato antigo
+      });
     }
   } catch (error: any) {
     console.error('Erro ao detectar setor:', error);

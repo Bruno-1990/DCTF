@@ -32,7 +32,7 @@ class SpedService {
   /**
    * Detecta automaticamente o setor baseado no arquivo SPED e XMLs
    */
-  async detectarSetor(spedFile: File, xmlFiles: File[] = []): Promise<string | null> {
+  async detectarSetor(spedFile: File, xmlFiles: File[] = []): Promise<string[]> {
     const formData = new FormData();
     formData.append('sped', spedFile);
     
@@ -42,7 +42,7 @@ class SpedService {
     });
 
     try {
-      const response = await axios.post<{ setor: string | null }>(
+      const response = await axios.post<{ setores: string[], setor?: string | null }>(
         `${API_BASE_URL}/api/sped/detectar-setor`,
         formData,
         {
@@ -52,10 +52,16 @@ class SpedService {
         }
       );
 
-      return response.data.setor;
+      // Retornar lista de setores (novo formato) ou compatibilidade com formato antigo
+      if (response.data.setores && Array.isArray(response.data.setores)) {
+        return response.data.setores;
+      } else if (response.data.setor) {
+        return [response.data.setor];
+      }
+      return [];
     } catch (error) {
       console.error('Erro ao detectar setor:', error);
-      return null;
+      return [];
     }
   }
 

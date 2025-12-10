@@ -757,6 +757,78 @@ def _parse_c190_totais(file_path: Path):
         pass
     return {}, por_triple
 
+def _parse_c190_por_cfop_cst(file_path: Path) -> Dict[Tuple[str, str, str], Dict[str, float]]:
+    """
+    Agrega C190 por (CHAVE, CFOP, CST)
+    Retorna: {(chave_nf, cfop, cst): {"VL_BC_ICMS": ..., "VL_ICMS": ..., ...}}
+    """
+    agregados = {}
+    current_key: Optional[str] = None
+    
+    try:
+        with file_path.open("r", encoding="latin1", errors="ignore") as f:
+            from parsers import split_sped_line
+            for ln in f:
+                if ln.startswith("|C100|"):
+                    fs = split_sped_line(ln, min_fields=10)
+                    if len(fs) >= 10:
+                        current_key = (fs[9] or "").strip() or None
+                
+                elif ln.startswith("|C190|") and current_key:
+                    fs = split_sped_line(ln, min_fields=13)
+                    if len(fs) < 13:
+                        continue
+                    
+                    cst = (fs[2] or "").strip()
+                    cfop = (fs[3] or "").strip()
+                    
+                    if not cfop or not cst:
+                        continue
+                    
+                    key = (current_key, cfop, cst)
+                    if key not in agregados:
+                        agregados[key] = {
+                            "VL_BC_ICMS": 0.0,
+                            "VL_ICMS": 0.0,
+                            "VL_BC_ICMS_ST": 0.0,
+                            "VL_ICMS_ST": 0.0,
+                            "VL_IPI": 0.0
+                        }
+                    
+                    def pf(i):
+                        try:
+                            return float(str(fs[i]).replace(".", "").replace(",", ".")) if fs[i] else 0.0
+                        except Exception:
+                            return 0.0
+                    
+                    agregados[key]["VL_BC_ICMS"] += pf(6)
+                    agregados[key]["VL_ICMS"] += pf(7)
+                    agregados[key]["VL_BC_ICMS_ST"] += pf(8)
+                    agregados[key]["VL_ICMS_ST"] += pf(9)
+                    agregados[key]["VL_IPI"] += pf(11)
+    except Exception:
+        pass
+    
+    return agregados
+
+def _get_c100_map(file_path: Path) -> Dict[str, Dict]:
+    """Mapeia CHAVE_NF -> {COD_SIT, ...} do C100"""
+    mapa = {}
+    try:
+        with file_path.open("r", encoding="latin1", errors="ignore") as f:
+            from parsers import split_sped_line
+            for ln in f:
+                if ln.startswith("|C100|"):
+                    fs = split_sped_line(ln, min_fields=10)
+                    if len(fs) >= 10:
+                        chave = (fs[9] or "").strip()
+                        cod_sit = (fs[6] or "").strip() if len(fs) > 6 else ""
+                        if chave:
+                            mapa[chave] = {"COD_SIT": cod_sit}
+    except Exception:
+        pass
+    return mapa
+
 # ---------------------------------------------------------------------------
 # 3) Apurações: E110/E111/E112, E310/E311, E500/E510/E520
 # ---------------------------------------------------------------------------
@@ -853,6 +925,400 @@ def check_cfop_vs_destination_derived(xml_notes: List[Dict[str, Any]]):
     return _df(rows, columns=["CHAVE","idDest","CFOP","ALERTA"])
 
 # ---------------------------------------------------------------------------
+# 4.5) Validação C170 x C190 (conforme regra group.C170_to_C190)
+# ---------------------------------------------------------------------------
+
+def check_c170_equals_c190(efd_txt: Path) -> pd.DataFrame:
+    """
+    Verifica se Σ(C170 por CFOP/CST) == C190 (por CFOP/CST)
+    Conforme regra: group.C170_to_C190 do base.yml
+    
+    Agrupa C170 por (CHAVE, CFOP, CST) e compara com C190 agregado da mesma forma.
+    """
+    rows: List[Dict[str, Any]] = []
+    try:
+        # Importar parse_efd_c170_agregado de parsers
+        try:
+            from parsers import parse_efd_c170_agregado
+        except ImportError:
+            # Se import relativo falhar, tentar absoluto
+            import sys
+            from pathlib import Path as _P
+            parent_dir = _P(__file__).parent
+            if str(parent_dir) not in sys.path:
+                sys.path.insert(0, str(parent_dir))
+            from parsers import parse_efd_c170_agregado
+        
+        c170_agregados = parse_efd_c170_agregado(efd_txt)
+        c190_por_chave_cfop_cst = _parse_c190_por_cfop_cst(efd_txt)
+        
+        # Comparar C170 com C190
+        for (chave, cfop, cst), valores_c170 in c170_agregados.items():
+            c190_key = (chave, cfop, cst)
+            valores_c190 = c190_por_chave_cfop_cst.get(c190_key, {})
+            
+            # Comparar cada campo
+            campos = ["VL_BC_ICMS", "VL_ICMS", "VL_BC_ICMS_ST", "VL_ICMS_ST", "VL_IPI"]
+            for campo in campos:
+                v_c170 = valores_c170.get(campo, 0.0) or 0.0
+                v_c190 = valores_c190.get(campo, 0.0) or 0.0
+                diff = abs(v_c170 - v_c190)
+                
+                if diff > TOL:
+                    severidade = "alta" if diff > 10 else ("media" if diff > 1 else "baixa")
+                    rows.append({
+                        "CHAVE": chave or "",
+                        "CFOP": cfop,
+                        "CST": cst,
+                        "CAMPO": campo,
+                        "C170": round(v_c170, 2),
+                        "C190": round(v_c190, 2),
+                        "DIFERENCA": round(diff, 2),
+                        "SEVERIDADE": severidade
+                    })
+    except Exception as e:
+        logging.warning(f"Erro ao verificar C170 x C190: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return _df(rows, columns=["CHAVE", "CFOP", "CST", "CAMPO", "C170", "C190", "DIFERENCA", "SEVERIDADE"])
+
+def check_divergencias_legitimas_c170_c190(
+    efd_txt: Path,
+    divergencias_c170_c190: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Verifica se divergências C170 x C190 são legítimas
+    Considera: CFOPs especiais, cancelamentos, abatimentos, etc.
+    Baseado na legislação EFD-ICMS/IPI
+    """
+    rows: List[Dict[str, Any]] = []
+    try:
+        # Importar CFOPClassifier
+        try:
+            from rules.cfop_classifier import CFOPClassifier
+        except ImportError:
+            # Se import relativo falhar, tentar absoluto
+            import sys
+            from pathlib import Path as _P
+            parent_dir = _P(__file__).parent
+            if str(parent_dir) not in sys.path:
+                sys.path.insert(0, str(parent_dir))
+            from rules.cfop_classifier import CFOPClassifier
+        
+        c100_map = _get_c100_map(efd_txt)
+        
+        for _, row in divergencias_c170_c190.iterrows():
+            chave = str(row.get("CHAVE", "") or "")
+            cfop = str(row.get("CFOP", "") or "")
+            cst = str(row.get("CST", "") or "")
+            campo = str(row.get("CAMPO", "") or "")
+            diferenca = float(row.get("DIFERENCA", 0) or 0)
+            v_c170 = float(row.get("C170", 0) or 0)
+            v_c190 = float(row.get("C190", 0) or 0)
+            
+            # Obter COD_SIT do C100
+            cod_sit = c100_map.get(chave, {}).get("COD_SIT", "")
+            tipo_op = CFOPClassifier.get_tipo_operacao(cfop, cod_sit)
+            
+            # Verificar se divergência é legítima
+            is_legitima = False
+            motivo_legitimo = ""
+            
+            if tipo_op == "CANCELADO" or tipo_op == "DENEGADO" or tipo_op == "INUTILIZADO":
+                is_legitima = True
+                motivo_legitimo = f"Documento {tipo_op.lower()} - diferenças podem ser esperadas conforme legislação"
+            
+            elif tipo_op == "DEVOLUCAO":
+                # Devoluções podem ter ajustes de impostos (créditos/decréditos)
+                is_legitima = True
+                motivo_legitimo = "CFOP de devolução - ajustes de impostos podem causar diferenças legítimas"
+            
+            elif tipo_op == "BRINDE_BONIFICACAO":
+                # Brindes podem ter tratamento fiscal diferente
+                is_legitima = True
+                motivo_legitimo = "CFOP de brinde/bonificação - tratamento fiscal diferenciado conforme legislação"
+            
+            elif tipo_op == "REMESSA_RETORNO":
+                # Remessas/retornos podem ter valores zerados ou diferentes
+                is_legitima = True
+                motivo_legitimo = "CFOP de remessa/retorno - valores podem diferir conforme natureza da operação"
+            
+            elif tipo_op == "INDUSTRIALIZACAO":
+                # Industrialização pode ter tratamento especial
+                is_legitima = True
+                motivo_legitimo = "CFOP de industrialização - pode ter tratamento fiscal diferenciado"
+            
+            elif abs(diferenca) < 0.10:  # Diferenças muito pequenas (arredondamento)
+                is_legitima = True
+                motivo_legitimo = "Diferença pequena - provável arredondamento (tolerância < R$ 0,10)"
+            
+            # Ajustar severidade se for legítima
+            severidade_original = str(row.get("SEVERIDADE", "media") or "media")
+            severidade = "baixa" if is_legitima else severidade_original
+            
+            rows.append({
+                "CHAVE": chave,
+                "CFOP": cfop,
+                "CST": cst,
+                "CAMPO": campo,
+                "C170": round(v_c170, 2),
+                "C190": round(v_c190, 2),
+                "DIFERENCA": round(diferenca, 2),
+                "TIPO_OPERACAO": tipo_op,
+                "E_LEGITIMA": is_legitima,
+                "MOTIVO_LEGITIMO": motivo_legitimo if is_legitima else "",
+                "SEVERIDADE": severidade,
+                "COD_SIT": cod_sit
+            })
+    except Exception as e:
+        logging.warning(f"Erro ao verificar divergências legítimas: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return _df(rows, columns=[
+        "CHAVE", "CFOP", "CST", "CAMPO", "C170", "C190", "DIFERENCA",
+        "TIPO_OPERACAO", "E_LEGITIMA", "MOTIVO_LEGITIMO", "SEVERIDADE", "COD_SIT"
+    ])
+
+
+def check_divergencias_valores_legitimas(
+    notes_df: pd.DataFrame,
+    efd_txt: Optional[Path] = None
+) -> pd.DataFrame:
+    """
+    Verifica se divergências de valores (especialmente descontos) são legítimas
+    ou causadas por erro humano.
+    
+    Análises realizadas:
+    1. Proporcionalidade: Se o desconto é proporcional ao valor total
+    2. Consistência histórica: Se o mesmo fornecedor/cliente tem padrão similar
+    3. Impacto em impostos: Se a diferença afeta cálculos de ICMS/ST de forma consistente
+    4. Tipo de operação: CFOPs que permitem descontos diferenciados
+    5. Arredondamento: Diferenças muito pequenas (< R$ 0,10)
+    
+    Retorna DataFrame com colunas: CHAVE, CAMPO, DELTA_COLUNA, VALOR_XML, VALOR_SPED,
+    DIFERENCA, TIPO_DIVERGENCIA, MOTIVO_CLASSIFICACAO, CONFIANCA, CFOP, COD_SIT
+    """
+    rows: List[Dict[str, Any]] = []
+    
+    try:
+        # pandas já deve estar importado no escopo do módulo
+        # Usar pd se disponível, caso contrário usar None
+        
+        # Importar classificador de CFOP se disponível
+        try:
+            from rules.cfop_classifier import CFOPClassifier
+        except ImportError:
+            CFOPClassifier = None
+        
+        # Verificar se notes_df está vazio
+        if notes_df is None or notes_df.empty:
+            return _df([], columns=[
+                "CHAVE", "CAMPO", "DELTA_COLUNA", "VALOR_XML", "VALOR_SPED", "DIFERENCA",
+                "TIPO_DIVERGENCIA", "MOTIVO_CLASSIFICACAO", "CONFIANCA", "CFOP", "COD_SIT"
+            ])
+        
+        # Campos de valores a analisar
+        campos_analise = [
+            ('Delta Desconto', 'Desconto'),
+            ('Delta vNF', 'Total NF'),
+            ('Delta Base ICMS', 'BC ICMS'),
+            ('Delta ICMS', 'ICMS'),
+            ('Delta Base ST', 'BC ST'),
+            ('Delta ST', 'ST'),
+            ('Delta IPI', 'IPI'),
+        ]
+        
+        # Mapear C100 para obter CFOP e COD_SIT
+        c100_map = {}
+        if efd_txt:
+            c100_map = _get_c100_map(efd_txt)
+        
+        # Tentar obter CFOP do notes_df se disponível
+        tem_cfop_no_df = 'CFOP' in notes_df.columns if pd is not None else False
+        
+        for _, row in notes_df.iterrows():
+            chave = str(row.get("CHAVE", "") or "")
+            if not chave:
+                continue
+            
+            # Obter informações do C100
+            c100_info = c100_map.get(chave, {})
+            cod_sit = c100_info.get("COD_SIT", "")
+            
+            # Tentar obter CFOP do row ou do C100
+            cfop = ""
+            if tem_cfop_no_df:
+                cfop = str(row.get("CFOP", "") or "")
+            # Se não tiver no row, tentar buscar do C100 (precisa parsear linha C100)
+            # Por enquanto, deixar vazio se não estiver disponível
+        
+            # Analisar cada campo com divergência
+            for delta_col, campo_nome in campos_analise:
+                if delta_col not in row.index:
+                    continue
+                
+                delta = row[delta_col]
+                if delta is None or (pd is not None and pd.isna(delta)):
+                    continue
+                
+                try:
+                    delta_valor = float(delta)
+                except (ValueError, TypeError):
+                    continue
+                
+                # Ignorar se não há divergência significativa
+                if abs(delta_valor) <= 0.02:
+                    continue
+                
+                # Obter valores XML e SPED
+                valor_xml = None
+                valor_sped = None
+                
+                if campo_nome == 'Desconto':
+                    valor_xml = row.get('XML_vDesc', 0)
+                    valor_sped = row.get('SPED_VL_DESC', 0)
+                elif campo_nome == 'Total NF':
+                    valor_xml = row.get('XML_vNF', 0)
+                    valor_sped = row.get('SPED_VL_DOC', 0)
+                elif campo_nome == 'BC ICMS':
+                    valor_xml = row.get('XML_vBC', 0)
+                    valor_sped = row.get('SPED_vBC (C190)', 0)
+                elif campo_nome == 'ICMS':
+                    valor_xml = row.get('XML_vICMS', 0)
+                    valor_sped = row.get('SPED_vICMS (C190)', 0)
+                elif campo_nome == 'BC ST':
+                    valor_xml = row.get('XML_vBCST', 0)
+                    valor_sped = row.get('SPED_vBCST (C190)', 0)
+                elif campo_nome == 'ST':
+                    valor_xml = row.get('XML_vST', 0)
+                    valor_sped = row.get('SPED_vST (C190)', 0)
+                elif campo_nome == 'IPI':
+                    valor_xml = row.get('XML_vIPI', 0)
+                    valor_sped = row.get('SPED_vIPI (C190)', 0)
+                
+                # Classificar a divergência
+                tipo_divergencia = "ERRO_HUMANO"  # Padrão: assumir erro até provar o contrário
+                motivo_classificacao = ""
+                confianca = "MEDIA"
+                
+                # 1. Verificar se é arredondamento
+                if abs(delta_valor) < 0.10:
+                    tipo_divergencia = "ARREDONDAMENTO"
+                    motivo_classificacao = f"Diferença muito pequena (R$ {abs(delta_valor):.2f}) - provável arredondamento"
+                    confianca = "ALTA"
+                
+                # 2. Verificar tipo de operação (CFOP/COD_SIT)
+                elif CFOPClassifier and cfop:
+                    try:
+                        tipo_op = CFOPClassifier.get_tipo_operacao(cfop, cod_sit)
+                        if tipo_op in ["CANCELADO", "DENEGADO", "INUTILIZADO"]:
+                            tipo_divergencia = "LEGITIMA_OPERACAO"
+                            motivo_classificacao = f"Documento {tipo_op.lower()} - diferenças podem ser esperadas"
+                            confianca = "ALTA"
+                        elif tipo_op == "DEVOLUCAO":
+                            tipo_divergencia = "LEGITIMA_OPERACAO"
+                            motivo_classificacao = "CFOP de devolução - ajustes podem causar diferenças legítimas"
+                            confianca = "ALTA"
+                    except Exception:
+                        pass
+                
+                # 3. Análise de proporcionalidade (especialmente para descontos)
+                elif campo_nome == 'Desconto' and valor_xml is not None and valor_sped is not None:
+                    try:
+                        vnf_xml = float(row.get('XML_vNF', 0) or 0)
+                        vnf_sped = float(row.get('SPED_VL_DOC', 0) or 0)
+                        
+                        if vnf_xml > 0:
+                            # Calcular percentual de desconto no XML
+                            perc_desc_xml = (float(valor_xml) / vnf_xml) * 100 if valor_xml else 0
+                            
+                            # Verificar se a diferença é proporcional ao valor total
+                            # Se o desconto XML é maior, mas a diferença é proporcional ao total, pode ser legítimo
+                            if abs(delta_valor) / vnf_xml < 0.05:  # Diferença menor que 5% do total
+                                tipo_divergencia = "DESCONTO_CONSISTENTE"
+                                motivo_classificacao = f"Diferença de desconto proporcional ao valor total ({perc_desc_xml:.2f}% no XML)"
+                                confianca = "MEDIA"
+                            
+                            # Verificar se há padrão: desconto maior no XML geralmente indica desconto incondicional
+                            # que pode não estar sendo aplicado corretamente no SPED
+                            try:
+                                val_xml_num = float(valor_xml) if valor_xml else 0
+                                val_sped_num = float(valor_sped) if valor_sped else 0
+                                
+                                if val_xml_num > val_sped_num and val_sped_num == 0:
+                                    tipo_divergencia = "POSSIVEL_ERRO_SPED"
+                                    motivo_classificacao = "Desconto presente no XML mas ausente no SPED - verificar preenchimento C100 campo VL_DESC"
+                                    confianca = "ALTA"
+                                elif val_xml_num < val_sped_num:
+                                    tipo_divergencia = "POSSIVEL_ERRO_XML"
+                                    motivo_classificacao = "Desconto maior no SPED que no XML - verificar XML da NF-e"
+                                    confianca = "ALTA"
+                            except (ValueError, TypeError):
+                                pass
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        pass
+                
+                # 4. Análise de impacto em impostos
+                # Se há divergência em desconto, verificar se impacta impostos de forma consistente
+                if campo_nome in ['BC ICMS', 'ICMS', 'BC ST', 'ST']:
+                    delta_desc = row.get('Delta Desconto', 0)
+                    try:
+                        delta_desc_val = float(delta_desc) if delta_desc and (pd is None or not pd.isna(delta_desc)) else 0
+                        # Se há desconto maior no XML, é esperado que a BC ICMS seja menor
+                        if campo_nome == 'BC ICMS' and delta_desc_val > 0 and delta_valor < 0:
+                            tipo_divergencia = "CONSISTENTE_COM_DESCONTO"
+                            motivo_classificacao = "Redução de BC ICMS consistente com desconto maior no XML"
+                            confianca = "ALTA"
+                        elif campo_nome == 'ICMS' and delta_desc_val > 0 and delta_valor < 0:
+                            tipo_divergencia = "CONSISTENTE_COM_DESCONTO"
+                            motivo_classificacao = "Redução de ICMS consistente com desconto maior no XML"
+                            confianca = "ALTA"
+                    except (ValueError, TypeError):
+                        pass
+                
+                # 5. Verificar se múltiplos campos têm divergências consistentes
+                # (indicando padrão sistemático, não erro pontual)
+                divergencias_campos = sum(1 for dc, _ in campos_analise 
+                                       if dc in row.index and 
+                                       row[dc] is not None and 
+                                       (pd is None or not pd.isna(row[dc])) and 
+                                       abs(float(row[dc])) > 0.02)
+                
+                if divergencias_campos >= 3:
+                    # Múltiplas divergências podem indicar erro sistemático ou operação especial
+                    if tipo_divergencia == "ERRO_HUMANO":
+                        tipo_divergencia = "ERRO_SISTEMATICO"
+                        motivo_classificacao = f"Múltiplas divergências ({divergencias_campos} campos) - possível erro sistemático no preenchimento"
+                        confianca = "ALTA"
+                
+                # Adicionar ao resultado
+                rows.append({
+                    "CHAVE": chave,
+                    "CAMPO": campo_nome,
+                    "DELTA_COLUNA": delta_col,
+                    "VALOR_XML": valor_xml,
+                    "VALOR_SPED": valor_sped,
+                    "DIFERENCA": round(delta_valor, 2),
+                    "TIPO_DIVERGENCIA": tipo_divergencia,
+                    "MOTIVO_CLASSIFICACAO": motivo_classificacao,
+                    "CONFIANCA": confianca,
+                    "CFOP": cfop,
+                    "COD_SIT": cod_sit,
+                })
+    
+    except Exception as e:
+        logging.warning(f"Erro ao verificar divergências de valores legítimas: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return _df(rows, columns=[
+        "CHAVE", "CAMPO", "DELTA_COLUNA", "VALOR_XML", "VALOR_SPED", "DIFERENCA",
+        "TIPO_DIVERGENCIA", "MOTIVO_CLASSIFICACAO", "CONFIANCA", "CFOP", "COD_SIT"
+    ])
+
+# ---------------------------------------------------------------------------
 # 5) Orquestrador (opcional): tudo em um lugar
 # ---------------------------------------------------------------------------
 
@@ -903,6 +1369,19 @@ def run_all_validations(efd_txt: Path, xml_notes: List[Dict[str, Any]], rules: O
     # Somatórios
     out["Σ C170 = C100.VL_MERC"] = check_sum_c170_equals_c100_vl_merc(efd_txt)
     out["Σ C190.IPI = C100.VL_IPI"] = check_c190_ipi_equals_c100_vl_ipi(efd_txt)
+    
+    # Validação C170 x C190 (agregado por CFOP/CST)
+    try:
+        divergencias_c170_c190 = check_c170_equals_c190(efd_txt)
+        if not divergencias_c170_c190.empty:
+            # Verificar se divergências são legítimas
+            divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_txt, divergencias_c170_c190)
+            out["C170 x C190 (Divergências)"] = divergencias_legitimas
+        else:
+            out["C170 x C190 (Divergências)"] = pd.DataFrame({"OK": ["Nenhuma divergência encontrada"]})
+    except Exception as e:
+        logging.warning(f"Erro ao verificar C170 x C190: {e}")
+        out["C170 x C190 (Divergências)"] = pd.DataFrame({"ERRO": [str(e)]})
 
     # Apurações
     out["E110 ajustes detalhados"] = check_e110_requires_details(efd_txt)

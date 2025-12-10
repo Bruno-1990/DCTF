@@ -52,10 +52,12 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
       if (spedFile && xmlFiles.length > 0 && !setorDetectado && !isDetectando) {
         setIsDetectando(true);
         try {
-          const setor = await spedService.detectarSetor(spedFile, xmlFiles);
-          if (setor) {
-            setSetorDetectado(setor);
-            setSetoresSelecionados([setor]);
+          const setores = await spedService.detectarSetor(spedFile, xmlFiles);
+          if (setores && setores.length > 0) {
+            // Se detectou múltiplos setores, selecionar todos automaticamente
+            setSetoresSelecionados(setores);
+            // Para compatibilidade, manter setorDetectado como o primeiro
+            setSetorDetectado(setores[0]);
           } else {
             setSetorDetectado('');
             setSetoresSelecionados([]);
@@ -550,12 +552,34 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
                   <button
                     type="button"
                     onClick={() => setMostrarSeletorSetor(true)}
-                    className="group w-full px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center gap-2"
+                    className="group relative w-full px-6 py-4 text-base font-bold text-white bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 rounded-2xl border-2 border-blue-400 hover:border-blue-500 transition-all duration-300 shadow-lg hover:shadow-2xl flex items-center justify-center gap-3 overflow-hidden transform hover:scale-[1.02] active:scale-[0.98]"
                   >
-                    <svg className="h-5 w-5 text-gray-500 group-hover:text-blue-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
-                    {setoresSelecionados.length > 0 ? 'Gerenciar setores selecionados' : 'Selecionar setor(es)'}
+                    {/* Efeito de brilho animado */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                    
+                    {/* Ícone com animação */}
+                    <div className="relative z-10 flex items-center justify-center">
+                      <svg className="h-6 w-6 text-white group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </div>
+                    
+                    {/* Texto */}
+                    <span className="relative z-10">
+                      {setoresSelecionados.length > 0 ? 'Gerenciar Setores Selecionados' : 'Adicionar Setor'}
+                    </span>
+                    
+                    {/* Badge com contador se houver setores selecionados */}
+                    {setoresSelecionados.length > 0 && (
+                      <span className="relative z-10 inline-flex items-center justify-center px-3 py-1 text-xs font-bold text-blue-600 bg-white rounded-full shadow-md">
+                        {setoresSelecionados.length}
+                      </span>
+                    )}
+                    
+                    {/* Efeito de brilho no hover */}
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <div className="absolute inset-0 bg-gradient-to-r from-blue-400/50 via-white/30 to-indigo-400/50 blur-xl"></div>
+                    </div>
                   </button>
                 ) : (
                   <div className="relative overflow-hidden bg-gradient-to-br from-gray-50 to-blue-50 rounded-2xl border-2 border-gray-200 shadow-lg p-6">

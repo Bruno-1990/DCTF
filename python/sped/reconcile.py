@@ -797,6 +797,55 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None) -> Dic
                 mask = notes_df[delta_cols].apply(lambda col: col.apply(check_delta), axis=0).any(axis=1)
                 diff_val = int(mask.sum())
         checklist.append(("Diferenças de valores (Total/Frete/Desconto/BC ICMS/ICMS/BC ST/ST/IPI via C190)", diff_val))
+        
+        # Divergências C170 x C190
+        try:
+            from validators import check_c170_equals_c190, check_divergencias_legitimas_c170_c190
+            divergencias_c170_c190 = check_c170_equals_c190(efd_path)
+            if not divergencias_c170_c190.empty:
+                divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
+                # Contar divergências não legítimas (que requerem atenção)
+                if "E_LEGITIMA" in divergencias_legitimas.columns:
+                    div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
+                    checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
+                else:
+                    checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
+                # Adicionar ao relatório
+                out["C170 x C190 (Divergências)"] = divergencias_legitimas
+            else:
+                checklist.append(("Divergências C170 x C190", 0))
+        except Exception as e:
+            logging.warning(f"Erro ao verificar C170 x C190: {e}")
+            import traceback
+            traceback.print_exc()
+            checklist.append(("Divergências C170 x C190", "Erro"))
+
+        # Classificação de Divergências de Valores (Erro Humano vs Desconto Legítimo)
+        try:
+            from validators import check_divergencias_valores_legitimas
+            if xml_total and not notes_df.empty:
+                logging.info("Iniciando classificação de divergências de valores...")
+                divergencias_valores_classificadas = check_divergencias_valores_legitimas(notes_df, efd_path)
+                logging.info(f"Classificação concluída. Encontradas {len(divergencias_valores_classificadas)} divergências classificadas.")
+                if not divergencias_valores_classificadas.empty:
+                    # Contar por tipo de divergência
+                    if "TIPO_DIVERGENCIA" in divergencias_valores_classificadas.columns:
+                        erro_humano = divergencias_valores_classificadas[
+                            divergencias_valores_classificadas["TIPO_DIVERGENCIA"] == "ERRO_HUMANO"
+                        ]
+                        desconto_legitimo = divergencias_valores_classificadas[
+                            divergencias_valores_classificadas["TIPO_DIVERGENCIA"].isin([
+                                "DESCONTO_CONSISTENTE", "LEGITIMA_OPERACAO", "CONSISTENTE_COM_DESCONTO"
+                            ])
+                        ]
+                        checklist.append(("Divergências de valores - Erro Humano", len(erro_humano)))
+                        checklist.append(("Divergências de valores - Descontos Legítimos", len(desconto_legitimo)))
+                    # Adicionar ao relatório
+                    out["Divergências de Valores (Classificadas)"] = divergencias_valores_classificadas
+        except Exception as e:
+            logging.warning(f"Erro ao classificar divergências de valores: {e}")
+            import traceback
+            traceback.print_exc()
 
         # vNF casadas + somatórios
         diff_vnf_casadas = 0
