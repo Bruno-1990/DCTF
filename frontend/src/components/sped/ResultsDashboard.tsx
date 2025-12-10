@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ChartBarIcon, ArrowDownTrayIcon, ArrowPathIcon, DocumentCheckIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, ArrowDownTrayIcon, ArrowPathIcon, DocumentCheckIcon, ExclamationTriangleIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline';
 import { spedService } from '../../services/sped';
 import DivergenciasTable from './DivergenciasTable';
 import DivergenciasValoresConferencia from './DivergenciasValoresConferencia';
+import AjusteSpedComponent from './AjusteSpedComponent';
 
 interface ResultsDashboardProps {
   validationId: string;
@@ -27,7 +28,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   const [resultado, setResultado] = useState<ValidationResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'resumo' | 'divergencias' | 'conferencia'>('resumo');
+  const [activeTab, setActiveTab] = useState<'resumo' | 'divergencias' | 'conferencia' | 'ajuste'>('resumo');
 
   useEffect(() => {
     carregarResultado();
@@ -225,6 +226,17 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('ajuste')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'ajuste'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <WrenchScrewdriverIcon className="h-5 w-5 inline-block mr-2" />
+            Ajuste
+          </button>
         </nav>
       </div>
 
@@ -334,6 +346,10 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
 
         {activeTab === 'conferencia' && (
           <DivergenciasValoresConferencia divergencias={divergencias} notesDf={notesDf} />
+        )}
+
+        {activeTab === 'ajuste' && (
+          <AjusteSpedComponent validationId={validationId} resultado={resultado} />
         )}
       </div>
 

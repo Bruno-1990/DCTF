@@ -203,6 +203,40 @@ class SpedService {
   async deletarValidacao(validationId: string): Promise<void> {
     await axios.delete(`${API_BASE_URL}/api/sped/validacao/${validationId}`);
   }
+
+  /**
+   * Obtém lista de ajustes identificados
+   */
+  async obterAjustes(validationId: string): Promise<any[]> {
+    try {
+      const response = await axios.get<any[]>(
+        `${API_BASE_URL}/api/sped/validacao/${validationId}/ajustes`
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Erro ao obter ajustes:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Aplica ajustes selecionados e retorna arquivo SPED ajustado
+   */
+  async aplicarAjustes(validationId: string, ajustes: any[]): Promise<Blob> {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/sped/validacao/${validationId}/aplicar-ajustes`,
+        { ajustes },
+        {
+          responseType: 'blob',
+        }
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Erro ao aplicar ajustes:', error);
+      throw error;
+    }
+  }
 }
 
 export const spedService = new SpedService();

@@ -347,5 +347,63 @@ router.delete('/validacao/:validationId', async (req: Request, res: Response) =>
   }
 });
 
+/**
+ * GET /api/sped/validacao/:validationId/ajustes
+ * Obtém lista de ajustes identificados baseado em cruzamento inteligente
+ */
+router.get('/validacao/:validationId/ajustes', async (req: Request, res: Response) => {
+  try {
+    const { validationId } = req.params;
+    
+    const ajustes = await spedValidationService.obterAjustes(validationId);
+    
+    res.json(ajustes);
+  } catch (error: any) {
+    console.error('Erro ao obter ajustes:', error);
+    res.status(500).json({
+      error: 'Erro ao obter ajustes',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/sped/validacao/:validationId/aplicar-ajustes
+ * Aplica ajustes selecionados e retorna SPED ajustado
+ */
+router.post('/validacao/:validationId/aplicar-ajustes', async (req: Request, res: Response) => {
+  try {
+    const { validationId } = req.params;
+    const { ajustes } = req.body; // Lista de ajustes selecionados
+    
+    if (!ajustes || !Array.isArray(ajustes) || ajustes.length === 0) {
+      return res.status(400).json({
+        error: 'Lista de ajustes é obrigatória'
+      });
+    }
+    
+    const arquivoAjustado = await spedValidationService.aplicarAjustes(validationId, ajustes);
+    
+    if (!arquivoAjustado) {
+      return res.status(404).json({
+        error: 'Arquivo SPED ajustado não encontrado'
+      });
+    }
+    
+    const fs = require('fs');
+    const fileContent = fs.readFileSync(arquivoAjustado);
+    
+    res.setHeader('Content-Type', 'text/plain; charset=latin-1');
+    res.setHeader('Content-Disposition', `attachment; filename="SPED_AJUSTADO_${validationId}.txt"`);
+    res.send(fileContent);
+  } catch (error: any) {
+    console.error('Erro ao aplicar ajustes:', error);
+    res.status(500).json({
+      error: 'Erro ao aplicar ajustes',
+      message: error.message
+    });
+  }
+});
+
 export default router;
 

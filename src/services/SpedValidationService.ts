@@ -353,6 +353,139 @@ export class SpedValidationService {
   }
 
   /**
+   * Obtém lista de ajustes identificados baseado em cruzamento inteligente
+   */
+  async obterAjustes(validationId: string): Promise<any[]> {
+    const status = this.validations.get(validationId);
+    if (!status || status.status !== 'completed') {
+      throw new Error('Validação não encontrada ou não concluída');
+    }
+
+    const validationDir = path.join(this.tmpDir, validationId);
+    const spedPath = path.join(validationDir, 'sped.txt');
+    const xmlDir = path.join(validationDir, 'xmls');
+
+    if (!fs.existsSync(spedPath) || !fs.existsSync(xmlDir)) {
+      throw new Error('Arquivos da validação não encontrados');
+    }
+
+    // Executar script Python para análise de ajustes
+    const pythonScript = path.join(__dirname, '../../python/sped/processar_ajustes.py');
+    const outputPath = path.join(validationDir, 'ajustes.json');
+
+    try {
+      const pythonProcess = spawn('python', [
+        pythonScript,
+        spedPath,
+        xmlDir,
+        outputPath
+      ], {
+        cwd: path.join(__dirname, '../../python/sped'),
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdoutBuffer = '';
+      let stderrBuffer = '';
+
+      pythonProcess.stdout.on('data', (data: Buffer) => {
+        stdoutBuffer += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data: Buffer) => {
+        stderrBuffer += data.toString();
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        pythonProcess.on('close', (code: number) => {
+          if (code !== 0) {
+            reject(new Error(stderrBuffer || 'Erro ao processar ajustes'));
+          } else {
+            resolve();
+          }
+        });
+
+        pythonProcess.on('error', (error: Error) => {
+          reject(error);
+        });
+      });
+
+      // Ler resultado
+      if (fs.existsSync(outputPath)) {
+        const ajustesData = fs.readFileSync(outputPath, 'utf-8');
+        return JSON.parse(ajustesData);
+      } else {
+        throw new Error('Arquivo de ajustes não foi gerado');
+      }
+    } catch (error: any) {
+      console.error('Erro ao obter ajustes:', error);
+      throw new Error(`Erro ao obter ajustes: ${error.message}`);
+    }
+  }
+
+  /**
+   * Aplica ajustes selecionados e retorna caminho do arquivo SPED ajustado
+   */
+  async aplicarAjustes(validationId: string, ajustes: any[]): Promise<string | null> {
+    const status = this.validations.get(validationId);
+    if (!status || status.status !== 'completed') {
+      throw new Error('Validação não encontrada ou não concluída');
+    }
+
+    const validationDir = path.join(this.tmpDir, validationId);
+    const spedPath = path.join(validationDir, 'sped.txt');
+    const ajustesPath = path.join(validationDir, 'ajustes_selecionados.json');
+
+    // Salvar ajustes selecionados
+    fs.writeFileSync(ajustesPath, JSON.stringify(ajustes, null, 2), 'utf-8');
+
+    // Executar script Python para gerar SPED ajustado
+    const pythonScript = path.join(__dirname, '../../python/sped/aplicar_ajustes.py');
+    const outputPath = path.join(validationDir, 'sped_ajustado.txt');
+
+    try {
+      const pythonProcess = spawn('python', [
+        pythonScript,
+        spedPath,
+        ajustesPath,
+        outputPath
+      ], {
+        cwd: path.join(__dirname, '../../python/sped'),
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stderrBuffer = '';
+
+      pythonProcess.stderr.on('data', (data: Buffer) => {
+        stderrBuffer += data.toString();
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        pythonProcess.on('close', (code: number) => {
+          if (code !== 0) {
+            reject(new Error(stderrBuffer || 'Erro ao aplicar ajustes'));
+          } else {
+            resolve();
+          }
+        });
+
+        pythonProcess.on('error', (error: Error) => {
+          reject(error);
+        });
+      });
+
+      // Verificar se arquivo foi gerado
+      if (fs.existsSync(outputPath)) {
+        return outputPath;
+      } else {
+        throw new Error('Arquivo SPED ajustado não foi gerado');
+      }
+    } catch (error: any) {
+      console.error('Erro ao aplicar ajustes:', error);
+      throw new Error(`Erro ao aplicar ajustes: ${error.message}`);
+    }
+  }
+
+  /**
    * Cria script Python para processamento
    */
   private async criarScriptPython(): Promise<void> {
