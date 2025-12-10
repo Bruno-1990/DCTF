@@ -847,12 +847,72 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
             # Mensagem mais descritiva no checklist
             checklist.append(("Divergências C170 x C190", f"Erro: {error_msg[:50]}"))
 
+        # Validações adicionais baseadas em legislação (sem quebrar código existente)
+        try:
+            from validators_legislacao import (
+                check_relacionamento_c100_c170_c190,
+                check_base_calculo_consistente,
+                check_impostos_calculados_corretamente,
+                check_sequencia_registros,
+                check_apuracao_consistente,
+                check_c190_preenchimento_correto
+            )
+            if efd_path is not None:
+                # Relacionamento C100-C170-C190
+                relacionamento = check_relacionamento_c100_c170_c190(efd_path)
+                if not relacionamento.empty:
+                    out["Relacionamento C100-C170-C190"] = relacionamento
+                    checklist.append(("Validações de Relacionamento", len(relacionamento)))
+                
+                # Bases de cálculo consistentes
+                bases_calculo = check_base_calculo_consistente(efd_path)
+                if not bases_calculo.empty:
+                    out["Bases de Cálculo Inconsistentes"] = bases_calculo
+                    checklist.append(("Bases de Cálculo Inconsistentes", len(bases_calculo)))
+                
+                # Cálculos de impostos
+                impostos = check_impostos_calculados_corretamente(efd_path)
+                if not impostos.empty:
+                    out["Cálculos de Impostos Inconsistentes"] = impostos
+                    checklist.append(("Cálculos de Impostos", len(impostos)))
+                
+                # Sequência de registros
+                sequencia = check_sequencia_registros(efd_path)
+                if not sequencia.empty:
+                    out["Sequência de Registros"] = sequencia
+                    checklist.append(("Sequência de Registros", len(sequencia)))
+                
+                # Validação de Apuração (E110/E116)
+                apuracao = check_apuracao_consistente(efd_path)
+                if not apuracao.empty:
+                    out["Apuração - Consistência"] = apuracao
+                    checklist.append(("Inconsistências na Apuração", len(apuracao)))
+                
+                # Validação de Preenchimento do C190
+                c190_preenchimento = check_c190_preenchimento_correto(efd_path)
+                if not c190_preenchimento.empty:
+                    out["C190 - Preenchimento Incorreto"] = c190_preenchimento
+                    checklist.append(("C190 não preenchido corretamente", len(c190_preenchimento)))
+        except ImportError:
+            # Se o módulo não existir, não quebra o código
+            logging.info("Módulo validators_legislacao não disponível - validações adicionais não serão executadas")
+        except Exception as e:
+            logging.warning(f"Erro ao executar validações adicionais: {e}")
+
         # Classificação de Divergências de Valores (Erro Humano vs Desconto Legítimo)
         try:
             from validators import check_divergencias_valores_legitimas
             if xml_total and not notes_df.empty and efd_path is not None:
                 logging.info("Iniciando classificação de divergências de valores...")
-                divergencias_valores_classificadas = check_divergencias_valores_legitimas(notes_df, efd_path)
+                # Obter setores das regras se disponível
+                sectors_list = None
+                if rules and isinstance(rules, dict):
+                    # Tentar extrair setores das regras (se houver metadados)
+                    # Por enquanto, passar rules diretamente
+                    pass
+                divergencias_valores_classificadas = check_divergencias_valores_legitimas(
+                    notes_df, efd_path, rules=rules, sectors=sectors_list
+                )
                 logging.info(f"Classificação concluída. Encontradas {len(divergencias_valores_classificadas)} divergências classificadas.")
                 if not divergencias_valores_classificadas.empty:
                     # Contar por tipo de divergência

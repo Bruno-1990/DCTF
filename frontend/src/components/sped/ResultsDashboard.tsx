@@ -3,6 +3,7 @@ import { ChartBarIcon, ArrowDownTrayIcon, ArrowPathIcon, DocumentCheckIcon, Excl
 import { spedService } from '../../services/sped';
 import DivergenciasTable from './DivergenciasTable';
 import DivergenciasValoresConferencia from './DivergenciasValoresConferencia';
+import DivergenciasInteligentes from './DivergenciasInteligentes';
 import AjusteSpedComponent from './AjusteSpedComponent';
 
 interface ResultsDashboardProps {
@@ -141,6 +142,10 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   // A chave está em 'reports' (retornado por make_reports)
   const divergenciasClassificadas = reports['Divergências de Valores (Classificadas)'] || 
                                     validacoes['Divergências de Valores (Classificadas)'] || [];
+  // Buscar divergências de apuração
+  const divergenciasApuracao = validacoes['Apuração - Consistência'] || reports['Apuração - Consistência'] || [];
+  // Buscar divergências de preenchimento do C190
+  const divergenciasC190Preenchimento = validacoes['C190 - Preenchimento Incorreto'] || reports['C190 - Preenchimento Incorreto'] || [];
   
   // Debug: mostrar estrutura do resultado
   console.log('Estrutura do resultado:', {
@@ -281,8 +286,14 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
 
         {activeTab === 'divergencias' && (
           <>
-            {divergencias.length > 0 ? (
-              <DivergenciasTable divergencias={divergencias} />
+            {(divergencias.length > 0 || (divergenciasC170C190 && divergenciasC170C190.length > 0) || (divergenciasClassificadas && divergenciasClassificadas.length > 0) || (divergenciasApuracao && divergenciasApuracao.length > 0) || (divergenciasC190Preenchimento && divergenciasC190Preenchimento.length > 0)) ? (
+              <DivergenciasInteligentes
+                divergenciasC170C190={Array.isArray(divergenciasC170C190) ? divergenciasC170C190 : []}
+                divergenciasValores={Array.isArray(divergenciasClassificadas) ? divergenciasClassificadas : []}
+                divergenciasApuracao={Array.isArray(divergenciasApuracao) ? divergenciasApuracao : []}
+                divergenciasC190Preenchimento={Array.isArray(divergenciasC190Preenchimento) ? divergenciasC190Preenchimento : []}
+                outrasDivergencias={divergencias}
+              />
             ) : (
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h3 className="text-xl font-semibold mb-4 flex items-center">

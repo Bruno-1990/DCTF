@@ -1110,20 +1110,168 @@ def check_divergencias_legitimas_c170_c190(
     ])
 
 
+def _aplicar_regras_setor_divergencia(
+    campo_nome: str,
+    chave: str,
+    cfop: str,
+    cst: str,
+    valor_xml: float,
+    valor_sped: float,
+    delta_valor: float,
+    efd_txt: Optional[Path],
+    rules: Optional[Dict[str, Any]] = None
+) -> Tuple[bool, str]:
+    """
+    Aplica regras específicas do setor para determinar se uma divergência é legítima.
+    
+    Retorna: (é_legitima, motivo)
+    """
+    motivo = []
+    é_legitima = False
+    
+    # Aplicar regras específicas por campo
+    if campo_nome == 'BC ST':
+        return _verificar_bc_st_legitima_zero(chave, cfop, cst, valor_xml, valor_sped, efd_txt, rules)
+    
+    # Regras genéricas baseadas em CFOP e CST
+    if rules:
+        cfop_expected = rules.get("cfop_expected", {})
+        if cfop and cfop in cfop_expected:
+            cfop_rules = cfop_expected[cfop]
+            notes = cfop_rules.get("notes", [])
+            
+            # Verificar se há notas específicas sobre o campo
+            for note in notes:
+                if isinstance(note, str):
+                    note_upper = note.upper()
+                    campo_upper = campo_nome.upper()
+                    # Se a nota menciona o campo ou é genérica sobre operações especiais
+                    if campo_upper in note_upper or any(palavra in note_upper for palavra in ['ESPECIAL', 'DIFERENCIADO', 'REGIME']):
+                        motivo.append(f"Regra do setor para {cfop}: {note}")
+                        é_legitima = True
+                        break
+    
+    motivo_final = " | ".join(motivo) if motivo else ""
+    return é_legitima, motivo_final
+
+
+def _verificar_bc_st_legitima_zero(
+    chave: str,
+    cfop: str,
+    cst: str,
+    valor_xml: float,
+    valor_sped: float,
+    efd_txt: Optional[Path],
+    rules: Optional[Dict[str, Any]] = None
+) -> Tuple[bool, str]:
+    """
+    Verifica se BC ST zerado no SPED é legítimo baseado em regras de setor e legislação.
+    
+    Retorna: (é_legitima, motivo)
+    """
+    # Se não há divergência significativa, não é problema
+    if abs(valor_xml - valor_sped) < 0.02:
+        return True, "Sem divergência significativa"
+    
+    # Se SPED tem valor, não é caso de zero legítimo
+    if abs(valor_sped) > 0.02:
+        return False, ""
+    
+    # Se XML também está zerado, não há problema
+    if abs(valor_xml) < 0.02:
+        return True, "Ambos zerados"
+    
+    motivo = []
+    é_legitima = False
+    
+    # 1. Verificar se é CFOP interestadual (remetente pode retirar ST)
+    if cfop:
+        cfop_str = str(cfop).strip()
+        # CFOPs interestaduais começam com 1 (entrada) ou 2 (saída)
+        # Para entrada interestadual, o destinatário pode não lançar BC ST se remetente retém
+        if len(cfop_str) >= 1:
+            primeiro_digito = cfop_str[0]
+            if primeiro_digito in ['1', '2']:
+                # Verificar se é operação interestadual (segundo dígito)
+                if len(cfop_str) >= 2 and cfop_str[1] in ['1', '2']:
+                    motivo.append("CFOP interestadual - ST pode ser retida pelo remetente")
+                    é_legitima = True
+    
+    # 2. Verificar CST específicos que podem ter ST zerada
+    if cst:
+        cst_str = str(cst).strip()
+        # CST 500: ST retida anteriormente - pode não ter BC ST no SPED
+        if cst_str in ['500', '50']:
+            motivo.append("CST 500 (ST retida anteriormente) - BC ST pode ser zero no SPED")
+            é_legitima = True
+        # CST 60: ST retida - verificar se remetente retém
+        elif cst_str in ['060', '60']:
+            motivo.append("CST 60 (ST) - verificar se remetente é responsável pela retenção")
+            # Não é automaticamente legítimo, precisa verificar mais contexto
+    
+    # 3. Verificar regras específicas do setor
+    if rules:
+        # Verificar se há regras específicas para CFOP no setor
+        cfop_expected = rules.get("cfop_expected", {})
+        if cfop and cfop in cfop_expected:
+            cfop_rules = cfop_expected[cfop]
+            expected_cst = cfop_rules.get("expected_cst", [])
+            notes = cfop_rules.get("notes", [])
+            
+            # Se há nota sobre ST no setor, considerar
+            for note in notes:
+                if isinstance(note, str) and ("ST" in note.upper() or "substituição" in note.lower()):
+                    motivo.append(f"Regra do setor: {note}")
+                    é_legitima = True
+                    break
+    
+    # 4. Verificar se há registro C176 (desfazimento de ST)
+    if efd_txt and efd_txt.exists():
+        try:
+            with efd_txt.open("r", encoding="latin1", errors="ignore") as f:
+                for ln in f:
+                    # Procurar C176 relacionado à chave
+                    if ln.startswith("|C176|") and chave in ln:
+                        motivo.append("Registro C176 (desfazimento de ST) presente - BC ST pode ser ajustado")
+                        é_legitima = True
+                        break
+        except Exception:
+            pass
+    
+    motivo_final = " | ".join(motivo) if motivo else ""
+    return é_legitima, motivo_final
+
+
 def check_divergencias_valores_legitimas(
     notes_df: pd.DataFrame,
-    efd_txt: Optional[Path] = None
+    efd_txt: Optional[Path] = None,
+    rules: Optional[Dict[str, Any]] = None,
+    sectors: Optional[List[str]] = None
 ) -> pd.DataFrame:
     """
     Verifica se divergências de valores (especialmente descontos) são legítimas
     ou causadas por erro humano.
     
-    Análises realizadas:
-    1. Proporcionalidade: Se o desconto é proporcional ao valor total
-    2. Consistência histórica: Se o mesmo fornecedor/cliente tem padrão similar
-    3. Impacto em impostos: Se a diferença afeta cálculos de ICMS/ST de forma consistente
-    4. Tipo de operação: CFOPs que permitem descontos diferenciados
-    5. Arredondamento: Diferenças muito pequenas (< R$ 0,10)
+    Análises realizadas (em ordem de prioridade):
+    1. Arredondamento: Diferenças muito pequenas (< R$ 0,10)
+    2. Regras específicas do setor: Aplica regras de setor (comércio, construção, etc.) para determinar
+       se divergências são legítimas baseadas em CFOP, CST e características da operação
+    3. Tipo de operação: CFOPs que permitem descontos diferenciados (cancelados, devoluções, etc.)
+    4. Proporcionalidade: Se o desconto é proporcional ao valor total
+    5. Impacto em impostos: Se a diferença afeta cálculos de ICMS/ST de forma consistente
+    6. Padrões sistemáticos: Múltiplas divergências indicando erro sistemático
+    
+    Validações específicas para BC ST:
+    - Verifica CFOPs interestaduais (ST pode ser retida pelo remetente)
+    - Verifica CST 500 (ST retida anteriormente)
+    - Verifica presença de C176 (desfazimento de ST)
+    - Aplica regras específicas do setor para CFOPs com ST
+    
+    Parâmetros:
+    - notes_df: DataFrame com divergências encontradas
+    - efd_txt: Caminho para arquivo SPED (opcional)
+    - rules: Dicionário com regras do setor (opcional)
+    - sectors: Lista de setores da empresa (opcional)
     
     Retorna DataFrame com colunas: CHAVE, CAMPO, DELTA_COLUNA, VALOR_XML, VALOR_SPED,
     DIFERENCA, TIPO_DIVERGENCIA, MOTIVO_CLASSIFICACAO, CONFIANCA, CFOP, COD_SIT
@@ -1160,8 +1308,29 @@ def check_divergencias_valores_legitimas(
         
         # Mapear C100 para obter CFOP e COD_SIT
         c100_map = {}
+        c170_map = {}  # Mapear C170 para obter CST por chave
         if efd_txt:
             c100_map = _get_c100_map(efd_txt)
+            # Mapear C170 para obter CST
+            try:
+                from parsers import split_sped_line
+                current_key = None
+                with efd_txt.open("r", encoding="latin1", errors="ignore") as f:
+                    for ln in f:
+                        if ln.startswith("|C100|"):
+                            fs = split_sped_line(ln, min_fields=10)
+                            if len(fs) >= 10:
+                                current_key = (fs[9] or "").strip() or None
+                        elif ln.startswith("|C170|") and current_key:
+                            fs = split_sped_line(ln, min_fields=21)
+                            if len(fs) >= 11:
+                                cst = (fs[10] or "").strip()
+                                if current_key not in c170_map:
+                                    c170_map[current_key] = []
+                                if cst:
+                                    c170_map[current_key].append(cst)
+            except Exception:
+                pass
         
         # Tentar obter CFOP do notes_df se disponível
         tem_cfop_no_df = 'CFOP' in notes_df.columns if pd is not None else False
@@ -1181,6 +1350,12 @@ def check_divergencias_valores_legitimas(
                 cfop = str(row.get("CFOP", "") or "")
             # Se não tiver no row, tentar buscar do C100 (precisa parsear linha C100)
             # Por enquanto, deixar vazio se não estiver disponível
+            
+            # Obter CST do C170 (pegar o primeiro CST encontrado para a chave)
+            cst = ""
+            cst_list = c170_map.get(chave, [])
+            if cst_list:
+                cst = cst_list[0]  # Usar o primeiro CST encontrado
         
             # Analisar cada campo com divergência
             for delta_col, campo_nome in campos_analise:
@@ -1237,8 +1412,26 @@ def check_divergencias_valores_legitimas(
                     motivo_classificacao = f"Diferença muito pequena (R$ {abs(delta_valor):.2f}) - provável arredondamento"
                     confianca = "ALTA"
                 
-                # 2. Verificar tipo de operação (CFOP/COD_SIT)
-                elif CFOPClassifier and cfop:
+                # 2. Aplicar regras específicas do setor (PRIORIDADE ALTA - antes de outras validações)
+                elif rules:
+                    try:
+                        val_xml_num = float(valor_xml) if valor_xml else 0
+                        val_sped_num = float(valor_sped) if valor_sped else 0
+                        
+                        # Verificar se a divergência é legítima baseada em regras de setor
+                        é_legitima_setor, motivo_setor = _aplicar_regras_setor_divergencia(
+                            campo_nome, chave, cfop, cst, val_xml_num, val_sped_num, delta_valor, efd_txt, rules
+                        )
+                        
+                        if é_legitima_setor and motivo_setor:
+                            tipo_divergencia = "LEGITIMA_OPERACAO"
+                            motivo_classificacao = f"Divergência pode ser legítima conforme regras do setor: {motivo_setor}"
+                            confianca = "ALTA"
+                    except (ValueError, TypeError):
+                        pass
+                
+                # 3. Verificar tipo de operação (CFOP/COD_SIT)
+                if tipo_divergencia == "ERRO_HUMANO" and CFOPClassifier and cfop:
                     try:
                         tipo_op = CFOPClassifier.get_tipo_operacao(cfop, cod_sit)
                         if tipo_op in ["CANCELADO", "DENEGADO", "INUTILIZADO"]:
@@ -1252,8 +1445,8 @@ def check_divergencias_valores_legitimas(
                     except Exception:
                         pass
                 
-                # 3. Análise de proporcionalidade (especialmente para descontos)
-                elif campo_nome == 'Desconto' and valor_xml is not None and valor_sped is not None:
+                # 4. Análise de proporcionalidade (especialmente para descontos)
+                if tipo_divergencia == "ERRO_HUMANO" and campo_nome == 'Desconto' and valor_xml is not None and valor_sped is not None:
                     try:
                         vnf_xml = float(row.get('XML_vNF', 0) or 0)
                         vnf_sped = float(row.get('SPED_VL_DOC', 0) or 0)
@@ -1288,9 +1481,9 @@ def check_divergencias_valores_legitimas(
                     except (ValueError, TypeError, ZeroDivisionError):
                         pass
                 
-                # 4. Análise de impacto em impostos
+                # 5. Análise de impacto em impostos
                 # Se há divergência em desconto, verificar se impacta impostos de forma consistente
-                if campo_nome in ['BC ICMS', 'ICMS', 'BC ST', 'ST']:
+                if campo_nome in ['BC ICMS', 'ICMS', 'ST']:
                     delta_desc = row.get('Delta Desconto', 0)
                     try:
                         delta_desc_val = float(delta_desc) if delta_desc and (pd is None or not pd.isna(delta_desc)) else 0
@@ -1306,7 +1499,7 @@ def check_divergencias_valores_legitimas(
                     except (ValueError, TypeError):
                         pass
                 
-                # 5. Verificar se múltiplos campos têm divergências consistentes
+                # 6. Verificar se múltiplos campos têm divergências consistentes
                 # (indicando padrão sistemático, não erro pontual)
                 divergencias_campos = sum(1 for dc, _ in campos_analise 
                                        if dc in row.index and 
