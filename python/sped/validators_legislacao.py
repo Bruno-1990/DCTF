@@ -6,6 +6,7 @@ Estas validações são complementares às existentes em validators.py
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 import logging
+import re
 
 try:
     import pandas as pd

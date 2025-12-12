@@ -47,33 +47,53 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
   const xmlDropZoneRef = useRef<HTMLDivElement>(null);
 
   // Detectar setor automaticamente quando SPED e XMLs estiverem prontos
+  // Com debounce para evitar múltiplas chamadas quando muitos arquivos são adicionados
   useEffect(() => {
-    const detectarSetor = async () => {
-      if (spedFile && xmlFiles.length > 0 && !setorDetectado && !isDetectando) {
-        setIsDetectando(true);
-        try {
-          const setores = await spedService.detectarSetor(spedFile, xmlFiles);
-          if (setores && setores.length > 0) {
-            // Se detectou múltiplos setores, selecionar todos automaticamente
-            setSetoresSelecionados(setores);
-            // Para compatibilidade, manter setorDetectado como o primeiro
-            setSetorDetectado(setores[0]);
-          } else {
-            setSetorDetectado('');
-            setSetoresSelecionados([]);
-          }
-        } catch (error) {
-          console.warn('Erro ao detectar setor:', error);
+    // Se já detectou ou está detectando, não fazer nada
+    if (setorDetectado !== null || isDetectando) {
+      return;
+    }
+
+    // Se não tem arquivos necessários, não fazer nada
+    if (!spedFile || xmlFiles.length === 0) {
+      return;
+    }
+
+    // Debounce: aguardar 1 segundo após a última mudança antes de detectar
+    const timeoutId = setTimeout(async () => {
+      // Verificar novamente se ainda não foi detectado (pode ter mudado durante o debounce)
+      if (setorDetectado !== null || isDetectando || !spedFile || xmlFiles.length === 0) {
+        return;
+      }
+
+      setIsDetectando(true);
+      try {
+        const setores = await spedService.detectarSetor(spedFile, xmlFiles);
+        if (setores && setores.length > 0) {
+          // Se detectou múltiplos setores, selecionar todos automaticamente
+          setSetoresSelecionados(setores);
+          // Para compatibilidade, manter setorDetectado como o primeiro
+          setSetorDetectado(setores[0]);
+        } else {
           setSetorDetectado('');
           setSetoresSelecionados([]);
-        } finally {
-          setIsDetectando(false);
         }
+      } catch (error: any) {
+        // Não logar erro 429 repetidamente
+        if (error.response?.status !== 429) {
+          console.warn('Erro ao detectar setor:', error);
+        }
+        setSetorDetectado('');
+        setSetoresSelecionados([]);
+      } finally {
+        setIsDetectando(false);
       }
-    };
+    }, 1500); // 1.5 segundos de debounce
 
-    detectarSetor();
-  }, [spedFile, xmlFiles.length]);
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [spedFile, xmlFiles.length, setorDetectado, isDetectando]);
 
   const handleSpedFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

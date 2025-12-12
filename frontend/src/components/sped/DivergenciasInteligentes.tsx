@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ExclamationTriangleIcon, 
   CheckCircleIcon,
@@ -9,9 +9,12 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ClipboardIcon,
-  CheckIcon
+  CheckIcon,
+  WrenchScrewdriverIcon,
+  ArrowDownTrayIcon
 } from '@heroicons/react/24/outline';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { spedService } from '../../services/sped';
 
 interface DivergenciaC170C190 {
   CHAVE?: string;
@@ -26,6 +29,14 @@ interface DivergenciaC170C190 {
   MOTIVO_LEGITIMO?: string;
   TIPO_OPERACAO?: string;
   COD_SIT?: string;
+  // Campos de solução automática
+  SOLUCAO_AUTOMATICA?: string;
+  REGISTRO_CORRIGIR?: string;
+  CAMPO_CORRIGIR?: string;
+  VALOR_CORRETO?: number;
+  FORMULA_LEGAL?: string;
+  REFERENCIA_LEGAL?: string;
+  DETALHES?: string;
 }
 
 interface DivergenciaValor {
@@ -40,6 +51,13 @@ interface DivergenciaValor {
   CONFIANCA?: string;
   CFOP?: string;
   COD_SIT?: string;
+  SOLUCAO_AUTOMATICA?: string;
+  REGISTRO_CORRIGIR?: string;
+  CAMPO_CORRIGIR?: string;
+  VALOR_CORRETO?: number;
+  FORMULA_LEGAL?: string;
+  REFERENCIA_LEGAL?: string;
+  DETALHES_ITENS?: string;  // JSON string
 }
 
 interface DivergenciaApuracao {
@@ -91,13 +109,16 @@ interface Props {
   divergenciasApuracao?: DivergenciaApuracao[];
   divergenciasC190Preenchimento?: DivergenciaC190Preenchimento[];
   outrasDivergencias?: any[];
+  validationId?: string; // ID da validação para aplicar correções
 }
 
 // Função para gerar recomendações inteligentes baseadas em legislação
 const gerarRecomendacao = (div: DivergenciaC170C190 | DivergenciaValor | DivergenciaApuracao | DivergenciaC190Preenchimento | any): Recomendacao => {
+  // Se div tem dadosOriginais, usar eles (caso seja um objeto formatado)
+  const dadosReais = (div as any).dadosOriginais || div;
   // Divergências de C190 Preenchimento (verificar primeiro para evitar conflito)
-  if ('TIPO' in div && div.TIPO === 'C190 não preenchido' && 'VALOR_C170_BC_ICMS' in div) {
-    const d = div as DivergenciaC190Preenchimento;
+  if ('TIPO' in dadosReais && dadosReais.TIPO === 'C190 não preenchido' && 'VALOR_C170_BC_ICMS' in dadosReais) {
+    const d = dadosReais as DivergenciaC190Preenchimento;
     const valorTotalC170 = Math.abs(d.VALOR_C170_BC_ICMS || 0) + Math.abs(d.VALOR_C170_ICMS || 0) + 
                           Math.abs(d.VALOR_C170_BC_ST || 0) + Math.abs(d.VALOR_C170_ICMS_ST || 0) + 
                           Math.abs(d.VALOR_C170_IPI || 0);
@@ -126,8 +147,8 @@ const gerarRecomendacao = (div: DivergenciaC170C190 | DivergenciaValor | Diverge
   }
   
   // Divergências de Apuração (verificar antes de outros tipos)
-  if ('TIPO' in div && 'VALOR_ESCRITURADO' in div && 'VALOR_APURADO' in div && div.TIPO !== 'C190 não preenchido') {
-    const d = div as DivergenciaApuracao;
+  if ('TIPO' in dadosReais && 'VALOR_ESCRITURADO' in dadosReais && 'VALOR_APURADO' in dadosReais && dadosReais.TIPO !== 'C190 não preenchido') {
+    const d = dadosReais as DivergenciaApuracao;
     const diferenca = Math.abs(d.DIFERENCA || 0);
     const severidade = (d.SEVERIDADE || 'media').toLowerCase();
     
@@ -152,8 +173,8 @@ const gerarRecomendacao = (div: DivergenciaC170C190 | DivergenciaValor | Diverge
   }
   
   // Divergências C170 x C190
-  if ('E_LEGITIMA' in div) {
-    const d = div as DivergenciaC170C190;
+  if ('E_LEGITIMA' in dadosReais) {
+    const d = dadosReais as DivergenciaC170C190;
     
     if (d.E_LEGITIMA) {
       return {
@@ -174,7 +195,80 @@ const gerarRecomendacao = (div: DivergenciaC170C190 | DivergenciaValor | Diverge
       };
     }
     
-    // Divergências que requerem atenção
+    // PRIORIDADE: Se temos solução automática, usar ela (verificação mais robusta)
+    const solucao = d.SOLUCAO_AUTOMATICA;
+    
+    // Debug para C170 x C190
+    console.log('[gerarRecomendacao - C170 x C190] Verificando solução:', {
+      chave: d.CHAVE,
+      cfop: d.CFOP,
+      cst: d.CST,
+      campo: d.CAMPO,
+      solucao,
+      tipo: typeof solucao,
+      isNull: solucao === null,
+      isUndefined: solucao === undefined,
+      isFalse: solucao === false,
+      truthy: !!solucao,
+      todasChaves: Object.keys(d),
+      registroCorrigir: d.REGISTRO_CORRIGIR,
+      valorCorreto: d.VALOR_CORRETO
+    });
+    
+    if (solucao != null && solucao !== undefined && solucao !== false) {
+      // Converter para string se necessário
+      const solucaoStr = String(solucao).trim();
+      
+      if (solucaoStr !== '' && solucaoStr !== 'null' && solucaoStr !== 'undefined' && solucaoStr !== 'None' && solucaoStr !== 'nan') {
+        console.log('[gerarRecomendacao - C170 x C190] ✅ Solução válida encontrada! Usando solução automática.');
+        
+        const detalhes = [solucaoStr];
+        
+        // Adicionar valor correto se disponível
+        if (d.VALOR_CORRETO !== undefined && d.VALOR_CORRETO !== null) {
+          detalhes.push(`Valor correto a lançar: ${formatCurrency(d.VALOR_CORRETO)}`);
+        }
+        
+        // Adicionar registro específico a corrigir
+        if (d.REGISTRO_CORRIGIR && d.REGISTRO_CORRIGIR !== 'NENHUM') {
+          detalhes.push(`Registro a corrigir: ${d.REGISTRO_CORRIGIR}`);
+          if (d.CAMPO_CORRIGIR) {
+            detalhes.push(`Campo específico: ${d.CAMPO_CORRIGIR}`);
+          }
+        }
+        
+        // Adicionar detalhes se disponível
+        if (d.DETALHES) {
+          detalhes.push(d.DETALHES);
+        }
+        
+        // Adicionar fórmula legal se disponível
+        if (d.FORMULA_LEGAL) {
+          detalhes.push(`Fórmula legal: ${d.FORMULA_LEGAL}`);
+        }
+        
+        return {
+          acao: d.REGISTRO_CORRIGIR === 'NENHUM' ? 'Não requer correção' : `Corrigir ${d.REGISTRO_CORRIGIR || 'C190'}`,
+          prioridade: (d.SEVERIDADE === 'alta' ? 'alta' : 'media') as 'alta' | 'media' | 'baixa',
+          detalhes: detalhes,
+          icon: d.REGISTRO_CORRIGIR === 'NENHUM' ? 
+            <CheckCircleIcon className="h-5 w-5 text-green-600" /> :
+            <XCircleIcon className="h-5 w-5 text-red-600" />,
+          referenciaLegal: {
+            artigo: d.REFERENCIA_LEGAL || 'Ato COTEPE/ICMS nº 44/2018, Seção 3, Bloco C',
+            norma: d.FORMULA_LEGAL || 'Os valores dos itens (C170) devem bater com os totais (C190) por CFOP/CST',
+            prazo: d.REGISTRO_CORRIGIR === 'NENHUM' ? 'Não aplicável' : 'Corrigir antes da próxima apuração',
+            penalidade: d.REGISTRO_CORRIGIR === 'NENHUM' ? undefined : 'Multa por inconsistência na escrituração fiscal'
+          }
+        };
+      } else {
+        console.log('[gerarRecomendacao - C170 x C190] ⚠️ Solução vazia ou inválida:', solucaoStr);
+      }
+    } else {
+      console.log('[gerarRecomendacao - C170 x C190] ⚠️ Solução não encontrada ou falsy');
+    }
+    
+    // Fallback para recomendações genéricas se não houver solução automática
     const diferenca = Math.abs(d.DIFERENCA || 0);
     const campo = d.CAMPO || '';
     
@@ -221,9 +315,110 @@ const gerarRecomendacao = (div: DivergenciaC170C190 | DivergenciaValor | Diverge
   }
   
   // Divergências de Valores
-  if ('TIPO_DIVERGENCIA' in div) {
-    const d = div as DivergenciaValor;
+  if ('TIPO_DIVERGENCIA' in dadosReais) {
+    const d = dadosReais as DivergenciaValor;
     
+    // Debug: Log para verificar se SOLUCAO_AUTOMATICA está presente
+    if (!d.SOLUCAO_AUTOMATICA || d.SOLUCAO_AUTOMATICA === '') {
+      console.log('[gerarRecomendacao] SOLUCAO_AUTOMATICA não encontrada ou vazia para divergência de valores:', {
+        chave: d.CHAVE,
+        campo: d.CAMPO || d.DELTA_COLUNA,
+        tipoDivergencia: d.TIPO_DIVERGENCIA,
+        todasChaves: Object.keys(d),
+        temDadosOriginais: !!(div as any).dadosOriginais,
+        solucaoAutomatica: d.SOLUCAO_AUTOMATICA,
+        tipoSolucao: typeof d.SOLUCAO_AUTOMATICA
+      });
+    }
+    
+    // Se temos solução automática (não vazia), usar ela (verificação mais robusta)
+    const solucao = d.SOLUCAO_AUTOMATICA;
+    
+    // Debug detalhado
+    console.log('[gerarRecomendacao - Valores] Verificando solução:', {
+      solucao,
+      tipo: typeof solucao,
+      isNull: solucao === null,
+      isUndefined: solucao === undefined,
+      isFalse: solucao === false,
+      truthy: !!solucao,
+      todasChaves: Object.keys(d)
+    });
+    
+    if (solucao != null && solucao !== undefined && solucao !== false) {
+      // Converter para string se necessário
+      const solucaoStr = String(solucao).trim();
+      console.log('[gerarRecomendacao - Valores] Solução convertida para string:', {
+        solucaoStr,
+        length: solucaoStr.length,
+        isEmpty: solucaoStr === '',
+        isNull: solucaoStr === 'null',
+        isUndefined: solucaoStr === 'undefined',
+        isNone: solucaoStr === 'None',
+        isNan: solucaoStr === 'nan'
+      });
+      
+      if (solucaoStr !== '' && solucaoStr !== 'null' && solucaoStr !== 'undefined' && solucaoStr !== 'None' && solucaoStr !== 'nan') {
+        console.log('[gerarRecomendacao - Valores] ✅ Solução válida encontrada! Usando solução automática.');
+        const detalhes = [solucaoStr];
+        
+        // Adicionar valor correto se disponível
+        if (d.VALOR_CORRETO !== undefined) {
+          detalhes.push(`Valor correto a lançar: ${formatCurrency(d.VALOR_CORRETO)}`);
+        }
+        
+        // Adicionar registro específico a corrigir
+        if (d.REGISTRO_CORRIGIR && d.REGISTRO_CORRIGIR !== 'NENHUM') {
+          detalhes.push(`Registro a corrigir: ${d.REGISTRO_CORRIGIR}`);
+          if (d.CAMPO_CORRIGIR) {
+            detalhes.push(`Campo específico: ${d.CAMPO_CORRIGIR}`);
+          }
+        }
+        
+        // Adicionar fórmula legal se disponível
+        if (d.FORMULA_LEGAL) {
+          detalhes.push(`Fórmula legal: ${d.FORMULA_LEGAL}`);
+        }
+      
+      // Adicionar detalhes de itens se disponível
+      if (d.DETALHES_ITENS) {
+        try {
+          const itens = JSON.parse(d.DETALHES_ITENS);
+          if (Array.isArray(itens) && itens.length > 0) {
+            detalhes.push('\nDetalhes item a item:');
+            itens.slice(0, 5).forEach((item: any, idx: number) => {
+              detalhes.push(
+                `  ${idx + 1}. Item ${item.nItem || 'N/A'} (CFOP ${item.CFOP || 'N/A'}, CST ${item.CST || 'N/A'}): ` +
+                `XML: ${formatCurrency(item.valor_xml || 0)}, SPED: ${formatCurrency(item.valor_sped || 0)}`
+              );
+            });
+            if (itens.length > 5) {
+              detalhes.push(`  ... e mais ${itens.length - 5} item(ns)`);
+            }
+          }
+        } catch (e) {
+          // Ignorar erro de parse JSON
+        }
+      }
+      
+        return {
+          acao: d.REGISTRO_CORRIGIR === 'NENHUM' ? 'Não requer correção' : `Corrigir ${d.REGISTRO_CORRIGIR || 'SPED'}`,
+          prioridade: (d.CONFIANCA === 'ALTA' ? 'alta' : 'media') as 'alta' | 'media' | 'baixa',
+          detalhes: detalhes,
+          icon: d.REGISTRO_CORRIGIR === 'NENHUM' ? 
+            <CheckCircleIcon className="h-5 w-5 text-green-600" /> :
+            <XCircleIcon className="h-5 w-5 text-red-600" />,
+          referenciaLegal: {
+            artigo: d.REFERENCIA_LEGAL || 'Guia Prático EFD-ICMS/IPI, Capítulo III, Seção 3',
+            norma: d.FORMULA_LEGAL || 'Valores informados no SPED devem corresponder aos valores dos documentos fiscais',
+            prazo: d.REGISTRO_CORRIGIR === 'NENHUM' ? 'Não aplicável' : 'Imediato - antes da transmissão',
+            penalidade: d.REGISTRO_CORRIGIR === 'NENHUM' ? undefined : 'Multa por erro na escrituração fiscal'
+          }
+        };
+      }
+    }
+    
+    // Fallback para recomendações genéricas se não houver solução automática
     if (d.TIPO_DIVERGENCIA === 'ERRO_HUMANO' || d.TIPO_DIVERGENCIA === 'ERRO_SISTEMATICO') {
       return {
         acao: 'Corrigir no SPED',
@@ -294,20 +489,74 @@ const DivergenciasInteligentes: React.FC<Props> = ({
   divergenciasValores = [],
   divergenciasApuracao = [],
   divergenciasC190Preenchimento = [],
-  outrasDivergencias = []
+  outrasDivergencias = [],
+  validationId
 }) => {
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas');
   const [filtroPrioridade, setFiltroPrioridade] = useState<string>('todas');
   const [busca, setBusca] = useState<string>('');
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
   const [copiedChave, setCopiedChave] = useState<string | null>(null);
+  const [aplicandoCorrecao, setAplicandoCorrecao] = useState<number | null>(null);
+  const [correcoesAplicadas, setCorrecoesAplicadas] = useState<Set<number>>(new Set());
+
+  // Debug: Log dos dados recebidos
+  useEffect(() => {
+    console.log('[DivergenciasInteligentes] Props recebidas:', {
+      divergenciasC170C190: divergenciasC170C190?.length || 0,
+      divergenciasValores: divergenciasValores?.length || 0,
+      divergenciasApuracao: divergenciasApuracao?.length || 0,
+      divergenciasC190Preenchimento: divergenciasC190Preenchimento?.length || 0,
+    });
+    
+    if (divergenciasValores && divergenciasValores.length > 0) {
+      const primeira = divergenciasValores[0];
+      console.log('[DivergenciasInteligentes] Primeira divergência de valores:', primeira);
+      console.log('[DivergenciasInteligentes] Tem SOLUCAO_AUTOMATICA?', 'SOLUCAO_AUTOMATICA' in primeira);
+      console.log('[DivergenciasInteligentes] Valor de SOLUCAO_AUTOMATICA:', primeira.SOLUCAO_AUTOMATICA);
+      console.log('[DivergenciasInteligentes] Tipo de SOLUCAO_AUTOMATICA:', typeof primeira.SOLUCAO_AUTOMATICA);
+      console.log('[DivergenciasInteligentes] Chaves:', Object.keys(primeira));
+      console.log('[DivergenciasInteligentes] Todas as propriedades:', JSON.stringify(primeira, null, 2));
+      if (primeira.SOLUCAO_AUTOMATICA) {
+        console.log('[DivergenciasInteligentes] Solução encontrada:', primeira.SOLUCAO_AUTOMATICA.substring(0, 100));
+      } else {
+        console.warn('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA está vazia ou não existe!');
+      }
+    }
+    
+    if (divergenciasC170C190 && divergenciasC170C190.length > 0) {
+      const primeira = divergenciasC170C190[0];
+      console.log('[DivergenciasInteligentes] Primeira divergência C170 x C190:', primeira);
+      console.log('[DivergenciasInteligentes] Tem SOLUCAO_AUTOMATICA?', 'SOLUCAO_AUTOMATICA' in primeira);
+      if (primeira.SOLUCAO_AUTOMATICA) {
+        console.log('[DivergenciasInteligentes] Solução C170 x C190 encontrada:', primeira.SOLUCAO_AUTOMATICA.substring(0, 100));
+      }
+    }
+  }, [divergenciasC170C190, divergenciasValores, divergenciasApuracao, divergenciasC190Preenchimento]);
 
   // Agrupar e formatar todas as divergências
   const divergenciasFormatadas = useMemo(() => {
     const resultado: any[] = [];
     
     // Adicionar C170 x C190
-    divergenciasC170C190.forEach(div => {
+    divergenciasC170C190.forEach((div, idx) => {
+      // Debug detalhado para C170 x C190 (apenas primeira)
+      if (idx === 0) {
+        console.log('[DivergenciasInteligentes] Primeira divergência C170 x C190:', div);
+        console.log('[DivergenciasInteligentes] Todas as chaves do objeto:', Object.keys(div));
+        console.log('[DivergenciasInteligentes] Tem SOLUCAO_AUTOMATICA?', 'SOLUCAO_AUTOMATICA' in div);
+        console.log('[DivergenciasInteligentes] Valor SOLUCAO_AUTOMATICA:', div.SOLUCAO_AUTOMATICA);
+        console.log('[DivergenciasInteligentes] Tipo SOLUCAO_AUTOMATICA:', typeof div.SOLUCAO_AUTOMATICA);
+        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA truthy?', !!div.SOLUCAO_AUTOMATICA);
+        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === null?', div.SOLUCAO_AUTOMATICA === null);
+        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === undefined?', div.SOLUCAO_AUTOMATICA === undefined);
+        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === ""?', div.SOLUCAO_AUTOMATICA === '');
+        console.log('[DivergenciasInteligentes] String(SOLUCAO_AUTOMATICA):', String(div.SOLUCAO_AUTOMATICA || ''));
+        console.log('[DivergenciasInteligentes] REGISTRO_CORRIGIR:', div.REGISTRO_CORRIGIR);
+        console.log('[DivergenciasInteligentes] VALOR_CORRETO:', div.VALOR_CORRETO);
+        console.log('[DivergenciasInteligentes] FORMULA_LEGAL:', div.FORMULA_LEGAL);
+      }
+      
       const rec = gerarRecomendacao(div);
       resultado.push({
         categoria: 'C170 x C190',
@@ -326,8 +575,32 @@ const DivergenciasInteligentes: React.FC<Props> = ({
     });
     
     // Adicionar Divergências de Valores
-    divergenciasValores.forEach(div => {
+    divergenciasValores.forEach((div, index) => {
+      // Debug: Log da primeira divergência para inspeção
+      if (index === 0) {
+        console.log('[DivergenciasInteligentes] Processando primeira divergência de valores:', div);
+        console.log('[DivergenciasInteligentes] Tem SOLUCAO_AUTOMATICA?', 'SOLUCAO_AUTOMATICA' in div);
+        console.log('[DivergenciasInteligentes] Valor SOLUCAO_AUTOMATICA:', div.SOLUCAO_AUTOMATICA);
+        console.log('[DivergenciasInteligentes] Tipo SOLUCAO_AUTOMATICA:', typeof div.SOLUCAO_AUTOMATICA);
+        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA truthy?', !!div.SOLUCAO_AUTOMATICA);
+        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === null?', div.SOLUCAO_AUTOMATICA === null);
+        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === undefined?', div.SOLUCAO_AUTOMATICA === undefined);
+        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === ""?', div.SOLUCAO_AUTOMATICA === '');
+        console.log('[DivergenciasInteligentes] String(SOLUCAO_AUTOMATICA):', String(div.SOLUCAO_AUTOMATICA || ''));
+        console.log('[DivergenciasInteligentes] Todas as chaves:', Object.keys(div));
+        console.log('[DivergenciasInteligentes] JSON completo:', JSON.stringify(div, null, 2));
+      }
+      
       const rec = gerarRecomendacao(div);
+      
+      // Debug: Verificar se a recomendação tem detalhes da solução
+      if (index === 0 && rec && rec.detalhes) {
+        console.log('[DivergenciasInteligentes] Recomendação gerada:', {
+          acao: rec.acao,
+          detalhesCount: rec.detalhes.length,
+          primeiroDetalhe: rec.detalhes[0]?.substring(0, 100)
+        });
+      }
       resultado.push({
         categoria: 'Valores Divergentes',
         chave: div.CHAVE || '',
@@ -449,6 +722,100 @@ const DivergenciasInteligentes: React.FC<Props> = ({
     setExpandedCards(new Set());
   };
 
+  const aplicarCorrecao = async (index: number, div: any) => {
+    if (!validationId) {
+      alert('ID de validação não disponível');
+      return;
+    }
+
+    const dadosOriginais = div.dadosOriginais || div;
+    
+    // Verificar se tem solução automática implementável
+    if (!dadosOriginais.SOLUCAO_AUTOMATICA || !dadosOriginais.REGISTRO_CORRIGIR || dadosOriginais.VALOR_CORRETO === undefined) {
+      alert('Esta divergência não possui correção automática disponível');
+      return;
+    }
+
+    setAplicandoCorrecao(index);
+
+    try {
+      const correcao = {
+        registro_corrigir: String(dadosOriginais.REGISTRO_CORRIGIR || '').trim(),
+        campo: String(dadosOriginais.CAMPO || dadosOriginais.CAMPO_CORRIGIR || '').trim(),
+        valor_correto: parseFloat(String(dadosOriginais.VALOR_CORRETO || 0)),
+        chave: String(dadosOriginais.CHAVE || '').trim(),
+        cfop: String(dadosOriginais.CFOP || '').trim(),
+        cst: String(dadosOriginais.CST || '').trim(),
+        linha_sped: dadosOriginais.LINHA_SPED ? parseInt(String(dadosOriginais.LINHA_SPED)) : undefined
+      };
+
+      const resultado = await spedService.aplicarCorrecao(validationId, correcao);
+
+      if (resultado.success) {
+        setCorrecoesAplicadas(new Set([...correcoesAplicadas, index]));
+        alert(`✅ Correção aplicada com sucesso!\n\n${resultado.message}`);
+      } else {
+        alert(`❌ Erro ao aplicar correção: ${resultado.message || 'Erro desconhecido'}`);
+      }
+    } catch (error: any) {
+      console.error('Erro ao aplicar correção:', error);
+      alert(`❌ Erro ao aplicar correção: ${error.message || 'Erro desconhecido'}`);
+    } finally {
+      setAplicandoCorrecao(null);
+    }
+  };
+
+  const aplicarTodasCorrecoes = async () => {
+    if (!validationId) {
+      alert('ID de validação não disponível');
+      return;
+    }
+
+    if (!confirm('Deseja aplicar TODAS as correções automáticas disponíveis? Esta ação modificará o arquivo SPED.')) {
+      return;
+    }
+
+    setAplicandoCorrecao(-1); // -1 indica "aplicando todas"
+
+    try {
+      const resultado = await spedService.aplicarTodasCorrecoes(validationId);
+
+      if (resultado.success) {
+        alert(`✅ ${resultado.correcoes_aplicadas || 0} de ${resultado.total_correcoes || 0} correções aplicadas com sucesso!\n\n${resultado.message}`);
+        // Marcar todas as correções aplicadas
+        const indicesAplicados = new Set<number>();
+        divergenciasFormatadas.forEach((div, idx) => {
+          const dadosOriginais = div.dadosOriginais || div;
+          if (dadosOriginais.SOLUCAO_AUTOMATICA && dadosOriginais.REGISTRO_CORRIGIR) {
+            indicesAplicados.add(idx);
+          }
+        });
+        setCorrecoesAplicadas(indicesAplicados);
+      } else {
+        alert(`❌ Erro ao aplicar correções: ${resultado.message || 'Erro desconhecido'}`);
+      }
+    } catch (error: any) {
+      console.error('Erro ao aplicar todas as correções:', error);
+      alert(`❌ Erro ao aplicar correções: ${error.message || 'Erro desconhecido'}`);
+    } finally {
+      setAplicandoCorrecao(null);
+    }
+  };
+
+  const baixarSpedCorrigido = async () => {
+    if (!validationId) {
+      alert('ID de validação não disponível');
+      return;
+    }
+
+    try {
+      await spedService.baixarSpedCorrigido(validationId);
+    } catch (error: any) {
+      console.error('Erro ao baixar SPED corrigido:', error);
+      alert(`❌ Erro ao baixar SPED corrigido: ${error.message || 'Erro desconhecido'}`);
+    }
+  };
+
   const copyToClipboard = async (chave: string) => {
     try {
       // Remove espaços da chave para copiar apenas os números
@@ -528,6 +895,42 @@ const DivergenciasInteligentes: React.FC<Props> = ({
       {/* Estatísticas e Controles */}
       {divergenciasFormatadas.length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-4">
+          <div className="flex items-center justify-between mb-4">
+            {/* Botão para aplicar todas as correções */}
+            {validationId && divergenciasFormatadas.some(div => {
+              const dadosOriginais = div.dadosOriginais || div;
+              return dadosOriginais.SOLUCAO_AUTOMATICA && dadosOriginais.REGISTRO_CORRIGIR;
+            }) && (
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={aplicarTodasCorrecoes}
+                  disabled={aplicandoCorrecao === -1}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                >
+                  {aplicandoCorrecao === -1 ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Aplicando todas as correções...
+                    </>
+                  ) : (
+                    <>
+                      <WrenchScrewdriverIcon className="h-5 w-5" />
+                      Aplicar Todas as Correções Automáticas
+                    </>
+                  )}
+                </button>
+                {(correcoesAplicadas.size > 0 || aplicandoCorrecao === -1) && (
+                  <button
+                    onClick={baixarSpedCorrigido}
+                    className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                  >
+                    <ArrowDownTrayIcon className="h-5 w-5" />
+                    Baixar SPED Corrigido
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <div className="flex items-center justify-between mb-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1">
               <div className="text-center">
@@ -684,26 +1087,142 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                 {/* Conteúdo expandível */}
                 {isExpanded && (
                   <div className="px-4 pb-4 border-t border-gray-200 pt-4 space-y-4">
-                    {/* Recomendação */}
-                    <div className={`p-4 rounded-lg ${
-                      div.recomendacao.prioridade === 'alta' ? 'bg-red-50 border border-red-200' :
-                      div.recomendacao.prioridade === 'media' ? 'bg-yellow-50 border border-yellow-200' :
-                      'bg-blue-50 border border-blue-200'
-                    }`}>
-                      <div className="flex items-start gap-3">
-                        <LightBulbIcon className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-gray-900 mb-2">
-                            {div.recomendacao.acao}
-                          </h4>
-                          <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
-                            {div.recomendacao.detalhes.map((detalhe, i) => (
-                              <li key={i}>{detalhe}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
+                    {/* Solução Implementável ou Recomendação */}
+                    {(() => {
+                      const dadosOriginais = div.dadosOriginais || div;
+                      // Verificar se tem solução automática (verificação mais robusta)
+                      const solucaoAutomatica = dadosOriginais.SOLUCAO_AUTOMATICA;
+                      const registroCorrigir = dadosOriginais.REGISTRO_CORRIGIR;
+                      const valorCorreto = dadosOriginais.VALOR_CORRETO;
+                      
+                      const temSolucaoAutomatica = solucaoAutomatica && 
+                                                   solucaoAutomatica !== '' &&
+                                                   solucaoAutomatica !== 'null' &&
+                                                   solucaoAutomatica !== 'undefined' &&
+                                                   solucaoAutomatica !== 'None' &&
+                                                   solucaoAutomatica !== 'nan' &&
+                                                   registroCorrigir && 
+                                                   registroCorrigir !== '' &&
+                                                   registroCorrigir !== 'NENHUM' &&
+                                                   valorCorreto !== undefined &&
+                                                   valorCorreto !== null;
+                      const correcaoAplicada = correcoesAplicadas.has(index);
+                      
+                      if (temSolucaoAutomatica) {
+                        return (
+                          <div className={`p-4 rounded-lg ${
+                            correcaoAplicada 
+                              ? 'bg-green-50 border-2 border-green-500' 
+                              : 'bg-blue-50 border-2 border-blue-500'
+                          }`}>
+                            <div className="flex items-start gap-3">
+                              {correcaoAplicada ? (
+                                <CheckCircleIcon className="h-6 w-6 text-green-600 mt-0.5 flex-shrink-0" />
+                              ) : (
+                                <WrenchScrewdriverIcon className="h-6 w-6 text-blue-600 mt-0.5 flex-shrink-0" />
+                              )}
+                              <div className="flex-1">
+                                <h4 className={`font-bold text-lg mb-3 ${
+                                  correcaoAplicada ? 'text-green-900' : 'text-blue-900'
+                                }`}>
+                                  {correcaoAplicada ? '✅ Correção Aplicada' : '🔧 Solução Automática Implementável'}
+                                </h4>
+                                
+                                <div className="space-y-3 mb-4">
+                                  <div className="bg-white p-3 rounded border border-gray-200">
+                                    <p className="font-semibold text-gray-900 mb-2">Instrução de Correção:</p>
+                                    <p className="text-sm text-gray-700 whitespace-pre-line">
+                                      {String(solucaoAutomatica || '').trim()}
+                                    </p>
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <span className="font-medium text-gray-700">Registro a corrigir:</span>
+                                      <span className="ml-2 font-mono text-blue-700">{String(registroCorrigir || '').trim()}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-gray-700">Campo:</span>
+                                      <span className="ml-2 font-mono text-blue-700">{String(dadosOriginais.CAMPO || dadosOriginais.CAMPO_CORRIGIR || '').trim()}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-gray-700">Valor atual:</span>
+                                      <span className="ml-2 text-red-600 font-semibold">
+                                        {formatCurrency(div.valor2 || 0)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-gray-700">Valor correto:</span>
+                                      <span className="ml-2 text-green-600 font-semibold">
+                                        {formatCurrency(valorCorreto || 0)}
+                                      </span>
+                                    </div>
+                                    {dadosOriginais.LINHA_SPED && (
+                                      <div className="col-span-2">
+                                        <span className="font-medium text-gray-700">Linha no SPED:</span>
+                                        <span className="ml-2 font-mono text-blue-700">{dadosOriginais.LINHA_SPED}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {dadosOriginais.FORMULA_LEGAL && (
+                                    <div className="bg-gray-50 p-2 rounded text-xs font-mono text-gray-700">
+                                      <span className="font-semibold">Fórmula Legal:</span> {dadosOriginais.FORMULA_LEGAL}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {!correcaoAplicada && validationId && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      aplicarCorrecao(index, div);
+                                    }}
+                                    disabled={aplicandoCorrecao === index}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2"
+                                  >
+                                    {aplicandoCorrecao === index ? (
+                                      <>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                        Aplicando correção...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <WrenchScrewdriverIcon className="h-5 w-5" />
+                                        Aplicar Correção Automaticamente
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      } else {
+                        // Fallback para recomendações genéricas (quando não há solução automática)
+                        return (
+                          <div className={`p-4 rounded-lg ${
+                            div.recomendacao.prioridade === 'alta' ? 'bg-red-50 border border-red-200' :
+                            div.recomendacao.prioridade === 'media' ? 'bg-yellow-50 border border-yellow-200' :
+                            'bg-blue-50 border border-blue-200'
+                          }`}>
+                            <div className="flex items-start gap-3">
+                              <LightBulbIcon className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-gray-900 mb-2">
+                                  {div.recomendacao.acao}
+                                </h4>
+                                <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+                                  {div.recomendacao.detalhes.map((detalhe, i) => (
+                                    <li key={i}>{detalhe}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                    })()}
 
                     {/* Referência Legal */}
                     {div.recomendacao.referenciaLegal && (

@@ -137,6 +137,14 @@ class Server {
     this.app.use('/api/situacao-fiscal', situacaoFiscalRoutes);
     this.app.use('/api/host-dados', hostDadosRoutes);
     this.app.use('/api/sci', sciRoutes);
+    // Rotas de correções automáticas (DEVEM vir ANTES de /api/sped para evitar conflito)
+    const spedCorrecoesRoutes = require('./routes/sped_correcoes').default;
+    this.app.use('/api/sped/correcoes', spedCorrecoesRoutes);
+    console.log('✅ Rotas de correções registradas: /api/sped/correcoes');
+    console.log('   - POST /api/sped/correcoes/aplicar');
+    console.log('   - POST /api/sped/correcoes/aplicar-todas');
+    console.log('   - GET /api/sped/correcoes/:validationId/download');
+    
     this.app.use('/api/sped', spedRoutes);
 
     // Root endpoint

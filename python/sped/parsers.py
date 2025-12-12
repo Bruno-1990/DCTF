@@ -399,6 +399,7 @@ def parse_xml_nfe(path: Path) -> Dict[str, Any]:
             if icms_node is not None:
                 icms_child = next(iter(icms_node), None)
                 if icms_child is not None:
+                    # Campos básicos do ICMS
                     for t in ("orig", "CST", "CSOSN", "modBC", "vBC", "pICMS", "vICMS"):
                         node = icms_child.find(f"nfe:{t}", NS_NFE)
                         val2 = node.text if node is not None else None
@@ -411,6 +412,29 @@ def parse_xml_nfe(path: Path) -> Dict[str, Any]:
                                 except Exception:
                                     val2 = None
                         icms[t] = val2
+                    
+                    # Campos de ST (Substituição Tributária)
+                    for t in ("vBCST", "pST", "vICMSST", "pRedBCST", "vBCSTRet", "vICMSSTRet"):
+                        node = icms_child.find(f"nfe:{t}", NS_NFE)
+                        val2 = node.text if node is not None else None
+                        if val2 is not None:
+                            try:
+                                val2 = float(str(val2).replace(",", "."))
+                            except Exception:
+                                try:
+                                    val2 = float(val2)
+                                except Exception:
+                                    val2 = None
+                        icms[t] = val2
+                    
+                    # Adicionar vST como alias de vICMSST para compatibilidade
+                    if "vICMSST" in icms:
+                        icms["vST"] = icms["vICMSST"]
+                    if "vBCST" in icms:
+                        item["vBCST"] = icms["vBCST"]
+                    if "vICMSST" in icms:
+                        item["vST"] = icms["vICMSST"]
+        
         item["ICMS"] = icms
         items.append(item)
 
@@ -532,22 +556,49 @@ def parse_efd_e110_e116_e310_e316(file_path: Path):
     return {"E110": pd.DataFrame(e110_rows), "E116": pd.DataFrame(e116_rows), "E310": pd.DataFrame(e310_rows), "E316": pd.DataFrame(e316_rows)}
 
 def parse_efd_c195_c197(file_path: Path):
-    ajustes_por_chave: Dict[str, List[Dict[str, Any]]] = {}
+    """
+    Parseia C195 (Observações) e C197 (Ajustes) por chave NF-e.
+    Retorna: {chave_nf: {"c195": [...], "c197": [...]}}
+    """
+    ajustes_por_chave: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
     current_key = None
+    current_c195 = None
+    
     with file_path.open("r", encoding="latin1", errors="ignore") as f:
         for ln in f:
             if ln.startswith("|C100|"):
                 # CORREÇÃO: Usar split_sped_line para preservar campos vazios
                 fs = split_sped_line(ln, min_fields=10)
                 current_key = (fs[9] or "").strip() if len(fs) > 9 else None
+                current_c195 = None
+            elif ln.startswith("|C195|") and current_key:
+                # C195: REG(1), COD_OBS(2), TXT_COMPL(3)
+                fs = split_sped_line(ln, min_fields=4)
+                if current_key not in ajustes_por_chave:
+                    ajustes_por_chave[current_key] = {"c195": [], "c197": []}
+                ajustes_por_chave[current_key]["c195"].append({
+                    "COD_OBS": (fs[2] or "").strip(),
+                    "TXT_COMPL": (fs[3] or "").strip() if len(fs) > 3 else ""
+                })
+                current_c195 = len(ajustes_por_chave[current_key]["c195"]) - 1
             elif ln.startswith("|C197|") and current_key:
-                # CORREÇÃO: Usar split_sped_line para preservar campos vazios
+                # C197: REG(1), COD_AJ(2), DESCR_COMPL_AJ(3), COD_ITEM(4), VL_BC_ICMS(5), ALIQ_ICMS(6), VL_ICMS(7), VL_OUTROS(8)
                 fs = split_sped_line(ln, min_fields=9)
                 def pdv(i):
                     try: 
                         return float(str(fs[i]).replace(",", ".")) if fs[i] else 0.0
                     except Exception: 
                         return 0.0
-                row = {"COD_AJ": fs[2], "DESCR_COMPL_AJ": fs[3], "COD_ITEM": fs[4], "VL_BC_ICMS": pdv(5), "ALIQ_ICMS": pdv(6), "VL_ICMS": pdv(7), "VL_OUTROS": pdv(8)}
-                ajustes_por_chave.setdefault(current_key, []).append(row)
+                if current_key not in ajustes_por_chave:
+                    ajustes_por_chave[current_key] = {"c195": [], "c197": []}
+                row = {
+                    "COD_AJ": (fs[2] or "").strip(),
+                    "DESCR_COMPL_AJ": (fs[3] or "").strip() if len(fs) > 3 else "",
+                    "COD_ITEM": (fs[4] or "").strip() if len(fs) > 4 else "",
+                    "VL_BC_ICMS": pdv(5),
+                    "ALIQ_ICMS": pdv(6),
+                    "VL_ICMS": pdv(7),
+                    "VL_OUTROS": pdv(8)
+                }
+                ajustes_por_chave[current_key]["c197"].append(row)
     return ajustes_por_chave

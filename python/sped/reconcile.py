@@ -58,7 +58,7 @@ class Materiais:
     map_0150: Dict[str, Dict[str, Any]]
     set_0190: set
     apur_e: Dict[str, pd.DataFrame]
-    ajustes_c197: Dict[str, List[Dict[str, Any]]]
+    ajustes_c197: Dict[str, Dict[str, List[Dict[str, Any]]]]  # Novo formato: {"c195": [...], "c197": [...]}
 
 
 def build_dataframes(efd_path, xml_folder) -> Materiais:
@@ -107,6 +107,8 @@ def build_dataframes(efd_path, xml_folder) -> Materiais:
 
 def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_path: Optional[Path] = None) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
+    # Criar alias 'materiais' para compatibilidade com código existente
+    materiais = data
     efd = data.efd_c100
     c190_by_key = data.c190_by_key
     c190_by_triple = data.c190_by_triple
@@ -238,11 +240,24 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
 
     if ajustes_c197:
         rows_c197 = []
-        for ch, lst in ajustes_c197.items():
-            for a in lst:
-                rows_c197.append({"CHAVE": ch, **a})
+        rows_c195 = []
+        for ch, info in ajustes_c197.items():
+            # Novo formato: {"c195": [...], "c197": [...]}
+            if isinstance(info, dict):
+                c197_list = info.get("c197", [])
+                c195_list = info.get("c195", [])
+                for a in c197_list:
+                    rows_c197.append({"CHAVE": ch, **a})
+                for a in c195_list:
+                    rows_c195.append({"CHAVE": ch, **a})
+            else:
+                # Formato antigo (compatibilidade): lista direta de C197
+                for a in info:
+                    rows_c197.append({"CHAVE": ch, **a})
         if rows_c197:
             out["Ajustes (C197)"] = pd.DataFrame(rows_c197)
+        if rows_c195:
+            out["Observações (C195)"] = pd.DataFrame(rows_c195)
 
 
     # XML inválidos (evento, cancelamento, etc.)
@@ -829,12 +844,188 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                 if not tem_erro:
                     if not divergencias_c170_c190.empty:
                         divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
+                        
+                        # Garantir que colunas de solução existam ANTES de processar
+                        colunas_solucao = ["SOLUCAO_AUTOMATICA", "REGISTRO_CORRIGIR", "VALOR_CORRETO", "FORMULA_LEGAL", "DETALHES"]
+                        for col in colunas_solucao:
+                            if col not in divergencias_legitimas.columns:
+                                divergencias_legitimas[col] = ""
+                        
+                        # Adicionar soluções automáticas para divergências não legítimas
+                        try:
+                            from validators_solucoes import processar_divergencias_c170_c190_com_solucoes
+                            logging.info(f"[C170 x C190] ========== INICIANDO PROCESSAMENTO DE SOLUÇÕES ==========")
+                            logging.info(f"[C170 x C190] Total de divergências: {len(divergencias_legitimas)}")
+                            if "E_LEGITIMA" in divergencias_legitimas.columns:
+                                div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
+                                logging.info(f"[C170 x C190] ✅ Divergências não legítimas encontradas: {len(div_nao_legitimas)}")
+                                if not div_nao_legitimas.empty:
+                                    logging.info(f"[C170 x C190] Chamando processar_divergencias_c170_c190_com_solucoes...")
+                                    logging.info(f"[C170 x C190] XML notes disponíveis: {len(materiais.xml_nf) if materiais.xml_nf else 0}")
+                                    logging.info(f"[C170 x C190] EFD path: {efd_path}")
+                                    div_nao_legitimas = processar_divergencias_c170_c190_com_solucoes(
+                                        div_nao_legitimas, materiais.xml_nf, efd_path
+                                    )
+                                    logging.info(f"[C170 x C190] Processamento concluído. Verificando soluções...")
+                                    if "SOLUCAO_AUTOMATICA" in div_nao_legitimas.columns:
+                                        solucoes_nao_vazias = (div_nao_legitimas["SOLUCAO_AUTOMATICA"] != "").sum()
+                                        logging.info(f"[C170 x C190] Soluções não vazias após processamento: {solucoes_nao_vazias} de {len(div_nao_legitimas)}")
+                                        if solucoes_nao_vazias > 0:
+                                            exemplo = div_nao_legitimas[div_nao_legitimas["SOLUCAO_AUTOMATICA"] != ""].iloc[0]
+                                            logging.info(f"[C170 x C190] Exemplo de solução gerada: {str(exemplo.get('SOLUCAO_AUTOMATICA', ''))[:200]}")
+                                    else:
+                                        logging.error(f"[C170 x C190] ❌ SOLUCAO_AUTOMATICA não está nas colunas após processamento!")
+                                    
+                                    # Atualizar divergências legítimas com soluções usando merge (mais robusto)
+                                    # Garantir que as colunas existam em ambos os DataFrames
+                                    for col in colunas_solucao:
+                                        if col not in divergencias_legitimas.columns:
+                                            divergencias_legitimas[col] = ""
+                                        if col not in div_nao_legitimas.columns:
+                                            div_nao_legitimas[col] = ""
+                                    
+                                    # Usar merge baseado em colunas de identificação (mais confiável que índice)
+                                    # Criar uma chave única para fazer o merge
+                                    logging.info(f"[C170 x C190] Antes do merge - div_nao_legitimas shape: {div_nao_legitimas.shape}")
+                                    logging.info(f"[C170 x C190] Antes do merge - divergencias_legitimas shape: {divergencias_legitimas.shape}")
+                                    
+                                    # Criar chave única para merge (CHAVE + CFOP + CST + CAMPO)
+                                    if "CHAVE" in div_nao_legitimas.columns and "CHAVE" in divergencias_legitimas.columns:
+                                        div_nao_legitimas["_merge_key"] = (
+                                            div_nao_legitimas["CHAVE"].astype(str) + "_" +
+                                            div_nao_legitimas["CFOP"].astype(str) + "_" +
+                                            div_nao_legitimas["CST"].astype(str) + "_" +
+                                            div_nao_legitimas["CAMPO"].astype(str)
+                                        )
+                                        divergencias_legitimas["_merge_key"] = (
+                                            divergencias_legitimas["CHAVE"].astype(str) + "_" +
+                                            divergencias_legitimas["CFOP"].astype(str) + "_" +
+                                            divergencias_legitimas["CST"].astype(str) + "_" +
+                                            divergencias_legitimas["CAMPO"].astype(str)
+                                        )
+                                        
+                                        # Criar DataFrame apenas com as colunas de solução e a chave de merge
+                                        div_solucoes = div_nao_legitimas[["_merge_key"] + colunas_solucao].copy()
+                                        
+                                        # Remover duplicatas da chave de merge antes do merge (manter a primeira ocorrência)
+                                        div_solucoes = div_solucoes.drop_duplicates(subset=["_merge_key"], keep='first')
+                                        
+                                        logging.info(f"[C170 x C190] Após remover duplicatas - div_solucoes shape: {div_solucoes.shape}")
+                                        
+                                        # Fazer merge baseado na chave
+                                        divergencias_legitimas = divergencias_legitimas.merge(
+                                            div_solucoes, 
+                                            on="_merge_key",
+                                            how='left',
+                                            suffixes=('', '_new')
+                                        )
+                                        
+                                        # Atualizar colunas originais com valores novos (se existirem)
+                                        for col in colunas_solucao:
+                                            col_new = f"{col}_new"
+                                            if col_new in divergencias_legitimas.columns:
+                                                # Atualizar apenas onde há valor novo e não vazio
+                                                mask = (
+                                                    divergencias_legitimas[col_new].notna() & 
+                                                    (divergencias_legitimas[col_new] != "")
+                                                )
+                                                divergencias_legitimas.loc[mask, col] = divergencias_legitimas.loc[mask, col_new]
+                                                # Remover coluna temporária
+                                                divergencias_legitimas = divergencias_legitimas.drop(columns=[col_new])
+                                        
+                                        # Remover chave de merge temporária
+                                        divergencias_legitimas = divergencias_legitimas.drop(columns=["_merge_key"])
+                                        logging.info(f"[C170 x C190] Após merge - divergencias_legitimas shape: {divergencias_legitimas.shape}")
+                                    else:
+                                        logging.error(f"[C170 x C190] ❌ Coluna CHAVE não encontrada para fazer merge!")
+                                else:
+                                    logging.warning(f"[C170 x C190] Nenhuma divergência não legítima encontrada para processar soluções")
+                                    
+                                    # Garantir que strings vazias sejam preservadas (não None)
+                                    for col in ["SOLUCAO_AUTOMATICA", "REGISTRO_CORRIGIR", "FORMULA_LEGAL"]:
+                                        if col in divergencias_legitimas.columns:
+                                            divergencias_legitimas[col] = (
+                                                divergencias_legitimas[col]
+                                                .fillna("")
+                                                .astype(str)
+                                                .replace("nan", "")
+                                                .replace("None", "")
+                                                .replace("null", "")
+                                            )
+                                    
+                                    # Verificar se soluções foram aplicadas
+                                    solucoes_aplicadas = divergencias_legitimas[
+                                        divergencias_legitimas["SOLUCAO_AUTOMATICA"].notna() & 
+                                        (divergencias_legitimas["SOLUCAO_AUTOMATICA"] != "") &
+                                        (divergencias_legitimas["SOLUCAO_AUTOMATICA"] != "nan") &
+                                        (divergencias_legitimas["SOLUCAO_AUTOMATICA"] != "None")
+                                    ]
+                                    logging.info(f"✅ Soluções automáticas aplicadas a {len(div_nao_legitimas)} divergências C170 x C190")
+                                    logging.info(f"✅ Total de divergências C170 x C190 com solução: {len(solucoes_aplicadas)}")
+                                    if len(solucoes_aplicadas) > 0:
+                                        exemplo = solucoes_aplicadas.iloc[0]
+                                        logging.info(f"✅ Exemplo de solução C170 x C190: {str(exemplo.get('SOLUCAO_AUTOMATICA', ''))[:200]}")
+                        except Exception as e:
+                            logging.warning(f"Erro ao gerar soluções automáticas para C170 x C190: {e}")
+                        
                         # Contar divergências não legítimas (que requerem atenção)
                         if "E_LEGITIMA" in divergencias_legitimas.columns:
                             div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
                             checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
                         else:
                             checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
+                        # Validação final: garantir que SOLUCAO_AUTOMATICA não seja None
+                        if "SOLUCAO_AUTOMATICA" in divergencias_legitimas.columns:
+                            divergencias_legitimas["SOLUCAO_AUTOMATICA"] = (
+                                divergencias_legitimas["SOLUCAO_AUTOMATICA"]
+                                .fillna("")
+                                .astype(str)
+                                .replace("nan", "")
+                                .replace("None", "")
+                                .replace("null", "")
+                            )
+                            
+                            # Log final para debug
+                            solucoes_finais = divergencias_legitimas[
+                                (divergencias_legitimas["SOLUCAO_AUTOMATICA"] != "") &
+                                (divergencias_legitimas["SOLUCAO_AUTOMATICA"] != "nan") &
+                                (divergencias_legitimas["SOLUCAO_AUTOMATICA"] != "None")
+                            ]
+                            logging.info(f"[C170 x C190] ✅ VALIDAÇÃO FINAL: {len(solucoes_finais)} de {len(divergencias_legitimas)} divergências têm SOLUCAO_AUTOMATICA válida")
+                            if len(solucoes_finais) > 0:
+                                exemplo_final = solucoes_finais.iloc[0]
+                                logging.info(f"[C170 x C190] ✅ Exemplo final de solução: {str(exemplo_final.get('SOLUCAO_AUTOMATICA', ''))[:200]}")
+                                logging.info(f"[C170 x C190] ✅ Exemplo final REGISTRO_CORRIGIR: {exemplo_final.get('REGISTRO_CORRIGIR', 'N/A')}")
+                                logging.info(f"[C170 x C190] ✅ Exemplo final VALOR_CORRETO: {exemplo_final.get('VALOR_CORRETO', 'N/A')}")
+                                logging.info(f"[C170 x C190] ✅ Exemplo final FORMULA_LEGAL: {exemplo_final.get('FORMULA_LEGAL', 'N/A')}")
+                        
+                        # Garantir que TODAS as colunas de solução existam antes de adicionar ao relatório
+                        for col in colunas_solucao:
+                            if col not in divergencias_legitimas.columns:
+                                logging.warning(f"[C170 x C190] Coluna {col} não encontrada - criando como string vazia")
+                                divergencias_legitimas[col] = ""
+                        
+                        # Log final antes de adicionar ao relatório
+                        logging.info(f"[C170 x C190] Colunas antes de adicionar ao relatório: {list(divergencias_legitimas.columns)}")
+                        if "SOLUCAO_AUTOMATICA" in divergencias_legitimas.columns:
+                            solucoes_count = divergencias_legitimas["SOLUCAO_AUTOMATICA"].notna().sum()
+                            solucoes_nao_vazias = (divergencias_legitimas["SOLUCAO_AUTOMATICA"] != "").sum()
+                            logging.info(f"[C170 x C190] Total de linhas: {len(divergencias_legitimas)}")
+                            logging.info(f"[C170 x C190] Linhas com SOLUCAO_AUTOMATICA não-null: {solucoes_count}")
+                            logging.info(f"[C170 x C190] Linhas com SOLUCAO_AUTOMATICA não-vazia: {solucoes_nao_vazias}")
+                            if solucoes_nao_vazias > 0:
+                                exemplo = divergencias_legitimas[divergencias_legitimas["SOLUCAO_AUTOMATICA"] != ""].iloc[0]
+                                logging.info(f"[C170 x C190] Exemplo final antes do relatório - SOLUCAO_AUTOMATICA: {str(exemplo.get('SOLUCAO_AUTOMATICA', ''))[:200]}")
+                            # Log de exemplo mesmo quando vazio para debug
+                            if len(divergencias_legitimas) > 0:
+                                exemplo_qualquer = divergencias_legitimas.iloc[0]
+                                logging.info(f"[C170 x C190] Exemplo primeira linha - chaves: {list(exemplo_qualquer.index) if hasattr(exemplo_qualquer, 'index') else 'N/A'}")
+                                logging.info(f"[C170 x C190] Exemplo primeira linha - SOLUCAO_AUTOMATICA presente: {'SOLUCAO_AUTOMATICA' in exemplo_qualquer}")
+                                if 'SOLUCAO_AUTOMATICA' in exemplo_qualquer:
+                                    logging.info(f"[C170 x C190] Exemplo primeira linha - SOLUCAO_AUTOMATICA valor: {str(exemplo_qualquer.get('SOLUCAO_AUTOMATICA', ''))[:100]}")
+                        else:
+                            logging.error(f"[C170 x C190] ❌ SOLUCAO_AUTOMATICA NÃO está nas colunas antes de adicionar ao relatório!")
+                        
                         # Adicionar ao relatório
                         out["C170 x C190 (Divergências)"] = divergencias_legitimas
                     else:
@@ -900,8 +1091,17 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
             logging.warning(f"Erro ao executar validações adicionais: {e}")
 
         # Classificação de Divergências de Valores (Erro Humano vs Desconto Legítimo)
+        # Inicializar como DataFrame vazio para evitar erro de variável não definida
+        # Mas vamos garantir que seja None inicialmente para detectar se foi processado
+        divergencias_valores_classificadas = None
+        
         try:
             from validators import check_divergencias_valores_legitimas
+            from validators_solucoes import processar_divergencias_com_solucoes
+            
+            # Verificar condições
+            logging.info(f"Verificando condições para classificação: xml_total={xml_total}, notes_df.empty={notes_df.empty if hasattr(notes_df, 'empty') else 'N/A'}, efd_path={efd_path is not None}")
+            
             if xml_total and not notes_df.empty and efd_path is not None:
                 logging.info("Iniciando classificação de divergências de valores...")
                 # Obter setores das regras se disponível
@@ -913,8 +1113,62 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                 divergencias_valores_classificadas = check_divergencias_valores_legitimas(
                     notes_df, efd_path, rules=rules, sectors=sectors_list
                 )
-                logging.info(f"Classificação concluída. Encontradas {len(divergencias_valores_classificadas)} divergências classificadas.")
+                
+                logging.info(f"Divergências classificadas retornadas: {len(divergencias_valores_classificadas)} linhas")
                 if not divergencias_valores_classificadas.empty:
+                    logging.info(f"Colunas antes de processar soluções: {list(divergencias_valores_classificadas.columns)}")
+                
+                # Adicionar soluções automáticas específicas
+                if not divergencias_valores_classificadas.empty:
+                    logging.info("Gerando soluções automáticas para divergências...")
+                    logging.info(f"Divergências antes de processar: {len(divergencias_valores_classificadas)} linhas")
+                    logging.info(f"Colunas antes: {list(divergencias_valores_classificadas.columns)}")
+                    
+                    try:
+                        divergencias_valores_classificadas = processar_divergencias_com_solucoes(
+                            divergencias_valores_classificadas, materiais.xml_nf, efd_path, rules
+                        )
+                        
+                        logging.info(f"Divergências depois de processar: {len(divergencias_valores_classificadas)} linhas")
+                        logging.info(f"Colunas depois: {list(divergencias_valores_classificadas.columns)}")
+                        
+                        # Verificar se SOLUCAO_AUTOMATICA está presente
+                        if "SOLUCAO_AUTOMATICA" in divergencias_valores_classificadas.columns:
+                            solucoes_nao_vazias = divergencias_valores_classificadas[
+                                divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"].notna() & 
+                                (divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"] != "")
+                            ]
+                            logging.info(f"Soluções automáticas geradas: {len(solucoes_nao_vazias)} de {len(divergencias_valores_classificadas)}")
+                        else:
+                            logging.warning("SOLUCAO_AUTOMATICA NÃO está presente nas colunas após processar!")
+                    except Exception as e_solucao:
+                        logging.error(f"Erro ao processar soluções automáticas: {e_solucao}")
+                        import traceback
+                        traceback.print_exc()
+                
+                logging.info(f"Classificação concluída. Encontradas {len(divergencias_valores_classificadas) if divergencias_valores_classificadas is not None and not divergencias_valores_classificadas.empty else 0} divergências classificadas.")
+                
+                # SEMPRE adicionar ao relatório, mesmo se vazio (para debug)
+                if divergencias_valores_classificadas is not None and not divergencias_valores_classificadas.empty:
+                    # Validação final: garantir que SOLUCAO_AUTOMATICA existe e não é None
+                    if "SOLUCAO_AUTOMATICA" in divergencias_valores_classificadas.columns:
+                        # Converter None para string vazia
+                        divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"] = (
+                            divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"]
+                            .fillna("")
+                            .astype(str)
+                            .replace("nan", "")
+                            .replace("None", "")
+                            .replace("null", "")
+                        )
+                        # Log de validação
+                        solucoes_validas = divergencias_valores_classificadas[
+                            (divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"] != "") &
+                            (divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"] != "nan") &
+                            (divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"] != "None")
+                        ]
+                        logging.info(f"✅ Validação final: {len(solucoes_validas)} soluções válidas de {len(divergencias_valores_classificadas)}")
+                    
                     # Contar por tipo de divergência
                     if "TIPO_DIVERGENCIA" in divergencias_valores_classificadas.columns:
                         erro_humano = divergencias_valores_classificadas[
@@ -927,10 +1181,29 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                         ]
                         checklist.append(("Divergências de valores - Erro Humano", len(erro_humano)))
                         checklist.append(("Divergências de valores - Descontos Legítimos", len(desconto_legitimo)))
+                    
                     # Adicionar ao relatório
                     out["Divergências de Valores (Classificadas)"] = divergencias_valores_classificadas
+                    logging.info(f"✅ Adicionado 'Divergências de Valores (Classificadas)' ao relatório com {len(divergencias_valores_classificadas)} linhas")
+                else:
+                    # Adicionar DataFrame vazio mesmo assim para garantir que a chave existe
+                    if divergencias_valores_classificadas is None:
+                        divergencias_valores_classificadas = pd.DataFrame()
+                    out["Divergências de Valores (Classificadas)"] = divergencias_valores_classificadas
+                    logging.warning(f"⚠️ Divergências classificadas está VAZIO - adicionado DataFrame vazio ao relatório (será serializado como [])")
+            else:
+                logging.warning(f"Condições não atendidas para classificação: xml_total={xml_total}, notes_df.empty={notes_df.empty if hasattr(notes_df, 'empty') else 'N/A'}, efd_path={efd_path is not None}")
+                # SEMPRE adicionar DataFrame vazio mesmo quando condições não são atendidas
+                # para garantir que a chave existe no relatório
+                out["Divergências de Valores (Classificadas)"] = pd.DataFrame()
+                logging.info(f"✅ Adicionado 'Divergências de Valores (Classificadas)' vazio ao relatório (condições não atendidas)")
         except Exception as e:
-            logging.warning(f"Erro ao classificar divergências de valores: {e}")
+            logging.error(f"Erro ao classificar divergências de valores: {e}")
+            import traceback
+            traceback.print_exc()
+            # Garantir que a chave existe mesmo em caso de erro
+            out["Divergências de Valores (Classificadas)"] = pd.DataFrame()
+            logging.info(f"✅ Adicionado 'Divergências de Valores (Classificadas)' vazio ao relatório (erro no processamento)")
             import traceback
             traceback.print_exc()
 

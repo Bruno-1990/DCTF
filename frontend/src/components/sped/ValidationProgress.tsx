@@ -27,12 +27,21 @@ const ValidationProgress: React.FC<ValidationProgressProps> = ({
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
     let isMounted = true;
+    let consecutiveErrors = 0;
+    let currentInterval = 2000; // Começar com 2 segundos
+    const maxInterval = 10000; // Máximo de 10 segundos
+    const minInterval = 2000; // Mínimo de 2 segundos
 
     const checkStatus = async () => {
       try {
         const s = await spedService.obterStatus(validationId);
         if (!isMounted) return;
+
+        // Resetar contador de erros em caso de sucesso
+        consecutiveErrors = 0;
+        currentInterval = minInterval;
 
         if (s) {
           setStatus({
@@ -47,37 +56,87 @@ const ValidationProgress: React.FC<ValidationProgressProps> = ({
               clearInterval(intervalId);
               intervalId = null;
             }
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
             setTimeout(() => onComplete(), 1000);
           } else if (s.status === 'error') {
             if (intervalId) {
               clearInterval(intervalId);
               intervalId = null;
             }
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
             onError(s.error || 'Erro na validação');
           }
-        } else {
-          // Se não encontrou status, pode ser que ainda não foi criado
-          // Continuar tentando
         }
       } catch (error: any) {
-        console.error('Erro ao verificar status:', error);
-        if (isMounted) {
-          // Se der erro várias vezes, pode ser que a validação não existe mais
-          // Mas vamos continuar tentando por enquanto
+        consecutiveErrors++;
+        
+        // Se receber 429 (Too Many Requests), aumentar intervalo exponencialmente
+        if (error.response?.status === 429) {
+          currentInterval = Math.min(currentInterval * 2, maxInterval);
+          
+          // Se tiver muitos erros 429 consecutivos, parar o polling
+          if (consecutiveErrors >= 5) {
+            console.warn('Muitos erros 429. Parando polling temporariamente.');
+            if (intervalId) {
+              clearInterval(intervalId);
+              intervalId = null;
+            }
+            // Tentar novamente após um tempo maior
+            timeoutId = setTimeout(() => {
+              consecutiveErrors = 0;
+              currentInterval = minInterval;
+              if (isMounted) {
+                scheduleNextCheck();
+              }
+            }, 30000); // 30 segundos
+            return;
+          }
+        } else if (error.response?.status !== 429) {
+          // Para outros erros, apenas logar
+          console.error('Erro ao verificar status:', error);
         }
+
+        // Reagendar com intervalo maior em caso de erro
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        scheduleNextCheck();
       }
+    };
+
+    const scheduleNextCheck = () => {
+      if (!isMounted) return;
+      
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      
+      intervalId = setTimeout(() => {
+        checkStatus();
+        scheduleNextCheck();
+      }, currentInterval);
     };
 
     // Verificar imediatamente
     checkStatus();
 
-    // Configurar polling a cada 1 segundo
-    intervalId = setInterval(checkStatus, 1000);
+    // Iniciar polling
+    scheduleNextCheck();
 
     return () => {
       isMounted = false;
       if (intervalId) {
         clearInterval(intervalId);
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
       }
     };
   }, [validationId, onComplete, onError]);

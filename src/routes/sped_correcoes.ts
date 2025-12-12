@@ -1,0 +1,337 @@
+/**
+ * Rotas para aplicação de correções automáticas no SPED
+ * Permite corrigir divergências identificadas e exportar SPED corrigido
+ */
+
+import { Router, Request, Response } from 'express';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import { SpedValidationService } from '../services/SpedValidationService';
+
+const router = Router();
+const execAsync = promisify(exec);
+const spedValidationService = new SpedValidationService();
+
+// Middleware de debug para todas as rotas
+router.use((req, res, next) => {
+  console.log(`[sped_correcoes] ${req.method} ${req.path}`);
+  next();
+});
+
+/**
+ * POST /api/sped/correcoes/aplicar
+ * Aplica correção automática em uma divergência específica
+ */
+router.post('/aplicar', async (req: Request, res: Response) => {
+  try {
+    const { validationId, correcao } = req.body;
+
+    if (!validationId || !correcao) {
+      return res.status(400).json({
+        error: 'validationId e correcao são obrigatórios'
+      });
+    }
+
+    // Validar estrutura da correção
+    const { registro_corrigir, campo, valor_correto, chave, cfop, cst, linha_sped } = correcao;
+    
+    if (!registro_corrigir || !campo || valor_correto === undefined) {
+      return res.status(400).json({
+        error: 'correcao deve conter: registro_corrigir, campo, valor_correto'
+      });
+    }
+
+    // Obter caminho do arquivo SPED original
+    const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
+    const spedPath = path.join(tmpDir, 'sped.txt');
+
+    if (!fs.existsSync(spedPath)) {
+      return res.status(404).json({
+        error: 'Arquivo SPED não encontrado para esta validação'
+      });
+    }
+
+    // Executar script Python para aplicar correção
+    const pythonScript = path.join(__dirname, '../../python/sped/aplicar_correcao.py');
+    const outputPath = path.join(tmpDir, 'sped_corrigido.txt');
+
+    const correcaoJson = JSON.stringify(correcao);
+    const command = `python "${pythonScript}" "${spedPath}" "${outputPath}" '${correcaoJson.replace(/'/g, "\\'")}'`;
+
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: path.join(__dirname, '../../python/sped'),
+        maxBuffer: 10 * 1024 * 1024 // 10MB
+      });
+
+      if (stderr && !stderr.includes('INFO')) {
+        console.error('Erro ao aplicar correção:', stderr);
+      }
+
+      // Verificar se arquivo foi criado
+      if (!fs.existsSync(outputPath)) {
+        return res.status(500).json({
+          error: 'Correção não foi aplicada. Arquivo corrigido não foi gerado.'
+        });
+      }
+
+      // Ler resumo das alterações (se disponível)
+      const resumoPath = path.join(tmpDir, 'resumo_correcao.json');
+      let resumo = {};
+      if (fs.existsSync(resumoPath)) {
+        try {
+          resumo = JSON.parse(fs.readFileSync(resumoPath, 'utf-8'));
+        } catch (e) {
+          console.warn('Erro ao ler resumo de correção:', e);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: 'Correção aplicada com sucesso',
+        arquivo_corrigido: outputPath,
+        resumo: resumo
+      });
+
+    } catch (error: any) {
+      console.error('Erro ao executar script de correção:', error);
+      return res.status(500).json({
+        error: `Erro ao aplicar correção: ${error.message}`,
+        details: error.stderr
+      });
+    }
+
+  } catch (error: any) {
+    console.error('Erro ao processar requisição de correção:', error);
+    res.status(500).json({
+      error: error.message || 'Erro interno ao processar correção'
+    });
+  }
+});
+
+/**
+ * POST /api/sped/correcoes/aplicar-todas
+ * Aplica todas as correções automáticas de uma validação
+ * IMPORTANTE: Esta rota deve vir ANTES de /:validationId/download para evitar conflito
+ */
+router.post('/aplicar-todas', async (req: Request, res: Response) => {
+  console.log('📥 POST /api/sped/correcoes/aplicar-todas - Rota capturada!');
+  console.log('📥 Body recebido:', req.body);
+  const { validationId } = req.body || {};
+  try {
+
+    if (!validationId) {
+      return res.status(400).json({
+        error: 'validationId é obrigatório'
+      });
+    }
+
+    // Obter resultado da validação para identificar todas as correções
+    let resultado = await spedValidationService.obterResultado(validationId);
+    
+    // Fallback: se não encontrou no Map, tenta ler do arquivo diretamente
+    if (!resultado || !resultado.reports) {
+      console.log(`[aplicar-todas] Resultado não encontrado no Map, tentando ler do arquivo...`);
+      const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
+      const resultadoPath = path.join(tmpDir, 'resultado.json');
+      
+      if (fs.existsSync(resultadoPath)) {
+        try {
+          const resultadoData = fs.readFileSync(resultadoPath, 'utf-8');
+          // Limpar NaN, Infinity antes de parsear
+          const cleanedData = resultadoData
+            .replace(/:\s*NaN\b(?!")/g, ': null')
+            .replace(/:\s*Infinity\b(?!")/g, ': null')
+            .replace(/:\s*-Infinity\b(?!")/g, ': null');
+          resultado = JSON.parse(cleanedData);
+          console.log(`[aplicar-todas] ✅ Resultado carregado do arquivo com sucesso`);
+        } catch (error: any) {
+          console.error(`[aplicar-todas] ❌ Erro ao ler arquivo de resultado:`, error.message);
+        }
+      } else {
+        console.error(`[aplicar-todas] ❌ Arquivo de resultado não existe: ${resultadoPath}`);
+      }
+    }
+    
+    if (!resultado || !resultado.reports) {
+      console.error(`[aplicar-todas] ❌ Resultado não encontrado para validationId: ${validationId}`);
+      return res.status(404).json({
+        error: 'Resultado da validação não encontrado',
+        validationId: validationId,
+        detalhes: 'O resultado não foi encontrado no cache nem no arquivo. Verifique se a validação foi concluída com sucesso.'
+      });
+    }
+    
+    console.log(`[aplicar-todas] ✅ Resultado encontrado com ${Object.keys(resultado.reports).length} reports`);
+
+    // Coletar todas as correções de C170 x C190
+    const correcoes: any[] = [];
+    const divergenciasC170C190 = resultado.reports['C170 x C190 (Divergências)'] || [];
+    
+    console.log(`[aplicar-todas] Divergências C170 x C190 encontradas: ${divergenciasC170C190.length}`);
+    
+    for (const div of divergenciasC170C190) {
+      if (div.SOLUCAO_AUTOMATICA && div.REGISTRO_CORRIGIR && div.VALOR_CORRETO !== undefined) {
+        correcoes.push({
+          registro_corrigir: div.REGISTRO_CORRIGIR,
+          campo: div.CAMPO,
+          valor_correto: div.VALOR_CORRETO,
+          chave: div.CHAVE,
+          cfop: div.CFOP,
+          cst: div.CST,
+          linha_sped: div.LINHA_SPED
+        });
+      }
+    }
+
+    console.log(`[aplicar-todas] Correções válidas coletadas: ${correcoes.length}`);
+
+    if (correcoes.length === 0) {
+      return res.json({
+        success: true,
+        message: 'Nenhuma correção automática disponível',
+        correcoes_aplicadas: 0
+      });
+    }
+
+    // Aplicar correções sequencialmente
+    const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
+    const spedPath = path.join(tmpDir, 'sped.txt');
+    let arquivoAtual = spedPath;
+
+    const resultados = [];
+    for (let i = 0; i < correcoes.length; i++) {
+      const correcao = correcoes[i];
+      const outputPath = i === correcoes.length - 1 
+        ? path.join(tmpDir, 'sped_corrigido.txt')
+        : path.join(tmpDir, `sped_corrigido_${i}.txt`);
+
+      const pythonScript = path.join(__dirname, '../../python/sped/aplicar_correcao.py');
+      
+      // Salvar correção em arquivo temporário para evitar problemas com aspas e caracteres especiais
+      const correcaoJsonPath = path.join(tmpDir, `correcao_${i}.json`);
+      fs.writeFileSync(correcaoJsonPath, JSON.stringify(correcao, null, 2), 'utf-8');
+      
+      // Usar arquivo JSON ao invés de passar como argumento
+      const command = `python "${pythonScript}" "${arquivoAtual}" "${outputPath}" "${correcaoJsonPath}"`;
+
+      try {
+        console.log(`[aplicar-todas] Aplicando correção ${i + 1}/${correcoes.length}: ${correcao.registro_corrigir}.${correcao.campo} = ${correcao.valor_correto}`);
+        
+        const { stdout, stderr } = await execAsync(command, {
+          cwd: path.join(__dirname, '../../python/sped'),
+          maxBuffer: 10 * 1024 * 1024
+        });
+
+        // Logar saída do Python para debug
+        if (stdout) {
+          console.log(`[aplicar-todas] Python stdout (${i + 1}):`, stdout.substring(0, 200));
+        }
+        if (stderr) {
+          console.error(`[aplicar-todas] Python stderr (${i + 1}):`, stderr.substring(0, 200));
+        }
+
+        // Verificar se o arquivo foi criado
+        if (!fs.existsSync(outputPath)) {
+          throw new Error('Arquivo corrigido não foi gerado pelo script Python');
+        }
+
+        // Tentar parsear resposta JSON do Python se houver
+        let pythonResponse: any = null;
+        try {
+          if (stdout && stdout.trim()) {
+            pythonResponse = JSON.parse(stdout.trim());
+            if (pythonResponse.success === false) {
+              throw new Error(pythonResponse.error || 'Script Python retornou sucesso=false');
+            }
+          }
+        } catch (parseError) {
+          // Se não conseguir parsear, não é problema se o arquivo foi criado
+          if (!fs.existsSync(outputPath)) {
+            throw new Error(`Erro ao processar resposta do Python: ${parseError}`);
+          }
+        }
+
+        resultados.push({
+          correcao: correcao,
+          sucesso: true
+        });
+
+        arquivoAtual = outputPath;
+        console.log(`[aplicar-todas] ✅ Correção ${i + 1}/${correcoes.length} aplicada com sucesso`);
+      } catch (error: any) {
+        const errorMsg = error.stderr || error.stdout || error.message || 'Erro desconhecido';
+        console.error(`[aplicar-todas] ❌ Erro na correção ${i + 1}/${correcoes.length}:`, errorMsg.substring(0, 500));
+        
+        resultados.push({
+          correcao: correcao,
+          sucesso: false,
+          erro: errorMsg.substring(0, 500)
+        });
+      }
+    }
+
+    const sucessos = resultados.filter(r => r.sucesso).length;
+    const falhas = resultados.filter(r => !r.sucesso).length;
+
+    console.log(`[aplicar-todas] ✅ Processamento concluído: ${sucessos} sucessos, ${falhas} falhas`);
+
+    res.json({
+      success: sucessos > 0,
+      message: `${sucessos} de ${correcoes.length} correções aplicadas${falhas > 0 ? ` (${falhas} falhas)` : ''}`,
+      correcoes_aplicadas: sucessos,
+      total_correcoes: correcoes.length,
+      falhas: falhas,
+      resultados: resultados,
+      arquivo_corrigido: arquivoAtual
+    });
+
+  } catch (error: any) {
+    console.error(`[aplicar-todas] ❌ Erro ao aplicar todas as correções:`, error);
+    res.status(500).json({
+      error: error.message || 'Erro interno ao processar correções',
+      validationId: validationId
+    });
+  }
+});
+
+/**
+ * GET /api/sped/correcoes/:validationId/download
+ * Baixa arquivo SPED corrigido
+ * IMPORTANTE: Esta rota deve vir DEPOIS das rotas específicas para evitar conflito
+ */
+router.get('/:validationId/download', async (req: Request, res: Response) => {
+  try {
+    const { validationId } = req.params;
+
+    const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
+    const spedCorrigidoPath = path.join(tmpDir, 'sped_corrigido.txt');
+
+    if (!fs.existsSync(spedCorrigidoPath)) {
+      return res.status(404).json({
+        error: 'Arquivo SPED corrigido não encontrado. Aplique as correções primeiro.'
+      });
+    }
+
+    res.download(spedCorrigidoPath, `sped_corrigido_${validationId}.txt`, (err) => {
+      if (err) {
+        console.error('Erro ao baixar SPED corrigido:', err);
+        res.status(500).json({
+          error: 'Erro ao baixar arquivo'
+        });
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao processar download:', error);
+    res.status(500).json({
+      error: error.message || 'Erro interno ao processar download'
+    });
+  }
+});
+
+export default router;
+

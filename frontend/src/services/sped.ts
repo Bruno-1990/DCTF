@@ -28,11 +28,44 @@ export interface ValidationResult {
   reports?: Record<string, any[]>;
 }
 
+export interface CorrecaoAutomatica {
+  registro_corrigir: string;
+  campo: string;
+  valor_correto: number;
+  chave?: string;
+  cfop?: string;
+  cst?: string;
+  linha_sped?: number;
+}
+
+export interface ResultadoCorrecao {
+  success: boolean;
+  message: string;
+  arquivo_corrigido?: string;
+  resumo?: any;
+  correcoes_aplicadas?: number;
+  total_correcoes?: number;
+  resultados?: any[];
+}
+
 class SpedService {
+  // Cache para detecção de setor (baseado em nome e tamanho dos arquivos)
+  private detectarSetorCache: Map<string, { setores: string[]; timestamp: number }> = new Map();
+  private readonly DETECTAR_SETOR_CACHE_TTL = 30000; // 30 segundos de cache
+
   /**
    * Detecta automaticamente o setor baseado no arquivo SPED e XMLs
    */
   async detectarSetor(spedFile: File, xmlFiles: File[] = []): Promise<string[]> {
+    // Criar chave de cache baseada em nome e tamanho dos arquivos
+    const cacheKey = `${spedFile.name}-${spedFile.size}-${xmlFiles.length}-${xmlFiles.slice(0, 5).map(f => `${f.name}-${f.size}`).join('-')}`;
+    
+    // Verificar cache
+    const cached = this.detectarSetorCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.DETECTAR_SETOR_CACHE_TTL) {
+      return cached.setores;
+    }
+
     const formData = new FormData();
     formData.append('sped', spedFile);
     
@@ -49,18 +82,32 @@ class SpedService {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
+          timeout: 30000, // 30 segundos de timeout
         }
       );
 
       // Retornar lista de setores (novo formato) ou compatibilidade com formato antigo
+      let setores: string[] = [];
       if (response.data.setores && Array.isArray(response.data.setores)) {
-        return response.data.setores;
+        setores = response.data.setores;
       } else if (response.data.setor) {
-        return [response.data.setor];
+        setores = [response.data.setor];
       }
-      return [];
-    } catch (error) {
-      console.error('Erro ao detectar setor:', error);
+
+      // Atualizar cache
+      this.detectarSetorCache.set(cacheKey, {
+        setores,
+        timestamp: Date.now()
+      });
+
+      return setores;
+    } catch (error: any) {
+      // Não logar erro 429 repetidamente
+      if (error.response?.status !== 429) {
+        console.error('Erro ao detectar setor:', error);
+      }
+      
+      // Em caso de erro, retornar array vazio mas não cachear
       return [];
     }
   }
@@ -100,17 +147,50 @@ class SpedService {
     return response.data.validationId;
   }
 
+  // Cache para evitar requisições duplicadas
+  private statusCache: Map<string, { data: ValidationStatus | null; timestamp: number }> = new Map();
+  private readonly CACHE_TTL = 2000; // 2 segundos de cache
+
   /**
-   * Obtém status da validação
+   * Obtém status da validação com cache e throttling
    */
-  async obterStatus(validationId: string): Promise<ValidationStatus | null> {
+  async obterStatus(validationId: string, forceRefresh: boolean = false): Promise<ValidationStatus | null> {
+    // Verificar cache se não for refresh forçado
+    if (!forceRefresh) {
+      const cached = this.statusCache.get(validationId);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+        return cached.data;
+      }
+    }
+
     try {
       const response = await axios.get<ValidationStatus>(
-        `${API_BASE_URL}/api/sped/validacao/${validationId}`
+        `${API_BASE_URL}/api/sped/validacao/${validationId}`,
+        {
+          // Adicionar timeout para evitar requisições pendentes
+          timeout: 10000
+        }
       );
+      
+      // Atualizar cache
+      this.statusCache.set(validationId, {
+        data: response.data,
+        timestamp: Date.now()
+      });
+      
       return response.data;
-    } catch (error) {
-      console.error('Erro ao obter status:', error);
+    } catch (error: any) {
+      // Não logar erro 429 repetidamente para evitar spam no console
+      if (error.response?.status !== 429) {
+        console.error('Erro ao obter status:', error);
+      }
+      
+      // Atualizar cache mesmo em caso de erro (para evitar requisições repetidas)
+      this.statusCache.set(validationId, {
+        data: null,
+        timestamp: Date.now()
+      });
+      
       return null;
     }
   }
@@ -240,6 +320,64 @@ class SpedService {
       return response.data;
     } catch (error: any) {
       console.error('Erro ao aplicar ajustes:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Aplica uma correção automática específica
+   */
+  async aplicarCorrecao(validationId: string, correcao: CorrecaoAutomatica): Promise<ResultadoCorrecao> {
+    try {
+      const response = await axios.post<ResultadoCorrecao>(
+        `${API_BASE_URL}/api/sped/correcoes/aplicar`,
+        { validationId, correcao }
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Erro ao aplicar correção:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Aplica todas as correções automáticas disponíveis
+   */
+  async aplicarTodasCorrecoes(validationId: string): Promise<ResultadoCorrecao> {
+    try {
+      const response = await axios.post<ResultadoCorrecao>(
+        `${API_BASE_URL}/api/sped/correcoes/aplicar-todas`,
+        { validationId }
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Erro ao aplicar todas as correções:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Baixa o arquivo SPED corrigido
+   */
+  async baixarSpedCorrigido(validationId: string): Promise<void> {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/sped/correcoes/${validationId}/download`,
+        {
+          responseType: 'blob',
+        }
+      );
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `sped_corrigido_${validationId}.txt`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('Erro ao baixar SPED corrigido:', error);
       throw error;
     }
   }

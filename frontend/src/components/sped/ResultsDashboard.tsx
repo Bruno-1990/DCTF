@@ -32,7 +32,14 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'resumo' | 'divergencias' | 'conferencia' | 'ajuste'>('resumo');
 
   useEffect(() => {
-    carregarResultado();
+    // Adicionar debounce para evitar múltiplas chamadas
+    const timeoutId = setTimeout(() => {
+      carregarResultado();
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [validationId]);
 
   const carregarResultado = async () => {
@@ -63,6 +70,36 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
       console.log('Resultado carregado:', data);
       console.log('Tipo do resultado:', typeof data);
       console.log('Chaves do resultado:', data ? Object.keys(data) : 'null');
+      
+      // Debug detalhado dos reports e validacoes
+      if (data && data.reports) {
+        console.log('[ResultsDashboard] Chaves em reports:', Object.keys(data.reports));
+        const chaveDivClass = 'Divergências de Valores (Classificadas)';
+        const temChave = chaveDivClass in data.reports;
+        console.log('[ResultsDashboard] Tem "Divergências de Valores (Classificadas)"?', temChave);
+        if (temChave) {
+          const divClass = data.reports[chaveDivClass];
+          console.log('[ResultsDashboard] Valor de "Divergências de Valores (Classificadas)":', divClass);
+          console.log('[ResultsDashboard] Tipo do valor:', typeof divClass);
+          console.log('[ResultsDashboard] É array?', Array.isArray(divClass));
+          console.log('[ResultsDashboard] É null?', divClass === null);
+          console.log('[ResultsDashboard] É undefined?', divClass === undefined);
+          console.log('[ResultsDashboard] É false?', divClass === false);
+          console.log('[ResultsDashboard] Valor truthy?', !!divClass);
+          console.log('[ResultsDashboard] Divergências Classificadas encontradas:', {
+            quantidade: Array.isArray(divClass) ? divClass.length : 'não é array',
+            tipo: typeof divClass,
+            valor: divClass,
+            primeiraLinha: Array.isArray(divClass) && divClass.length > 0 ? divClass[0] : null
+          });
+        } else {
+          console.warn('[ResultsDashboard] Chave "Divergências de Valores (Classificadas)" NÃO encontrada em reports!');
+        }
+      }
+      
+      if (data && data.validacoes) {
+        console.log('[ResultsDashboard] Chaves em validacoes:', Object.keys(data.validacoes));
+      }
       
       if (!data) {
         setError('Resultado não disponível. A validação pode não ter sido concluída com sucesso.');
@@ -136,12 +173,34 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   // Buscar notes_df para divergências de valores (contém colunas Delta)
   const notesDf = reports['Notas (+Natureza)'] || reports['Notas Saídas'] || reports['Notas Entradas'] || [];
   
-  // Buscar divergências C170 x C190
-  const divergenciasC170C190 = validacoes['C170 x C190 (Divergências)'] || reports['C170 x C190 (Divergências)'] || [];
+  // Buscar divergências C170 x C190 (verificar múltiplas chaves possíveis)
+  const divergenciasC170C190 = 
+    validacoes['C170 x C190 (Divergências)'] || 
+    reports['C170 x C190 (Divergências)'] ||
+    validacoes['C170 x C190'] ||
+    reports['C170 x C190'] ||
+    [];
+  
+  // Debug: Log para verificar se C170 x C190 está sendo encontrado
+  console.log('[ResultsDashboard] Buscando C170 x C190:', {
+    emValidacoes: !!validacoes['C170 x C190 (Divergências)'],
+    emReports: !!reports['C170 x C190 (Divergências)'],
+    quantidade: divergenciasC170C190.length,
+    primeiraLinha: divergenciasC170C190.length > 0 ? divergenciasC170C190[0] : null,
+    temSolucaoAutomatica: divergenciasC170C190.length > 0 && divergenciasC170C190[0]?.SOLUCAO_AUTOMATICA ? true : false
+  });
   // Buscar divergências de valores classificadas (Erro Humano vs Desconto Legítimo)
   // A chave está em 'reports' (retornado por make_reports)
   const divergenciasClassificadas = reports['Divergências de Valores (Classificadas)'] || 
                                     validacoes['Divergências de Valores (Classificadas)'] || [];
+  
+  // Debug: verificar se encontrou as divergências classificadas
+  console.log('[ResultsDashboard] Buscando divergências classificadas:', {
+    emReports: !!reports['Divergências de Valores (Classificadas)'],
+    emValidacoes: !!validacoes['Divergências de Valores (Classificadas)'],
+    quantidade: divergenciasClassificadas.length,
+    primeiraLinha: divergenciasClassificadas.length > 0 ? divergenciasClassificadas[0] : null
+  });
   // Buscar divergências de apuração
   const divergenciasApuracao = validacoes['Apuração - Consistência'] || reports['Apuração - Consistência'] || [];
   // Buscar divergências de preenchimento do C190
@@ -289,6 +348,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
             {(divergencias.length > 0 || (divergenciasC170C190 && divergenciasC170C190.length > 0) || (divergenciasClassificadas && divergenciasClassificadas.length > 0) || (divergenciasApuracao && divergenciasApuracao.length > 0) || (divergenciasC190Preenchimento && divergenciasC190Preenchimento.length > 0)) ? (
               <DivergenciasInteligentes
                 divergenciasC170C190={Array.isArray(divergenciasC170C190) ? divergenciasC170C190 : []}
+                validationId={validationId}
                 divergenciasValores={Array.isArray(divergenciasClassificadas) ? divergenciasClassificadas : []}
                 divergenciasApuracao={Array.isArray(divergenciasApuracao) ? divergenciasApuracao : []}
                 divergenciasC190Preenchimento={Array.isArray(divergenciasC190Preenchimento) ? divergenciasC190Preenchimento : []}

@@ -68,11 +68,34 @@ def main():
         import math
         
         def replace_nan(obj):
-            """Substitui NaN, inf e -inf por None recursivamente"""
+            """Substitui NaN, inf e -inf por None recursivamente, mas preserva strings vazias em colunas de solução"""
             if isinstance(obj, dict):
-                return {k: replace_nan(v) for k, v in obj.items()}
+                result = {}
+                for k, v in obj.items():
+                    # Para colunas de solução, preservar strings vazias como ""
+                    if k in ["SOLUCAO_AUTOMATICA", "REGISTRO_CORRIGIR", "CAMPO_CORRIGIR", "FORMULA_LEGAL", "REFERENCIA_LEGAL"]:
+                        if v is None or (isinstance(v, float) and math.isnan(v)):
+                            result[k] = ""
+                        elif isinstance(v, str):
+                            result[k] = v  # Preservar string mesmo se vazia
+                        elif hasattr(v, 'item'):  # numpy/pandas types
+                            try:
+                                val = v.item()
+                                if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                                    result[k] = ""
+                                else:
+                                    result[k] = str(val) if val is not None else ""
+                            except (ValueError, OverflowError, AttributeError):
+                                result[k] = ""
+                        else:
+                            result[k] = str(v) if v is not None else ""
+                    else:
+                        result[k] = replace_nan(v)
+                return result
             elif isinstance(obj, list):
                 return [replace_nan(item) for item in obj]
+            elif isinstance(obj, str):
+                return obj  # Preservar strings
             elif isinstance(obj, float):
                 if math.isnan(obj) or math.isinf(obj):
                     return None
@@ -90,13 +113,72 @@ def main():
         def df_to_dict(df):
             if hasattr(df, 'to_dict'):
                 try:
+                    # Verificar se DataFrame está vazio ANTES de converter
+                    if df.empty:
+                        import logging
+                        logging.info(f"[df_to_dict] DataFrame vazio detectado - retornando lista vazia")
+                        return []
+                    
                     # Converter DataFrame para dict, substituindo NaN
-                    # Usar fillna para substituir NaN por None
-                    df_filled = df.fillna(None)
+                    # Primeiro, identificar colunas de solução e preservar strings vazias
+                    colunas_solucao = ['SOLUCAO_AUTOMATICA', 'REGISTRO_CORRIGIR', 'CAMPO_CORRIGIR', 
+                                      'FORMULA_LEGAL', 'REFERENCIA_LEGAL']
+                    
+                    # Preencher NaN com string vazia para colunas de solução, None para outras
+                    df_filled = df.copy()
+                    for col in colunas_solucao:
+                        if col in df_filled.columns:
+                            # Garantir que seja string válida, tratando todos os casos
+                            df_filled[col] = (
+                                df_filled[col]
+                                .fillna("")
+                                .astype(str)
+                                .replace("nan", "")
+                                .replace("None", "")
+                                .replace("null", "")
+                                .replace("NaN", "")
+                                .replace("NONE", "")
+                                .replace("NULL", "")
+                            )
+                    
+                    # Garantir que colunas de solução existam mesmo se não estiverem no DataFrame original
+                    for col in colunas_solucao:
+                        if col not in df_filled.columns:
+                            df_filled[col] = ""
+                    
+                    # Preencher outras colunas com None
+                    df_filled = df_filled.fillna(None)
                     records = df_filled.to_dict('records')
+                    
+                    # Garantir que colunas de solução estejam presentes em todos os registros
+                    for record in records:
+                        for col in colunas_solucao:
+                            if col not in record:
+                                record[col] = ""
+                    
+                    # DEBUG: Verificar se colunas de solução estão presentes
+                    if records and len(records) > 0:
+                        primeira_linha = records[0]
+                        colunas_solucao_debug = ['SOLUCAO_AUTOMATICA', 'REGISTRO_CORRIGIR', 'VALOR_CORRETO', 
+                                          'FORMULA_LEGAL', 'REFERENCIA_LEGAL', 'DETALHES_ITENS', 'DETALHES']
+                        colunas_presentes = [col for col in colunas_solucao_debug if col in primeira_linha]
+                        colunas_ausentes = [col for col in colunas_solucao_debug if col not in primeira_linha]
+                        import logging
+                        logging.info(f"[df_to_dict] Total de registros: {len(records)}")
+                        logging.info(f"[df_to_dict] Colunas de solução presentes: {colunas_presentes}")
+                        logging.info(f"[df_to_dict] Colunas de solução ausentes: {colunas_ausentes}")
+                        logging.info(f"[df_to_dict] Todas as colunas do DataFrame: {list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
+                        if 'SOLUCAO_AUTOMATICA' in primeira_linha:
+                            valor_solucao = primeira_linha['SOLUCAO_AUTOMATICA']
+                            logging.info(f"[df_to_dict] SOLUCAO_AUTOMATICA encontrada! Valor: {str(valor_solucao)[:100] if valor_solucao else 'None/Vazio'}")
+                        else:
+                            logging.warning(f"[df_to_dict] SOLUCAO_AUTOMATICA NÃO encontrada na primeira linha!")
+                    
                     # Aplicar replace_nan recursivamente para garantir
                     return replace_nan(records)
                 except Exception as e:
+                    import logging
+                    logging.error(f"Erro ao converter DataFrame: {e}")
                     # Fallback: tentar sem limpeza
                     try:
                         records = df.to_dict('records')

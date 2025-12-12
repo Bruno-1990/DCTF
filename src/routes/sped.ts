@@ -6,6 +6,9 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import { SpedValidationService } from '../services/SpedValidationService';
 import { sanitizeData } from '../middleware/validation';
 
@@ -225,17 +228,77 @@ router.get('/validacao/:validationId', async (req: Request, res: Response) => {
   try {
     const { validationId } = req.params;
     
-    const status = await spedValidationService.obterStatus(validationId);
+    let status = await spedValidationService.obterStatus(validationId);
+    
+    // Fallback: se não encontrou no Map, tenta verificar se o arquivo existe
+    if (!status) {
+      console.log(`[GET /validacao] Status não encontrado no Map para ${validationId}, verificando arquivo...`);
+      const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
+      const resultadoPath = path.join(tmpDir, 'resultado.json');
+      
+      // Se o arquivo existe, significa que a validação foi concluída
+      if (fs.existsSync(resultadoPath)) {
+        try {
+          // Tentar ler o resultado para construir o status
+          const resultadoData = fs.readFileSync(resultadoPath, 'utf-8');
+          const cleanedData = resultadoData
+            .replace(/:\s*NaN\b(?!")/g, ': null')
+            .replace(/:\s*Infinity\b(?!")/g, ': null')
+            .replace(/:\s*-Infinity\b(?!")/g, ': null');
+          const resultado = JSON.parse(cleanedData);
+          
+          // Construir status a partir do arquivo
+          status = {
+            validationId,
+            status: 'completed' as const,
+            progress: 100,
+            message: 'Validação concluída',
+            resultado
+          };
+          
+          console.log(`[GET /validacao] ✅ Status reconstruído do arquivo para ${validationId}`);
+        } catch (error: any) {
+          console.error(`[GET /validacao] Erro ao ler arquivo de resultado:`, error.message);
+        }
+      }
+    }
     
     if (!status) {
       return res.status(404).json({
-        error: 'Validação não encontrada'
+        error: 'Validação não encontrada',
+        validationId: validationId
       });
     }
 
     // Se completou, retornar resultado completo
     if (status.status === 'completed') {
-      const resultado = await spedValidationService.obterResultado(validationId);
+      let resultado = status.resultado;
+      
+      // Se não tem resultado no status, tentar obter do serviço ou arquivo
+      if (!resultado) {
+        resultado = await spedValidationService.obterResultado(validationId);
+        
+        // Se ainda não tem, tentar ler do arquivo diretamente
+        if (!resultado) {
+          const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
+          const resultadoPath = path.join(tmpDir, 'resultado.json');
+          
+          if (fs.existsSync(resultadoPath)) {
+            try {
+              const resultadoData = fs.readFileSync(resultadoPath, 'utf-8');
+              const cleanedData = resultadoData
+                .replace(/:\s*NaN\b(?!")/g, ': null')
+                .replace(/:\s*Infinity\b(?!")/g, ': null')
+                .replace(/:\s*-Infinity\b(?!")/g, ': null');
+              resultado = JSON.parse(cleanedData);
+              console.log(`[GET /validacao] ✅ Resultado carregado do arquivo para ${validationId}`);
+            } catch (error: any) {
+              console.error(`[GET /validacao] Erro ao ler resultado do arquivo:`, error.message);
+            }
+          }
+        }
+      }
+      
       return res.json({
         ...status,
         resultado
@@ -245,10 +308,11 @@ router.get('/validacao/:validationId', async (req: Request, res: Response) => {
     // Retornar status atual
     res.json(status);
   } catch (error: any) {
-    console.error('Erro ao obter status da validação:', error);
+    console.error(`[GET /validacao] Erro ao obter status da validação:`, error);
     res.status(500).json({
       error: 'Erro ao obter status da validação',
-      message: error.message
+      message: error.message,
+      validationId: req.params.validationId
     });
   }
 });

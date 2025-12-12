@@ -125,9 +125,25 @@ export class SpedValidationService {
           }
         });
 
-        // Capturar stderr
+        // Capturar stderr (logs do Python vão para stderr)
         pythonProcess.stderr.on('data', (data: Buffer) => {
-          stderrBuffer += data.toString();
+          const output = data.toString();
+          stderrBuffer += output;
+          // Exibir logs do Python no console (especialmente para debug)
+          const lines = output.split('\n').filter(l => l.trim());
+          for (const line of lines) {
+            // Filtrar apenas logs importantes (INFO, WARNING, ERROR)
+            if (line.includes('[C170 x C190]') || 
+                line.includes('[processar_divergencias_c170_c190_com_solucoes]') ||
+                line.includes('[gerar_solucao_automatica]') ||
+                line.includes('ERROR') ||
+                line.includes('WARNING') ||
+                line.includes('✅') ||
+                line.includes('❌') ||
+                line.includes('⚠️')) {
+              console.log(`[Python] ${line}`);
+            }
+          }
         });
 
         // Aguardar conclusão do processo
@@ -189,11 +205,83 @@ export class SpedValidationService {
         try {
           const resultadoData = fs.readFileSync(outputPath, 'utf-8');
           // Substituir NaN, Infinity, -Infinity antes de parsear
+          // IMPORTANTE: NÃO substituir strings "NaN" ou "None" que são valores válidos de colunas de solução
           const cleanedData = resultadoData
-            .replace(/:\s*NaN\b/g, ': null')
-            .replace(/:\s*Infinity\b/g, ': null')
-            .replace(/:\s*-Infinity\b/g, ': null');
+            .replace(/:\s*NaN\b(?!")/g, ': null')  // NaN numérico, não string
+            .replace(/:\s*Infinity\b(?!")/g, ': null')
+            .replace(/:\s*-Infinity\b(?!")/g, ': null');
           resultado = JSON.parse(cleanedData);
+          
+          // Garantir que colunas de solução sejam strings válidas após parse
+          const colunasSolucao = ['SOLUCAO_AUTOMATICA', 'REGISTRO_CORRIGIR', 'CAMPO_CORRIGIR', 'FORMULA_LEGAL', 'REFERENCIA_LEGAL', 'DETALHES', 'DETALHES_ITENS'];
+          
+          function limparSolucoes(obj: any): any {
+            if (Array.isArray(obj)) {
+              return obj.map(limparSolucoes);
+            } else if (obj && typeof obj === 'object') {
+              const cleaned: any = {};
+              for (const [key, value] of Object.entries(obj)) {
+                if (colunasSolucao.includes(key)) {
+                  // Garantir que seja string válida
+                  if (value === null || value === undefined) {
+                    cleaned[key] = '';
+                  } else if (typeof value === 'string') {
+                    // Limpar strings inválidas
+                    if (value.toLowerCase() === 'nan' || value.toLowerCase() === 'none' || value.toLowerCase() === 'null') {
+                      cleaned[key] = '';
+                    } else {
+                      cleaned[key] = value;
+                    }
+                  } else {
+                    cleaned[key] = String(value);
+                  }
+                } else {
+                  cleaned[key] = limparSolucoes(value);
+                }
+              }
+              return cleaned;
+            }
+            return obj;
+          }
+          
+          // Limpar soluções em reports e validacoes
+          if (resultado.reports) {
+            resultado.reports = limparSolucoes(resultado.reports);
+          }
+          if (resultado.validacoes) {
+            resultado.validacoes = limparSolucoes(resultado.validacoes);
+          }
+          
+          // Debug: Verificar se SOLUCAO_AUTOMATICA está presente nos dados
+          if (resultado.reports && resultado.reports['Divergências de Valores (Classificadas)']) {
+            const divClass = resultado.reports['Divergências de Valores (Classificadas)'];
+            console.log(`[${validationId}] DEBUG - Divergências Classificadas encontradas:`, {
+              quantidade: Array.isArray(divClass) ? divClass.length : 'não é array',
+              tipo: typeof divClass,
+              primeiraLinha: Array.isArray(divClass) && divClass.length > 0 ? divClass[0] : null,
+              temSolucaoAutomatica: Array.isArray(divClass) && divClass.length > 0 ? 'SOLUCAO_AUTOMATICA' in (divClass[0] || {}) : false,
+              valorSolucao: Array.isArray(divClass) && divClass.length > 0 ? (divClass[0] || {}).SOLUCAO_AUTOMATICA : null
+            });
+          }
+          
+          // Debug: Verificar C170 x C190 especificamente
+          if (resultado.reports && resultado.reports['C170 x C190 (Divergências)']) {
+            const c170c190 = resultado.reports['C170 x C190 (Divergências)'];
+            console.log(`[${validationId}] DEBUG - C170 x C190 encontradas:`, {
+              quantidade: Array.isArray(c170c190) ? c170c190.length : 'não é array',
+              tipo: typeof c170c190,
+              primeiraLinha: Array.isArray(c170c190) && c170c190.length > 0 ? c170c190[0] : null,
+              temSolucaoAutomatica: Array.isArray(c170c190) && c170c190.length > 0 ? 'SOLUCAO_AUTOMATICA' in (c170c190[0] || {}) : false,
+              valorSolucao: Array.isArray(c170c190) && c170c190.length > 0 ? (c170c190[0] || {}).SOLUCAO_AUTOMATICA : null,
+              todasChaves: Array.isArray(c170c190) && c170c190.length > 0 ? Object.keys(c170c190[0] || {}) : []
+            });
+            
+            // Log detalhado da primeira divergência
+            if (Array.isArray(c170c190) && c170c190.length > 0) {
+              const primeira = c170c190[0];
+              console.log(`[${validationId}] DEBUG - Primeira C170 x C190 completa:`, JSON.stringify(primeira, null, 2));
+            }
+          }
           
           console.log(`[${validationId}] Resultado carregado:`, {
             hasEmpresa: !!resultado.empresa,
@@ -261,20 +349,18 @@ export class SpedValidationService {
 
   /**
    * Obtém resultado da validação
+   * Tenta obter do Map primeiro, depois do arquivo como fallback
    */
   async obterResultado(validationId: string): Promise<any> {
     const status = this.validations.get(validationId);
-    if (!status) {
-      return null;
-    }
     
-    // Se completou com sucesso, retornar resultado
-    if (status.status === 'completed' && status.resultado) {
+    // Se encontrou no Map e tem resultado, retornar
+    if (status && status.status === 'completed' && status.resultado) {
       return status.resultado;
     }
     
     // Se houve erro, retornar informações do erro
-    if (status.status === 'error') {
+    if (status && status.status === 'error') {
       return {
         error: status.error || 'Erro desconhecido',
         message: status.message,
@@ -282,7 +368,66 @@ export class SpedValidationService {
       };
     }
     
-    // Se ainda está processando, retornar null
+    // Fallback: tentar ler do arquivo diretamente
+    const tmpDir = path.join(this.tmpDir, validationId);
+    const resultadoPath = path.join(tmpDir, 'resultado.json');
+    
+    if (fs.existsSync(resultadoPath)) {
+      try {
+        const resultadoData = fs.readFileSync(resultadoPath, 'utf-8');
+        // Limpar NaN, Infinity antes de parsear
+        const cleanedData = resultadoData
+          .replace(/:\s*NaN\b(?!")/g, ': null')
+          .replace(/:\s*Infinity\b(?!")/g, ': null')
+          .replace(/:\s*-Infinity\b(?!")/g, ': null');
+        const resultado = JSON.parse(cleanedData);
+        
+        // Garantir que colunas de solução sejam strings válidas após parse
+        const colunasSolucao = ['SOLUCAO_AUTOMATICA', 'REGISTRO_CORRIGIR', 'CAMPO_CORRIGIR', 'FORMULA_LEGAL', 'REFERENCIA_LEGAL', 'DETALHES', 'DETALHES_ITENS'];
+        
+        function limparSolucoes(obj: any): any {
+          if (Array.isArray(obj)) {
+            return obj.map(limparSolucoes);
+          } else if (obj && typeof obj === 'object') {
+            const cleaned: any = {};
+            for (const [key, value] of Object.entries(obj)) {
+              if (colunasSolucao.includes(key)) {
+                if (value === null || value === undefined) {
+                  cleaned[key] = '';
+                } else if (typeof value === 'string') {
+                  if (value.toLowerCase() === 'nan' || value.toLowerCase() === 'none' || value.toLowerCase() === 'null') {
+                    cleaned[key] = '';
+                  } else {
+                    cleaned[key] = value;
+                  }
+                } else {
+                  cleaned[key] = String(value);
+                }
+              } else {
+                cleaned[key] = limparSolucoes(value);
+              }
+            }
+            return cleaned;
+          }
+          return obj;
+        }
+        
+        // Limpar soluções em reports e validacoes
+        if (resultado.reports) {
+          resultado.reports = limparSolucoes(resultado.reports);
+        }
+        if (resultado.validacoes) {
+          resultado.validacoes = limparSolucoes(resultado.validacoes);
+        }
+        
+        return resultado;
+      } catch (error: any) {
+        console.error(`[obterResultado] Erro ao ler arquivo de resultado para ${validationId}:`, error.message);
+        return null;
+      }
+    }
+    
+    // Se ainda está processando ou não encontrou, retornar null
     return null;
   }
 
