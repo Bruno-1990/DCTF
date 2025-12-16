@@ -10,6 +10,13 @@ from typing import Dict, List, Optional, Tuple
 import re
 import logging
 
+# Tentar importar chardet para detecção de encoding
+try:
+    import chardet
+    HAS_CHARDET = True
+except ImportError:
+    HAS_CHARDET = False
+
 # Importar split_sped_line do parsers
 try:
     from parsers import split_sped_line
@@ -40,18 +47,90 @@ class SpedEditor:
         self.sped_path = Path(sped_path)
         self.lines: List[str] = []
         self.original_lines: List[str] = []
+        self.encoding: str = 'utf-8'  # Encoding detectado será armazenado aqui
         self._load_file()
     
+    def _detect_encoding(self) -> str:
+        """
+        Detecta a codificação do arquivo SPED
+        Tenta múltiplas codificações comuns para arquivos brasileiros
+        """
+        # Lista de codificações comuns para arquivos SPED brasileiros
+        # Ordem: tentar latin-1 primeiro (mais comum em SPED), depois windows-1252, depois UTF-8
+        encodings = ['latin-1', 'iso-8859-1', 'windows-1252', 'cp1252', 'utf-8']
+        
+        # Se chardet estiver disponível, usar para detecção
+        if HAS_CHARDET:
+            try:
+                with open(self.sped_path, 'rb') as f:
+                    raw_data = f.read(10000)  # Ler primeiros 10KB para detecção
+                    result = chardet.detect(raw_data)
+                    if result and result['encoding']:
+                        detected = result['encoding'].lower()
+                        # Normalizar alguns encodings
+                        if detected in ['windows-1252', 'cp1252']:
+                            detected = 'windows-1252'
+                        elif detected in ['latin-1', 'iso-8859-1']:
+                            detected = 'latin-1'
+                        logger.info(f"Encoding detectado por chardet: {detected} (confiança: {result.get('confidence', 0):.2f})")
+                        return detected
+            except Exception as e:
+                logger.warning(f"Erro ao detectar encoding com chardet: {e}")
+        
+        # Tentar cada encoding até encontrar um que funcione
+        for encoding in encodings:
+            try:
+                with open(self.sped_path, 'r', encoding=encoding) as f:
+                    f.read(1000)  # Tentar ler um pouco
+                logger.info(f"Encoding detectado por tentativa: {encoding}")
+                return encoding
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        
+        # Se nenhum funcionar, usar latin-1 como fallback (mais permissivo)
+        logger.warning("Não foi possível detectar encoding, usando latin-1 como fallback")
+        return 'latin-1'
+    
     def _load_file(self):
-        """Carrega arquivo SPED em memória"""
+        """Carrega arquivo SPED em memória com detecção automática de encoding"""
         if not self.sped_path.exists():
             raise FileNotFoundError(f"Arquivo SPED não encontrado: {self.sped_path}")
         
-        with open(self.sped_path, 'r', encoding='utf-8') as f:
-            self.lines = f.readlines()
-            self.original_lines = self.lines.copy()
+        # Detectar encoding
+        encoding = self._detect_encoding()
+        self.encoding = encoding  # Armazenar encoding detectado
         
-        logger.info(f"Arquivo SPED carregado: {len(self.lines)} linhas")
+        try:
+            with open(self.sped_path, 'r', encoding=encoding) as f:
+                self.lines = f.readlines()
+                self.original_lines = self.lines.copy()
+            
+            logger.info(f"Arquivo SPED carregado: {len(self.lines)} linhas (encoding: {encoding})")
+        except (UnicodeDecodeError, UnicodeError) as e:
+            logger.error(f"Erro ao ler arquivo com encoding {encoding}: {e}")
+            # Tentar latin-1 como último recurso com tratamento de erros
+            if encoding != 'latin-1':
+                logger.warning("Tentando latin-1 como último recurso...")
+                self.encoding = 'latin-1'
+                try:
+                    with open(self.sped_path, 'r', encoding='latin-1') as f:
+                        self.lines = f.readlines()
+                        self.original_lines = self.lines.copy()
+                    logger.info(f"Arquivo SPED carregado com latin-1: {len(self.lines)} linhas")
+                except (UnicodeDecodeError, UnicodeError):
+                    # Se ainda falhar, usar errors='replace' para substituir caracteres inválidos
+                    logger.warning("Usando latin-1 com substituição de caracteres inválidos...")
+                    with open(self.sped_path, 'r', encoding='latin-1', errors='replace') as f:
+                        self.lines = f.readlines()
+                        self.original_lines = self.lines.copy()
+                    logger.info(f"Arquivo SPED carregado com latin-1 (com substituição de erros): {len(self.lines)} linhas")
+            else:
+                # Se já estava tentando latin-1, usar errors='replace'
+                logger.warning("Usando latin-1 com substituição de caracteres inválidos...")
+                with open(self.sped_path, 'r', encoding='latin-1', errors='replace') as f:
+                    self.lines = f.readlines()
+                    self.original_lines = self.lines.copy()
+                logger.info(f"Arquivo SPED carregado com latin-1 (com substituição de erros): {len(self.lines)} linhas")
     
     def find_line_by_record(self, registro: str, chave: Optional[str] = None, 
                            cfop: Optional[str] = None, cst: Optional[str] = None,
@@ -103,32 +182,60 @@ class SpedEditor:
                 
                 # Se temos CFOP, verificar
                 if cfop:
+                    # CORREÇÃO: Normalizar CFOP passado como parâmetro (remover todos os espaços)
+                    cfop_clean_param = "".join(str(cfop).strip().split()) if cfop else ""
+                    
                     if registro == "C170":
-                        # C170|NUM_ITEM|COD_ITEM|DESCR_COMPL|QTD|UNID|VL_ITEM|VL_DESC|CFOP|... (posição 8)
-                        if len(parts) > 8:
-                            linha_cfop = parts[8].strip()
-                            if linha_cfop != cfop:
+                        # Layout C170 após split: parts[0]="", parts[1]="C170", parts[2]=NUM_ITEM, ...
+                        # parts[11]=CFOP (conforme layout oficial: REG(1), NUM_ITEM(2), ..., CFOP(11))
+                        if len(parts) > 11:
+                            linha_cfop = parts[11].strip()
+                            # CORREÇÃO: Remover todos os espaços (incluindo internos) para comparação
+                            linha_cfop_clean = "".join(linha_cfop.split())
+                            if linha_cfop_clean != cfop_clean_param:
                                 continue
                     elif registro == "C190":
-                        # C190|CFOP|... (posição 2)
-                        if len(parts) > 2:
-                            linha_cfop = parts[2].strip()
-                            if linha_cfop != cfop:
+                        # Layout C190: C190|CST_ICMS|CFOP|... (conforme layout oficial)
+                        # Após split: parts[2]=CST_ICMS, parts[3]=CFOP
+                        if len(parts) > 3:
+                            linha_cfop = parts[3].strip()
+                            # CORREÇÃO: Remover todos os espaços (incluindo internos) para comparação
+                            linha_cfop_clean = "".join(linha_cfop.split())
+                            if linha_cfop_clean != cfop_clean_param:
                                 continue
                 
-                # Se temos CST, verificar
+                # Se temos CST, verificar (normalizando para comparação)
                 if cst:
+                    try:
+                        from common import normalize_cst_for_compare
+                        cst_normalizado = normalize_cst_for_compare(cst)
+                    except ImportError:
+                        # Fallback se não conseguir importar
+                        cst_normalizado = str(cst).strip().zfill(3)
+                    
                     if registro == "C170":
-                        # C170|...|CST_ICMS|... (posição 7)
-                        if len(parts) > 7:
-                            linha_cst = parts[7].strip()
-                            if linha_cst != cst:
+                        # Layout C170 após split: parts[0]="", parts[1]="C170", parts[2]=NUM_ITEM, ...
+                        # parts[10]=CST_ICMS (conforme layout oficial: REG(1), NUM_ITEM(2), ..., CST_ICMS(10))
+                        if len(parts) > 10:
+                            linha_cst = parts[10].strip()
+                            try:
+                                from common import normalize_cst_for_compare as ncfc
+                                linha_cst_normalizado = ncfc(linha_cst)
+                            except ImportError:
+                                linha_cst_normalizado = linha_cst.strip().zfill(3)
+                            if linha_cst_normalizado != cst_normalizado:
                                 continue
                     elif registro == "C190":
-                        # C190|CFOP|CST_ICMS|... (posição 3)
-                        if len(parts) > 3:
-                            linha_cst = parts[3].strip()
-                            if linha_cst != cst:
+                        # Layout C190: C190|CST_ICMS|CFOP|... (conforme layout oficial)
+                        # Após split: parts[2]=CST_ICMS, parts[3]=CFOP
+                        if len(parts) > 2:
+                            linha_cst = parts[2].strip()
+                            try:
+                                from common import normalize_cst_for_compare as ncfc
+                                linha_cst_normalizado = ncfc(linha_cst)
+                            except ImportError:
+                                linha_cst_normalizado = linha_cst.strip().zfill(3)
+                            if linha_cst_normalizado != cst_normalizado:
                                 continue
                 
                 indices.append(idx)
@@ -170,11 +277,14 @@ class SpedEditor:
                 "VL_ITEM": 15,
             },
             "C190": {
-                "VL_BC_ICMS": 4,
-                "VL_ICMS": 5,
-                "VL_BC_ICMS_ST": 6,
-                "VL_ICMS_ST": 7,
-                "VL_IPI": 8,
+                # Layout C190 após split: fs[0]="", fs[1]="C190", fs[2]=CST, fs[3]=CFOP, fs[4]=ALIQ, 
+                # fs[5]=VL_OPR, fs[6]=VL_BC_ICMS, fs[7]=VL_ICMS, fs[8]=VL_BC_ICMS_ST, 
+                # fs[9]=VL_ICMS_ST, fs[10]=VL_RED_BC, fs[11]=VL_IPI, fs[12]=COD_OBS
+                "VL_BC_ICMS": 6,
+                "VL_ICMS": 7,
+                "VL_BC_ICMS_ST": 8,
+                "VL_ICMS_ST": 9,
+                "VL_IPI": 11,
             }
         }
         
@@ -300,6 +410,166 @@ class SpedEditor:
         logger.info(f"Registro {registro} adicionado no final")
         return True
     
+    def find_cod_part_by_cnpj(self, cnpj: str) -> Optional[str]:
+        """
+        Encontra COD_PART existente para um CNPJ no registro 0150.
+        
+        Args:
+            cnpj: CNPJ sem formatação (apenas números)
+        
+        Returns:
+            COD_PART se encontrado, None caso contrário
+        """
+        cnpj_clean = re.sub(r"\D", "", str(cnpj).strip())
+        if not cnpj_clean:
+            return None
+        
+        for idx, line in enumerate(self.lines):
+            if line.startswith("|0150|"):
+                parts = split_sped_line(line, min_fields=9)
+                if len(parts) >= 6:
+                    cnpj_0150 = re.sub(r"\D", "", (parts[5] or "").strip())
+                    if cnpj_0150 == cnpj_clean:
+                        cod_part = (parts[2] or "").strip()
+                        if cod_part:
+                            return cod_part
+        
+        return None
+    
+    def get_next_cod_part(self) -> str:
+        """
+        Gera próximo COD_PART disponível.
+        Busca o maior COD_PART numérico existente e incrementa.
+        
+        Returns:
+            Próximo COD_PART disponível (string)
+        """
+        max_cod = 0
+        
+        for line in self.lines:
+            if line.startswith("|0150|"):
+                parts = split_sped_line(line, min_fields=9)
+                if len(parts) >= 3:
+                    cod_part = (parts[2] or "").strip()
+                    # Tentar extrair número do COD_PART
+                    cod_num = re.sub(r"\D", "", cod_part)
+                    if cod_num:
+                        try:
+                            cod_int = int(cod_num)
+                            if cod_int > max_cod:
+                                max_cod = cod_int
+                        except ValueError:
+                            pass
+        
+        # Próximo código: incrementar o maior encontrado
+        next_cod = max_cod + 1
+        return str(next_cod).zfill(4)  # Formato padrão: 4 dígitos com zeros à esquerda
+    
+    def criar_0150_se_necessario(
+        self,
+        cnpj: str,
+        nome: str,
+        ie: str = "",
+        uf: str = "",
+        cpf: str = "",
+        cod_mun: str = ""
+    ) -> str:
+        """
+        Cria registro 0150 se não existir para o CNPJ.
+        Auto-cadastro mínimo conforme SC FAQ.
+        
+        Args:
+            cnpj: CNPJ (com ou sem formatação)
+            nome: Nome/Razão Social
+            ie: Inscrição Estadual (opcional)
+            uf: UF (opcional)
+            cpf: CPF (opcional, se pessoa física)
+            cod_mun: Código do município (opcional)
+        
+        Returns:
+            COD_PART criado ou existente
+        """
+        # Limpar CNPJ
+        cnpj_clean = re.sub(r"\D", "", str(cnpj).strip())
+        if not cnpj_clean:
+            logger.warning("CNPJ vazio ao tentar criar 0150")
+            return None
+        
+        # Verificar se já existe
+        cod_part_existente = self.find_cod_part_by_cnpj(cnpj_clean)
+        if cod_part_existente:
+            logger.debug(f"0150 já existe para CNPJ {cnpj_clean}: COD_PART={cod_part_existente}")
+            return cod_part_existente
+        
+        # Gerar próximo COD_PART
+        cod_part = self.get_next_cod_part()
+        
+        # Limpar campos
+        nome_clean = str(nome).strip()[:100] if nome else ""  # Limitar tamanho
+        ie_clean = str(ie).strip()[:14] if ie else ""
+        uf_clean = str(uf).strip()[:2].upper() if uf else ""
+        cpf_clean = re.sub(r"\D", "", str(cpf).strip()) if cpf else ""
+        cod_mun_clean = str(cod_mun).strip()[:7] if cod_mun else ""
+        
+        # Criar linha 0150
+        # Layout: 0150|COD_PART|NOME|COD_PAIS|CNPJ|CPF|IE|COD_MUN|SUFRAMA|END|NUM|COMPL|BAIRRO
+        # Campos mínimos: COD_PART(2), NOME(3), CNPJ(5) ou CPF(6)
+        campos_0150 = [
+            "",  # fs[0] - vazio antes do primeiro |
+            "0150",  # fs[1]
+            cod_part,  # fs[2] - COD_PART
+            nome_clean,  # fs[3] - NOME
+            "",  # fs[4] - COD_PAIS (deixar vazio)
+            cnpj_clean if cnpj_clean else "",  # fs[5] - CNPJ
+            cpf_clean if cpf_clean else "",  # fs[6] - CPF
+            ie_clean,  # fs[7] - IE
+            cod_mun_clean,  # fs[8] - COD_MUN
+            "",  # fs[9] - SUFRAMA
+            "",  # fs[10] - END
+            "",  # fs[11] - NUM
+            "",  # fs[12] - COMPL
+            "",  # fs[13] - BAIRRO
+        ]
+        
+        linha_0150 = "|".join(campos_0150) + "|\n"
+        
+        # Inserir após último 0150 ou antes de 0190
+        posicao_inserir = None
+        
+        # Buscar último 0150
+        ultimo_0150_idx = None
+        for idx in range(len(self.lines) - 1, -1, -1):
+            if self.lines[idx].startswith("|0150|"):
+                ultimo_0150_idx = idx
+                break
+        
+        if ultimo_0150_idx is not None:
+            # Inserir após último 0150
+            posicao_inserir = ultimo_0150_idx + 1
+        else:
+            # Buscar primeiro 0190 (inserir antes dele)
+            for idx, line in enumerate(self.lines):
+                if line.startswith("|0190|"):
+                    posicao_inserir = idx
+                    break
+        
+        # Se não encontrou posição, inserir antes do 9999
+        if posicao_inserir is None:
+            for idx in range(len(self.lines) - 1, -1, -1):
+                if self.lines[idx].startswith('9999|'):
+                    posicao_inserir = idx
+                    break
+        
+        # Se ainda não encontrou, inserir no final (antes do 9999)
+        if posicao_inserir is None:
+            posicao_inserir = len(self.lines) - 1 if self.lines else 0
+        
+        # Inserir 0150
+        self.lines.insert(posicao_inserir, linha_0150)
+        logger.info(f"0150 criado: COD_PART={cod_part}, NOME={nome_clean}, CNPJ={cnpj_clean}")
+        
+        return cod_part
+    
     def save(self, output_path: Optional[Path] = None) -> Path:
         """
         Salva arquivo SPED modificado
@@ -316,10 +586,20 @@ class SpedEditor:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.writelines(self.lines)
+        # Usar o mesmo encoding do arquivo original para preservar caracteres especiais
+        # Se o encoding original for latin-1 ou windows-1252, manter; caso contrário, usar UTF-8
+        save_encoding = self.encoding if self.encoding in ['latin-1', 'iso-8859-1', 'windows-1252', 'cp1252'] else 'utf-8'
         
-        logger.info(f"Arquivo SPED salvo em: {output_path}")
+        try:
+            with open(output_path, 'w', encoding=save_encoding, newline='') as f:
+                f.writelines(self.lines)
+        except UnicodeEncodeError:
+            # Se falhar, tentar latin-1 como fallback
+            logger.warning(f"Erro ao salvar em {save_encoding}, tentando latin-1...")
+            with open(output_path, 'w', encoding='latin-1', newline='') as f:
+                f.writelines(self.lines)
+        
+        logger.info(f"Arquivo SPED salvo em: {output_path} (encoding: {save_encoding})")
         return output_path
     
     def get_changes_summary(self) -> Dict[str, any]:
@@ -373,35 +653,408 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
         valor_correto = float(correcao.get("valor_correto", 0))
         chave = correcao.get("chave")
         cfop = correcao.get("cfop")
-        cst = correcao.get("cst")
+        cst_raw = correcao.get("cst")
         linha_sped = correcao.get("linha_sped")
+        
+        # CORREÇÃO: Normalizar CST antes de usar (pode vir do DataFrame em formato diferente)
+        # O CST pode vir como "00", "000", "0", etc. e precisa ser normalizado para 3 dígitos
+        try:
+            from common import normalize_cst_for_compare
+            cst = normalize_cst_for_compare(cst_raw) if cst_raw else None
+            cst_normalizado = cst  # Já normalizado
+        except ImportError:
+            # Fallback se não conseguir importar
+            cst = str(cst_raw).strip().zfill(3) if cst_raw else None
+            cst_normalizado = cst
+        
+        # CORREÇÃO: Limpar CFOP (remover espaços) antes de usar
+        cfop_clean = str(cfop).strip() if cfop else ""
+        cfop_clean = "".join(cfop_clean.split())  # Remove todos os espaços (incluindo internos)
         
         # Se C190 não existe e precisa ser criado
         if registro == "C190" and valor_correto > 0:
-            # Verificar se C190 já existe
-            indices_c190 = editor.find_line_by_record("C190", cfop=cfop, cst=cst, linha_sped=linha_sped)
+            
+            # Verificar se C190 já existe (usar CFOP limpo)
+            indices_c190 = editor.find_line_by_record("C190", cfop=cfop_clean, cst=cst_normalizado, linha_sped=linha_sped)
             
             if not indices_c190:
                 # C190 não existe, precisa criar
-                # Buscar último C190 para usar como template ou criar novo
-                # Por enquanto, vamos tentar encontrar próximo C190 para inserir antes
-                # TODO: Implementar criação completa de C190 com todos os campos
-                logger.warning(f"C190 não existe para CFOP {cfop} / CST {cst}. Criação completa ainda não implementada.")
-                return (False, sped_path, {
-                    "erro": "C190 não existe e criação completa ainda não implementada",
-                    "sugestao": f"Criar C190 manualmente com CFOP {cfop}, CST {cst}, {campo} = {valor_correto:.2f}"
-                })
+                # VALIDAÇÃO LEGAL: Verificar se temos C170 relacionados antes de criar C190
+                # Conforme legislação: C190 = Σ C170 por CFOP/CST
+                # CORREÇÃO: Limpar CFOP (remover espaços) antes de buscar
+                cfop_clean = str(cfop).strip() if cfop else ""
+                cfop_clean = "".join(cfop_clean.split())  # Remove todos os espaços (incluindo internos)
+                logger.info(f"[DEBUG] Buscando C170 com CFOP='{cfop_clean}' (original='{cfop}'), CST original={cst_raw}, CST normalizado={cst_normalizado}")
+                print(f"[DEBUG] Buscando C170 com CFOP='{cfop_clean}' (original='{cfop}'), CST original={cst_raw}, CST normalizado={cst_normalizado}", flush=True)
+                
+                indices_c170 = editor.find_line_by_record("C170", cfop=cfop_clean, cst=cst_normalizado)
+                logger.info(f"[DEBUG] C170 encontrados com CFOP='{cfop_clean}' e CST={cst_normalizado}: {len(indices_c170)}")
+                print(f"[DEBUG] C170 encontrados com CFOP='{cfop_clean}' e CST={cst_normalizado}: {len(indices_c170)}", flush=True)
+                
+                # Se não encontrou, tentar com CST original também (pode estar em formato diferente)
+                if not indices_c170 and cst_raw:
+                    logger.warning(f"[DEBUG] Não encontrou C170 com CST normalizado {cst_normalizado}, tentando com CST original {cst_raw}")
+                    print(f"[DEBUG] Não encontrou C170 com CST normalizado {cst_normalizado}, tentando com CST original {cst_raw}", flush=True)
+                    indices_c170 = editor.find_line_by_record("C170", cfop=cfop_clean, cst=cst_raw)
+                    logger.info(f"[DEBUG] C170 encontrados com CST original {cst_raw}: {len(indices_c170)}")
+                    print(f"[DEBUG] C170 encontrados com CST original {cst_raw}: {len(indices_c170)}", flush=True)
+                
+                # Se ainda não encontrou, tentar buscar apenas por CFOP e verificar CST manualmente
+                if not indices_c170:
+                    logger.warning(f"[DEBUG] Tentando busca alternativa: buscar por CFOP e verificar CST manualmente")
+                    
+                    # Primeiro, verificar se há C170 no arquivo (sem filtro)
+                    todos_c170 = editor.find_line_by_record("C170")
+                    print(f"[DEBUG] Total de linhas C170 no arquivo: {len(todos_c170)}", flush=True)
+                    logger.info(f"[DEBUG] Total de linhas C170 no arquivo: {len(todos_c170)}")
+                    
+                    # Coletar todos os CFOPs/CSTs únicos para análise
+                    cfops_csts_encontrados = {}
+                    if todos_c170:
+                        print(f"[DEBUG] Analisando todos os C170 para mapear CFOPs/CSTs disponíveis...", flush=True)
+                        logger.info(f"[DEBUG] Analisando todos os C170 para mapear CFOPs/CSTs disponíveis...")
+                        for idx in todos_c170:
+                            line = editor.lines[idx]
+                            parts = split_sped_line(line, min_fields=21)
+                            if len(parts) > 11:
+                                cfop_encontrado_raw = parts[11].strip()
+                                # CORREÇÃO: Remover todos os espaços (incluindo internos) do CFOP
+                                cfop_encontrado = "".join(cfop_encontrado_raw.split())
+                                cst_encontrado = parts[10].strip() if len(parts) > 10 else "N/A"
+                                chave = f"{cfop_encontrado}/{cst_encontrado}"
+                                if chave not in cfops_csts_encontrados:
+                                    cfops_csts_encontrados[chave] = 0
+                                cfops_csts_encontrados[chave] += 1
+                        
+                        # Mostrar resumo de CFOPs/CSTs encontrados
+                        print(f"[DEBUG] Total de combinacoes CFOP/CST unicas encontradas: {len(cfops_csts_encontrados)}", flush=True)
+                        logger.info(f"[DEBUG] Total de combinacoes CFOP/CST unicas encontradas: {len(cfops_csts_encontrados)}")
+                        
+                        # Mostrar as primeiras 20 combinações
+                        print(f"[DEBUG] Primeiras 20 combinacoes CFOP/CST encontradas:", flush=True)
+                        logger.info(f"[DEBUG] Primeiras 20 combinacoes CFOP/CST encontradas:")
+                        for i, (chave, count) in enumerate(sorted(cfops_csts_encontrados.items())[:20]):
+                            print(f"[DEBUG]   {i+1}. {chave} ({count} C170)", flush=True)
+                            logger.info(f"[DEBUG]   {i+1}. {chave} ({count} C170)")
+                        
+                        # Verificar se o CFOP buscado existe (mesmo com CST diferente)
+                        cfops_unicos = set()
+                        for idx in todos_c170:
+                            line = editor.lines[idx]
+                            parts = split_sped_line(line, min_fields=21)
+                            if len(parts) > 11:
+                                cfop_raw = parts[11].strip()
+                                # CORREÇÃO: Remover todos os espaços (incluindo internos) do CFOP
+                                cfop_clean = "".join(cfop_raw.split())
+                                cfops_unicos.add(cfop_clean)
+                        
+                        print(f"[DEBUG] CFOPs unicos encontrados no arquivo: {sorted(cfops_unicos)}", flush=True)
+                        logger.info(f"[DEBUG] CFOPs unicos encontrados no arquivo: {sorted(cfops_unicos)}")
+                        print(f"[DEBUG] CFOP buscado: {cfop}", flush=True)
+                        logger.info(f"[DEBUG] CFOP buscado: {cfop}")
+                        
+                        # CORREÇÃO: Comparar com CFOP limpo
+                        if cfop_clean not in cfops_unicos:
+                            print(f"[DEBUG] AVISO CRITICO: CFOP '{cfop_clean}' (original='{cfop}') NAO EXISTE no arquivo SPED!", flush=True)
+                            logger.error(f"[DEBUG] AVISO CRITICO: CFOP '{cfop_clean}' (original='{cfop}') NAO EXISTE no arquivo SPED!")
+                            print(f"[DEBUG] Isso significa que nao ha C170 com este CFOP, portanto nao podemos criar C190.", flush=True)
+                            logger.error(f"[DEBUG] Isso significa que nao ha C170 com este CFOP, portanto nao podemos criar C190.")
+                    
+                    # Mostrar alguns exemplos de C170 do arquivo
+                    if todos_c170:
+                        print(f"[DEBUG] Exemplos de C170 no arquivo (primeiros 5):", flush=True)
+                        logger.info(f"[DEBUG] Exemplos de C170 no arquivo (primeiros 5):")
+                        for idx in todos_c170[:5]:
+                            line = editor.lines[idx]
+                            parts = split_sped_line(line, min_fields=21)
+                            if len(parts) > 11:
+                                cfop_exemplo_raw = parts[11].strip()
+                                # CORREÇÃO: Remover todos os espaços (incluindo internos) do CFOP
+                                cfop_exemplo = "".join(cfop_exemplo_raw.split())
+                                cst_exemplo = parts[10].strip() if len(parts) > 10 else "N/A"
+                                print(f"[DEBUG]   Linha {idx+1}: CFOP='{cfop_exemplo}' (original='{cfop_exemplo_raw}'), CST={cst_exemplo}", flush=True)
+                                logger.info(f"[DEBUG]   Linha {idx+1}: CFOP='{cfop_exemplo}' (original='{cfop_exemplo_raw}'), CST={cst_exemplo}")
+                    
+                    c170_cfop = editor.find_line_by_record("C170", cfop=cfop_clean)
+                    print(f"[DEBUG] C170 encontrados apenas com CFOP '{cfop_clean}' (original='{cfop}'): {len(c170_cfop)}", flush=True)
+                    logger.info(f"[DEBUG] C170 encontrados apenas com CFOP '{cfop_clean}' (original='{cfop}'): {len(c170_cfop)}")
+                    
+                    # Se encontrou C170 com CFOP, mostrar seus CSTs
+                    if c170_cfop:
+                        print(f"[DEBUG] CSTs encontrados nos C170 com CFOP {cfop}:", flush=True)
+                        logger.info(f"[DEBUG] CSTs encontrados nos C170 com CFOP {cfop}:")
+                        csts_encontrados = set()
+                        for idx in c170_cfop[:10]:  # Primeiros 10
+                            line = editor.lines[idx]
+                            parts = split_sped_line(line, min_fields=21)
+                            if len(parts) > 10:
+                                cst_exemplo = parts[10].strip()
+                                csts_encontrados.add(cst_exemplo)
+                                try:
+                                    from common import normalize_cst_for_compare as ncfc
+                                    cst_exemplo_norm = ncfc(cst_exemplo)
+                                except ImportError:
+                                    cst_exemplo_norm = cst_exemplo.strip().zfill(3)
+                                print(f"[DEBUG]   Linha {idx+1}: CST={cst_exemplo} (normalizado: {cst_exemplo_norm})", flush=True)
+                                logger.info(f"[DEBUG]   Linha {idx+1}: CST={cst_exemplo} (normalizado: {cst_exemplo_norm})")
+                        print(f"[DEBUG] CSTs únicos encontrados: {sorted(csts_encontrados)}", flush=True)
+                        print(f"[DEBUG] CST buscado: {cst_raw} (normalizado: {cst_normalizado})", flush=True)
+                        logger.info(f"[DEBUG] CSTs únicos encontrados: {sorted(csts_encontrados)}")
+                        logger.info(f"[DEBUG] CST buscado: {cst_raw} (normalizado: {cst_normalizado})")
+                    else:
+                        print(f"[DEBUG] AVISO: Nenhum C170 encontrado com CFOP '{cfop_clean}' (original='{cfop}')", flush=True)
+                        logger.warning(f"[DEBUG] AVISO: Nenhum C170 encontrado com CFOP '{cfop_clean}' (original='{cfop}')")
+                    
+                    indices_c170_alternativo = []
+                    for idx in c170_cfop:
+                        line = editor.lines[idx]
+                        parts = split_sped_line(line, min_fields=21)
+                        # Layout C170: parts[10]=CST_ICMS, parts[11]=CFOP
+                        if len(parts) > 10:
+                            linha_cst = parts[10].strip()
+                            try:
+                                from common import normalize_cst_for_compare as ncfc
+                                linha_cst_norm = ncfc(linha_cst)
+                            except ImportError:
+                                linha_cst_norm = linha_cst.strip().zfill(3)
+                            
+                            # Comparar CST normalizado
+                            if linha_cst_norm == cst_normalizado:
+                                indices_c170_alternativo.append(idx)
+                            # Também tentar comparar sem normalização (caso ambos estejam no mesmo formato)
+                            elif linha_cst == cst or linha_cst == str(cst).strip():
+                                indices_c170_alternativo.append(idx)
+                    
+                    if indices_c170_alternativo:
+                        logger.info(f"[DEBUG] Busca alternativa encontrou {len(indices_c170_alternativo)} C170")
+                        indices_c170 = indices_c170_alternativo
+                    else:
+                        # Mostrar exemplos de C170 encontrados para debug
+                        if c170_cfop:
+                            logger.warning(f"[DEBUG] Exemplos de C170 com CFOP '{cfop_clean}' (original='{cfop}') (mas CST diferente):")
+                            for idx in c170_cfop[:5]:  # Primeiros 5
+                                line = editor.lines[idx]
+                                parts = split_sped_line(line, min_fields=21)
+                                # Layout C170: parts[10]=CST_ICMS, parts[11]=CFOP
+                                if len(parts) > 11:
+                                    cst_exemplo = parts[10].strip()
+                                    cfop_exemplo_raw = parts[11].strip()
+                                    # CORREÇÃO: Remover todos os espaços (incluindo internos) do CFOP
+                                    cfop_exemplo = "".join(cfop_exemplo_raw.split())
+                                    try:
+                                        from common import normalize_cst_for_compare as ncfc
+                                        cst_exemplo_norm = ncfc(cst_exemplo)
+                                    except ImportError:
+                                        cst_exemplo_norm = cst_exemplo.strip().zfill(3)
+                                    logger.warning(f"[DEBUG]   Linha {idx+1}: CFOP='{cfop_exemplo}' (original='{cfop_exemplo_raw}'), CST={cst_exemplo} (normalizado: {cst_exemplo_norm})")
+                
+                if not indices_c170:
+                    print(f"[DEBUG] ERRO: Nenhum C170 encontrado após todas as tentativas. CFOP='{cfop_clean}' (original='{cfop}'), CST original={cst_raw}, CST normalizado={cst_normalizado}", flush=True)
+                    logger.error(f"[DEBUG] ERRO: Nenhum C170 encontrado após todas as tentativas. CFOP='{cfop_clean}' (original='{cfop}'), CST original={cst_raw}, CST normalizado={cst_normalizado}")
+                    logger.warning(f"Não é possível criar C190 sem C170 relacionados. CFOP {cfop_clean} / CST {cst_normalizado} não possui C170 correspondente.")
+                    return (False, sped_path, {
+                        "erro": "Não é possível criar C190 sem C170 relacionados conforme legislação",
+                        "detalhes": f"Conforme Guia Prático EFD-ICMS/IPI, Seção 3, Bloco C: C190 deve ser igual à soma dos C170 agrupados por CFOP e CST. Não foram encontrados C170 com CFOP {cfop} e CST {cst} (normalizado: {cst_normalizado}).",
+                        "sugestao": f"Verificar se existem C170 com CFOP {cfop} e CST {cst} antes de criar o C190 correspondente."
+                    })
+                
+                logger.info(f"Criando novo C190 para CFOP {cfop} / CST {cst} com {campo} = {valor_correto:.2f} (baseado em {len(indices_c170)} C170 relacionados)")
+                
+                # Calcular valores baseados nos C170 ou usar valores da correção
+                vl_bc_icms = 0.0
+                vl_icms = 0.0
+                vl_bc_icms_st = 0.0
+                vl_icms_st = 0.0
+                vl_ipi = 0.0
+                vl_opr = 0.0
+                
+                # Mapear campo para variável
+                if campo == "VL_BC_ICMS":
+                    vl_bc_icms = valor_correto
+                elif campo == "VL_ICMS":
+                    vl_icms = valor_correto
+                elif campo == "VL_BC_ICMS_ST":
+                    vl_bc_icms_st = valor_correto
+                elif campo == "VL_ICMS_ST":
+                    vl_icms_st = valor_correto
+                elif campo == "VL_IPI":
+                    vl_ipi = valor_correto
+                
+                # VALIDAÇÃO LEGAL: Calcular valores baseados nos C170 relacionados
+                # Conforme legislação: C190 = Σ C170 por CFOP/CST
+                if indices_c170:
+                    for idx in indices_c170:
+                        parts = split_sped_line(editor.lines[idx], min_fields=21)
+                        # Layout C170 após split: fs[0]="", fs[1]="C170", fs[2]=NUM_ITEM, ...
+                        # fs[9]=VL_BC_ICMS, fs[10]=VL_ICMS, fs[11]=VL_BC_ICMS_ST, fs[12]=VL_ICMS_ST, fs[13]=VL_IPI, fs[15]=VL_ITEM
+                        if len(parts) > 9:
+                            vl_bc_icms += float(parts[9] or 0) if parts[9] else 0.0
+                        if len(parts) > 10:
+                            vl_icms += float(parts[10] or 0) if parts[10] else 0.0
+                        if len(parts) > 11:
+                            vl_bc_icms_st += float(parts[11] or 0) if parts[11] else 0.0
+                        if len(parts) > 12:
+                            vl_icms_st += float(parts[12] or 0) if parts[12] else 0.0
+                        if len(parts) > 13:
+                            vl_ipi += float(parts[13] or 0) if parts[13] else 0.0
+                        if len(parts) > 15:
+                            vl_opr += float(parts[15] or 0) if parts[15] else 0.0
+                    
+                    # VALIDAÇÃO LEGAL: O valor do campo corrigido deve ser igual à soma dos C170
+                    # Tolerância de 0.02 para arredondamentos
+                    valor_soma_c170 = {
+                        "VL_BC_ICMS": vl_bc_icms,
+                        "VL_ICMS": vl_icms,
+                        "VL_BC_ICMS_ST": vl_bc_icms_st,
+                        "VL_ICMS_ST": vl_icms_st,
+                        "VL_IPI": vl_ipi
+                    }.get(campo, 0.0)
+                    
+                    diferenca = abs(valor_correto - valor_soma_c170)
+                    if diferenca > 0.02:
+                        logger.warning(f"VALIDAÇÃO LEGAL: Valor da correção ({valor_correto:.2f}) difere da soma dos C170 ({valor_soma_c170:.2f}) em {diferenca:.2f}")
+                        logger.warning(f"Usando soma dos C170 ({valor_soma_c170:.2f}) conforme legislação: C190.{campo} = Σ C170.{campo} por CFOP/CST")
+                        # Usar a soma dos C170 como valor correto (conforme legislação)
+                        valor_correto = valor_soma_c170
+                
+                # VALIDAÇÃO LEGAL: Garantir que o campo corrigido use o valor da soma dos C170
+                # Se o campo específico não foi calculado ou está zerado, usar o valor da correção
+                # Mas apenas se for o campo que estamos corrigindo
+                if campo == "VL_BC_ICMS":
+                    vl_bc_icms = valor_correto  # Usar valor da correção (já validado acima)
+                elif campo == "VL_ICMS":
+                    vl_icms = valor_correto
+                elif campo == "VL_BC_ICMS_ST":
+                    vl_bc_icms_st = valor_correto
+                elif campo == "VL_ICMS_ST":
+                    vl_icms_st = valor_correto
+                elif campo == "VL_IPI":
+                    vl_ipi = valor_correto
+                
+                # VALIDAÇÃO LEGAL: Verificar se CFOP e CST são válidos
+                if not cfop or len(cfop.strip()) == 0:
+                    return (False, sped_path, {
+                        "erro": "CFOP é obrigatório para criar C190 conforme legislação",
+                        "referencia_legal": "Guia Prático EFD-ICMS/IPI, Seção 3, Bloco C"
+                    })
+                
+                if not cst_normalizado or len(str(cst_normalizado).strip()) == 0:
+                    return (False, sped_path, {
+                        "erro": "CST é obrigatório para criar C190 conforme legislação",
+                        "referencia_legal": "Guia Prático EFD-ICMS/IPI, Seção 3, Bloco C"
+                    })
+                
+                # Criar linha C190
+                # Layout: C190|CST_ICMS|CFOP|ALIQ_ICMS|VL_OPR|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_RED_BC|VL_IPI|COD_OBS|
+                # Após split: fs[0]="", fs[1]="C190", fs[2]=CST, fs[3]=CFOP, fs[4]=ALIQ, fs[5]=VL_OPR, 
+                #            fs[6]=VL_BC_ICMS, fs[7]=VL_ICMS, fs[8]=VL_BC_ICMS_ST, fs[9]=VL_ICMS_ST, 
+                #            fs[10]=VL_RED_BC, fs[11]=VL_IPI, fs[12]=COD_OBS
+                campos_c190 = [
+                    "",  # fs[0] - vazio antes do primeiro |
+                    "C190",  # fs[1]
+                    cst_normalizado or "",  # fs[2] - CST_ICMS (usar CST normalizado)
+                    cfop or "",  # fs[3] - CFOP
+                    "",  # fs[4] - ALIQ_ICMS (deixar vazio por enquanto)
+                    f"{vl_opr:.2f}",  # fs[5] - VL_OPR
+                    f"{vl_bc_icms:.2f}",  # fs[6] - VL_BC_ICMS
+                    f"{vl_icms:.2f}",  # fs[7] - VL_ICMS
+                    f"{vl_bc_icms_st:.2f}",  # fs[8] - VL_BC_ICMS_ST
+                    f"{vl_icms_st:.2f}",  # fs[9] - VL_ICMS_ST
+                    "",  # fs[10] - VL_RED_BC (deixar vazio)
+                    f"{vl_ipi:.2f}",  # fs[11] - VL_IPI
+                    ""  # fs[12] - COD_OBS (deixar vazio)
+                ]
+                
+                linha_c190 = "|".join(campos_c190) + "|\n"
+                
+                # Encontrar posição para inserir C190
+                # Inserir após o último C170 relacionado ou após o último C190 do mesmo bloco
+                posicao_inserir = None
+                
+                if indices_c170:
+                    # Inserir após o último C170
+                    posicao_inserir = max(indices_c170) + 1
+                else:
+                    # Buscar último C190 para inserir após ele
+                    todos_c190 = editor.find_line_by_record("C190")
+                    if todos_c190:
+                        posicao_inserir = max(todos_c190) + 1
+                    else:
+                        # Buscar último C170 do arquivo para inserir após
+                        todos_c170 = editor.find_line_by_record("C170")
+                        if todos_c170:
+                            posicao_inserir = max(todos_c170) + 1
+                
+                # Se não encontrou posição, inserir antes do 9999
+                if posicao_inserir is None:
+                    for idx in range(len(editor.lines) - 1, -1, -1):
+                        if editor.lines[idx].startswith('9999|'):
+                            posicao_inserir = idx
+                            break
+                
+                if posicao_inserir is None:
+                    posicao_inserir = len(editor.lines)
+                
+                # Inserir C190
+                editor.lines.insert(posicao_inserir, linha_c190)
+                logger.info(f"SUCESSO: C190 criado na linha {posicao_inserir + 1} com CFOP {cfop}, CST {cst}, {campo} = {valor_correto:.2f}")
+                logger.info(f"SUCESSO: VALIDAÇÃO LEGAL: C190.{campo} = {valor_correto:.2f} = Σ C170.{campo} por CFOP/CST (conforme Guia Prático EFD-ICMS/IPI, Seção 3, Bloco C)")
+                
+                # Marcar como sucesso
+                sucesso = True
             else:
                 # C190 existe, atualizar
+                # VALIDAÇÃO LEGAL: Verificar se o valor a atualizar está de acordo com a legislação
+                # C190 = Σ C170 por CFOP/CST
+                indices_c170 = editor.find_line_by_record("C170", cfop=cfop, cst=cst)
+                
+                if indices_c170:
+                    # Calcular soma dos C170 para validar
+                    soma_c170 = 0.0
+                    for idx in indices_c170:
+                        parts = split_sped_line(editor.lines[idx], min_fields=21)
+                        # Mapear campo para posição no C170
+                        posicao_campo = {
+                            "VL_BC_ICMS": 9,
+                            "VL_ICMS": 10,
+                            "VL_BC_ICMS_ST": 11,
+                            "VL_ICMS_ST": 12,
+                            "VL_IPI": 13
+                        }.get(campo, 9)
+                        
+                        if len(parts) > posicao_campo:
+                            soma_c170 += float(parts[posicao_campo] or 0) if parts[posicao_campo] else 0.0
+                    
+                    # Validar se o valor da correção está de acordo com a legislação
+                    diferenca = abs(valor_correto - soma_c170)
+                    if diferenca > 0.02:
+                        logger.warning(f"VALIDAÇÃO LEGAL: Valor da correção ({valor_correto:.2f}) difere da soma dos C170 ({soma_c170:.2f}) em {diferenca:.2f}")
+                        logger.warning(f"Ajustando para soma dos C170 ({soma_c170:.2f}) conforme legislação: C190.{campo} = Σ C170.{campo} por CFOP/CST")
+                        # Usar a soma dos C170 como valor correto (conforme legislação)
+                        valor_correto = soma_c170
+                
                 sucesso = editor.update_field(
                     registro=registro,
                     campo=campo,
                     novo_valor=valor_correto,
                     cfop=cfop,
-                    cst=cst,
+                    cst=cst_normalizado,  # Usar CST normalizado
                     linha_sped=linha_sped
                 )
+                
+                if sucesso:
+                    logger.info(f"SUCESSO: C190 atualizado: {campo} = {valor_correto:.2f}")
+                    if indices_c170:
+                        logger.info(f"SUCESSO: VALIDAÇÃO LEGAL: C190.{campo} = {valor_correto:.2f} = Σ C170.{campo} por CFOP/CST (conforme Guia Prático EFD-ICMS/IPI, Seção 3, Bloco C)")
         else:
+            # Normalizar CST antes de atualizar (pode vir do XML em formato diferente)
+            try:
+                from common import normalize_cst_for_compare
+                cst_normalizado = normalize_cst_for_compare(cst) if cst else None
+            except ImportError:
+                # Fallback se não conseguir importar
+                cst_normalizado = str(cst).strip().zfill(3) if cst else None
+            
             # Atualizar campo existente
             sucesso = editor.update_field(
                 registro=registro,
@@ -409,7 +1062,7 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                 novo_valor=valor_correto,
                 chave=chave,
                 cfop=cfop,
-                cst=cst,
+                cst=cst_normalizado,  # Usar CST normalizado
                 linha_sped=linha_sped
             )
         

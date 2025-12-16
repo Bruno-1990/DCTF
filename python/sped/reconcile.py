@@ -864,7 +864,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                                     logging.info(f"[C170 x C190] XML notes disponíveis: {len(materiais.xml_nf) if materiais.xml_nf else 0}")
                                     logging.info(f"[C170 x C190] EFD path: {efd_path}")
                                     div_nao_legitimas = processar_divergencias_c170_c190_com_solucoes(
-                                        div_nao_legitimas, materiais.xml_nf, efd_path
+                                        div_nao_legitimas, materiais.xml_nf, efd_path, rules
                                     )
                                     logging.info(f"[C170 x C190] Processamento concluído. Verificando soluções...")
                                     if "SOLUCAO_AUTOMATICA" in div_nao_legitimas.columns:

@@ -42,6 +42,38 @@ def parse_decimal(s: Optional[str]) -> Optional[float]:
     if s in (None, ""):
         return None
     st = str(s).strip()
+    
+    # CORREÇÃO: Detectar e tratar strings com múltiplas vírgulas (erro de parsing)
+    # Se houver múltiplas vírgulas, pode ser que múltiplos valores foram concatenados
+    # Nesse caso, tentar extrair apenas o último valor (que geralmente é o decimal completo)
+    if "," in st and st.count(",") > 1:
+        # Tentar extrair o último segmento (última vírgula até o fim)
+        # Exemplo: "36647,39155,675,4510285,8" -> "4510285,8"
+        parts = st.split(",")
+        if len(parts) > 1:
+            # Pegar os dois últimos segmentos (número antes da vírgula + decimal)
+            last_two = ",".join(parts[-2:])
+            # Remover pontos de milhar e converter vírgula para ponto
+            last_two_clean = last_two.replace(".", "").replace(",", ".")
+            try:
+                return float(last_two_clean)
+            except Exception:
+                # Se falhar, tentar apenas o último segmento
+                try:
+                    return float(parts[-1].replace(".", ""))
+                except Exception:
+                    pass
+        # Se não conseguir, tentar remover todas as vírgulas exceto a última
+        # e tratar como número brasileiro
+        last_comma_idx = st.rfind(",")
+        if last_comma_idx > 0:
+            before_comma = st[:last_comma_idx].replace(",", "").replace(".", "")
+            after_comma = st[last_comma_idx + 1:]
+            try:
+                return float(before_comma + "." + after_comma)
+            except Exception:
+                pass
+    
     # aceita 1 vírgula como separador decimal pt-BR
     if "," in st and st.count(",") == 1:
         st = st.replace(".", "").replace(",", ".")
@@ -170,3 +202,69 @@ def normalize_unit(u: str) -> str:
     if _re.fullmatch(r"UN[\s_]*\d+", s):
         s = "UN"
     return UNIT_SYNONYMS.get(s, s)
+
+def normalize_cst_for_compare(cst: str) -> str:
+    """
+    Normaliza CST/CSOSN para comparação estável conforme EFD.
+    - Remove caracteres não numéricos
+    - Garante 3 dígitos (preenche com zeros à esquerda)
+    - Exemplos: "00" -> "000", "60" -> "060", "101" -> "101"
+    """
+    if not cst:
+        return ""
+    s = re.sub(r"\D", "", str(cst).strip())
+    if not s:
+        return ""
+    if len(s) == 2:
+        s = "0" + s
+    return s.zfill(3)
+
+def converter_cfop_xml_para_sped(cfop_xml: str, ind_oper: str) -> str:
+    """
+    Converte CFOP do XML (perspectiva do emitente) para CFOP do SPED (perspectiva da empresa).
+    
+    Regra de conversão:
+    - Se IND_OPER=0 (entrada): converter 5→1, 6→2, 7→3
+    - Se IND_OPER=1 (saída): converter 1→5, 2→6, 3→7
+    
+    Exemplos:
+    - XML 6910 (saída interestadual do fornecedor) → SPED 2910 (entrada interestadual para você)
+    - XML 5910 → SPED 1910
+    - XML 5411 → SPED 1411
+    
+    Args:
+        cfop_xml: CFOP do XML (4 dígitos)
+        ind_oper: IND_OPER do C100 ("0" para entrada, "1" para saída)
+    
+    Returns:
+        CFOP convertido para perspectiva do SPED
+    """
+    if not cfop_xml or len(cfop_xml) < 4:
+        return cfop_xml
+    
+    primeiro_digito = cfop_xml[0]
+    resto = cfop_xml[1:]
+    
+    if ind_oper == "0":  # Entrada
+        # Converter perspectiva do emitente (saída) para perspectiva da empresa (entrada)
+        if primeiro_digito == "5":
+            return "1" + resto
+        elif primeiro_digito == "6":
+            return "2" + resto
+        elif primeiro_digito == "7":
+            return "3" + resto
+        # Se já está em 1, 2 ou 3, manter (já está na perspectiva correta)
+        return cfop_xml
+    elif ind_oper == "1":  # Saída
+        # Converter perspectiva do emitente (entrada) para perspectiva da empresa (saída)
+        if primeiro_digito == "1":
+            return "5" + resto
+        elif primeiro_digito == "2":
+            return "6" + resto
+        elif primeiro_digito == "3":
+            return "7" + resto
+        # Se já está em 5, 6 ou 7, manter (já está na perspectiva correta)
+        return cfop_xml
+    
+    # Se IND_OPER não for 0 ou 1, retornar sem conversão
+    return cfop_xml

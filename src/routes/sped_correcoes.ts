@@ -58,8 +58,12 @@ router.post('/aplicar', async (req: Request, res: Response) => {
     const pythonScript = path.join(__dirname, '../../python/sped/aplicar_correcao.py');
     const outputPath = path.join(tmpDir, 'sped_corrigido.txt');
 
-    const correcaoJson = JSON.stringify(correcao);
-    const command = `python "${pythonScript}" "${spedPath}" "${outputPath}" '${correcaoJson.replace(/'/g, "\\'")}'`;
+    // Salvar correção em arquivo temporário para evitar problemas com aspas e caracteres especiais
+    const correcaoJsonPath = path.join(tmpDir, 'correcao.json');
+    fs.writeFileSync(correcaoJsonPath, JSON.stringify(correcao, null, 2), 'utf-8');
+    
+    // Usar arquivo JSON ao invés de passar como argumento
+    const command = `python "${pythonScript}" "${spedPath}" "${outputPath}" "${correcaoJsonPath}"`;
 
     try {
       const { stdout, stderr } = await execAsync(command, {
@@ -173,8 +177,24 @@ router.post('/aplicar-todas', async (req: Request, res: Response) => {
     
     console.log(`[aplicar-todas] Divergências C170 x C190 encontradas: ${divergenciasC170C190.length}`);
     
+    // DEBUG: Analisar por que correções não estão sendo coletadas
+    let total_com_solucao = 0;
+    let total_com_registro = 0;
+    let total_com_valor = 0;
+    let total_com_todos = 0;
+    let exemplos_rejeitados: any[] = [];
+    
     for (const div of divergenciasC170C190) {
-      if (div.SOLUCAO_AUTOMATICA && div.REGISTRO_CORRIGIR && div.VALOR_CORRETO !== undefined) {
+      const tem_solucao = !!div.SOLUCAO_AUTOMATICA;
+      const tem_registro = !!div.REGISTRO_CORRIGIR;
+      const tem_valor = div.VALOR_CORRETO !== undefined && div.VALOR_CORRETO !== null;
+      
+      if (tem_solucao) total_com_solucao++;
+      if (tem_registro) total_com_registro++;
+      if (tem_valor) total_com_valor++;
+      
+      if (tem_solucao && tem_registro && tem_valor) {
+        total_com_todos++;
         correcoes.push({
           registro_corrigir: div.REGISTRO_CORRIGIR,
           campo: div.CAMPO,
@@ -184,10 +204,36 @@ router.post('/aplicar-todas', async (req: Request, res: Response) => {
           cst: div.CST,
           linha_sped: div.LINHA_SPED
         });
+      } else if (exemplos_rejeitados.length < 5) {
+        // Coletar exemplos de divergências rejeitadas para debug
+        exemplos_rejeitados.push({
+          chave: div.CHAVE?.substring(0, 20),
+          SOLUCAO_AUTOMATICA: div.SOLUCAO_AUTOMATICA,
+          SOLUCAO_AUTOMATICA_type: typeof div.SOLUCAO_AUTOMATICA,
+          REGISTRO_CORRIGIR: div.REGISTRO_CORRIGIR,
+          REGISTRO_CORRIGIR_type: typeof div.REGISTRO_CORRIGIR,
+          VALOR_CORRETO: div.VALOR_CORRETO,
+          VALOR_CORRETO_type: typeof div.VALOR_CORRETO,
+          tem_solucao,
+          tem_registro,
+          tem_valor
+        });
       }
     }
 
     console.log(`[aplicar-todas] Correções válidas coletadas: ${correcoes.length}`);
+    console.log(`[aplicar-todas] DEBUG - Estatísticas:`);
+    console.log(`[aplicar-todas]   - Total com SOLUCAO_AUTOMATICA=true: ${total_com_solucao}`);
+    console.log(`[aplicar-todas]   - Total com REGISTRO_CORRIGIR: ${total_com_registro}`);
+    console.log(`[aplicar-todas]   - Total com VALOR_CORRETO: ${total_com_valor}`);
+    console.log(`[aplicar-todas]   - Total com TODOS os requisitos: ${total_com_todos}`);
+    
+    if (exemplos_rejeitados.length > 0) {
+      console.log(`[aplicar-todas] DEBUG - Exemplos de divergências rejeitadas (primeiros 3):`);
+      exemplos_rejeitados.slice(0, 3).forEach((ex, idx) => {
+        console.log(`[aplicar-todas]   Exemplo ${idx + 1}:`, JSON.stringify(ex, null, 2));
+      });
+    }
 
     if (correcoes.length === 0) {
       return res.json({
@@ -197,81 +243,104 @@ router.post('/aplicar-todas', async (req: Request, res: Response) => {
       });
     }
 
-    // Aplicar correções sequencialmente
+    // OTIMIZAÇÃO: Aplicar todas as correções de uma vez usando script otimizado
     const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
     const spedPath = path.join(tmpDir, 'sped.txt');
-    let arquivoAtual = spedPath;
+    const outputPath = path.join(tmpDir, 'sped_corrigido.txt');
 
-    const resultados = [];
-    for (let i = 0; i < correcoes.length; i++) {
-      const correcao = correcoes[i];
-      const outputPath = i === correcoes.length - 1 
-        ? path.join(tmpDir, 'sped_corrigido.txt')
-        : path.join(tmpDir, `sped_corrigido_${i}.txt`);
+    // Salvar todas as correções em um único arquivo JSON
+    const correcoesJsonPath = path.join(tmpDir, 'todas_correcoes.json');
+    fs.writeFileSync(correcoesJsonPath, JSON.stringify(correcoes, null, 2), 'utf-8');
+    
+    // Usar script otimizado que aplica todas de uma vez
+    const pythonScript = path.join(__dirname, '../../python/sped/aplicar_todas_correcoes.py');
+    const command = `python "${pythonScript}" "${spedPath}" "${outputPath}" "${correcoesJsonPath}"`;
 
-      const pythonScript = path.join(__dirname, '../../python/sped/aplicar_correcao.py');
-      
-      // Salvar correção em arquivo temporário para evitar problemas com aspas e caracteres especiais
-      const correcaoJsonPath = path.join(tmpDir, `correcao_${i}.json`);
-      fs.writeFileSync(correcaoJsonPath, JSON.stringify(correcao, null, 2), 'utf-8');
-      
-      // Usar arquivo JSON ao invés de passar como argumento
-      const command = `python "${pythonScript}" "${arquivoAtual}" "${outputPath}" "${correcaoJsonPath}"`;
+    console.log(`[aplicar-todas] Aplicando ${correcoes.length} correções de uma vez (otimizado)...`);
+    
+    let resultados: any[] = [];
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: path.join(__dirname, '../../python/sped'),
+        maxBuffer: 50 * 1024 * 1024 // 50MB para muitas correções
+      });
 
-      try {
-        console.log(`[aplicar-todas] Aplicando correção ${i + 1}/${correcoes.length}: ${correcao.registro_corrigir}.${correcao.campo} = ${correcao.valor_correto}`);
-        
-        const { stdout, stderr } = await execAsync(command, {
-          cwd: path.join(__dirname, '../../python/sped'),
-          maxBuffer: 10 * 1024 * 1024
-        });
-
-        // Logar saída do Python para debug
-        if (stdout) {
-          console.log(`[aplicar-todas] Python stdout (${i + 1}):`, stdout.substring(0, 200));
-        }
-        if (stderr) {
-          console.error(`[aplicar-todas] Python stderr (${i + 1}):`, stderr.substring(0, 200));
-        }
-
-        // Verificar se o arquivo foi criado
-        if (!fs.existsSync(outputPath)) {
-          throw new Error('Arquivo corrigido não foi gerado pelo script Python');
-        }
-
-        // Tentar parsear resposta JSON do Python se houver
-        let pythonResponse: any = null;
-        try {
-          if (stdout && stdout.trim()) {
-            pythonResponse = JSON.parse(stdout.trim());
-            if (pythonResponse.success === false) {
-              throw new Error(pythonResponse.error || 'Script Python retornou sucesso=false');
-            }
-          }
-        } catch (parseError) {
-          // Se não conseguir parsear, não é problema se o arquivo foi criado
-          if (!fs.existsSync(outputPath)) {
-            throw new Error(`Erro ao processar resposta do Python: ${parseError}`);
-          }
-        }
-
-        resultados.push({
-          correcao: correcao,
-          sucesso: true
-        });
-
-        arquivoAtual = outputPath;
-        console.log(`[aplicar-todas] ✅ Correção ${i + 1}/${correcoes.length} aplicada com sucesso`);
-      } catch (error: any) {
-        const errorMsg = error.stderr || error.stdout || error.message || 'Erro desconhecido';
-        console.error(`[aplicar-todas] ❌ Erro na correção ${i + 1}/${correcoes.length}:`, errorMsg.substring(0, 500));
-        
-        resultados.push({
-          correcao: correcao,
-          sucesso: false,
-          erro: errorMsg.substring(0, 500)
-        });
+      // Logar saída do Python para debug
+      if (stdout) {
+        console.log(`[aplicar-todas] Python stdout:`, stdout.substring(0, 1000));
       }
+      if (stderr) {
+        console.error(`[aplicar-todas] Python stderr:`, stderr.substring(0, 1000));
+      }
+
+      // Tentar parsear resposta JSON do Python
+      let pythonResponse: any = null;
+      try {
+        if (stdout && stdout.trim()) {
+          // Tentar extrair JSON da saída (pode ter logs antes)
+          // Procurar pelo último JSON válido na saída
+          const jsonMatches = stdout.match(/\{[\s\S]*?\}/g);
+          if (jsonMatches && jsonMatches.length > 0) {
+            // Pegar o último JSON (geralmente é o resultado final)
+            try {
+              pythonResponse = JSON.parse(jsonMatches[jsonMatches.length - 1]);
+            } catch {
+              // Se falhar, tentar todos os matches
+              for (let i = jsonMatches.length - 1; i >= 0; i--) {
+                try {
+                  pythonResponse = JSON.parse(jsonMatches[i]);
+                  break;
+                } catch {
+                  continue;
+                }
+              }
+            }
+          } else {
+            // Tentar parsear toda a saída
+            pythonResponse = JSON.parse(stdout.trim());
+          }
+        }
+      } catch (parseError: any) {
+        console.warn(`[aplicar-todas] Não foi possível parsear resposta JSON:`, parseError.message);
+        console.warn(`[aplicar-todas] stdout (primeiros 2000 chars):`, stdout.substring(0, 2000));
+      }
+
+      // Verificar se o arquivo foi criado
+      console.log(`[aplicar-todas] Verificando se arquivo existe: ${outputPath}`);
+      if (!fs.existsSync(outputPath)) {
+        console.error(`[aplicar-todas] ❌ Arquivo não encontrado: ${outputPath}`);
+        // Listar arquivos no diretório para debug
+        const tmpDir = path.dirname(outputPath);
+        if (fs.existsSync(tmpDir)) {
+          const files = fs.readdirSync(tmpDir);
+          console.log(`[aplicar-todas] Arquivos no diretório ${tmpDir}:`, files);
+        }
+        throw new Error(`Arquivo corrigido não foi gerado pelo script Python. Caminho esperado: ${outputPath}`);
+      } else {
+        const stats = fs.statSync(outputPath);
+        console.log(`[aplicar-todas] ✅ Arquivo criado com sucesso: ${outputPath} (${stats.size} bytes)`);
+      }
+
+      // Usar resultados do Python se disponíveis
+      if (pythonResponse && pythonResponse.resultados) {
+        resultados = pythonResponse.resultados;
+      } else {
+        // Fallback: criar resultados baseado no sucesso
+        resultados = correcoes.map((correcao, i) => ({
+          correcao: correcao,
+          sucesso: pythonResponse?.success !== false
+        }));
+      }
+    } catch (error: any) {
+      const errorMsg = error.stderr || error.stdout || error.message || 'Erro desconhecido';
+      console.error(`[aplicar-todas] ❌ Erro ao aplicar correções:`, errorMsg.substring(0, 1000));
+      
+      // Criar resultados com erro para todas as correções
+      resultados = correcoes.map(correcao => ({
+        correcao: correcao,
+        sucesso: false,
+        erro: errorMsg.substring(0, 500)
+      }));
     }
 
     const sucessos = resultados.filter(r => r.sucesso).length;
@@ -286,7 +355,7 @@ router.post('/aplicar-todas', async (req: Request, res: Response) => {
       total_correcoes: correcoes.length,
       falhas: falhas,
       resultados: resultados,
-      arquivo_corrigido: arquivoAtual
+      arquivo_corrigido: outputPath
     });
 
   } catch (error: any) {
@@ -310,18 +379,36 @@ router.get('/:validationId/download', async (req: Request, res: Response) => {
     const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
     const spedCorrigidoPath = path.join(tmpDir, 'sped_corrigido.txt');
 
+    console.log(`[download] Buscando arquivo SPED corrigido: ${spedCorrigidoPath}`);
+    
     if (!fs.existsSync(spedCorrigidoPath)) {
+      console.error(`[download] ❌ Arquivo não encontrado: ${spedCorrigidoPath}`);
+      // Listar arquivos no diretório para debug
+      if (fs.existsSync(tmpDir)) {
+        const files = fs.readdirSync(tmpDir);
+        console.log(`[download] Arquivos disponíveis no diretório:`, files);
+      } else {
+        console.error(`[download] ❌ Diretório não existe: ${tmpDir}`);
+      }
       return res.status(404).json({
-        error: 'Arquivo SPED corrigido não encontrado. Aplique as correções primeiro.'
+        error: 'Arquivo SPED corrigido não encontrado. Aplique as correções primeiro.',
+        path: spedCorrigidoPath,
+        tmpDir: tmpDir
       });
     }
 
+    const stats = fs.statSync(spedCorrigidoPath);
+    console.log(`[download] ✅ Arquivo encontrado: ${spedCorrigidoPath} (${stats.size} bytes)`);
+
+    // Usar res.download() que preserva encoding automaticamente
     res.download(spedCorrigidoPath, `sped_corrigido_${validationId}.txt`, (err) => {
       if (err) {
         console.error('Erro ao baixar SPED corrigido:', err);
-        res.status(500).json({
-          error: 'Erro ao baixar arquivo'
-        });
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: 'Erro ao baixar arquivo'
+          });
+        }
       }
     });
 

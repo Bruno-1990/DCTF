@@ -49,8 +49,8 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
   // Detectar setor automaticamente quando SPED e XMLs estiverem prontos
   // Com debounce para evitar múltiplas chamadas quando muitos arquivos são adicionados
   useEffect(() => {
-    // Se já detectou ou está detectando, não fazer nada
-    if (setorDetectado !== null || isDetectando) {
+    // Se já detectou com sucesso (não é null e não é string vazia) ou está detectando, não fazer nada
+    if ((setorDetectado !== null && setorDetectado !== '') || isDetectando) {
       return;
     }
 
@@ -59,10 +59,10 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
       return;
     }
 
-    // Debounce: aguardar 1 segundo após a última mudança antes de detectar
+    // Debounce: aguardar 1.5 segundos após a última mudança antes de detectar
     const timeoutId = setTimeout(async () => {
       // Verificar novamente se ainda não foi detectado (pode ter mudado durante o debounce)
-      if (setorDetectado !== null || isDetectando || !spedFile || xmlFiles.length === 0) {
+      if ((setorDetectado !== null && setorDetectado !== '') || isDetectando || !spedFile || xmlFiles.length === 0) {
         return;
       }
 
@@ -75,6 +75,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
           // Para compatibilidade, manter setorDetectado como o primeiro
           setSetorDetectado(setores[0]);
         } else {
+          // Se não encontrou setor, definir como string vazia mas permitir nova tentativa se arquivos mudarem
           setSetorDetectado('');
           setSetoresSelecionados([]);
         }
@@ -83,7 +84,8 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
         if (error.response?.status !== 429) {
           console.warn('Erro ao detectar setor:', error);
         }
-        setSetorDetectado('');
+        // Em caso de erro, resetar para null para permitir nova tentativa
+        setSetorDetectado(null);
         setSetoresSelecionados([]);
       } finally {
         setIsDetectando(false);

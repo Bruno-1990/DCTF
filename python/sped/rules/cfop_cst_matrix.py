@@ -212,3 +212,5 @@ class MatrizRegrasFiscais:
         return regra.gera_icms_st if regra else False
 
 
+
+

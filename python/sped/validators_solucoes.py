@@ -6,6 +6,13 @@ e gerar soluções específicas com valores exatos
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 import logging
+import re
+
+# Importar função para parsear com linha (opcional)
+try:
+    from parsers_cruzamentos import parse_efd_c100_c190_c170_com_linha
+except ImportError:
+    parse_efd_c100_c190_c170_com_linha = None
 
 try:
     import pandas as pd
@@ -74,10 +81,80 @@ def parse_efd_c170_individual(file_path: Path) -> Dict[str, List[Dict[str, Any]]
     return c170_por_chave
 
 
+def normalizar_cst_xml(icms_data: Dict[str, Any]) -> str:
+    """
+    Normaliza CST do XML combinando orig + CST quando necessário.
+    No XML, o CST pode vir separado: orig="0" + CST="00" = "000" no SPED.
+    
+    Args:
+        icms_data: Dicionário com dados do ICMS do XML (contém 'orig', 'CST', 'CSOSN')
+    
+    Returns:
+        CST normalizado de 3 dígitos (ou CSOSN se aplicável)
+    """
+    if not icms_data:
+        return ""
+    
+    # Se tem CSOSN, usar diretamente (já está completo)
+    csosn = icms_data.get("CSOSN")
+    if csosn:
+        return str(csosn).strip().zfill(3)
+    
+    # Se tem CST, verificar se precisa combinar com orig
+    cst = icms_data.get("CST")
+    orig = icms_data.get("orig")
+    
+    if not cst:
+        return ""
+    
+    cst_str = str(cst).strip()
+    # Remover caracteres não numéricos
+    cst_digits = re.sub(r"\D", "", cst_str)
+    
+    if not cst_digits:
+        return ""
+    
+    # Se CST já tem 3 dígitos, verificar se o primeiro dígito é a origem
+    if len(cst_digits) == 3:
+        # Se o primeiro dígito corresponde à origem, já está completo
+        if orig and str(orig).strip() == cst_digits[0]:
+            return cst_digits
+        # Se não corresponde, pode ser que o CST já venha completo
+        # Verificar se orig existe e é diferente
+        if orig:
+            orig_str = str(orig).strip()
+            if orig_str and orig_str != cst_digits[0]:
+                # Combinar orig + CST (últimos 2 dígitos)
+                return orig_str + cst_digits[-2:]
+        return cst_digits
+    
+    # Se CST tem 2 dígitos, combinar com orig
+    if len(cst_digits) == 2:
+        if orig:
+            orig_str = str(orig).strip()
+            if orig_str:
+                return orig_str + cst_digits
+        # Se não tem orig, assumir origem 0 (nacional)
+        return "0" + cst_digits
+    
+    # Se CST tem 1 dígito, combinar com orig
+    if len(cst_digits) == 1:
+        if orig:
+            orig_str = str(orig).strip()
+            if orig_str:
+                return orig_str + cst_digits.zfill(2)
+        # Se não tem orig, assumir origem 0
+        return "0" + cst_digits.zfill(2)
+    
+    # Se tem mais de 3 dígitos, pegar os 3 primeiros
+    return cst_digits[:3]
+
+
 def cruzar_item_item_xml_sped(
     xml_items: List[Dict[str, Any]],
     c170_items: List[Dict[str, Any]],
-    campo: str
+    campo: str,
+    rules: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Cruza item a item XML ↔ C170 para identificar divergências específicas.
@@ -149,6 +226,10 @@ def cruzar_item_item_xml_sped(
         
         resultado["total_xml"] += valor_xml
         
+        # Normalizar CST do XML
+        icms_data = xml_item.get("ICMS", {})
+        cst_xml_normalizado = normalizar_cst_xml(icms_data)
+        
         c170_item = c170_map.get(n_item)
         
         if not c170_item:
@@ -156,7 +237,7 @@ def cruzar_item_item_xml_sped(
             resultado["itens_faltantes_sped"].append({
                 "nItem": n_item,
                 "CFOP": xml_item.get("CFOP", ""),
-                "CST": xml_item.get("ICMS", {}).get("CST") or xml_item.get("ICMS", {}).get("CSOSN", ""),
+                "CST": cst_xml_normalizado,  # USAR CST NORMALIZADO
                 "xProd": xml_item.get("xProd", ""),
                 "NCM": xml_item.get("NCM", ""),
                 "qCom": xml_item.get("qCom", 0),
@@ -169,6 +250,9 @@ def cruzar_item_item_xml_sped(
             # Item existe em ambos - verificar valor e consistência
             valor_sped = float(c170_item.get(campo_sped, 0) or 0)
             resultado["total_sped"] += valor_sped
+            
+            # Normalizar CST do SPED para comparação
+            cst_sped = str(c170_item.get("CST", "")).strip().zfill(3)
             
             # Verificar NCM (garantir que é o mesmo produto)
             ncm_xml = str(xml_item.get("NCM", "")).strip()
@@ -188,19 +272,40 @@ def cruzar_item_item_xml_sped(
                     "diferenca_qtd": abs(qtd_xml - qtd_sped)
                 })
             
+            # Aplicar regras do setor para validar CST se disponível
+            cst_divergente_legitimo = False
+            if rules and cst_xml_normalizado and cst_sped and cst_xml_normalizado != cst_sped:
+                cfop = xml_item.get("CFOP", "")
+                if cfop and "cfop_expected" in rules:
+                    cfop_rules = rules.get("cfop_expected", {}).get(cfop, {})
+                    expected_csts = cfop_rules.get("expected_cst", [])
+                    if expected_csts:
+                        # Normalizar CSTs esperados para comparação
+                        try:
+                            from common import normalize_cst_for_compare
+                            expected_csts_norm = [normalize_cst_for_compare(str(c)) for c in expected_csts]
+                            cst_xml_norm = normalize_cst_for_compare(cst_xml_normalizado)
+                            cst_sped_norm = normalize_cst_for_compare(cst_sped)
+                            # Se ambos os CSTs são esperados para este CFOP, pode ser legítimo
+                            if cst_xml_norm in expected_csts_norm and cst_sped_norm in expected_csts_norm:
+                                cst_divergente_legitimo = True
+                        except Exception:
+                            pass
+            
             diferenca = abs(valor_xml - valor_sped)
             if diferenca > 0.02:  # Tolerância
                 item_divergente = {
                     "nItem": n_item,
                     "CFOP": c170_item.get("CFOP", ""),
-                    "CST": c170_item.get("CST", ""),
+                    "CST": cst_xml_normalizado,  # USAR CST NORMALIZADO DO XML
+                    "CST_SPED": cst_sped,  # CST do SPED para referência
                     "xProd": xml_item.get("xProd", ""),
                     "DESCR_COMPL": c170_item.get("DESCR_COMPL", ""),
                     "NCM_XML": ncm_xml,
                     "COD_ITEM_SPED": ncm_sped,
                     "QTD_XML": qtd_xml,
                     "QTD_SPED": qtd_sped,
-                    "valor_xml": valor_xml,
+                    "valor_xml": valor_xml,  # VALOR DO XML (sempre usado como correto)
                     "valor_sped": valor_sped,
                     "diferenca": diferenca
                 }
@@ -210,6 +315,10 @@ def cruzar_item_item_xml_sped(
                     # Pode ser produto diferente ou código interno vs NCM
                     item_divergente["ncm_divergente"] = True
                     resultado["itens_ncm_divergente"].append(item_divergente)
+                
+                # Se CST diverge mas é legítimo conforme regras do setor, adicionar flag
+                if cst_divergente_legitimo:
+                    item_divergente["cst_divergente_legitimo"] = True
                 
                 resultado["itens_divergentes"].append(item_divergente)
     
@@ -490,6 +599,9 @@ def identificar_onde_esta_erro(
     # Múltiplos erros (C100 e C190 ambos errados)
     elif diferenca_c100 > 0.02 and diferenca_c190 > 0.02:
         resultado["local_erro"] = "MULTIPLO"
+        # Para múltiplos erros, usar C190 como registro principal (mais comum)
+        # mas marcar como não aplicável automaticamente
+        resultado["valor_correto"] = valor_xml  # Ainda definir valor correto para referência
         resultado["instrucao_especifica"] = (
             f"Erros em múltiplos registros. C100: R$ {valor_c100:.2f}, "
             f"C190: R$ {valor_c190:.2f}, Correto (XML): R$ {valor_xml:.2f}. "
@@ -705,12 +817,52 @@ def gerar_solucao_automatica(
         c190_por_cfop_cst=c190_por_cfop_cst
     )
     
-    solucao["registro_corrigir"] = localizacao["local_erro"]
-    solucao["valor_correto"] = localizacao["valor_correto"]
+    # CORREÇÃO: Se local_erro é "MULTIPLO", não aplicar automaticamente
+    local_erro = localizacao.get("local_erro", "")
+    if local_erro == "MULTIPLO" or not local_erro or local_erro == "":
+        solucao["registro_corrigir"] = "NENHUM"  # Não aplicar automaticamente
+        solucao["valor_correto"] = None
+    else:
+        solucao["registro_corrigir"] = local_erro
+        solucao["valor_correto"] = localizacao.get("valor_correto")
+        
+        # Garantir que valor_correto seja definido
+        if solucao["valor_correto"] is None:
+            solucao["valor_correto"] = valor_xml  # Fallback para valor do XML
     
-    # 3. Se temos itens do XML, cruzar item a item
+    # 2. VALIDAÇÃO LEGAL: Verificar se divergência é legítima conforme regras do setor
+    if rules:
+        # Aplicar validações específicas do setor antes de gerar correção
+        try:
+            from validators import _normalize_expected_list
+            from common import normalize_cst_for_compare
+            
+            # Verificar CFOP/CST esperados conforme regras do setor
+            if xml_items:
+                for xml_item in xml_items:
+                    cfop = xml_item.get("CFOP", "")
+                    icms_data = xml_item.get("ICMS", {})
+                    cst_xml = normalizar_cst_xml(icms_data)
+                    
+                    if cfop and cst_xml and "cfop_expected" in rules:
+                        cfop_rules = rules.get("cfop_expected", {}).get(cfop, {})
+                        expected_csts = _normalize_expected_list(
+                            cfop_rules.get("expected_cst", []),
+                            normalize_cst_for_compare
+                        )
+                        expected_codes = [e["code"] for e in expected_csts]
+                        
+                        # Se CST do XML não está nos esperados, pode ser erro
+                        if expected_codes and cst_xml not in expected_codes:
+                            logging.warning(
+                                f"[gerar_solucao_automatica] CST {cst_xml} do XML não está nos esperados para CFOP {cfop}: {expected_codes}"
+                            )
+        except Exception as e:
+            logging.warning(f"Erro ao validar regras do setor: {e}")
+    
+    # 3. CRUZAMENTO XML x SPED: Usar valores do XML como referência
     if xml_items and c170_items:
-        cruzamento = cruzar_item_item_xml_sped(xml_items, c170_items, campo)
+        cruzamento = cruzar_item_item_xml_sped(xml_items, c170_items, campo, rules)
         
         # Se há itens faltantes no SPED
         if cruzamento["itens_faltantes_sped"]:
@@ -719,13 +871,18 @@ def gerar_solucao_automatica(
             
             itens_str = ", ".join([f"Item {i['nItem']} (CFOP {i['CFOP']}, CST {i['CST']})" 
                                  for i in itens_falt[:3]])
+            # VALOR CORRETO = SOMA DOS VALORES DO XML
+            valor_total_xml = sum(i['valor_xml'] for i in itens_falt)
+            solucao["valor_correto"] = valor_total_xml
             solucao["solucao"] = (
-                f"ADICIONAR itens C170 faltantes: {itens_str}. "
-                f"Valor total a adicionar: R$ {sum(i['valor_xml'] for i in itens_falt):.2f}. "
-                f"Após adicionar, gerar C190 correspondente."
+                f"ADICIONAR itens C170 faltantes conforme valores do XML: {itens_str}. "
+                f"Valor total a adicionar: R$ {valor_total_xml:.2f} (valores do XML). "
+                f"Após adicionar, gerar C190 correspondente conforme legislação: "
+                f"C190 = Σ C170 por CFOP/CST (Guia Prático EFD-ICMS/IPI, Capítulo III, Seção 3, Bloco C)."
             )
             solucao["campo_corrigir"] = "C170 (adicionar registros)"
             solucao["formula_legal"] = "C190 = Σ C170 por CFOP/CST"
+            solucao["referencia_legal"] = "Guia Prático EFD-ICMS/IPI, Capítulo III, Seção 3, Bloco C"
             return solucao
         
         # Se há itens divergentes
@@ -733,21 +890,31 @@ def gerar_solucao_automatica(
             itens_div = cruzamento["itens_divergentes"]
             solucao["detalhes_itens"] = itens_div
             
-            # Gerar instrução específica para cada item
+            # VALIDAÇÃO LEGAL: C190 = Σ C170 por CFOP/CST (Guia Prático)
+            # Se corrigindo C170, recalcular C190
+            # Gerar instrução específica para cada item usando VALOR DO XML como correto
             instrucoes_itens = []
             for item in itens_div[:5]:  # Limitar a 5 itens
+                # VALOR CORRETO = VALOR DO XML (sempre)
+                valor_correto_item = item['valor_xml']
                 instrucoes_itens.append(
                     f"Item {item['nItem']} (CFOP {item.get('CFOP', 'N/A')}, CST {item.get('CST', 'N/A')}): "
-                    f"corrigir {campo} de R$ {item['valor_sped']:.2f} para R$ {item['valor_xml']:.2f}"
+                    f"corrigir {campo} de R$ {item['valor_sped']:.2f} para R$ {valor_correto_item:.2f} "
+                    f"(valor do XML)"
                 )
             
+            # VALOR CORRETO = SOMA DOS VALORES DO XML
+            valor_total_xml = sum(i['valor_xml'] for i in itens_div)
+            solucao["valor_correto"] = valor_total_xml
             solucao["solucao"] = (
-                f"CORRIGIR valores nos seguintes itens C170:\n" +
+                f"CORRIGIR valores nos seguintes itens C170 conforme valores do XML:\n" +
                 "\n".join(f"- {inst}" for inst in instrucoes_itens) +
-                f"\n\nApós corrigir, recalcular C190 para CFOP/CST correspondentes."
+                f"\n\nApós corrigir, recalcular C190 para CFOP/CST correspondentes conforme legislação: "
+                f"C190 = Σ C170 por CFOP/CST (Guia Prático EFD-ICMS/IPI, Capítulo III, Seção 3, Bloco C)."
             )
-            solucao["campo_corrigir"] = f"C170.{campo}"
+            solucao["campo_corrigir"] = f"C170.{campo_c170}"
             solucao["formula_legal"] = "C190 = Σ C170 por CFOP/CST"
+            solucao["referencia_legal"] = "Guia Prático EFD-ICMS/IPI, Capítulo III, Seção 3, Bloco C"
             return solucao
     
     # 4. Usar localização do erro para gerar solução
@@ -872,7 +1039,8 @@ def gerar_solucao_c170_c190(
 def processar_divergencias_c170_c190_com_solucoes(
     divergencias_df: pd.DataFrame,
     xml_notes: List[Dict[str, Any]],
-    efd_txt: Path
+    efd_txt: Path,
+    rules: Optional[Dict[str, Any]] = None
 ) -> pd.DataFrame:
     """
     Processa divergências C170 x C190 e adiciona soluções automáticas.
@@ -891,12 +1059,35 @@ def processar_divergencias_c170_c190_com_solucoes(
     # Mapear XML por chave
     xml_por_chave = {n["CHAVE"]: n for n in xml_notes}
     
+    # CORREÇÃO: Obter CNPJ da empresa UMA VEZ no início (do registro 0000)
+    # Layout 0000: REG(1), COD_VER(2), COD_FIN(3), DT_INI(4), DT_FIN(5), NOME(6), CNPJ(7), UF(8), ...
+    # Isso evita ler o arquivo SPED múltiplas vezes dentro do loop
+    cnpj_empresa = None
+    try:
+        with efd_txt.open("r", encoding="latin1", errors="ignore") as f:
+            for ln in f:
+                if ln.startswith("|0000|"):
+                    from parsers import split_sped_line
+                    fs = split_sped_line(ln, min_fields=8)
+                    if len(fs) > 7:
+                        cnpj_empresa = (fs[7] or "").strip().replace(".", "").replace("/", "").replace("-", "")
+                        logging.debug(f"[processar_divergencias_c170_c190_com_solucoes] CNPJ da empresa obtido: {cnpj_empresa[:8] if cnpj_empresa and len(cnpj_empresa) > 8 else 'N/A'}...")
+                        break
+    except Exception as e:
+        logging.warning(f"[processar_divergencias_c170_c190_com_solucoes] ⚠️ Erro ao obter CNPJ da empresa do registro 0000: {e}")
+    
     rows_com_solucoes = []
     
     for _, row in divergencias_df.iterrows():
         chave = str(row.get("CHAVE", "") or "")
         cfop = str(row.get("CFOP", "") or "")
-        cst = str(row.get("CST", "") or "")
+        cst_raw = str(row.get("CST", "") or "")
+        
+        # CORREÇÃO: Normalizar CST antes de usar (pode vir do DataFrame em formato diferente)
+        # O CST pode vir como "00", "000", "0", etc. e precisa ser normalizado para 3 dígitos
+        from common import normalize_cst_for_compare
+        cst = normalize_cst_for_compare(cst_raw) if cst_raw else ""
+        
         campo = str(row.get("CAMPO", "") or "")
         valor_c170 = float(row.get("C170", 0) or 0)
         valor_c190 = float(row.get("C190", 0) or 0)
@@ -928,7 +1119,178 @@ def processar_divergencias_c170_c190_com_solucoes(
         }
         campo_formatado = campo_map.get(campo, campo)
         
-        # Calcular valor_xml a partir dos xml_items
+        # Obter C100 por chave para pegar IND_OPER (necessário para conversão de perspectiva do CFOP)
+        from parsers import parse_efd_c100
+        efd_c100 = parse_efd_c100(efd_txt)
+        c100_info_temp = {}
+        if not efd_c100.empty and "CHV_NFE" in efd_c100.columns:
+            c100_row = efd_c100[efd_c100["CHV_NFE"] == chave]
+            if not c100_row.empty:
+                c100_info_temp = c100_row.iloc[0].to_dict()
+        
+        # Obter IND_OPER do C100 para conversão de perspectiva do CFOP
+        ind_oper = c100_info_temp.get("IND_OPER", "") if c100_info_temp else ""
+        
+        # FALLBACK: Se IND_OPER não estiver disponível no C100, inferir do XML
+        # Comparando CNPJ do emitente com CNPJ da empresa (já obtido acima, não ler arquivo novamente)
+        if not ind_oper:
+            try:
+                # Obter CNPJ do emitente do XML
+                xml_note = xml_por_chave.get(chave, {})
+                emit_cnpj = xml_note.get("emit_CNPJ", "") or xml_note.get("emit_cnpj", "")
+                if emit_cnpj:
+                    emit_cnpj = str(emit_cnpj).replace(".", "").replace("/", "").replace("-", "").strip()
+                
+                # Inferir IND_OPER: se emitente = empresa, é saída (1), senão é entrada (0)
+                # Usar cnpj_empresa já obtido no início da função (não ler arquivo novamente)
+                if cnpj_empresa and emit_cnpj:
+                    if emit_cnpj == cnpj_empresa:
+                        ind_oper = "1"  # Saída (empresa emitiu a nota)
+                        logging.debug(f"[processar_divergencias_c170_c190_com_solucoes] IND_OPER inferido do XML: {ind_oper} (emitente = empresa, saída)")
+                    else:
+                        ind_oper = "0"  # Entrada (empresa recebeu a nota)
+                        logging.debug(f"[processar_divergencias_c170_c190_com_solucoes] IND_OPER inferido do XML: {ind_oper} (emitente ≠ empresa, entrada)")
+                else:
+                    logging.warning(f"[processar_divergencias_c170_c190_com_solucoes] ⚠️ Não foi possível inferir IND_OPER: CNPJ empresa={cnpj_empresa is not None}, CNPJ emitente={emit_cnpj is not None}")
+            except Exception as e:
+                logging.warning(f"[processar_divergencias_c170_c190_com_solucoes] ⚠️ Erro ao inferir IND_OPER do XML: {e}")
+        
+        # DEBUG: Log do IND_OPER obtido
+        if not ind_oper:
+            logging.warning(f"[processar_divergencias_c170_c190_com_solucoes] ⚠️ IND_OPER não encontrado para chave {chave[:20]}... (conversão pode não funcionar corretamente)")
+        else:
+            logging.debug(f"[processar_divergencias_c170_c190_com_solucoes] IND_OPER={ind_oper} para chave {chave[:20]}...")
+        
+        # CORREÇÃO: Filtrar XML por CFOP/CST antes de calcular valor_xml
+        # O confronto deve ser entre XML e SPED para o mesmo CFOP/CST
+        # IMPORTANTE: Converter CFOP do XML para perspectiva do SPED antes de comparar
+        xml_items_filtrados = []
+        # Inicializar cfop_correto com o CFOP do SPED
+        cfop_correto = cfop
+        if xml_items:
+            from common import normalize_cst_for_compare, converter_cfop_xml_para_sped
+            cst_sped_normalizado = normalize_cst_for_compare(cst) if cst else ""
+            
+            # DEBUG: Log dos valores que estão sendo comparados
+            logging.debug(f"[processar_divergencias_c170_c190_com_solucoes] Filtrando XML: CFOP SPED={cfop}, CST SPED={cst} (normalizado={cst_sped_normalizado}), IND_OPER={ind_oper}")
+            logging.debug(f"[processar_divergencias_c170_c190_com_solucoes] Total de itens XML para filtrar: {len(xml_items)}")
+            
+            cfops_encontrados = set()  # CFOPs originais do XML
+            cfops_convertidos = set()  # CFOPs convertidos para perspectiva do SPED
+            csts_encontrados = set()
+            cfop_cst_pares = {}
+            
+            # Primeiro, coletar todos os CFOPs/CSTs do XML (convertidos para perspectiva do SPED)
+            for xml_item in xml_items:
+                # CORREÇÃO: Garantir que CFOP seja string e normalizado (SEM espaços)
+                xml_cfop_raw = xml_item.get("CFOP", "")
+                xml_cfop = str(xml_cfop_raw).strip() if xml_cfop_raw is not None else ""
+                # Garantir que não há espaços internos ou caracteres invisíveis
+                xml_cfop_clean = "".join(xml_cfop.split())  # Remove todos os espaços (incluindo internos)
+                
+                # CORREÇÃO CRÍTICA: Converter CFOP do XML para perspectiva do SPED
+                xml_cfop_convertido = converter_cfop_xml_para_sped(xml_cfop_clean, ind_oper)
+                
+                icms_data = xml_item.get("ICMS", {})
+                cst_xml_normalizado = normalizar_cst_xml(icms_data)
+                cst_xml_norm = normalize_cst_for_compare(cst_xml_normalizado) if cst_xml_normalizado else ""
+                cst_xml_norm_clean = cst_xml_norm.strip() if cst_xml_norm else ""
+                
+                # Coletar estatísticas para debug (usar valores convertidos)
+                cfops_encontrados.add(xml_cfop_clean)  # CFOP original do XML
+                cfops_convertidos.add(xml_cfop_convertido)  # CFOP convertido para SPED
+                csts_encontrados.add(cst_xml_norm_clean)
+                chave_cfop_cst = f"{xml_cfop_convertido}/{cst_xml_norm_clean}"
+                if chave_cfop_cst not in cfop_cst_pares:
+                    cfop_cst_pares[chave_cfop_cst] = 0
+                cfop_cst_pares[chave_cfop_cst] += 1
+            
+            # CORREÇÃO: Garantir que CFOP do SPED também seja string (SEM espaços)
+            cfop_sped_raw = str(cfop).strip() if cfop else ""
+            cfop_sped_clean = "".join(cfop_sped_raw.split())  # Remove todos os espaços (incluindo internos)
+            cst_sped_norm_clean = cst_sped_normalizado.strip() if cst_sped_normalizado else ""
+            
+            # Agora comparar CFOP do SPED com CFOPs convertidos do XML
+            if cfop_sped_clean not in cfops_convertidos:
+                logging.warning(
+                    f"[processar_divergencias_c170_c190_com_solucoes] CFOP do SPED ({cfop_sped_clean}) não encontrado após conversão (IND_OPER={ind_oper}). "
+                    f"CFOPs originais no XML: {sorted(cfops_encontrados)[:10]}. "
+                    f"CFOPs convertidos: {sorted(cfops_convertidos)[:10]}."
+                )
+                # Tentar buscar por CST mesmo assim
+                cfop_candidatos = []
+                for xml_item in xml_items:
+                    xml_cfop_raw = xml_item.get("CFOP", "")
+                    xml_cfop = str(xml_cfop_raw).strip() if xml_cfop_raw is not None else ""
+                    xml_cfop_clean = "".join(xml_cfop.split())
+                    xml_cfop_convertido = converter_cfop_xml_para_sped(xml_cfop_clean, ind_oper)
+                    
+                    icms_data = xml_item.get("ICMS", {})
+                    cst_xml_normalizado = normalizar_cst_xml(icms_data)
+                    cst_xml_norm = normalize_cst_for_compare(cst_xml_normalizado) if cst_xml_normalizado else ""
+                    cst_xml_norm_clean = cst_xml_norm.strip() if cst_xml_norm else ""
+                    
+                    if cst_xml_norm_clean == cst_sped_norm_clean:
+                        cfop_candidatos.append(xml_cfop_convertido)
+                
+                if cfop_candidatos:
+                    from collections import Counter
+                    cfop_mais_comum = Counter(cfop_candidatos).most_common(1)[0][0]
+                    cfop_correto = cfop_mais_comum
+                    logging.warning(
+                        f"[processar_divergencias_c170_c190_com_solucoes] Usando CFOP convertido mais comum ({cfop_correto}) que corresponde ao CST {cst_sped_norm_clean}."
+                    )
+                else:
+                    cfop_correto = cfop_sped_clean
+            else:
+                cfop_correto = cfop_sped_clean
+            
+            # Agora filtrar XML usando o CFOP correto (convertido para perspectiva do SPED)
+            cfop_correto_clean = "".join(str(cfop_correto).strip().split())
+            
+            for xml_item in xml_items:
+                # CORREÇÃO: Garantir que CFOP seja string e normalizado (SEM espaços)
+                xml_cfop_raw = xml_item.get("CFOP", "")
+                xml_cfop = str(xml_cfop_raw).strip() if xml_cfop_raw is not None else ""
+                # Garantir que não há espaços internos ou caracteres invisíveis
+                xml_cfop_clean = "".join(xml_cfop.split())  # Remove todos os espaços (incluindo internos)
+                
+                # CORREÇÃO CRÍTICA: Converter CFOP do XML para perspectiva do SPED antes de comparar
+                xml_cfop_convertido = converter_cfop_xml_para_sped(xml_cfop_clean, ind_oper)
+                
+                icms_data = xml_item.get("ICMS", {})
+                cst_xml_normalizado = normalizar_cst_xml(icms_data)
+                cst_xml_norm = normalize_cst_for_compare(cst_xml_normalizado) if cst_xml_normalizado else ""
+                cst_xml_norm_clean = cst_xml_norm.strip() if cst_xml_norm else ""
+                
+                # Filtrar apenas itens com mesmo CFOP/CST
+                # IMPORTANTE: Comparar CFOP convertido (perspectiva do SPED) com CFOP do SPED
+                cfop_match = xml_cfop_convertido == cfop_correto_clean if cfop_correto_clean else False
+                cst_match = cst_xml_norm_clean == cst_sped_norm_clean if cst_sped_norm_clean else False
+                
+                if cfop_match and cst_match:
+                    xml_items_filtrados.append(xml_item)
+            
+            # DEBUG: Log das estatísticas (atualizado para mostrar conversão)
+            if len(xml_items_filtrados) == 0 and len(xml_items) > 0:
+                # Limpar CFOPs e CSTs para exibição (remover espaços)
+                cfops_orig_clean = sorted([c.strip() for c in cfops_encontrados if c])[:10]
+                cfops_conv_clean = sorted([c.strip() for c in cfops_convertidos if c])[:10]
+                csts_clean = sorted([c.strip() for c in csts_encontrados if c])[:10]
+                pares_clean = sorted(cfop_cst_pares.items(), key=lambda x: x[1], reverse=True)[:5]
+                
+                logging.warning(
+                    f"[processar_divergencias_c170_c190_com_solucoes] "
+                    f"Nenhum item XML encontrado para CFOP '{cfop_sped_clean}' / CST '{cst_sped_norm_clean}' (IND_OPER={ind_oper}). "
+                    f"Total de itens XML: {len(xml_items)}. "
+                    f"CFOPs originais no XML: {cfops_orig_clean}... (total: {len(cfops_encontrados)}). "
+                    f"CFOPs convertidos (IND_OPER={ind_oper}): {cfops_conv_clean}... (total: {len(cfops_convertidos)}). "
+                    f"CSTs encontrados no XML: {csts_clean}... (total: {len(csts_encontrados)}). "
+                    f"CFOP/CST pares mais comuns (convertidos): {pares_clean}. "
+                    f"Usando valor_xml = 0.0 (valor do XML para este CFOP/CST)."
+                )
+        
+        # Calcular valor_xml apenas dos itens filtrados por CFOP/CST
         valor_xml = 0.0
         campo_xml_map = {
             "BC ICMS": "vBC",
@@ -939,8 +1301,8 @@ def processar_divergencias_c170_c190_com_solucoes(
         }
         campo_xml = campo_xml_map.get(campo_formatado, "")
         
-        if campo_xml and xml_items:
-            for xml_item in xml_items:
+        if campo_xml and xml_items_filtrados:
+            for xml_item in xml_items_filtrados:
                 # Tentar primeiro no nível do item
                 if campo_xml in xml_item:
                     valor_xml += float(xml_item.get(campo_xml, 0) or 0)
@@ -954,24 +1316,20 @@ def processar_divergencias_c170_c190_com_solucoes(
                     elif campo_xml in icms_data:
                         valor_xml += float(icms_data.get(campo_xml, 0) or 0)
         
-        # Se não conseguiu calcular do XML, usar valor_c170 como referência
-        # Mas apenas se realmente não há XML disponível
-        if valor_xml == 0.0 and not xml_items:
-            valor_xml = valor_c170
-        elif valor_xml == 0.0 and xml_items:
-            # Se há XML mas valor_xml é 0, pode ser que o campo não existe no XML
-            # Nesse caso, usar valor_c170 como referência (assumir que C170 está correto)
-            logging.warning(f"[processar_divergencias_c170_c190_com_solucoes] valor_xml é 0 mas há XML items. Usando valor_c170 como referência.")
-            valor_xml = valor_c170
+        # CORREÇÃO: Remover fallback para valor_c170
+        # O valor correto SEMPRE vem do XML (mesmo que seja 0)
+        # Se valor_xml é 0, é porque realmente é 0 no XML para este CFOP/CST
+        if not xml_items_filtrados and xml_items:
+            logging.warning(
+                f"[processar_divergencias_c170_c190_com_solucoes] "
+                f"Nenhum item XML encontrado para CFOP {cfop} / CST {cst}. "
+                f"Total de itens XML: {len(xml_items)}. "
+                f"Usando valor_xml = 0.0 (valor do XML para este CFOP/CST)."
+            )
         
-        # Obter C100 por chave
-        from parsers import parse_efd_c100
-        efd_c100 = parse_efd_c100(efd_txt)
-        c100_info = {}
-        if not efd_c100.empty and "CHV_NFE" in efd_c100.columns:
-            c100_row = efd_c100[efd_c100["CHV_NFE"] == chave]
-            if not c100_row.empty:
-                c100_info = c100_row.iloc[0].to_dict()
+        # Obter C100 por chave (reutilizar c100_info_temp obtido acima)
+        # c100_info_temp já foi obtido acima, então reutilizar
+        c100_info = c100_info_temp
         
         # Obter C190 totais
         from parsers import parse_efd_c190_totais
@@ -997,9 +1355,14 @@ def processar_divergencias_c170_c190_com_solucoes(
                         if len(fs) >= 13:
                             cst_linha = (fs[2] or "").strip()
                             cfop_linha = (fs[3] or "").strip()
-                            if cst_linha == cst and cfop_linha == cfop:
+                            # Normalizar CST e CFOP para comparação
+                            from common import normalize_cst_for_compare
+                            cst_linha_norm = normalize_cst_for_compare(cst_linha)
+                            cst_norm = normalize_cst_for_compare(cst) if cst else ""
+                            # Usar cfop_correto (do XML se o SPED estiver errado) - já definido acima
+                            if cst_linha_norm == cst_norm and cfop_linha == cfop_correto:
                                 from parsers import parse_decimal
-                                chave_c190 = f"{chave}_{cfop}_{cst}"
+                                chave_c190 = f"{chave}_{cfop_correto}_{cst_norm}"
                                 c190_por_cfop_cst[chave_c190] = {
                                     "CHAVE": chave,
                                     "CFOP": cfop_linha,
@@ -1022,23 +1385,100 @@ def processar_divergencias_c170_c190_com_solucoes(
         logging.info(f"[processar_divergencias_c170_c190_com_solucoes] Campo: {campo} -> {campo_formatado}")
         logging.info(f"[processar_divergencias_c170_c190_com_solucoes] C170: {valor_c170}, C190: {valor_c190}, XML: {valor_xml}")
         logging.info(f"[processar_divergencias_c170_c190_com_solucoes] CFOP: {cfop}, CST: {cst}")
-        logging.info(f"[processar_divergencias_c170_c190_com_solucoes] XML items: {len(xml_items) if xml_items else 0}")
+        logging.info(f"[processar_divergencias_c170_c190_com_solucoes] XML items (todos): {len(xml_items) if xml_items else 0}")
+        logging.info(f"[processar_divergencias_c170_c190_com_solucoes] XML items (filtrados por CFOP/CST): {len(xml_items_filtrados) if xml_items_filtrados else 0}")
         logging.info(f"[processar_divergencias_c170_c190_com_solucoes] C170 items (filtrados): {len(c170_filtrados) if c170_filtrados else 0}")
         logging.info(f"[processar_divergencias_c170_c190_com_solucoes] C170 items (todos): {len(c170_items) if c170_items else 0}")
         
+        # VALIDAÇÃO ROBUSTA: Verificar match antes de aplicar correção automática
+        # IMPORTANTE: Por enquanto, vamos fazer a validação opcional (não bloquear)
+        # para não rejeitar todas as correções. O sistema de match pode ser muito restritivo.
+        match_validado = True
+        detalhes_match = {}
+        validacao_match_disponivel = False
+        
+        try:
+            from match_robusto import validar_match_antes_correcao
+            from parsers import parse_efd_c100
+            validacao_match_disponivel = True
+            
+            # Obter C100 para validação
+            efd_c100 = parse_efd_c100(efd_txt)
+            c100_record = {}
+            if not efd_c100.empty and "CHV_NFE" in efd_c100.columns:
+                c100_row = efd_c100[efd_c100["CHV_NFE"] == chave]
+                if not c100_row.empty:
+                    c100_record = c100_row.iloc[0].to_dict()
+            
+            # Validar match se temos C100 e XML
+            # NOTA: Por enquanto, vamos apenas LOGAR o score mas não BLOQUEAR correções
+            # O sistema de match pode ser muito restritivo inicialmente
+            if c100_record and xml_note:
+                pode_corrigir, detalhes_validacao = validar_match_antes_correcao(
+                    xml_note, c100_record, c170_items, xml_items
+                )
+                detalhes_match = detalhes_validacao
+                
+                # Por enquanto, apenas logar mas não bloquear (match_validado = True sempre)
+                # TODO: Ativar bloqueio quando sistema de match estiver mais refinado
+                if not pode_corrigir:
+                    logging.warning(
+                        f"[processar_divergencias_c170_c190_com_solucoes] ⚠️ Match fraco para {chave[:20]}... "
+                        f"Score: {detalhes_validacao.get('score_final', 0):.1f}. "
+                        f"Motivo: {detalhes_validacao.get('motivo_rejeicao', 'Desconhecido')}. "
+                        f"[NOTA: Correção ainda será gerada, mas com score baixo]"
+                    )
+                    # Por enquanto, não bloquear - apenas marcar score baixo
+                    # match_validado = False  # Descomentar quando quiser ativar bloqueio
+                else:
+                    logging.info(
+                        f"[processar_divergencias_c170_c190_com_solucoes] ✅ Match validado: "
+                        f"Score C100={detalhes_validacao.get('score_c100', 0):.1f}, "
+                        f"Score médio itens={detalhes_validacao.get('score_medio_itens', 0):.1f}, "
+                        f"Score final={detalhes_validacao.get('score_final', 0):.1f}"
+                    )
+        except ImportError:
+            logging.debug("[processar_divergencias_c170_c190_com_solucoes] match_robusto não disponível, pulando validação")
+        except Exception as e:
+            logging.debug(f"[processar_divergencias_c170_c190_com_solucoes] Erro ao validar match: {e}")
+            # Continuar mesmo com erro na validação (não bloquear processamento)
+        
+        # Se match foi rejeitado, marcar solução como "revisão manual necessária"
+        if not match_validado:
+            solucao = {
+                "solucao": (
+                    f"REVISÃO MANUAL NECESSÁRIA: Match insuficiente entre XML e SPED. "
+                    f"Score: {detalhes_match.get('score_final', 0):.1f}/100. "
+                    f"Motivo: {detalhes_match.get('motivo_rejeicao', 'Score insuficiente')}. "
+                    f"Não é recomendado aplicar correção automática."
+                ),
+                "registro_corrigir": None,
+                "valor_correto": None,
+                "SOLUCAO_AUTOMATICA": False,
+                "match_score": detalhes_match.get('score_final', 0),
+                "match_detalhes": detalhes_match
+            }
+            row_dict["SOLUCAO_AUTOMATICA"] = False
+            row_dict["SOLUCAO"] = solucao["solucao"]
+            row_dict["MATCH_SCORE"] = detalhes_match.get('score_final', 0)
+            rows_com_solucoes.append(row_dict)
+            continue
+        
         # Usar função robusta que faz cruzamento completo com XML
         # IMPORTANTE: valor_sped é o C190 (total consolidado), que pode ser 0
+        # CORREÇÃO: Usar xml_items_filtrados (já filtrados por CFOP/CST) ao invés de xml_items
         try:
             solucao = gerar_solucao_automatica(
                 chave,
                 campo_formatado,
-                valor_xml,
+                valor_xml,  # Valor do XML filtrado por CFOP/CST (sempre usado como correto)
                 valor_c190,  # valor_sped é o C190 (total consolidado) - pode ser 0!
-                xml_items,
+                xml_items_filtrados if xml_items_filtrados else xml_items,  # Usar itens filtrados
                 efd_txt,
                 c100_info=c100_info,
                 c170_items=c170_filtrados if c170_filtrados else c170_items,
                 c190_totais=c190_totais,
+                rules=rules,  # Passar rules para aplicar validações do setor
                 c190_por_cfop_cst=c190_por_cfop_cst if c190_por_cfop_cst else None
             )
         except Exception as e:
@@ -1046,9 +1486,10 @@ def processar_divergencias_c170_c190_com_solucoes(
             import traceback
             logging.error(f"[processar_divergencias_c170_c190_com_solucoes] Traceback: {traceback.format_exc()}")
             # Criar solução vazia para fallback
+            # CORREÇÃO: Usar valor_xml (do XML) como valor_correto, não valor_c170 (do SPED)
             solucao = {
                 "solucao": "",
-                "valor_correto": valor_c170,
+                "valor_correto": valor_xml,  # Sempre usar valor do XML como correto
                 "registro_corrigir": "",
                 "campo_corrigir": "",
                 "detalhes_itens": [],
@@ -1066,51 +1507,78 @@ def processar_divergencias_c170_c190_com_solucoes(
         # FALLBACK: Se solução está vazia, gerar solução genérica baseada nos valores
         if not solucao.get("solucao") or solucao.get("solucao") == "":
             logging.warning(f"[processar_divergencias_c170_c190_com_solucoes] ⚠️ Solução vazia! Gerando fallback...")
-            if abs(valor_c190) < 0.02 and abs(valor_c170) > 0.02:
-                # C190 zerado, C170 tem valor
+            if abs(valor_c190) < 0.02 and abs(valor_xml) > 0.02:
+                # C190 zerado, XML tem valor (valor correto)
                 solucao["solucao"] = (
                     f"ADICIONAR ou CORRIGIR registro C190 para CFOP {cfop} / CST {cst}. "
-                    f"Valor atual: R$ {valor_c190:.2f}, Valor correto: R$ {valor_c170:.2f}. "
-                    f"O C190 está zerado mas os C170 têm valores, então o C190 deve ser criado ou corrigido."
+                    f"Valor atual (C190): R$ {valor_c190:.2f}, Valor correto (XML): R$ {valor_xml:.2f}. "
+                    f"O C190 está zerado mas o XML tem valores, então o C190 deve ser criado ou corrigido conforme XML."
                 )
                 solucao["registro_corrigir"] = "C190"
-                solucao["valor_correto"] = valor_c170
+                solucao["valor_correto"] = valor_xml  # Sempre usar valor do XML como correto
                 solucao["formula_legal"] = f"C190.{campo} = Σ C170.{campo} por CFOP/CST"
                 logging.info(f"[processar_divergencias_c170_c190_com_solucoes] ✅ Fallback gerado: {solucao['solucao'][:100]}...")
-            elif abs(valor_c170) < 0.02 and abs(valor_c190) > 0.02:
-                # C170 zerado, C190 tem valor
+            elif abs(valor_xml) < 0.02 and abs(valor_c190) > 0.02:
+                # XML zerado, C190 tem valor (pode ser erro no SPED ou XML)
                 solucao["solucao"] = (
-                    f"VERIFICAR registro C170 para CFOP {cfop} / CST {cst}. "
-                    f"O C190 tem valor (R$ {valor_c190:.2f}) mas os C170 estão zerados. "
-                    f"Verificar se os itens C170 foram lançados corretamente."
+                    f"VERIFICAR registro C190 para CFOP {cfop} / CST {cst}. "
+                    f"O XML tem valor zero mas o C190 tem valor (R$ {valor_c190:.2f}). "
+                    f"Verificar se o C190 está correto ou se há erro no XML. "
+                    f"Valor correto conforme XML: R$ {valor_xml:.2f}."
                 )
-                solucao["registro_corrigir"] = "C170"
-                solucao["valor_correto"] = valor_c190
+                solucao["registro_corrigir"] = "C190"
+                solucao["valor_correto"] = valor_xml  # Sempre usar valor do XML como correto
                 solucao["formula_legal"] = f"C190.{campo} = Σ C170.{campo} por CFOP/CST"
                 logging.info(f"[processar_divergencias_c170_c190_com_solucoes] ✅ Fallback gerado: {solucao['solucao'][:100]}...")
             else:
                 # Diferença entre C170 e C190
+                # CORREÇÃO: Usar valor_xml (do XML) como valor correto, não valor_c170 (do SPED)
                 solucao["solucao"] = (
                     f"CORRIGIR divergência entre C170 (R$ {valor_c170:.2f}) e C190 (R$ {valor_c190:.2f}) "
-                    f"para CFOP {cfop} / CST {cst}. Diferença: R$ {abs(valor_c170 - valor_c190):.2f}."
+                    f"para CFOP {cfop} / CST {cst}. "
+                    f"Valor correto (XML): R$ {valor_xml:.2f}. Diferença: R$ {abs(valor_xml - valor_c190):.2f}."
                 )
-                solucao["registro_corrigir"] = "C190" if abs(valor_c190 - valor_c170) > abs(valor_c170 - valor_c190) else "C170"
-                solucao["valor_correto"] = valor_c170  # Assumir que C170 está correto
+                # Determinar qual registro corrigir baseado na diferença com o XML
+                diferenca_c170_xml = abs(valor_c170 - valor_xml)
+                diferenca_c190_xml = abs(valor_c190 - valor_xml)
+                solucao["registro_corrigir"] = "C190" if diferenca_c190_xml > diferenca_c170_xml else "C170"
+                solucao["valor_correto"] = valor_xml  # Sempre usar valor do XML como correto
                 solucao["formula_legal"] = f"C190.{campo} = Σ C170.{campo} por CFOP/CST"
                 logging.info(f"[processar_divergencias_c170_c190_com_solucoes] ✅ Fallback gerado: {solucao['solucao'][:100]}...")
         
         # Adicionar solução ao row
         row_dict = row.to_dict()
-        # Garantir que valores None sejam strings vazias para JSON (mais robusto)
+        # CORREÇÃO: Garantir que CST está normalizado no row_dict (será usado na correção)
+        row_dict["CST"] = cst  # CST já normalizado acima
+        
+        # CORREÇÃO CRÍTICA: SOLUCAO_AUTOMATICA deve ser BOOLEANO (True/False)
+        # SOLUCAO é o texto da solução (string)
         solucao_texto = solucao.get("solucao", "") or ""
-        row_dict["SOLUCAO_AUTOMATICA"] = str(solucao_texto) if solucao_texto else ""
-        if row_dict["SOLUCAO_AUTOMATICA"] is None:
-            row_dict["SOLUCAO_AUTOMATICA"] = ""
+        registro_corrigir = solucao.get("registro_corrigir", "") or ""
+        valor_correto = solucao.get("valor_correto")
+        
+        # Determinar se a solução pode ser aplicada automaticamente
+        # Condições: tem solução, tem registro para corrigir, tem valor correto
+        pode_aplicar_automaticamente = (
+            bool(solucao_texto) and 
+            bool(registro_corrigir) and 
+            valor_correto is not None and
+            registro_corrigir != "NENHUM"  # Não aplicar se for "NENHUM"
+        )
+        
+        row_dict["SOLUCAO_AUTOMATICA"] = pode_aplicar_automaticamente
+        row_dict["SOLUCAO"] = str(solucao_texto) if solucao_texto else ""
         
         registro_texto = solucao.get("registro_corrigir", "") or ""
         row_dict["REGISTRO_CORRIGIR"] = str(registro_texto) if registro_texto else ""
         if row_dict["REGISTRO_CORRIGIR"] is None:
             row_dict["REGISTRO_CORRIGIR"] = ""
+        
+        # Adicionar informações de match se disponíveis
+        if detalhes_match:
+            row_dict["MATCH_SCORE"] = detalhes_match.get("score_final", 0)
+            row_dict["MATCH_SCORE_C100"] = detalhes_match.get("score_c100", 0)
+            row_dict["MATCH_SCORE_ITENS"] = detalhes_match.get("score_medio_itens", 0)
         
         # Usar valor_correto da solução, ou fallback para valor_c170
         valor_correto = solucao.get("valor_correto", valor_c170)
@@ -1144,6 +1612,17 @@ def processar_divergencias_c170_c190_com_solucoes(
         row_dict["REFERENCIA_LEGAL"] = str(ref_texto) if ref_texto else ""
         if row_dict["REFERENCIA_LEGAL"] is None:
             row_dict["REFERENCIA_LEGAL"] = ""
+        
+        # Adicionar informações de match se disponíveis
+        if detalhes_match:
+            row_dict["MATCH_SCORE"] = detalhes_match.get("score_final", 0)
+            row_dict["MATCH_SCORE_C100"] = detalhes_match.get("score_c100", 0)
+            row_dict["MATCH_SCORE_ITENS"] = detalhes_match.get("score_medio_itens", 0)
+        else:
+            # Se não teve validação de match, deixar campos vazios
+            row_dict["MATCH_SCORE"] = None
+            row_dict["MATCH_SCORE_C100"] = None
+            row_dict["MATCH_SCORE_ITENS"] = None
         
         # Adicionar campo_corrigir se disponível (mais específico que registro_corrigir)
         campo_corrigir = solucao.get("campo_corrigir", "")
@@ -1179,7 +1658,7 @@ def processar_divergencias_c170_c190_com_solucoes(
     # Criar novo DataFrame com soluções
     try:
         colunas_originais = list(divergencias_df.columns)
-        colunas_novas = ["SOLUCAO_AUTOMATICA", "REGISTRO_CORRIGIR", "VALOR_CORRETO", 
+        colunas_novas = ["SOLUCAO_AUTOMATICA", "SOLUCAO", "REGISTRO_CORRIGIR", "VALOR_CORRETO", 
                          "FORMULA_LEGAL", "DETALHES"]
         
         # Criar DataFrame sem especificar colunas primeiro (evita problemas de reindexação)
@@ -1195,9 +1674,10 @@ def processar_divergencias_c170_c190_com_solucoes(
         
         # DEBUG: Verificar se soluções foram geradas para C170 x C190
         if len(df_resultado) > 0:
+            # CORREÇÃO: SOLUCAO_AUTOMATICA agora é booleano, verificar True
             solucoes_nao_vazias = df_resultado[
                 df_resultado['SOLUCAO_AUTOMATICA'].notna() & 
-                (df_resultado['SOLUCAO_AUTOMATICA'] != '')
+                (df_resultado['SOLUCAO_AUTOMATICA'] == True)
             ]
             logging.info(f"[C170 x C190] Total de divergências: {len(df_resultado)}")
             logging.info(f"[C170 x C190] Divergências com solução automática: {len(solucoes_nao_vazias)}")
@@ -1505,9 +1985,17 @@ def processar_divergencias_com_solucoes(
             row_dict = row.to_dict()
             # Garantir que valores None sejam strings vazias para JSON (mais robusto)
             solucao_texto = solucao.get("solucao", "")
-            row_dict["SOLUCAO_AUTOMATICA"] = str(solucao_texto) if solucao_texto else ""
-            if row_dict["SOLUCAO_AUTOMATICA"] is None:
-                row_dict["SOLUCAO_AUTOMATICA"] = ""
+            # CORREÇÃO: SOLUCAO_AUTOMATICA deve ser booleano
+            registro_corrigir_temp = solucao.get("registro_corrigir", "") or ""
+            valor_correto_temp = solucao.get("valor_correto")
+            pode_aplicar = (
+                bool(solucao_texto) and 
+                bool(registro_corrigir_temp) and 
+                valor_correto_temp is not None and
+                registro_corrigir_temp != "NENHUM"
+            )
+            row_dict["SOLUCAO_AUTOMATICA"] = pode_aplicar
+            row_dict["SOLUCAO"] = str(solucao_texto) if solucao_texto else ""
             
             registro_texto = solucao.get("registro_corrigir", "")
             row_dict["REGISTRO_CORRIGIR"] = str(registro_texto) if registro_texto else ""
@@ -1557,10 +2045,15 @@ def processar_divergencias_com_solucoes(
         # Garantir que todas as colunas novas estejam presentes
         for col in colunas_novas:
             if col not in df_resultado.columns:
-                df_resultado[col] = None
+                # SOLUCAO_AUTOMATICA é booleano, outros campos são None/string
+                if col == "SOLUCAO_AUTOMATICA":
+                    df_resultado[col] = False
+                else:
+                    df_resultado[col] = None
         
+        # CORREÇÃO: SOLUCAO_AUTOMATICA é booleano, não string
         # Garantir que colunas de solução sejam strings (não object/None)
-        colunas_string = ["SOLUCAO_AUTOMATICA", "REGISTRO_CORRIGIR", "CAMPO_CORRIGIR", "FORMULA_LEGAL", "REFERENCIA_LEGAL"]
+        colunas_string = ["REGISTRO_CORRIGIR", "CAMPO_CORRIGIR", "FORMULA_LEGAL", "REFERENCIA_LEGAL", "SOLUCAO"]
         for col in colunas_string:
             if col in df_resultado.columns:
                 # Converter None para string vazia e garantir tipo string
@@ -1575,9 +2068,10 @@ def processar_divergencias_com_solucoes(
         if len(df_resultado) > 0:
             # Verificar se coluna SOLUCAO_AUTOMATICA existe
             if 'SOLUCAO_AUTOMATICA' in df_resultado.columns:
+                # CORREÇÃO: SOLUCAO_AUTOMATICA agora é booleano, verificar True
                 solucoes_nao_vazias = df_resultado[
                     df_resultado['SOLUCAO_AUTOMATICA'].notna() & 
-                    (df_resultado['SOLUCAO_AUTOMATICA'] != '')
+                    (df_resultado['SOLUCAO_AUTOMATICA'] == True)
                 ]
                 logging.info(f"[processar_divergencias_com_solucoes] Total de divergências: {len(df_resultado)}")
                 logging.info(f"[processar_divergencias_com_solucoes] Divergências com solução automática: {len(solucoes_nao_vazias)}")

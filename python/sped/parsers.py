@@ -229,7 +229,9 @@ def parse_efd_c170_agregado(file_path: Path) -> Dict[Tuple[str, str, str], Dict[
                 
                 # Extrair campos do C170
                 cst = (fs[10] or "").strip() if len(fs) > 10 else ""
-                cfop = (fs[11] or "").strip() if len(fs) > 11 else ""
+                cfop_raw = (fs[11] or "").strip() if len(fs) > 11 else ""
+                # CORREÇÃO: Remover todos os espaços (incluindo internos) do CFOP
+                cfop = "".join(cfop_raw.split()) if cfop_raw else ""
                 
                 if not cfop or not cst:
                     continue
@@ -525,11 +527,10 @@ def parse_efd_e110_e116_e310_e316(file_path: Path):
             if ln.startswith("|E110|"):
                 # CORREÇÃO: Usar split_sped_line para preservar campos vazios
                 fs = split_sped_line(ln, min_fields=12)
+                # CORREÇÃO: Usar parse_decimal ao invés de pdv simples para tratar múltiplas vírgulas
                 def pdv(i): 
-                    try: 
-                        return float(str(fs[i]).replace(",", ".")) if fs[i] else 0.0
-                    except Exception: 
-                        return 0.0
+                    val = parse_decimal(fs[i]) if fs[i] else None
+                    return float(val) if val is not None else 0.0
                 e110_rows.append({
                     "VL_TOT_DEBITOS": pdv(2),
                     "VL_AJ_DEBITOS": pdv(3),
@@ -543,7 +544,16 @@ def parse_efd_e110_e116_e310_e316(file_path: Path):
             elif ln.startswith("|E116|"):
                 # CORREÇÃO: Usar split_sped_line para preservar campos vazios
                 fs = split_sped_line(ln, min_fields=8)
-                e116_rows.append({"COD_OR": fs[2], "VL_OR": fs[3], "DT_VCTO": fs[4], "COD_REC": fs[5], "NUM_PROC": fs[6], "IND_PROC": fs[7]})
+                # CORREÇÃO: Usar parse_decimal para VL_OR (pode ter múltiplas vírgulas)
+                vl_or = parse_decimal(fs[3]) if fs[3] else 0.0
+                e116_rows.append({
+                    "COD_OR": fs[2], 
+                    "VL_OR": float(vl_or) if vl_or is not None else 0.0, 
+                    "DT_VCTO": fs[4], 
+                    "COD_REC": fs[5], 
+                    "NUM_PROC": fs[6], 
+                    "IND_PROC": fs[7]
+                })
             elif ln.startswith("|E310|"):
                 # CORREÇÃO: Usar split_sped_line para preservar campos vazios
                 fs = split_sped_line(ln, min_fields=3)
@@ -551,7 +561,16 @@ def parse_efd_e110_e116_e310_e316(file_path: Path):
             elif ln.startswith("|E316|"):
                 # CORREÇÃO: Usar split_sped_line para preservar campos vazios
                 fs = split_sped_line(ln, min_fields=8)
-                e316_rows.append({"COD_OR": fs[2], "VL_OR": fs[3], "DT_VCTO": fs[4], "COD_REC": fs[5], "NUM_PROC": fs[6], "IND_PROC": fs[7]})
+                # CORREÇÃO: Usar parse_decimal para VL_OR (pode ter múltiplas vírgulas)
+                vl_or = parse_decimal(fs[3]) if fs[3] else 0.0
+                e316_rows.append({
+                    "COD_OR": fs[2], 
+                    "VL_OR": float(vl_or) if vl_or is not None else 0.0, 
+                    "DT_VCTO": fs[4], 
+                    "COD_REC": fs[5], 
+                    "NUM_PROC": fs[6], 
+                    "IND_PROC": fs[7]
+                })
     import pandas as pd
     return {"E110": pd.DataFrame(e110_rows), "E116": pd.DataFrame(e116_rows), "E310": pd.DataFrame(e310_rows), "E316": pd.DataFrame(e316_rows)}
 
@@ -584,11 +603,10 @@ def parse_efd_c195_c197(file_path: Path):
             elif ln.startswith("|C197|") and current_key:
                 # C197: REG(1), COD_AJ(2), DESCR_COMPL_AJ(3), COD_ITEM(4), VL_BC_ICMS(5), ALIQ_ICMS(6), VL_ICMS(7), VL_OUTROS(8)
                 fs = split_sped_line(ln, min_fields=9)
+                # CORREÇÃO: Usar parse_decimal ao invés de pdv simples para tratar múltiplas vírgulas
                 def pdv(i):
-                    try: 
-                        return float(str(fs[i]).replace(",", ".")) if fs[i] else 0.0
-                    except Exception: 
-                        return 0.0
+                    val = parse_decimal(fs[i]) if fs[i] else None
+                    return float(val) if val is not None else 0.0
                 if current_key not in ajustes_por_chave:
                     ajustes_por_chave[current_key] = {"c195": [], "c197": []}
                 row = {
