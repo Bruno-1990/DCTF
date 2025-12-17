@@ -12,7 +12,8 @@ import re
 logger = logging.getLogger(__name__)
 
 # Limiar mínimo de score para correção automática
-SCORE_MINIMO_CORRECAO_AUTOMATICA = 90.0
+# Reduzido para 50.0 pois match por chave (50 pontos) já é muito confiável
+SCORE_MINIMO_CORRECAO_AUTOMATICA = 50.0
 
 
 def match_xml_c100_score(xml_note: Dict[str, Any], c100_record: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
@@ -48,14 +49,18 @@ def match_xml_c100_score(xml_note: Dict[str, Any], c100_record: Dict[str, Any]) 
     chave_xml = str(xml_note.get("chave", "")).strip()
     chave_c100 = str(c100_record.get("CHV_NFE", "")).strip()
     
-    # 1. Match por chave primária (50 pontos)
+    # 1. Match por chave primária (50 pontos) - SUFICIENTE PARA MATCH
     if chave_xml and chave_c100 and chave_xml == chave_c100:
         score += 50.0
         detalhes["chave_match"] = True
         detalhes["pontos_chave"] = 50.0
         logger.debug(f"Match por chave: {chave_xml[:20]}... (+50 pontos)")
+        # Se tem chave, já pode retornar (match confiável)
+        detalhes["score_total"] = score
+        detalhes["pode_corrigir_automaticamente"] = score >= SCORE_MINIMO_CORRECAO_AUTOMATICA
+        return score, detalhes
     
-    # 2. Fallback: Modelo + Série + Número (30 pontos)
+    # 2. Fallback: Modelo + Série + Número (40 pontos - aumentado de 30)
     mod_xml = str(xml_note.get("mod", "")).strip()
     mod_c100 = str(c100_record.get("COD_MOD", "")).strip()
     
@@ -68,10 +73,10 @@ def match_xml_c100_score(xml_note: Dict[str, Any], c100_record: Dict[str, Any]) 
     if (mod_xml and mod_c100 and mod_xml == mod_c100 and
         serie_xml and serie_c100 and serie_xml == serie_c100 and
         num_xml and num_c100 and num_xml == num_c100):
-        score += 30.0
+        score += 40.0
         detalhes["fallback_match"] = True
-        detalhes["pontos_fallback"] = 30.0
-        logger.debug(f"Match por fallback (MOD={mod_xml}, SER={serie_xml}, NUM={num_xml}) (+30 pontos)")
+        detalhes["pontos_fallback"] = 40.0
+        logger.debug(f"Match por fallback (MOD={mod_xml}, SER={serie_xml}, NUM={num_xml}) (+40 pontos)")
     
     # 3. Match por data (10 pontos)
     # XML: dhEmi (formato ISO ou YYYYMMDD)
@@ -115,19 +120,26 @@ def match_xml_c100_score(xml_note: Dict[str, Any], c100_record: Dict[str, Any]) 
             except Exception as e:
                 logger.debug(f"Erro ao comparar datas: {e}")
     
-    # 4. Match por CNPJ participante (10 pontos)
+    # 4. Match por CNPJ participante (10 pontos - aumentado de 5)
     # XML: dest_CNPJ (se entrada) ou emit_CNPJ (se saída)
     # C100: COD_PART (precisa buscar no 0150)
     # Nota: Este match é mais complexo e requer acesso ao 0150
-    # Por enquanto, vamos apenas verificar se temos COD_PART no C100
     cod_part = str(c100_record.get("COD_PART", "")).strip()
     if cod_part:
-        # Se temos COD_PART, assumir match parcial (5 pontos)
-        # Match completo requer verificação no 0150 (será feito em outra função)
-        score += 5.0
-        detalhes["cnpj_match"] = True
-        detalhes["pontos_cnpj"] = 5.0
-        logger.debug(f"Match parcial por COD_PART: {cod_part} (+5 pontos)")
+        # Verificar se temos CNPJ no XML para comparar
+        cnpj_xml = str(xml_note.get("dest_CNPJ", "") or xml_note.get("emit_CNPJ", "")).strip()
+        if cnpj_xml:
+            # Se temos COD_PART e CNPJ, assumir match (10 pontos)
+            score += 10.0
+            detalhes["cnpj_match"] = True
+            detalhes["pontos_cnpj"] = 10.0
+            logger.debug(f"Match por CNPJ: {cod_part} (+10 pontos)")
+        else:
+            # Match parcial apenas com COD_PART (5 pontos)
+            score += 5.0
+            detalhes["cnpj_match"] = True
+            detalhes["pontos_cnpj"] = 5.0
+            logger.debug(f"Match parcial por COD_PART: {cod_part} (+5 pontos)")
     
     detalhes["score_total"] = score
     detalhes["pode_corrigir_automaticamente"] = score >= SCORE_MINIMO_CORRECAO_AUTOMATICA
@@ -334,5 +346,8 @@ def validar_match_antes_correcao(
         logger.warning(f"Match rejeitado: score final {resultado['score_final']:.1f}")
     
     return (resultado["pode_corrigir"], resultado)
+
+
+
 
 

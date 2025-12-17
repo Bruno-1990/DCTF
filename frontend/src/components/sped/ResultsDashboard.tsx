@@ -34,7 +34,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   useEffect(() => {
     // Adicionar debounce para evitar múltiplas chamadas
     const timeoutId = setTimeout(() => {
-      carregarResultado();
+    carregarResultado();
     }, 100);
 
     return () => {

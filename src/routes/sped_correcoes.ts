@@ -177,56 +177,161 @@ router.post('/aplicar-todas', async (req: Request, res: Response) => {
     
     console.log(`[aplicar-todas] Divergências C170 x C190 encontradas: ${divergenciasC170C190.length}`);
     
+    // Mapeamento de campos: campo original (do DataFrame) -> campo SPED (para Python)
+    const campoMap: { [key: string]: string } = {
+      "BC ICMS": "VL_BC_ICMS",
+      "ICMS": "VL_ICMS",
+      "BC ST": "VL_BC_ICMS_ST",
+      "ST": "VL_ICMS_ST",
+      "IPI": "VL_IPI",
+    };
+    
+    // Função para validar SOLUCAO_AUTOMATICA (pode vir como boolean, string, número)
+    const isValidSolucaoAutomatica = (value: any): boolean => {
+      if (value === true || value === 1 || value === "1") return true;
+      if (typeof value === "string" && value.toLowerCase() === "true") return true;
+      if (typeof value === "boolean" && value === true) return true;
+      return false;
+    };
+    
+    // Função para validar VALOR_CORRETO
+    const isValidValorCorreto = (value: any): boolean => {
+      if (value === undefined || value === null) return false;
+      if (value === "" || value === "NaN" || value === "null") return false;
+      const numValue = Number(value);
+      if (isNaN(numValue)) return false;
+      if (!isFinite(numValue)) return false;
+      // Permitir zero (pode ser correto em alguns casos)
+      return true;
+    };
+    
+    // Função para validar REGISTRO_CORRIGIR
+    const isValidRegistroCorrigir = (value: any): boolean => {
+      if (!value) return false;
+      const strValue = String(value).trim();
+      if (strValue === "" || strValue === "NENHUM" || strValue === "DESCONHECIDO") return false;
+      // Deve ser C100, C170, ou C190
+      return ["C100", "C170", "C190"].includes(strValue);
+    };
+    
+    // Função para mapear campo original para campo SPED
+    const mapearCampoSped = (campoOriginal: string, campoCorrigir?: string): string => {
+      // Se CAMPO_CORRIGIR existe e contém o nome do campo SPED, extrair dele
+      if (campoCorrigir) {
+        const campoCorrigirStr = String(campoCorrigir).trim();
+        // Pode ser "C190.VL_BC_ICMS" ou "VL_BC_ICMS"
+        if (campoCorrigirStr.includes(".")) {
+          const partes = campoCorrigirStr.split(".");
+          if (partes.length >= 2 && partes[1].startsWith("VL_")) {
+            return partes[1];
+          }
+        } else if (campoCorrigirStr.startsWith("VL_")) {
+          return campoCorrigirStr;
+        }
+      }
+      
+      // Mapear campo original usando o mapa
+      if (campoOriginal && campoMap[campoOriginal]) {
+        return campoMap[campoOriginal];
+      }
+      
+      // Se não encontrou no mapa, retornar o campo original (pode já estar no formato correto)
+      return campoOriginal || "VL_BC_ICMS"; // Fallback
+    };
+    
     // DEBUG: Analisar por que correções não estão sendo coletadas
     let total_com_solucao = 0;
     let total_com_registro = 0;
     let total_com_valor = 0;
     let total_com_todos = 0;
     let exemplos_rejeitados: any[] = [];
+    let erros_validacao: any[] = [];
     
     for (const div of divergenciasC170C190) {
-      const tem_solucao = !!div.SOLUCAO_AUTOMATICA;
-      const tem_registro = !!div.REGISTRO_CORRIGIR;
-      const tem_valor = div.VALOR_CORRETO !== undefined && div.VALOR_CORRETO !== null;
+      // Validações robustas
+      const tem_solucao = isValidSolucaoAutomatica(div.SOLUCAO_AUTOMATICA);
+      const tem_registro = isValidRegistroCorrigir(div.REGISTRO_CORRIGIR);
+      const tem_valor = isValidValorCorreto(div.VALOR_CORRETO);
+      
+      // Validar campos obrigatórios adicionais
+      const tem_chave = div.CHAVE && String(div.CHAVE).trim().length > 0;
+      const tem_cfop = div.CFOP && String(div.CFOP).trim().length > 0;
       
       if (tem_solucao) total_com_solucao++;
       if (tem_registro) total_com_registro++;
       if (tem_valor) total_com_valor++;
       
-      if (tem_solucao && tem_registro && tem_valor) {
+      // Coletar erros de validação para debug
+      const erros: string[] = [];
+      if (!tem_solucao) erros.push(`SOLUCAO_AUTOMATICA inválido: ${div.SOLUCAO_AUTOMATICA} (${typeof div.SOLUCAO_AUTOMATICA})`);
+      if (!tem_registro) erros.push(`REGISTRO_CORRIGIR inválido: ${div.REGISTRO_CORRIGIR}`);
+      if (!tem_valor) erros.push(`VALOR_CORRETO inválido: ${div.VALOR_CORRETO} (${typeof div.VALOR_CORRETO})`);
+      if (!tem_chave) erros.push(`CHAVE ausente ou vazia`);
+      if (!tem_cfop) erros.push(`CFOP ausente ou vazio`);
+      
+      if (tem_solucao && tem_registro && tem_valor && tem_chave && tem_cfop) {
         total_com_todos++;
+        
+        // Mapear campo para formato SPED
+        const campoOriginal = div.CAMPO || "";
+        const campoSped = mapearCampoSped(campoOriginal, div.CAMPO_CORRIGIR);
+        
+        // Validar valor numérico
+        const valorCorreto = Number(div.VALOR_CORRETO);
+        if (isNaN(valorCorreto) || !isFinite(valorCorreto)) {
+          console.warn(`[aplicar-todas] ⚠️ Valor inválido para correção: ${div.VALOR_CORRETO}`);
+          erros_validacao.push({
+            chave: div.CHAVE?.substring(0, 20),
+            erro: `Valor inválido: ${div.VALOR_CORRETO}`,
+            campo: campoSped
+          });
+          continue;
+        }
+        
         correcoes.push({
-          registro_corrigir: div.REGISTRO_CORRIGIR,
-          campo: div.CAMPO,
-          valor_correto: div.VALOR_CORRETO,
-          chave: div.CHAVE,
-          cfop: div.CFOP,
-          cst: div.CST,
-          linha_sped: div.LINHA_SPED
+          registro_corrigir: String(div.REGISTRO_CORRIGIR).trim(),
+          campo: campoSped,
+          valor_correto: valorCorreto,
+          chave: String(div.CHAVE).trim(),
+          cfop: String(div.CFOP).trim(),
+          cst: div.CST ? String(div.CST).trim() : null,
+          linha_sped: div.LINHA_SPED ? Number(div.LINHA_SPED) : null
         });
-      } else if (exemplos_rejeitados.length < 5) {
+      } else {
         // Coletar exemplos de divergências rejeitadas para debug
-        exemplos_rejeitados.push({
-          chave: div.CHAVE?.substring(0, 20),
-          SOLUCAO_AUTOMATICA: div.SOLUCAO_AUTOMATICA,
-          SOLUCAO_AUTOMATICA_type: typeof div.SOLUCAO_AUTOMATICA,
-          REGISTRO_CORRIGIR: div.REGISTRO_CORRIGIR,
-          REGISTRO_CORRIGIR_type: typeof div.REGISTRO_CORRIGIR,
-          VALOR_CORRETO: div.VALOR_CORRETO,
-          VALOR_CORRETO_type: typeof div.VALOR_CORRETO,
-          tem_solucao,
-          tem_registro,
-          tem_valor
-        });
+        if (exemplos_rejeitados.length < 5) {
+          exemplos_rejeitados.push({
+            chave: div.CHAVE?.substring(0, 20),
+            SOLUCAO_AUTOMATICA: div.SOLUCAO_AUTOMATICA,
+            SOLUCAO_AUTOMATICA_type: typeof div.SOLUCAO_AUTOMATICA,
+            SOLUCAO_AUTOMATICA_valid: tem_solucao,
+            REGISTRO_CORRIGIR: div.REGISTRO_CORRIGIR,
+            REGISTRO_CORRIGIR_type: typeof div.REGISTRO_CORRIGIR,
+            REGISTRO_CORRIGIR_valid: tem_registro,
+            VALOR_CORRETO: div.VALOR_CORRETO,
+            VALOR_CORRETO_type: typeof div.VALOR_CORRETO,
+            VALOR_CORRETO_valid: tem_valor,
+            CHAVE_valid: tem_chave,
+            CFOP_valid: tem_cfop,
+            erros: erros
+          });
+        }
       }
     }
 
     console.log(`[aplicar-todas] Correções válidas coletadas: ${correcoes.length}`);
     console.log(`[aplicar-todas] DEBUG - Estatísticas:`);
     console.log(`[aplicar-todas]   - Total com SOLUCAO_AUTOMATICA=true: ${total_com_solucao}`);
-    console.log(`[aplicar-todas]   - Total com REGISTRO_CORRIGIR: ${total_com_registro}`);
-    console.log(`[aplicar-todas]   - Total com VALOR_CORRETO: ${total_com_valor}`);
+    console.log(`[aplicar-todas]   - Total com REGISTRO_CORRIGIR válido: ${total_com_registro}`);
+    console.log(`[aplicar-todas]   - Total com VALOR_CORRETO válido: ${total_com_valor}`);
     console.log(`[aplicar-todas]   - Total com TODOS os requisitos: ${total_com_todos}`);
+    
+    if (erros_validacao.length > 0) {
+      console.warn(`[aplicar-todas] ⚠️ ${erros_validacao.length} correções rejeitadas por erros de validação:`);
+      erros_validacao.slice(0, 5).forEach((erro, idx) => {
+        console.warn(`[aplicar-todas]   Erro ${idx + 1}:`, erro);
+      });
+    }
     
     if (exemplos_rejeitados.length > 0) {
       console.log(`[aplicar-todas] DEBUG - Exemplos de divergências rejeitadas (primeiros 3):`);
@@ -237,9 +342,16 @@ router.post('/aplicar-todas', async (req: Request, res: Response) => {
 
     if (correcoes.length === 0) {
       return res.json({
-        success: true,
-        message: 'Nenhuma correção automática disponível',
-        correcoes_aplicadas: 0
+        success: false,
+        message: 'Nenhuma correção automática válida disponível',
+        correcoes_aplicadas: 0,
+        detalhes: {
+          total_divergencias: divergenciasC170C190.length,
+          total_com_solucao: total_com_solucao,
+          total_com_registro: total_com_registro,
+          total_com_valor: total_com_valor,
+          exemplos_rejeitados: exemplos_rejeitados.slice(0, 5)
+        }
       });
     }
 
@@ -248,9 +360,27 @@ router.post('/aplicar-todas', async (req: Request, res: Response) => {
     const spedPath = path.join(tmpDir, 'sped.txt');
     const outputPath = path.join(tmpDir, 'sped_corrigido.txt');
 
+    // Validar se arquivo SPED existe
+    if (!fs.existsSync(spedPath)) {
+      console.error(`[aplicar-todas] ❌ Arquivo SPED não encontrado: ${spedPath}`);
+      return res.status(404).json({
+        error: 'Arquivo SPED não encontrado',
+        path: spedPath
+      });
+    }
+
     // Salvar todas as correções em um único arquivo JSON
     const correcoesJsonPath = path.join(tmpDir, 'todas_correcoes.json');
-    fs.writeFileSync(correcoesJsonPath, JSON.stringify(correcoes, null, 2), 'utf-8');
+    try {
+      fs.writeFileSync(correcoesJsonPath, JSON.stringify(correcoes, null, 2), 'utf-8');
+      console.log(`[aplicar-todas] ✅ Arquivo de correções salvo: ${correcoesJsonPath} (${correcoes.length} correções)`);
+    } catch (error: any) {
+      console.error(`[aplicar-todas] ❌ Erro ao salvar arquivo de correções:`, error);
+      return res.status(500).json({
+        error: 'Erro ao salvar arquivo de correções',
+        details: error.message
+      });
+    }
     
     // Usar script otimizado que aplica todas de uma vez
     const pythonScript = path.join(__dirname, '../../python/sped/aplicar_todas_correcoes.py');

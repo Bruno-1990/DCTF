@@ -146,8 +146,8 @@ def main():
                         if col not in df_filled.columns:
                             df_filled[col] = ""
                     
-                    # Preencher outras colunas com None (usar value explícito)
-                    df_filled = df_filled.fillna(value=None)
+                    # Preencher demais colunas com string vazia para evitar erro de fillna
+                    df_filled = df_filled.fillna("")
                     records = df_filled.to_dict('records')
                     
                     # Garantir que colunas de solução estejam presentes em todos os registros

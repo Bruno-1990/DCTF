@@ -173,47 +173,47 @@ function DivergenciaRow({ divergencia }: { divergencia: DivergenciaValor }) {
   return (
     <div className="pl-6 pr-4 py-3 border-b border-gray-200 bg-white hover:bg-gray-50 transition-colors">
       <div className="grid grid-cols-4 gap-4 items-center">
-        {/* Campo */}
-        <div className="flex items-center gap-2 min-w-[120px]">
-          <SeverityTag severity={divergencia.severidade} />
-          <span className="text-sm font-semibold text-gray-700">
-            {divergencia.campo}
-          </span>
-        </div>
+      {/* Campo */}
+      <div className="flex items-center gap-2 min-w-[120px]">
+        <SeverityTag severity={divergencia.severidade} />
+        <span className="text-sm font-semibold text-gray-700">
+          {divergencia.campo}
+        </span>
+      </div>
 
-        {/* XML */}
-        <div className="min-w-[150px]">
-          <p className="text-sm font-mono font-semibold text-gray-900">
-            {divergencia.valorEncontrado || '—'}
-          </p>
-        </div>
+      {/* XML */}
+      <div className="min-w-[150px]">
+        <p className="text-sm font-mono font-semibold text-gray-900">
+          {divergencia.valorEncontrado || '—'}
+        </p>
+      </div>
 
-        {/* SPED */}
-        <div className="min-w-[150px]">
-          <p className="text-sm font-mono font-semibold text-gray-900">
-            {divergencia.valorEsperado || '—'}
-          </p>
-        </div>
+      {/* SPED */}
+      <div className="min-w-[150px]">
+        <p className="text-sm font-mono font-semibold text-gray-900">
+          {divergencia.valorEsperado || '—'}
+        </p>
+      </div>
 
-        {/* Diferença */}
-        <div className="min-w-[180px]">
-          {delta !== undefined && delta !== null ? (
-            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${
-              isPositive ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'
+      {/* Diferença */}
+      <div className="min-w-[180px]">
+        {delta !== undefined && delta !== null ? (
+          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${
+            isPositive ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'
+          }`}>
+            <span className={`text-sm font-mono font-bold ${
+              isPositive ? 'text-red-700' : 'text-blue-700'
             }`}>
-              <span className={`text-sm font-mono font-bold ${
-                isPositive ? 'text-red-700' : 'text-blue-700'
-              }`}>
-                {isPositive ? '+' : ''}{deltaFormatado}
-              </span>
-              <span className="text-xs text-gray-600">
-                ({isPositive ? 'XML maior' : 'SPED maior'})
-              </span>
-            </div>
-          ) : (
-            <p className="text-sm font-mono text-gray-500">—</p>
-          )}
-        </div>
+              {isPositive ? '+' : ''}{deltaFormatado}
+            </span>
+            <span className="text-xs text-gray-600">
+              ({isPositive ? 'XML maior' : 'SPED maior'})
+            </span>
+          </div>
+        ) : (
+          <p className="text-sm font-mono text-gray-500">—</p>
+        )}
+      </div>
       </div>
       
       {/* Classificação da divergência */}

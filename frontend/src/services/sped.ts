@@ -104,7 +104,7 @@ class SpedService {
     } catch (error: any) {
       // Não logar erro 429 repetidamente
       if (error.response?.status !== 429) {
-        console.error('Erro ao detectar setor:', error);
+      console.error('Erro ao detectar setor:', error);
       }
       
       // Em caso de erro, retornar array vazio mas não cachear
@@ -182,7 +182,7 @@ class SpedService {
     } catch (error: any) {
       // Não logar erro 429 repetidamente para evitar spam no console
       if (error.response?.status !== 429) {
-        console.error('Erro ao obter status:', error);
+      console.error('Erro ao obter status:', error);
       }
       
       // Atualizar cache mesmo em caso de erro (para evitar requisições repetidas)

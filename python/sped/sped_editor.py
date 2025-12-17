@@ -170,11 +170,19 @@ class SpedEditor:
                 if chave:
                     # Extrair chave da linha (posição varia por registro)
                     if registro == "C100":
-                        # C100|CHAVE|... (posição 2 após split)
-                        if len(parts) > 2:
-                            linha_chave = parts[2].strip()
-                            if linha_chave != chave:
-                                continue
+                        # C100 layout oficial: CHV_NFE é o 9º campo após REG (pos 9 considerando split com campo vazio inicial)
+                        # Exemplo split: ["", "C100", ind_oper, ind_emit, cod_part, cod_mod, cod_sit, ser, num_doc, chv_nfe, dt_doc, ...]
+                        # Portanto o índice da chave é 9 (ou 8 em alguns arquivos sem campo vazio inicial)
+                        chv_idx_candidates = [9, 8, 2]  # fallback para casos antigos/formatos diferentes
+                        linha_chave = None
+                        for idx_cand in chv_idx_candidates:
+                            if len(parts) > idx_cand:
+                                cand = parts[idx_cand].strip()
+                                if cand:
+                                    linha_chave = cand
+                                    break
+                        if linha_chave is None or linha_chave != chave:
+                            continue
                     elif registro == "C170":
                         # C170 precisa verificar chave do C100 pai
                         # Por enquanto, vamos buscar por CFOP/CST
@@ -579,27 +587,75 @@ class SpedEditor:
         
         Returns:
             Caminho do arquivo salvo
+        
+        Raises:
+            Exception: Se houver erro ao salvar o arquivo
         """
         if output_path is None:
             output_path = self.sped_path
         
         output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Garantir que o diretório existe
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Diretório garantido: {output_path.parent}")
+        except Exception as e:
+            error_msg = f"Erro ao criar diretório {output_path.parent}: {e}"
+            logger.error(error_msg)
+            raise Exception(error_msg) from e
+        
+        # Validar que há linhas para salvar
+        if not self.lines:
+            error_msg = "Nenhuma linha para salvar (arquivo vazio)"
+            logger.error(error_msg)
+            raise Exception(error_msg)
         
         # Usar o mesmo encoding do arquivo original para preservar caracteres especiais
         # Se o encoding original for latin-1 ou windows-1252, manter; caso contrário, usar UTF-8
         save_encoding = self.encoding if self.encoding in ['latin-1', 'iso-8859-1', 'windows-1252', 'cp1252'] else 'utf-8'
         
         try:
+            logger.debug(f"Tentando salvar arquivo em {output_path} com encoding {save_encoding} ({len(self.lines)} linhas)")
             with open(output_path, 'w', encoding=save_encoding, newline='') as f:
                 f.writelines(self.lines)
-        except UnicodeEncodeError:
+            logger.info(f"✅ Arquivo SPED salvo em: {output_path} (encoding: {save_encoding}, {len(self.lines)} linhas)")
+        except UnicodeEncodeError as e:
             # Se falhar, tentar latin-1 como fallback
             logger.warning(f"Erro ao salvar em {save_encoding}, tentando latin-1...")
-            with open(output_path, 'w', encoding='latin-1', newline='') as f:
-                f.writelines(self.lines)
+            try:
+                with open(output_path, 'w', encoding='latin-1', newline='', errors='replace') as f:
+                    f.writelines(self.lines)
+                logger.info(f"✅ Arquivo SPED salvo em: {output_path} (encoding: latin-1 com substituição de erros, {len(self.lines)} linhas)")
+            except Exception as e2:
+                error_msg = f"Erro ao salvar arquivo mesmo com fallback latin-1: {e2}"
+                logger.error(error_msg)
+                raise Exception(error_msg) from e2
+        except (IOError, OSError) as e:
+            error_msg = f"Erro de I/O ao salvar arquivo {output_path}: {e}"
+            logger.error(error_msg)
+            raise Exception(error_msg) from e
+        except Exception as e:
+            error_msg = f"Erro inesperado ao salvar arquivo {output_path}: {e}"
+            logger.error(error_msg)
+            import traceback
+            logger.debug(traceback.format_exc())
+            raise Exception(error_msg) from e
         
-        logger.info(f"Arquivo SPED salvo em: {output_path} (encoding: {save_encoding})")
+        # Verificar se o arquivo foi realmente criado
+        if not output_path.exists():
+            error_msg = f"Arquivo não foi criado após save(): {output_path}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        
+        # Verificar se o arquivo não está vazio
+        file_size = output_path.stat().st_size
+        if file_size == 0:
+            error_msg = f"Arquivo criado mas está vazio: {output_path}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        
+        logger.info(f"✅ Arquivo verificado: {output_path} ({file_size} bytes)")
         return output_path
     
     def get_changes_summary(self) -> Dict[str, any]:

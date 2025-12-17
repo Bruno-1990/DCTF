@@ -90,7 +90,7 @@ router.post('/detectar-setor', upload.fields([
         }
       } catch (parseError) {
         // Se não for JSON, tentar como string única (compatibilidade)
-        const setor = stdout.trim();
+      const setor = stdout.trim();
         if (setor) {
           setores = [setor];
         }

@@ -99,7 +99,7 @@ const ValidationProgress: React.FC<ValidationProgressProps> = ({
           }
         } else if (error.response?.status !== 429) {
           // Para outros erros, apenas logar
-          console.error('Erro ao verificar status:', error);
+        console.error('Erro ao verificar status:', error);
         }
 
         // Reagendar com intervalo maior em caso de erro

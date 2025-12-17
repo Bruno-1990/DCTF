@@ -974,6 +974,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                             checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
                         else:
                             checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
+                        
                         # Validação final: garantir que SOLUCAO_AUTOMATICA não seja None
                         if "SOLUCAO_AUTOMATICA" in divergencias_legitimas.columns:
                             divergencias_legitimas["SOLUCAO_AUTOMATICA"] = (

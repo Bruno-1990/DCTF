@@ -66,19 +66,19 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
         return;
       }
 
-      setIsDetectando(true);
-      try {
+        setIsDetectando(true);
+        try {
         const setores = await spedService.detectarSetor(spedFile, xmlFiles);
         if (setores && setores.length > 0) {
           // Se detectou múltiplos setores, selecionar todos automaticamente
           setSetoresSelecionados(setores);
           // Para compatibilidade, manter setorDetectado como o primeiro
           setSetorDetectado(setores[0]);
-        } else {
+          } else {
           // Se não encontrou setor, definir como string vazia mas permitir nova tentativa se arquivos mudarem
-          setSetorDetectado('');
-          setSetoresSelecionados([]);
-        }
+            setSetorDetectado('');
+            setSetoresSelecionados([]);
+          }
       } catch (error: any) {
         // Não logar erro 429 repetidamente
         if (error.response?.status !== 429) {
@@ -86,10 +86,10 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
         }
         // Em caso de erro, resetar para null para permitir nova tentativa
         setSetorDetectado(null);
-        setSetoresSelecionados([]);
-      } finally {
-        setIsDetectando(false);
-      }
+          setSetoresSelecionados([]);
+        } finally {
+          setIsDetectando(false);
+        }
     }, 1500); // 1.5 segundos de debounce
 
     return () => {
@@ -583,7 +583,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadStart, onError }) =
                     <div className="relative z-10 flex items-center justify-center">
                       <svg className="h-6 w-6 text-white group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                      </svg>
+                    </svg>
                     </div>
                     
                     {/* Texto */}
