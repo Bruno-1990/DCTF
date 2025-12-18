@@ -17,6 +17,7 @@ from parsers import (
     parse_efd_e110_e116_e310_e316,
     parse_efd_c195_c197,
 )
+from validacao_leiaute_versao import identificar_periodo_sped
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
@@ -253,7 +254,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
             else:
                 # Formato antigo (compatibilidade): lista direta de C197
                 for a in info:
-                    rows_c197.append({"CHAVE": ch, **a})
+                rows_c197.append({"CHAVE": ch, **a})
         if rows_c197:
             out["Ajustes (C197)"] = pd.DataFrame(rows_c197)
         if rows_c195:
@@ -280,17 +281,110 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
             recalc_mismatch += 1
     checklist.append((f"vNF recalculado difere do vNF do XML (±{0.02:.2f})", recalc_mismatch))
 
-    # Duplicidades no C100
-    dup_counts = efd_valid["CHV_NFE"].value_counts()
-    for chave, cnt in dup_counts[dup_counts > 1].items():
-        issues.append({
-            "Categoria": "Duplicidade no SPED (mesma chave)",
-            "Chave NF-e": chave, "Onde": "SPED C100", "Campo": "CHV_NFE",
-            "No XML": "-", "No SPED": f"{cnt} lançamentos",
-            "Regra": "A chave deve aparecer uma única vez",
-            "Severidade": "Alta", "Sugestão": "Manter apenas 1 lançamento",
-            "Descrição": "Há mais de um lançamento no C100 para a mesma chave."
-        })
+    # Match XML → C100 completo (usando novo módulo)
+    try:
+        from match_xml_c100_completo import match_xml_c100_completo, gerar_relatorio_match
+        
+        # Identificar período para validação
+        periodo = None
+        periodo_ano = None
+        periodo_mes = None
+        if efd_path:
+            periodo = identificar_periodo_sped(efd_path)
+            if periodo:
+                periodo_ano, periodo_mes = periodo
+        
+        # Executar match completo
+        match_report = match_xml_c100_completo(
+            data.xml_nf,
+            efd_valid,
+            periodo_ano=periodo_ano,
+            periodo_mes=periodo_mes,
+            map_0150=data.map_0150
+        )
+        
+        # Adicionar XMLs sem C100 aos issues
+        for xml_sem_c100 in match_report.xmls_sem_c100:
+            issues.append({
+                "Categoria": "XML sem C100 correspondente",
+                "Chave NF-e": xml_sem_c100.get("chave", ""),
+                "Onde": "XML",
+                "Campo": "CHV_NFE",
+                "No XML": f"MOD={xml_sem_c100.get('mod')}, SER={xml_sem_c100.get('serie')}, NUM={xml_sem_c100.get('nNF')}",
+                "No SPED": "Não encontrado",
+                "Regra": "Todo XML autorizado deve ter C100 correspondente",
+                "Severidade": "Alta",
+                "Sugestão": "Verificar se documento foi escriturado",
+                "Descrição": f"XML não encontrado no SPED. {xml_sem_c100.get('motivo', '')}"
+            })
+        
+        # Adicionar C100s sem XML aos issues
+        for c100_sem_xml in match_report.c100s_sem_xml:
+            issues.append({
+                "Categoria": "C100 sem XML correspondente",
+                "Chave NF-e": c100_sem_xml.get("CHV_NFE", ""),
+                "Onde": "SPED C100",
+                "Campo": "CHV_NFE",
+                "No XML": "Não encontrado",
+                "No SPED": f"MOD={c100_sem_xml.get('COD_MOD')}, SER={c100_sem_xml.get('SER')}, NUM={c100_sem_xml.get('NUM_DOC')}",
+                "Regra": "Todo C100 deve ter XML correspondente",
+                "Severidade": "Média",
+                "Sugestão": "Verificar se XML está na pasta fornecida",
+                "Descrição": f"C100 não encontrado nos XMLs. {c100_sem_xml.get('motivo', '')}"
+            })
+        
+        # Adicionar duplicidades por chave
+        for dup in match_report.duplicidades_chave:
+            issues.append({
+                "Categoria": "Duplicidade no SPED (mesma chave)",
+                "Chave NF-e": dup.get("chave", ""),
+                "Onde": "SPED C100",
+                "Campo": "CHV_NFE",
+                "No XML": "-",
+                "No SPED": f"{dup.get('quantidade')} lançamentos",
+                "Regra": "A chave deve aparecer uma única vez",
+                "Severidade": "Alta",
+                "Sugestão": "Manter apenas 1 lançamento",
+                "Descrição": "Há mais de um lançamento no C100 para a mesma chave."
+            })
+        
+        # Adicionar duplicidades por fallback
+        for dup in match_report.duplicidades_fallback:
+            issues.append({
+                "Categoria": "Duplicidade no SPED (mesma combinação MOD+SER+NUM+PART)",
+                "Chave NF-e": dup.get("chave_composta", ""),
+                "Onde": "SPED C100",
+                "Campo": "COD_MOD+SER+NUM_DOC+COD_PART",
+                "No XML": "-",
+                "No SPED": f"{dup.get('quantidade')} lançamentos",
+                "Regra": "A combinação deve aparecer uma única vez",
+                "Severidade": "Alta",
+                "Sugestão": "Manter apenas 1 lançamento",
+                "Descrição": "Há mais de um lançamento no C100 para a mesma combinação."
+            })
+        
+        # Adicionar relatório de match aos reports
+        relatorio_match = gerar_relatorio_match(match_report)
+        if relatorio_match["matches_encontrados"]:
+            out["Match XML → C100"] = pd.DataFrame(relatorio_match["matches_encontrados"])
+        if relatorio_match["xmls_sem_c100"]:
+            out["XMLs sem C100"] = pd.DataFrame(relatorio_match["xmls_sem_c100"])
+        if relatorio_match["c100s_sem_xml"]:
+            out["C100s sem XML"] = pd.DataFrame(relatorio_match["c100s_sem_xml"])
+        
+    except ImportError as e:
+        logger.warning(f"Módulo match_xml_c100_completo não disponível: {e}")
+        # Fallback para detecção básica de duplicidades
+        dup_counts = efd_valid["CHV_NFE"].value_counts()
+        for chave, cnt in dup_counts[dup_counts > 1].items():
+            issues.append({
+                "Categoria": "Duplicidade no SPED (mesma chave)",
+                "Chave NF-e": chave, "Onde": "SPED C100", "Campo": "CHV_NFE",
+                "No XML": "-", "No SPED": f"{cnt} lançamentos",
+                "Regra": "A chave deve aparecer uma única vez",
+                "Severidade": "Alta", "Sugestão": "Manter apenas 1 lançamento",
+                "Descrição": "Há mais de um lançamento no C100 para a mesma chave."
+            })
 
     # Linhas: Notas e Itens
     rows_notes: List[Dict[str, Any]] = []
@@ -827,7 +921,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                 logging.warning("efd_path não disponível - pulando verificação C170 x C190")
                 checklist.append(("Divergências C170 x C190", "N/D (efd_path não disponível)"))
             else:
-                divergencias_c170_c190 = check_c170_equals_c190(efd_path)
+            divergencias_c170_c190 = check_c170_equals_c190(efd_path)
                 
                 # Verificar se houve erro na verificação (campo CAMPO == "ERRO")
                 tem_erro = False
@@ -842,8 +936,8 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                 
                 # Processar normalmente se não houver erro
                 if not tem_erro:
-                    if not divergencias_c170_c190.empty:
-                        divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
+            if not divergencias_c170_c190.empty:
+                divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
                         
                         # Garantir que colunas de solução existam ANTES de processar
                         colunas_solucao = ["SOLUCAO_AUTOMATICA", "REGISTRO_CORRIGIR", "VALOR_CORRETO", "FORMULA_LEGAL", "DETALHES"]
@@ -968,12 +1062,12 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                         except Exception as e:
                             logging.warning(f"Erro ao gerar soluções automáticas para C170 x C190: {e}")
                         
-                        # Contar divergências não legítimas (que requerem atenção)
-                        if "E_LEGITIMA" in divergencias_legitimas.columns:
-                            div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
-                            checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
-                        else:
-                            checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
+                # Contar divergências não legítimas (que requerem atenção)
+                if "E_LEGITIMA" in divergencias_legitimas.columns:
+                    div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
+                    checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
+                else:
+                    checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
                         
                         # Validação final: garantir que SOLUCAO_AUTOMATICA não seja None
                         if "SOLUCAO_AUTOMATICA" in divergencias_legitimas.columns:
@@ -1027,10 +1121,10 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                         else:
                             logging.error(f"[C170 x C190] ❌ SOLUCAO_AUTOMATICA NÃO está nas colunas antes de adicionar ao relatório!")
                         
-                        # Adicionar ao relatório
-                        out["C170 x C190 (Divergências)"] = divergencias_legitimas
-                    else:
-                        checklist.append(("Divergências C170 x C190", 0))
+                # Adicionar ao relatório
+                out["C170 x C190 (Divergências)"] = divergencias_legitimas
+            else:
+                checklist.append(("Divergências C170 x C190", 0))
         except Exception as e:
             error_msg = str(e)
             logging.error(f"Erro ao verificar C170 x C190: {error_msg}")

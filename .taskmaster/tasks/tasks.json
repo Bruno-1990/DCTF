@@ -678,7 +678,14 @@
           21,
           22,
           23,
-          24
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31
         ],
         "priority": "high",
         "subtasks": []
@@ -922,12 +929,416 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 25,
+        "title": "Fase 1: MVP - Motor de Validação Estrutural Básico",
+        "description": "Implementar o motor de validação estrutural básico que detecta divergências entre XMLs e registros SPED (C100, C170, C190)",
+        "details": "Validação de Leiaute e Versão: identificação automática de período do SPED, registro de versão do Guia Prático, log de versões utilizadas. Motor de Match XML → C100: match por CHV_NFE (chave de 44 dígitos), match fallback por (CNPJ + modelo + série + número + data), score de confiança para matches fallback, detecção de duplicidades, lista de XMLs sem C100 e vice-versa. Validação C100 ↔ C170: contagem de itens (nItem XML x NUM_ITEM C170), validação básica de COD_ITEM, NCM, CFOP, CST, validação de QTD, UNID, VL_ITEM, detecção de divergências por item. Validação C170 → C190: agrupamento de C170s por (CST, CFOP, ALIQ), cálculo de totais esperados (VL_OPR, VL_BC_ICMS, VL_ICMS), comparação com C190 correspondente, detecção de C190 faltante ou divergente. Interface Básica de Visualização: lista de divergências detectadas, filtros básicos (tipo, prioridade), exportação básica (CSV).",
+        "testStrategy": "Testes unitários para cada motor de validação, testes de integração para o pipeline completo, testes de performance com arquivos grandes",
+        "status": "pending",
+        "dependencies": [
+          24
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Validação de Leiaute e Versão",
+            "description": "Identificar automaticamente o período do SPED e registrar versão do Guia Prático",
+            "details": "- Identificar período (mês/ano) do arquivo SPED automaticamente\n- Consultar base de dados de versões do Guia Prático por período\n- Validar compatibilidade da versão do PVA utilizada\n- Registrar no log todas as versões utilizadas para auditoria\n- Alertar quando há incompatibilidade de versões",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 25
+          },
+          {
+            "id": 2,
+            "title": "Motor de Match XML → C100",
+            "description": "Implementar match robusto entre XMLs autorizados e registros C100 no SPED",
+            "details": "- Utilizar CHV_NFE (chave de 44 dígitos) quando disponível como match primário\n- Implementar match fallback por (CNPJ emitente + modelo + série + número + data emissão)\n- Calcular score de confiança para matches fallback\n- Detectar duplicidades (mesma chave ou combinação modelo+série+número+emitente)\n- Garantir que o C100 está no período correto do XML\n- Tratar separadamente documentos autorizados, cancelados, denegados e inutilizados\n- Gerar lista de XMLs sem C100 correspondente e vice-versa",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "parentTaskId": 25
+          },
+          {
+            "id": 3,
+            "title": "Validação C100 ↔ C170 (Itens)",
+            "description": "Validar correspondência entre itens do XML e registros C170 no SPED",
+            "details": "- Validar contagem de itens (nItem XML x NUM_ITEM C170)\n- Validar campos fiscais: COD_ITEM, NCM, CFOP, CST\n- Validar quantidades: QTD e UNID do C170 vs XML\n- Validar valores: VL_ITEM do C170 vs valor do item no XML\n- Validar bases e alíquotas quando aplicável\n- Identificar e validar rateios de frete, seguro, outros e desconto\n- Gerar lista de itens com divergências por documento",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "parentTaskId": 25
+          },
+          {
+            "id": 4,
+            "title": "Validação C170 → C190 (Resumo por CST/CFOP/ALIQ)",
+            "description": "Validar coerência entre os itens (C170) e os resumos (C190) agrupados por combinação CST/CFOP/ALIQ",
+            "details": "- Para cada C100, agrupar C170s por combinação (CST, CFOP, ALIQ)\n- Calcular totais esperados de VL_OPR, VL_BC_ICMS, VL_ICMS\n- Comparar valores esperados com C190 correspondente\n- Identificar quando falta C190 para uma combinação\n- Apontar combinação e itens causadores da divergência",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "parentTaskId": 25
+          },
+          {
+            "id": 5,
+            "title": "Validação C100.VL_DOC x Σ(C190.VL_OPR)",
+            "description": "Validar coerência entre o valor total do documento (C100) e a soma dos valores de operação dos resumos (C190)",
+            "details": "- Somar todos os VL_OPR dos C190s vinculados ao C100\n- Comparar com VL_DOC do C100\n- Aplicar tolerância configurável para diferenças de arredondamento\n- Considerar descontos, fretes, seguros e outros rateios documentados\n- Apontar quando há diferença significativa sem justificativa\n- Registrar divergências encontradas",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "parentTaskId": 25
+          },
+          {
+            "id": 6,
+            "title": "Interface Básica de Visualização",
+            "description": "Criar interface básica para visualização de divergências detectadas",
+            "details": "- Lista de divergências detectadas com detalhes\n- Filtros básicos (tipo, prioridade, documento)\n- Exportação básica em CSV\n- Indicadores de quantidade de divergências por tipo\n- Visualização de detalhes de cada divergência",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "parentTaskId": 25
+          }
+        ]
+      },
+      {
+        "id": 26,
+        "title": "Fase 2: Sistema de Correção Automática",
+        "description": "Aplicar correções automáticas nas divergências detectadas com rastreabilidade completa",
+        "details": "Algoritmo de Correção C170: correção de valores (VL_ITEM) baseado em XML, correção de quantidades (QTD) baseado em XML, correção de CFOP, CST, NCM quando score de confiança ≥ 50%, normalização de CFOP (remover espaços, zeros à esquerda). Recálculo Automático de C190: após correção de C170, recalcula C190 correspondente, cria C190 se não existir, atualiza C190 existente com novos totais. Sistema de Rastreabilidade: log de todas as correções aplicadas, timestamp, usuário, justificativa, histórico de alterações. Interface de Aplicação de Correções: botão \"Aplicar Todas as Correções Automáticas\", modal de confirmação com estatísticas, feedback em tempo real durante aplicação, download de SPED corrigido.",
+        "testStrategy": "Testes unitários para algoritmos de correção, testes de integração para recálculo de C190, testes de rastreabilidade e auditoria",
+        "status": "pending",
+        "dependencies": [
+          25
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Algoritmo de Correção C170",
+            "description": "Implementar correções automáticas nos registros C170 baseadas em dados do XML",
+            "details": "- Correção de valores (VL_ITEM) baseado em XML\n- Correção de quantidades (QTD) baseado em XML\n- Correção de CFOP, CST, NCM quando score de confiança ≥ 50%\n- Normalização de CFOP (remover espaços, zeros à esquerda)\n- Validação de score mínimo antes de aplicar correção\n- Log detalhado de cada correção aplicada",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 26
+          },
+          {
+            "id": 2,
+            "title": "Algoritmo de Correção C100",
+            "description": "Implementar correções automáticas nos registros C100 baseadas em dados do XML",
+            "details": "- Correção de valores (VL_DOC) baseado em XML\n- Correção de datas (DT_DOC, DT_E_S) baseado em XML\n- Correção de situações (COD_SIT) quando aplicável\n- Validação de score mínimo antes de aplicar correção\n- Log detalhado de cada correção aplicada\n- Considerar documentos autorizados, cancelados, denegados e inutilizados",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "parentTaskId": 26
+          },
+          {
+            "id": 3,
+            "title": "Recálculo Automático de C190",
+            "description": "Recalcular C190 automaticamente após correção de C170",
+            "details": "- Após correção de C170, recalcular C190 correspondente\n- Criar C190 se não existir para a combinação CST/CFOP/ALIQ\n- Atualizar C190 existente com novos totais\n- Agrupar todos os C170s relacionados antes de recalcular\n- Validar coerência dos totais recalculados",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "parentTaskId": 26
+          },
+          {
+            "id": 4,
+            "title": "Sistema de Rastreabilidade",
+            "description": "Implementar log completo de todas as correções aplicadas",
+            "details": "- Registrar todas as correções aplicadas com timestamp\n- Registrar usuário que aplicou a correção\n- Registrar justificativa para cada correção\n- Manter histórico completo de alterações\n- Permitir auditoria de todas as correções realizadas",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "parentTaskId": 26
+          },
+          {
+            "id": 5,
+            "title": "Interface de Aplicação de Correções",
+            "description": "Criar interface para aplicação de correções automáticas",
+            "details": "- Botão \"Aplicar Todas as Correções Automáticas\"\n- Modal de confirmação com estatísticas (total, por prioridade, valor total)\n- Feedback em tempo real durante aplicação\n- Download de SPED corrigido após aplicação\n- Indicador de progresso durante processamento",
+            "status": "pending",
+            "dependencies": [
+              3,
+              4
+            ],
+            "parentTaskId": 26
+          }
+        ]
+      },
+      {
+        "id": 27,
+        "title": "Fase 3: Revalidação e Comparação Antes/Depois",
+        "description": "Revalidar SPED corrigido e comparar métricas antes e depois das correções",
+        "details": "Sistema de Revalidação: endpoint de revalidação do SPED corrigido, processamento assíncrono com polling, comparação de métricas antes/depois. Componente de Resultados: dashboard de comparação (antes/depois), gráficos de melhoria, estatísticas de correções aplicadas, detecção de novas divergências. Melhorias na Interface: estados de loading durante revalidação, animações e feedback visual, tratamento de casos onde divergências aumentam.",
+        "testStrategy": "Testes de integração para revalidação, testes de comparação de métricas, testes de UI para estados de loading",
+        "status": "pending",
+        "dependencies": [
+          26
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Sistema de Revalidação",
+            "description": "Implementar endpoint e lógica de revalidação do SPED corrigido",
+            "details": "- Criar endpoint de revalidação do SPED corrigido\n- Processamento assíncrono com polling de status\n- Comparação de métricas antes/depois\n- Armazenamento de resultados da revalidação\n- Tratamento de erros durante revalidação",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 27
+          },
+          {
+            "id": 2,
+            "title": "Componente de Resultados",
+            "description": "Criar dashboard de comparação antes/depois das correções",
+            "details": "- Dashboard de comparação (antes/depois)\n- Gráficos de melhoria (redução de divergências)\n- Estatísticas de correções aplicadas\n- Detecção de novas divergências após correções\n- Visualização de métricas por tipo e prioridade",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "parentTaskId": 27
+          },
+          {
+            "id": 3,
+            "title": "Melhorias na Interface",
+            "description": "Aprimorar interface com estados de loading e feedback visual",
+            "details": "- Estados de loading durante revalidação\n- Animações e feedback visual\n- Tratamento de casos onde divergências aumentam\n- Mensagens informativas sobre o processo\n- Indicadores de progresso detalhados",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "parentTaskId": 27
+          }
+        ]
+      },
+      {
+        "id": 28,
+        "title": "Fase 4: Validações Fiscais Avançadas",
+        "description": "Adicionar validações de conteúdo fiscal (IPI, ST, Simples Nacional) e operações especiais",
+        "details": "Validação de IPI: consistência de totais entre C100 e C190, validação quando aplicável ao cenário. Validação de Substituição Tributária (ST): distinção entre ICMS próprio e ICMS ST, tratamento correto para contribuinte substituído, identificação de quando ST não gera crédito. Validação de Simples Nacional: busca de crédito em múltiplos locais (C197, E111), validação de ajustes de documento e apuração. Validação de Operações Especiais: identificação de cenários especiais (cupom, referência, CFOPs específicos), checklist próprio para cada cenário.",
+        "testStrategy": "Testes unitários para cada tipo de validação fiscal, testes de integração para cenários complexos, testes de casos especiais",
+        "status": "pending",
+        "dependencies": [
+          27
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Validação de IPI",
+            "description": "Validar consistência de totais de IPI entre C100 e C190",
+            "details": "- Validar consistência de totais de IPI entre total do documento (C100) e somatórios do resumo (C190)\n- Validar quando aplicável ao cenário fiscal\n- Detectar divergências de IPI\n- Apontar origem das divergências",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 28
+          },
+          {
+            "id": 2,
+            "title": "Validação de Substituição Tributária (ST)",
+            "description": "Validar tratamento correto de ICMS ST",
+            "details": "- Distinguir ICMS próprio vs ICMS ST\n- Não exigir bloco/fechamentos de substituto quando contribuinte é apenas substituído\n- Identificar quando ST não gera crédito para adquirente\n- Validar cálculos de ST corretamente",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 28
+          },
+          {
+            "id": 3,
+            "title": "Validação de Simples Nacional",
+            "description": "Validar tratamento correto de créditos no Simples Nacional",
+            "details": "- Buscar crédito em múltiplos locais (C197, E111, campos de ICMS do item)\n- Validar ajustes de documento e apuração\n- Identificar cenários específicos do Simples Nacional\n- Validar regras específicas do regime",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 28
+          },
+          {
+            "id": 4,
+            "title": "Validação de Operações Especiais",
+            "description": "Identificar e validar cenários especiais (cupom, referência, CFOPs específicos)",
+            "details": "- Identificar cenários especiais (cupom, referência, CFOPs específicos)\n- Aplicar checklist próprio para cada cenário\n- Validar regras específicas de cada tipo de operação\n- Documentar casos especiais tratados",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 28
+          }
+        ]
+      },
+      {
+        "id": 29,
+        "title": "Fase 5: Validação de Cadastros e Apuração",
+        "description": "Validar cadastros (0150, 0200, 0190, 0220) e apuração (Bloco E - E110, E111, E116)",
+        "details": "Validação de Cadastros: 0150 (Participantes): COD_PART do C100 existe, 0200 (Itens): COD_ITEM do C170 existe, 0190 (Unidades): UNID do C170 existe, 0220 (Conversão): coerência quando houver conversão. Validação de Apuração (Bloco E): E110 (Fechamento): coerência de débitos, créditos, estornos, ajustes, E111 (Ajustes): código/motivo, rastreabilidade, classificação, E116 (Valores a recolher): coerência com E110. Interface de Validação de Cadastros: lista de códigos não cadastrados, sugestões de cadastro, links para criação de cadastros.",
+        "testStrategy": "Testes unitários para validação de cadastros, testes de integração para validação de apuração, testes de interface",
+        "status": "pending",
+        "dependencies": [
+          28
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Validação de Cadastros (0150, 0200, 0190, 0220)",
+            "description": "Validar que todos os códigos referenciados no SPED existem nos cadastros correspondentes",
+            "details": "- Validar 0150 (Participantes): COD_PART do C100 existe no cadastro\n- Validar 0200 (Itens): COD_ITEM do C170 existe no cadastro\n- Validar 0190 (Unidades): UNID do C170 existe no cadastro\n- Validar 0220 (Conversão de unidades): coerência quando houver conversão\n- Marcar como erro estrutural (alto risco) quando código não existe",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 29
+          },
+          {
+            "id": 2,
+            "title": "Validação de Apuração - E110 (Fechamento)",
+            "description": "Validar coerência do fechamento da apuração",
+            "details": "- Validar coerência de débitos, créditos, estornos, ajustes\n- Validar saldo anterior e saldo a transportar\n- Validar extra-apuração quando aplicável\n- Detectar inconsistências no fechamento",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 29
+          },
+          {
+            "id": 3,
+            "title": "Validação de Apuração - E111 (Ajustes)",
+            "description": "Validar ajustes da apuração",
+            "details": "- Validar que todo ajuste tem código/motivo\n- Validar rastreabilidade (origem/evidência)\n- Classificar impacto e risco dos ajustes\n- Detectar ajustes sem justificativa",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 29
+          },
+          {
+            "id": 4,
+            "title": "Validação de Apuração - E116 (Valores a Recolher)",
+            "description": "Validar valores a recolher",
+            "details": "- Validar que valores a recolher são suportados pelo fechamento E110\n- Validar coerência entre E116 e E110\n- Detectar valores a recolher sem suporte no fechamento",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "parentTaskId": 29
+          },
+          {
+            "id": 5,
+            "title": "Interface de Validação de Cadastros",
+            "description": "Criar interface para visualização de erros de cadastro",
+            "details": "- Lista de códigos não cadastrados\n- Sugestões de cadastro\n- Links para criação de cadastros\n- Filtros por tipo de cadastro\n- Exportação de lista de códigos faltantes",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "parentTaskId": 29
+          }
+        ]
+      },
+      {
+        "id": 30,
+        "title": "Fase 6: Normalização, Tolerância e PVA-Driven",
+        "description": "Implementar normalização avançada, tolerâncias configuráveis e integração com PVA",
+        "details": "Sistema de Normalização Avançada: normalização de CNPJ/CPF (validação de dígitos), normalização de datas (padronização de formato), normalização de decimais (padronização de casas), normalização de campos-chave (espaços, maiúsculas/minúsculas). Sistema de Tolerância Configurável: configuração de tolerância por item, documento, período, log de diferenças dentro da tolerância, justificativas (rateio/arredondamento). Integração com PVA (Futuro): execução automática de validação no PVA, armazenamento de erros e advertências, priorização baseada em resultados do PVA, registro de versão do PVA. Interface de Configuração: painel de configuração de tolerâncias, configuração de regras de normalização, histórico de validações PVA.",
+        "testStrategy": "Testes unitários para normalização, testes de tolerância configurável, testes de integração com PVA (quando disponível)",
+        "status": "pending",
+        "dependencies": [
+          29
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Sistema de Normalização Avançada",
+            "description": "Implementar normalização completa de dados",
+            "details": "- Normalizar CNPJ/CPF (remover formatação, validar dígitos)\n- Normalizar datas (padronizar formato)\n- Normalizar decimais (padronizar casas decimais)\n- Normalizar campos-chave (remover espaços, normalizar maiúsculas/minúsculas)\n- Aplicar normalização antes de comparações",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 30
+          },
+          {
+            "id": 2,
+            "title": "Sistema de Tolerância Configurável",
+            "description": "Implementar sistema de tolerâncias configuráveis para evitar falsos positivos",
+            "details": "- Configurar tolerância por item (ex: R$ 0,01 por item)\n- Configurar tolerância por documento (ex: R$ 0,10 por documento)\n- Configurar tolerância por período (ex: R$ 1,00 por período)\n- Registrar todas as diferenças dentro da tolerância com justificativa (rateio/arredondamento)\n- Permitir ajuste de tolerâncias por usuário",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "parentTaskId": 30
+          },
+          {
+            "id": 3,
+            "title": "Integração com PVA (Futuro)",
+            "description": "Preparar integração com validador oficial PVA",
+            "details": "- Executar validação no PVA como parte do pipeline\n- Armazenar erros, advertências e versões utilizadas\n- Usar resultados do PVA para priorizar correções (erros antes de advertências)\n- Registrar versão do PVA utilizada em cada validação\n- Preparar estrutura para integração futura",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "parentTaskId": 30
+          },
+          {
+            "id": 4,
+            "title": "Interface de Configuração",
+            "description": "Criar painel de configuração de tolerâncias e normalização",
+            "details": "- Painel de configuração de tolerâncias\n- Configuração de regras de normalização\n- Histórico de validações PVA\n- Configurações por cliente/período\n- Exportação de configurações",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "parentTaskId": 30
+          }
+        ]
+      },
+      {
+        "id": 31,
+        "title": "Fase 7: Painel de Riscos e Relatórios Avançados",
+        "description": "Dashboard executivo e relatórios completos de riscos e divergências",
+        "details": "Painel de Riscos: classificação de riscos (estrutural, fiscal, operacional), priorização (alta, média, baixa), gráficos de distribuição, filtros por período, cliente, tipo. Relatórios Avançados: relatório completo de divergências (PDF/Excel), relatório de correções aplicadas, relatório de auditoria (rastreabilidade completa), relatório executivo (KPIs, métricas consolidadas). Dashboard Executivo: visão consolidada de múltiplos clientes, KPIs principais (taxa de divergências, taxa de correção, tempo médio), gráficos de tendências, alertas de prazos.",
+        "testStrategy": "Testes de geração de relatórios, testes de dashboard executivo, testes de visualizações e gráficos",
+        "status": "pending",
+        "dependencies": [
+          30
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Painel de Riscos",
+            "description": "Criar painel de visualização de riscos classificados",
+            "details": "- Classificar riscos: estrutural (afeta aceitação do arquivo), fiscal (afeta créditos/débitos), operacional (afeta prazos/retificações)\n- Priorizar por: alta, média, baixa\n- Visualizar com gráficos de distribuição de riscos\n- Tabelas detalhadas por tipo\n- Filtros por período, cliente, tipo de risco\n- Exportar relatórios de riscos",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 31
+          },
+          {
+            "id": 2,
+            "title": "Relatórios Avançados",
+            "description": "Gerar relatórios completos de divergências, correções e auditoria",
+            "details": "- Relatório completo de divergências (PDF/Excel)\n- Relatório de correções aplicadas\n- Relatório de auditoria (rastreabilidade completa)\n- Relatório executivo (KPIs, métricas consolidadas)\n- Lista XMLs autorizados sem C100 correspondente\n- Lista C100s sem XML correspondente\n- Lista duplicidades\n- Lista divergências por documento e item\n- Validação de fechamento (E110) e recolhimento (E116)",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 31
+          },
+          {
+            "id": 3,
+            "title": "Dashboard Executivo",
+            "description": "Criar dashboard executivo com visão consolidada",
+            "details": "- Visão consolidada de múltiplos clientes\n- KPIs principais (taxa de divergências, taxa de correção, tempo médio)\n- Gráficos de tendências\n- Alertas de prazos\n- Métricas consolidadas por período\n- Comparação entre períodos",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "parentTaskId": 31
+          }
+        ]
       }
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-11-12T18:08:11.384Z",
-      "description": "Tag principal com todas as tarefas do projeto DCTF"
+      "updated": "2025-12-18T19:46:22.720Z",
+      "description": "Tag principal com todas as tarefas do projeto DCTF e Sistema de Conferência SPED"
     }
   }
 }

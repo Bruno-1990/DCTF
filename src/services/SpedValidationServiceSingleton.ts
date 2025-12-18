@@ -19,3 +19,4 @@ export function resetInstance(): void {
   instance = null;
 }
 
+

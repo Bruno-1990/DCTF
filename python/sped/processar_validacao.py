@@ -15,6 +15,7 @@ try:
     from reconcile import build_dataframes, make_reports
     from validators import load_rules_for_sector, run_all_validations
     from excelio import write_workbook
+    from validacao_leiaute_versao import validar_leiaute_versao, registrar_versao_utilizada
 except ImportError as e:
     print(json.dumps({"error": f"Erro ao importar módulos: {e}"}))
     sys.exit(1)
@@ -38,6 +39,11 @@ def main():
         if not xml_dir.exists() or not xml_dir.is_dir():
             print(json.dumps({"error": f"Diretório XML não encontrado: {xml_dir}"}))
             sys.exit(1)
+        
+        # Validar leiaute e versão
+        print(json.dumps({"progress": 10, "message": "Validando leiaute e versão do SPED..."}), flush=True)
+        resultado_leiaute = validar_leiaute_versao(sped_path)
+        registrar_versao_utilizada(resultado_leiaute)
         
         # Carregar dados
         print(json.dumps({"progress": 30, "message": "Carregando dados do SPED e XMLs..."}), flush=True)
@@ -197,6 +203,19 @@ def main():
                 "razao": materiais.empresa.razao,
                 "dt_ini": materiais.empresa.dt_ini,
                 "dt_fin": materiais.empresa.dt_fin
+            },
+            "leiaute_versao": {
+                "periodo_ano": resultado_leiaute.versao.periodo_ano,
+                "periodo_mes": resultado_leiaute.versao.periodo_mes,
+                "versao_guia": resultado_leiaute.versao.versao_guia,
+                "versao_pva": resultado_leiaute.versao.versao_pva,
+                "cod_ver_sped": resultado_leiaute.versao.cod_ver_sped,
+                "compativel": resultado_leiaute.versao.compativel,
+                "periodo_identificado": resultado_leiaute.periodo_identificado,
+                "versao_encontrada": resultado_leiaute.versao_encontrada,
+                "compatibilidade_validada": resultado_leiaute.compatibilidade_validada,
+                "alertas": resultado_leiaute.alertas,
+                "logs": resultado_leiaute.logs
             },
             "validacoes": {k: df_to_dict(v) for k, v in validacoes.items()},
             "reports": {k: df_to_dict(v) for k, v in reports.items()}

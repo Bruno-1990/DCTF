@@ -1,0 +1,177 @@
+APONTAMENTOS — CONFERÊNCIA EFD ICMS/IPI (SPED FISCAL) — XML x SPED
+Versão: 1.0 | Data: 18/12/2025
+
+======================================================================
+1) PRIMEIRO PASSO: CONFIRMAR GUIA PRÁTICO / LEIAUTE DO PERÍODO
+======================================================================
+- Validar qual versão do Guia Prático EFD ICMS/IPI e do PVA é aplicável ao mês/ano do arquivo.
+- Mudanças de leiaute/validações entre versões podem transformar “diferença” em “mudança de regra”.
+- Regra do processo: sempre registrar (no log) a versão do PVA utilizada e a versão do Guia/Leiaute.
+
+======================================================================
+2) CRUZAMENTOS “ESTRUTURAIS” (BASE DO MOTOR) — NÃO DEPENDEM DE SETOR
+======================================================================
+2.1) XML autorizado → C100 (existência e unicidade)
+- Todo XML autorizado deve ter escrituração compatível no SPED (C100), respeitando:
+  - período correto,
+  - COD_SIT (situação do documento),
+  - tratamento distinto para: autorizada / cancelada / denegada / inutilizada.
+- Duplicidade: mesma chave (44) ou (modelo+série+número+emitente) não pode aparecer 2x.
+- Se CHV_NFE existir no SPED, ela é o identificador primário do cruzamento.
+
+2.2) CHV_NFE no C100 (robustez do match)
+- O cruzamento robusto deve ser por CHV_NFE sempre que possível.
+- Quando não houver CHV_NFE, usar fallback:
+  - (CNPJ emitente + modelo + série + número + data emissão) e score de confiança.
+
+2.3) C100 ↔ C170 (itens e conteúdo)
+- Verificar:
+  - contagem de itens (nItem XML x NUM_ITEM C170),
+  - COD_ITEM/NCM/CFOP/CST,
+  - QTD/UNID e VL_ITEM,
+  - bases/aliquotas/valores (quando aplicável).
+- Tratar rateios (frete/seguro/outros/desconto) que podem estar:
+  - no total do documento ou
+  - rateados por item.
+
+2.4) C170 → C190 (validação por combinação CST/CFOP/ALIQ)
+- Para cada C100:
+  - agrupar C170 por (CST, CFOP, ALIQ),
+  - comparar com C190 correspondente:
+    - VL_OPR,
+    - VL_BC_ICMS,
+    - VL_ICMS,
+    - (e outros campos aplicáveis ao seu cenário).
+- Se não bater: erro estrutural (alto risco), apontar a combinação e os itens causadores.
+
+2.5) C100.VL_DOC x Σ(C190.VL_OPR)
+- Regra prática: o total do documento (C100) deve ser coerente com a soma do “valor da operação”
+  no resumo (C190), com tolerância e justificativas (desconto/frete/outros/rateios).
+
+2.6) Situação do documento (COD_SIT) muda o que deve/ não deve ser preenchido
+- Canceladas, denegadas e inutilizadas precisam de tratamento separado:
+  - você não pode exigir os mesmos campos/valores de uma autorizada “normal”.
+- Regra do auditor: “populações” separadas por COD_SIT para evitar falso-positivo.
+
+======================================================================
+3) CRUZAMENTOS DE CONTEÚDO (FISCAIS) QUE MUITA CONFERÊNCIA ESQUECE
+======================================================================
+3.1) IPI: consistência de totais
+- Conferir consistência entre:
+  - total do documento (C100) e
+  - somatórios do resumo (C190) para IPI,
+  quando o cenário exigir.
+
+3.2) ST (Substituição Tributária) — cuidado com exigências indevidas
+- Não exigir bloco/fechamentos típicos de “substituto tributário” quando o contribuinte é apenas
+  substituído (comprador).
+- Conferência deve distinguir:
+  - ICMS próprio,
+  - ICMS ST,
+  - quando ST não gera crédito para o adquirente.
+
+3.3) Compras do Simples Nacional: crédito pode aparecer como ajuste
+- O crédito (quando houver direito) pode estar:
+  - como ajuste de documento (ex.: C197) e/ou
+  - como ajuste de apuração (ex.: E111),
+  dependendo de parametrização/UF/legislação.
+- Auditor de crédito deve procurar “crédito” em mais de um lugar (não apenas nos campos de ICMS do item).
+
+3.4) Operações especiais (cupom / referência / CFOPs específicos)
+- Existem cenários em que a NF “espelha” operações já documentadas por outros sistemas (ECF/CF-e etc.).
+- A conferência deve identificar o cenário e aplicar checklist próprio para:
+  - registros filhos (C110/C114 etc. quando aplicável),
+  - expectativas tributárias (às vezes “sem ICMS” no resumo).
+
+======================================================================
+4) CADASTROS QUE SUSTENTAM TUDO (VALIDAÇÕES CLÁSSICAS)
+======================================================================
+- 0150 (Participantes): COD_PART do C100 deve existir aqui.
+- 0200 (Itens): COD_ITEM do C170 deve existir aqui.
+- 0190 (Unidades): UNID do C170 deve existir aqui.
+- 0220 (Conversão de unidades): quando houver conversão, deve estar coerente.
+
+Regra do sistema:
+- referência a código não cadastrado = erro estrutural (afeta qualidade e costuma virar erro/advertência).
+
+======================================================================
+5) APURAÇÃO (BLOCO E) — O QUE NÃO PODE FALTAR NO PROCESSO
+======================================================================
+5.1) E110 (fechamento)
+- Conferir coerência de:
+  - débitos,
+  - créditos,
+  - estornos,
+  - ajustes,
+  - saldo anterior,
+  - saldo a transportar,
+  - extra-apuração (quando aplicável).
+
+5.2) E111 (ajustes)
+- Todo ajuste que impacta apuração precisa:
+  - ter código/motivo,
+  - ter rastreabilidade (origem/evidência),
+  - ser classificado (impacto e risco).
+
+5.3) E116 (valores a recolher)
+- O que “deu a recolher” na apuração precisa aparecer corretamente no E116.
+- Regras de coerência: E116 deve ser suportado pelo fechamento do E110.
+
+======================================================================
+6) SETOR DO CLIENTE INTERFERE? SIM — NO “ESPERADO”, NÃO NA ESTRUTURA
+======================================================================
+- O motor estrutural (XML ↔ C100 ↔ C170 ↔ C190 ↔ E110/E116) é sempre o mesmo.
+- O que muda por setor é:
+  - o que você espera de crédito,
+  - o que é normal ter (ST, IPI, CIAP, Bloco K),
+  - quais exceções/regimes aparecem com frequência.
+
+6.1) Comércio (atacado/varejo)
+- Maior incidência de ST e cenários de revenda/devolução/bonificação.
+- Conferência precisa tratar “ST e sem crédito” com cuidado para não criar falso-positivo.
+
+6.2) Indústria
+- IPI tende a ser relevante.
+- Entram cenários de industrialização por encomenda (remessa/retorno).
+- Pode exigir auditoria adicional de:
+  - CIAP (Bloco G) e
+  - Bloco K (quando aplicável).
+
+6.3) Setores sensíveis (ex.: bebidas/combustíveis/fármacos/autopeças)
+- Alta incidência de ST/monofásico/pauta/MVA/FCP (conforme produto/UF).
+- Erros típicos são CST/CFOP/ALIQ/NCM incompatíveis com o regime do produto.
+
+======================================================================
+7) PROCESSO “PVA-DRIVEN” (RECOMENDAÇÃO FORTE)
+======================================================================
+- Executar validação no PVA como parte do pipeline e armazenar:
+  - erros,
+  - advertências,
+  - versões utilizadas.
+- Isso vira a “régua” oficial e ajuda a priorizar correções.
+
+======================================================================
+8) SAÍDAS QUE O SISTEMA DE CONFERÊNCIA DEVE GERAR (MÍNIMO VIÁVEL)
+======================================================================
+- Lista de XML autorizados sem C100 correspondente (e vice-versa).
+- Duplicidades (chave e/ou número/série/emitente).
+- Divergências por documento (totais e rateios).
+- Divergências por item (NCM/CFOP/CST/QTD/VL_ITEM/bases/valores).
+- Quebras C170 → C190 por combinação CST/CFOP/ALIQ (com “explicação”).
+- Fechamento (E110) e recolhimento (E116) coerentes e rastreáveis.
+- Painel de riscos:
+  - estrutural,
+  - fiscal (crédito/débito),
+  - operacional (prazo/retificação).
+
+======================================================================
+9) NOTAS FINAIS — NORMALIZAÇÃO E TOLERÂNCIA
+======================================================================
+- Normalizar CNPJ/CPF, datas, decimais e campos-chave.
+- Implementar tolerância configurável por:
+  - item,
+  - documento,
+  - período,
+  com log das diferenças e justificativas (rateio/arredondamento).
+
+FIM
