@@ -1177,7 +1177,7 @@
         "description": "Validar cadastros (0150, 0200, 0190, 0220) e apuração (Bloco E - E110, E111, E116)",
         "details": "Validação de Cadastros: 0150 (Participantes): COD_PART do C100 existe, 0200 (Itens): COD_ITEM do C170 existe, 0190 (Unidades): UNID do C170 existe, 0220 (Conversão): coerência quando houver conversão. Validação de Apuração (Bloco E): E110 (Fechamento): coerência de débitos, créditos, estornos, ajustes, E111 (Ajustes): código/motivo, rastreabilidade, classificação, E116 (Valores a recolher): coerência com E110. Interface de Validação de Cadastros: lista de códigos não cadastrados, sugestões de cadastro, links para criação de cadastros.",
         "testStrategy": "Testes unitários para validação de cadastros, testes de integração para validação de apuração, testes de interface",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           28
         ],
@@ -1188,7 +1188,7 @@
             "title": "Validação de Cadastros (0150, 0200, 0190, 0220)",
             "description": "Validar que todos os códigos referenciados no SPED existem nos cadastros correspondentes",
             "details": "- Validar 0150 (Participantes): COD_PART do C100 existe no cadastro\n- Validar 0200 (Itens): COD_ITEM do C170 existe no cadastro\n- Validar 0190 (Unidades): UNID do C170 existe no cadastro\n- Validar 0220 (Conversão de unidades): coerência quando houver conversão\n- Marcar como erro estrutural (alto risco) quando código não existe",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 29
           },
@@ -1197,7 +1197,7 @@
             "title": "Validação de Apuração - E110 (Fechamento)",
             "description": "Validar coerência do fechamento da apuração",
             "details": "- Validar coerência de débitos, créditos, estornos, ajustes\n- Validar saldo anterior e saldo a transportar\n- Validar extra-apuração quando aplicável\n- Detectar inconsistências no fechamento",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 29
           },
@@ -1206,7 +1206,7 @@
             "title": "Validação de Apuração - E111 (Ajustes)",
             "description": "Validar ajustes da apuração",
             "details": "- Validar que todo ajuste tem código/motivo\n- Validar rastreabilidade (origem/evidência)\n- Classificar impacto e risco dos ajustes\n- Detectar ajustes sem justificativa",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 29
           },
@@ -1215,7 +1215,7 @@
             "title": "Validação de Apuração - E116 (Valores a Recolher)",
             "description": "Validar valores a recolher",
             "details": "- Validar que valores a recolher são suportados pelo fechamento E110\n- Validar coerência entre E116 e E110\n- Detectar valores a recolher sem suporte no fechamento",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
@@ -1226,7 +1226,7 @@
             "title": "Interface de Validação de Cadastros",
             "description": "Criar interface para visualização de erros de cadastro",
             "details": "- Lista de códigos não cadastrados\n- Sugestões de cadastro\n- Links para criação de cadastros\n- Filtros por tipo de cadastro\n- Exportação de lista de códigos faltantes",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
@@ -1337,7 +1337,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-12-18T20:27:56.547Z",
+      "updated": "2025-12-18T20:33:40.976Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF e Sistema de Conferência SPED"
     }
   }
