@@ -9,11 +9,11 @@ import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { SpedValidationService } from '../services/SpedValidationService';
+import { getSpedValidationService } from '../services/SpedValidationServiceSingleton';
 
 const router = Router();
 const execAsync = promisify(exec);
-const spedValidationService = new SpedValidationService();
+const spedValidationService = getSpedValidationService();
 
 // Middleware de debug para todas as rotas
 router.use((req, res, next) => {
@@ -485,7 +485,9 @@ router.post('/aplicar-todas', async (req: Request, res: Response) => {
       total_correcoes: correcoes.length,
       falhas: falhas,
       resultados: resultados,
-      arquivo_corrigido: outputPath
+      arquivo_corrigido: outputPath,
+      validationId: validationId,
+      pode_revalidar: fs.existsSync(outputPath) // Indica se pode revalidar
     });
 
   } catch (error: any) {
@@ -546,6 +548,102 @@ router.get('/:validationId/download', async (req: Request, res: Response) => {
     console.error('Erro ao processar download:', error);
     res.status(500).json({
       error: error.message || 'Erro interno ao processar download'
+    });
+  }
+});
+
+/**
+ * POST /api/sped/correcoes/:validationId/revalidar
+ * Revalida o SPED corrigido automaticamente
+ */
+router.post('/:validationId/revalidar', async (req: Request, res: Response) => {
+  try {
+    const { validationId } = req.params;
+    const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
+    const spedCorrigidoPath = path.join(tmpDir, 'sped_corrigido.txt');
+    const xmlDir = path.join(tmpDir, 'xmls');
+
+    // Verificar se arquivo corrigido existe
+    if (!fs.existsSync(spedCorrigidoPath)) {
+      return res.status(404).json({
+        error: 'Arquivo SPED corrigido não encontrado. Aplique as correções primeiro.',
+        path: spedCorrigidoPath
+      });
+    }
+
+    console.log(`[revalidar] Iniciando revalidação do SPED corrigido: ${spedCorrigidoPath}`);
+
+    // Ler arquivo SPED corrigido
+    const spedCorrigidoBuffer = fs.readFileSync(spedCorrigidoPath);
+    
+    // Buscar XMLs originais
+    const xmlBuffers: Buffer[] = [];
+    if (fs.existsSync(xmlDir)) {
+      const xmlFileNames = fs.readdirSync(xmlDir).filter(f => f.endsWith('.xml'));
+      for (const fileName of xmlFileNames) {
+        const xmlPath = path.join(xmlDir, fileName);
+        xmlBuffers.push(fs.readFileSync(xmlPath));
+      }
+    }
+
+    // Criar novo ID para validação corrigida
+    const novaValidationId = `${validationId}_corrigido_${Date.now()}`;
+    
+    console.log(`[revalidar] Nova validationId criada: ${novaValidationId}`);
+    console.log(`[revalidar] XMLs encontrados: ${xmlBuffers.length}`);
+    console.log(`[revalidar] Tamanho do SPED corrigido: ${spedCorrigidoBuffer.length} bytes`);
+    
+    // IMPORTANTE: Inicializar o status no Map ANTES de iniciar o processamento
+    // Isso garante que o endpoint GET possa encontrar o status imediatamente
+    // Usamos o método privado através de uma abordagem que garante o status
+    // Mas como não podemos acessar diretamente, vamos iniciar o processamento
+    // que já inicializa o status na primeira linha
+    
+    // Usar a mesma instância do serviço que está sendo usada no endpoint GET
+    // Isso garante que o status fique disponível no mesmo Map
+    console.log(`[revalidar] Iniciando processamento com a mesma instância do serviço...`);
+    
+    // Iniciar processamento (ele inicializa o status síncronamente na primeira linha)
+    const processamentoPromise = spedValidationService.processarValidacao(
+      novaValidationId,
+      spedCorrigidoBuffer,
+      xmlBuffers,
+      req.body.setores || undefined
+    ).catch((error: any) => {
+      console.error(`[revalidar] ❌ Erro ao processar revalidação ${novaValidationId}:`, error);
+    });
+
+    // Aguardar um pouco para garantir que o status foi inicializado no Map
+    // O processarValidacao inicializa o status síncronamente na primeira linha
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Verificar se o status foi criado
+    const statusVerificado = await spedValidationService.obterStatus(novaValidationId);
+    if (statusVerificado) {
+      console.log(`[revalidar] ✅ Status inicializado com sucesso:`, {
+        validationId: statusVerificado.validationId,
+        status: statusVerificado.status,
+        progress: statusVerificado.progress
+      });
+    } else {
+      console.warn(`[revalidar] ⚠️ Status não encontrado após inicialização. Isso pode causar 404 no polling.`);
+    }
+
+    // Não aguardar o processamento completo, apenas iniciar
+    // O processamento continua em background
+
+    // Retornar ID da nova validação imediatamente
+    res.status(202).json({
+      success: true,
+      message: 'Revalidação iniciada com sucesso',
+      validationId: novaValidationId,
+      status: 'processing'
+    });
+
+  } catch (error: any) {
+    console.error('[revalidar] Erro ao iniciar revalidação:', error);
+    res.status(500).json({
+      error: error.message || 'Erro interno ao processar revalidação'
     });
   }
 });

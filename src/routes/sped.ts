@@ -9,11 +9,11 @@ import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { SpedValidationService } from '../services/SpedValidationService';
+import { getSpedValidationService } from '../services/SpedValidationServiceSingleton';
 import { sanitizeData } from '../middleware/validation';
 
 const router = Router();
-const spedValidationService = new SpedValidationService();
+const spedValidationService = getSpedValidationService();
 
 // Configurar multer para upload de arquivos
 const upload = multer({
@@ -236,9 +236,17 @@ router.get('/validacao/:validationId', async (req: Request, res: Response) => {
       const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
       const resultadoPath = path.join(tmpDir, 'resultado.json');
       
+      // Verificar se diretório existe
+      if (fs.existsSync(tmpDir)) {
+        console.log(`[GET /validacao] Diretório existe: ${tmpDir}`);
+        const files = fs.readdirSync(tmpDir);
+        console.log(`[GET /validacao] Arquivos no diretório:`, files);
+      }
+      
       // Se o arquivo existe, significa que a validação foi concluída
       if (fs.existsSync(resultadoPath)) {
         try {
+          console.log(`[GET /validacao] Arquivo resultado.json encontrado, lendo...`);
           // Tentar ler o resultado para construir o status
           const resultadoData = fs.readFileSync(resultadoPath, 'utf-8');
           const cleanedData = resultadoData
@@ -256,9 +264,25 @@ router.get('/validacao/:validationId', async (req: Request, res: Response) => {
             resultado
           };
           
-          console.log(`[GET /validacao] ✅ Status reconstruído do arquivo para ${validationId}`);
+          // IMPORTANTE: Atualizar o Map também para próximas consultas
+          spedValidationService.adicionarStatusAoMap(validationId, status);
+          
+          console.log(`[GET /validacao] ✅ Status reconstruído do arquivo para ${validationId} e adicionado ao Map`);
         } catch (error: any) {
           console.error(`[GET /validacao] Erro ao ler arquivo de resultado:`, error.message);
+        }
+      } else {
+        console.log(`[GET /validacao] Arquivo resultado.json não encontrado em: ${resultadoPath}`);
+        // Verificar se há arquivo de status ou se está ainda processando
+        const statusPath = path.join(tmpDir, 'status.json');
+        if (fs.existsSync(statusPath)) {
+          try {
+            const statusData = JSON.parse(fs.readFileSync(statusPath, 'utf-8'));
+            status = statusData;
+            console.log(`[GET /validacao] Status lido do arquivo status.json`);
+          } catch (e) {
+            console.log(`[GET /validacao] Erro ao ler status.json:`, e);
+          }
         }
       }
     }

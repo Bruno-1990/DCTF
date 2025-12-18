@@ -381,6 +381,22 @@ class SpedService {
       throw error;
     }
   }
+
+  /**
+   * Revalida o SPED corrigido automaticamente
+   */
+  async revalidarSpedCorrigido(validationId: string, setores?: string[]): Promise<{ validationId: string; status: string }> {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/sped/correcoes/${validationId}/revalidar`,
+        { setores }
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Erro ao revalidar SPED corrigido:', error);
+      throw error;
+    }
+  }
 }
 
 export const spedService = new SpedService();

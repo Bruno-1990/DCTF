@@ -11,10 +11,13 @@ import {
   ClipboardIcon,
   CheckIcon,
   WrenchScrewdriverIcon,
-  ArrowDownTrayIcon
+  ArrowDownTrayIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { spedService } from '../../services/sped';
+import ResultadoCorrecoes from './ResultadoCorrecoes';
+import ModalConfirmacaoCorrecoes from './ModalConfirmacaoCorrecoes';
 
 interface DivergenciaC170C190 {
   CHAVE?: string;
@@ -499,6 +502,13 @@ const DivergenciasInteligentes: React.FC<Props> = ({
   const [copiedChave, setCopiedChave] = useState<string | null>(null);
   const [aplicandoCorrecao, setAplicandoCorrecao] = useState<number | null>(null);
   const [correcoesAplicadas, setCorrecoesAplicadas] = useState<Set<number>>(new Set());
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [modalMessage, setModalMessage] = useState<string>('');
+  const [modalTitle, setModalTitle] = useState<string>('');
+  const [resultadoAplicacao, setResultadoAplicacao] = useState<any>(null);
+  const [mostrarResultado, setMostrarResultado] = useState(false);
 
   // Debug: Log dos dados recebidos
   useEffect(() => {
@@ -765,15 +775,54 @@ const DivergenciasInteligentes: React.FC<Props> = ({
     }
   };
 
+  // Calcular estatísticas de correções disponíveis
+  const estatisticasCorrecoes = useMemo(() => {
+    const correcoesDisponiveis = divergenciasFormatadas.filter(div => {
+      const dadosOriginais = div.dadosOriginais || div;
+      return dadosOriginais.SOLUCAO_AUTOMATICA && dadosOriginais.REGISTRO_CORRIGIR;
+    });
+
+    const porPrioridade = {
+      alta: correcoesDisponiveis.filter(d => d.recomendacao.prioridade === 'alta').length,
+      media: correcoesDisponiveis.filter(d => d.recomendacao.prioridade === 'media').length,
+      baixa: correcoesDisponiveis.filter(d => d.recomendacao.prioridade === 'baixa').length,
+    };
+
+    const valorTotalCorrecoes = correcoesDisponiveis.reduce((acc, div) => {
+      const dadosOriginais = div.dadosOriginais || div;
+      return acc + Math.abs((dadosOriginais.VALOR_CORRETO || 0) - (div.valor2 || 0));
+    }, 0);
+
+    return {
+      total: correcoesDisponiveis.length,
+      porPrioridade,
+      valorTotal: valorTotalCorrecoes
+    };
+  }, [divergenciasFormatadas]);
+
   const aplicarTodasCorrecoes = async () => {
     if (!validationId) {
-      alert('ID de validação não disponível');
+      setModalTitle('Atenção');
+      setModalMessage('ID de validação não disponível');
+      setShowErrorModal(true);
       return;
     }
 
-    if (!confirm('Deseja aplicar TODAS as correções automáticas disponíveis? Esta ação modificará o arquivo SPED.')) {
+    if (estatisticasCorrecoes.total === 0) {
+      setModalTitle('Atenção');
+      setModalMessage('Nenhuma correção automática disponível para aplicar.');
+      setShowErrorModal(true);
       return;
     }
+
+    // Mostrar modal de confirmação
+    setShowConfirmModal(true);
+  };
+
+  const confirmarAplicarTodasCorrecoes = async () => {
+    setShowConfirmModal(false);
+
+    if (!validationId) return;
 
     setAplicandoCorrecao(-1); // -1 indica "aplicando todas"
 
@@ -781,7 +830,25 @@ const DivergenciasInteligentes: React.FC<Props> = ({
       const resultado = await spedService.aplicarTodasCorrecoes(validationId);
 
       if (resultado.success) {
-        alert(`✅ ${resultado.correcoes_aplicadas || 0} de ${resultado.total_correcoes || 0} correções aplicadas com sucesso!\n\n${resultado.message}`);
+        // Salvar resultado da aplicação
+        setResultadoAplicacao({
+          correcoes_aplicadas: resultado.correcoes_aplicadas || 0,
+          total_correcoes: resultado.total_correcoes || 0,
+          falhas: resultado.falhas || 0,
+          message: resultado.message || ''
+        });
+        
+        // Calcular estatísticas antes das correções
+        const divergenciasAntes = {
+          total: divergenciasFormatadas.length,
+          alta: divergenciasFormatadas.filter(d => d.recomendacao.prioridade === 'alta').length,
+          media: divergenciasFormatadas.filter(d => d.recomendacao.prioridade === 'media').length,
+          legítimas: divergenciasFormatadas.filter(d => d.legítima).length
+        };
+        
+        // Mostrar componente de resultados
+        setMostrarResultado(true);
+        
         // Marcar todas as correções aplicadas
         const indicesAplicados = new Set<number>();
         divergenciasFormatadas.forEach((div, idx) => {
@@ -792,11 +859,15 @@ const DivergenciasInteligentes: React.FC<Props> = ({
         });
         setCorrecoesAplicadas(indicesAplicados);
       } else {
-        alert(`❌ Erro ao aplicar correções: ${resultado.message || 'Erro desconhecido'}`);
+        setModalTitle('❌ Erro');
+        setModalMessage(resultado.message || 'Erro desconhecido ao aplicar correções');
+        setShowErrorModal(true);
       }
     } catch (error: any) {
       console.error('Erro ao aplicar todas as correções:', error);
-      alert(`❌ Erro ao aplicar correções: ${error.message || 'Erro desconhecido'}`);
+      setModalTitle('❌ Erro');
+      setModalMessage(error.message || 'Erro desconhecido ao aplicar correções');
+      setShowErrorModal(true);
     } finally {
       setAplicandoCorrecao(null);
     }
@@ -844,6 +915,24 @@ const DivergenciasInteligentes: React.FC<Props> = ({
 
   return (
     <div className="space-y-6">
+      {/* Componente de Resultados das Correções */}
+      {mostrarResultado && resultadoAplicacao && (
+        <ResultadoCorrecoes
+          validationId={validationId || ''}
+          resultadoAplicacao={resultadoAplicacao}
+          divergenciasAntes={{
+            total: divergenciasFormatadas.length,
+            alta: divergenciasFormatadas.filter(d => d.recomendacao.prioridade === 'alta').length,
+            media: divergenciasFormatadas.filter(d => d.recomendacao.prioridade === 'media').length,
+            legítimas: divergenciasFormatadas.filter(d => d.legítima).length
+          }}
+          onRevalidacaoCompleta={(dados) => {
+            console.log('Revalidação completa:', dados);
+            // Aqui você pode atualizar as divergências com os novos dados se necessário
+          }}
+        />
+      )}
+
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow-md p-4">
         <div className="flex flex-wrap gap-4">
@@ -922,7 +1011,8 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                 {(correcoesAplicadas.size > 0 || aplicandoCorrecao === -1) && (
                   <button
                     onClick={baixarSpedCorrigido}
-                    className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                    disabled={aplicandoCorrecao === -1}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
                   >
                     <ArrowDownTrayIcon className="h-5 w-5" />
                     Baixar SPED Corrigido
@@ -968,6 +1058,84 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                 className="px-3 py-2 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors"
               >
                 Recolher Todas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação Moderno */}
+      <ModalConfirmacaoCorrecoes
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={confirmarAplicarTodasCorrecoes}
+        estatisticas={estatisticasCorrecoes}
+      />
+
+      {/* Modal de Sucesso */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                  <CheckCircleIcon className="h-6 w-6 text-green-600" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  {modalTitle}
+                </h3>
+                <p className="text-sm text-gray-700 whitespace-pre-line mb-4">
+                  {modalMessage}
+                </p>
+                <button
+                  onClick={() => setShowSuccessModal(false)}
+                  className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Erro */}
+      {showErrorModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <XCircleIcon className="h-6 w-6 text-red-600" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  {modalTitle}
+                </h3>
+                <p className="text-sm text-gray-700 whitespace-pre-line mb-4">
+                  {modalMessage}
+                </p>
+                <button
+                  onClick={() => setShowErrorModal(false)}
+                  className="w-full px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+              <button
+                onClick={() => setShowErrorModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <XMarkIcon className="h-5 w-5" />
               </button>
             </div>
           </div>

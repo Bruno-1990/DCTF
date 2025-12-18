@@ -809,6 +809,147 @@ def aplicar_correcao_no_editor(editor: SpedEditor, correcao: dict, idx_c100_cach
             )
             
             if sucesso:
+                # Se corrigiu um C170, recalcular C190 correspondente automaticamente
+                if registro == "C170" and cfop_clean and cst_normalizado:
+                    logger.info(f"Correção C170 aplicada, recalculando C190 para CFOP {cfop_clean}, CST {cst_normalizado}")
+                    
+                    # Encontrar todos os C170 com mesmo CFOP/CST no bloco do C100
+                    indices_c170_para_soma = []
+                    if chave:
+                        # Buscar C100 com a chave
+                        chave_normalizada = str(chave).strip() if chave else None
+                        c100_idx = _get_c100_idx(
+                            chave_normalizada,
+                            correcao.get("num_doc_xml"),
+                            correcao.get("ind_oper_xml"),
+                            idx_c100_cache if idx_c100_cache is not None else {},
+                            idx_c100_por_num if idx_c100_por_num is not None else {}
+                        )
+                        if c100_idx is not None:
+                            # Buscar C170 no bloco deste C100
+                            for idx in range(c100_idx + 1, len(editor.lines)):
+                                line = editor.lines[idx]
+                                if _is_c100_or_9999(line):
+                                    break
+                                if _is_c190(line):
+                                    continue
+                                if _is_c170(line):
+                                    line_stripped = line.lstrip()
+                                    if not line_stripped.startswith("|"):
+                                        pos = line_stripped.find("|C170|")
+                                        if pos >= 0:
+                                            line_stripped = line_stripped[pos:]
+                                        else:
+                                            continue
+                                    parts = split_sped_line(line_stripped, min_fields=21)
+                                    if len(parts) > 11:
+                                        linha_cfop_clean = _normalize_cfop(parts[11].strip())
+                                        if linha_cfop_clean == cfop_clean:
+                                            if len(parts) > 10:
+                                                linha_cst = parts[10].strip()
+                                                try:
+                                                    from common import normalize_cst_for_compare as ncfc
+                                                    linha_cst_norm = ncfc(linha_cst)
+                                                except ImportError:
+                                                    linha_cst_norm = linha_cst.strip().zfill(3)
+                                                if linha_cst_norm == cst_normalizado:
+                                                    indices_c170_para_soma.append(idx)
+                    
+                    # Fallback: busca global se não encontrou com chave
+                    if not indices_c170_para_soma:
+                        indices_c170_para_soma = editor.find_line_by_record("C170", cfop=cfop_clean, cst=cst_normalizado)
+                    
+                    if indices_c170_para_soma:
+                        # Calcular soma de todos os campos dos C170
+                        vl_bc_icms = 0.0
+                        vl_icms = 0.0
+                        vl_bc_icms_st = 0.0
+                        vl_icms_st = 0.0
+                        vl_ipi = 0.0
+                        vl_opr = 0.0
+                        
+                        for idx in indices_c170_para_soma:
+                            parts = split_sped_line(editor.lines[idx], min_fields=21)
+                            if len(parts) > 9:
+                                vl_bc_icms += float(parts[9] or 0) if parts[9] else 0.0
+                            if len(parts) > 10:
+                                vl_icms += float(parts[10] or 0) if parts[10] else 0.0
+                            if len(parts) > 11:
+                                vl_bc_icms_st += float(parts[11] or 0) if parts[11] else 0.0
+                            if len(parts) > 12:
+                                vl_icms_st += float(parts[12] or 0) if parts[12] else 0.0
+                            if len(parts) > 13:
+                                vl_ipi += float(parts[13] or 0) if parts[13] else 0.0
+                            if len(parts) > 15:
+                                vl_opr += float(parts[15] or 0) if parts[15] else 0.0
+                        
+                        # Buscar C190 correspondente
+                        indices_c190 = editor.find_line_by_record("C190", cfop=cfop_clean, cst=cst_normalizado)
+                        
+                        if indices_c190:
+                            # Atualizar C190 existente com os novos totais
+                            c190_idx = indices_c190[0]
+                            line_c190 = editor.lines[c190_idx]
+                            line_c190_stripped = line_c190.lstrip()
+                            
+                            # Garantir que começa com |
+                            if not line_c190_stripped.startswith("|"):
+                                pos = line_c190_stripped.find("|C190|")
+                                if pos >= 0:
+                                    line_c190_stripped = line_c190_stripped[pos:]
+                                else:
+                                    logger.warning(f"Não foi possível processar C190 na linha {c190_idx + 1}")
+                                    return (True, {"acao": "atualizado", "aviso": "C170 corrigido mas C190 não pôde ser recalculado"})
+                            
+                            parts_c190 = split_sped_line(line_c190_stripped, min_fields=14)
+                            
+                            # Atualizar campos do C190 (posições baseadas no formato SPED)
+                            if len(parts_c190) > 6:
+                                parts_c190[6] = f"{vl_opr:.2f}"
+                            if len(parts_c190) > 7:
+                                parts_c190[7] = f"{vl_bc_icms:.2f}"
+                            if len(parts_c190) > 8:
+                                parts_c190[8] = f"{vl_icms:.2f}"
+                            if len(parts_c190) > 9:
+                                parts_c190[9] = f"{vl_bc_icms_st:.2f}"
+                            if len(parts_c190) > 10:
+                                parts_c190[10] = f"{vl_icms_st:.2f}"
+                            if len(parts_c190) > 12:
+                                parts_c190[12] = f"{vl_ipi:.2f}"
+                            
+                            # Reconstruir linha C190 preservando formato original
+                            linha_c190_atualizada = "|".join(parts_c190)
+                            if not linha_c190_atualizada.endswith("|"):
+                                linha_c190_atualizada += "|"
+                            if not linha_c190_atualizada.endswith("\n"):
+                                linha_c190_atualizada += "\n"
+                            
+                            editor.lines[c190_idx] = linha_c190_atualizada
+                            logger.info(f"✅ C190 recalculado na linha {c190_idx + 1}: VL_BC_ICMS={vl_bc_icms:.2f}, VL_ICMS={vl_icms:.2f}, VL_IPI={vl_ipi:.2f}")
+                        else:
+                            # C190 não existe, criar novo
+                            campos_c190 = [
+                                "", "C190", cst_normalizado or "", cfop_clean or "", "",
+                                f"{vl_opr:.2f}", f"{vl_bc_icms:.2f}", f"{vl_icms:.2f}",
+                                f"{vl_bc_icms_st:.2f}", f"{vl_icms_st:.2f}", "",
+                                f"{vl_ipi:.2f}", ""
+                            ]
+                            linha_c190 = "|".join(campos_c190) + "|\n"
+                            
+                            # Inserir após o último C170 do mesmo CFOP/CST
+                            if indices_c170_para_soma:
+                                posicao_inserir = max(indices_c170_para_soma) + 1
+                            else:
+                                # Fallback: inserir após qualquer C190 existente ou no final
+                                todos_c190 = editor.find_line_by_record("C190")
+                                if todos_c190:
+                                    posicao_inserir = max(todos_c190) + 1
+                                else:
+                                    posicao_inserir = len(editor.lines)
+                            
+                            editor.lines.insert(posicao_inserir, linha_c190)
+                            logger.info(f"✅ C190 criado na linha {posicao_inserir + 1} após correção de C170 (CFOP={cfop_clean}, CST={cst_normalizado})")
+                
                 return (True, {"acao": "atualizado"})
             else:
                 return (False, {"erro": "Não foi possível aplicar correção"})

@@ -348,6 +348,13 @@ export class SpedValidationService {
   }
 
   /**
+   * Adiciona ou atualiza status no Map (útil quando reconstruído do arquivo)
+   */
+  adicionarStatusAoMap(validationId: string, status: ValidationStatus): void {
+    this.validations.set(validationId, status);
+  }
+
+  /**
    * Obtém resultado da validação
    * Tenta obter do Map primeiro, depois do arquivo como fallback
    */
