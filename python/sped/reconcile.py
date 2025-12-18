@@ -254,7 +254,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
             else:
                 # Formato antigo (compatibilidade): lista direta de C197
                 for a in info:
-                rows_c197.append({"CHAVE": ch, **a})
+                    rows_c197.append({"CHAVE": ch, **a})
         if rows_c197:
             out["Ajustes (C197)"] = pd.DataFrame(rows_c197)
         if rows_c195:
