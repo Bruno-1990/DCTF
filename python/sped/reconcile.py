@@ -921,7 +921,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                 logging.warning("efd_path não disponível - pulando verificação C170 x C190")
                 checklist.append(("Divergências C170 x C190", "N/D (efd_path não disponível)"))
             else:
-            divergencias_c170_c190 = check_c170_equals_c190(efd_path)
+                divergencias_c170_c190 = check_c170_equals_c190(efd_path)
                 
                 # Verificar se houve erro na verificação (campo CAMPO == "ERRO")
                 tem_erro = False
@@ -936,8 +936,8 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                 
                 # Processar normalmente se não houver erro
                 if not tem_erro:
-            if not divergencias_c170_c190.empty:
-                divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
+                    if not divergencias_c170_c190.empty:
+                        divergencias_legitimas = check_divergencias_legitimas_c170_c190(efd_path, divergencias_c170_c190)
                         
                         # Garantir que colunas de solução existam ANTES de processar
                         colunas_solucao = ["SOLUCAO_AUTOMATICA", "REGISTRO_CORRIGIR", "VALOR_CORRETO", "FORMULA_LEGAL", "DETALHES"]
@@ -1062,12 +1062,12 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                         except Exception as e:
                             logging.warning(f"Erro ao gerar soluções automáticas para C170 x C190: {e}")
                         
-                # Contar divergências não legítimas (que requerem atenção)
-                if "E_LEGITIMA" in divergencias_legitimas.columns:
-                    div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
-                    checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
-                else:
-                    checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
+                        # Contar divergências não legítimas (que requerem atenção)
+                        if "E_LEGITIMA" in divergencias_legitimas.columns:
+                            div_nao_legitimas = divergencias_legitimas[divergencias_legitimas["E_LEGITIMA"] == False]
+                            checklist.append(("Divergências C170 x C190 (requerem atenção)", len(div_nao_legitimas)))
+                        else:
+                            checklist.append(("Divergências C170 x C190 (requerem atenção)", len(divergencias_c170_c190)))
                         
                         # Validação final: garantir que SOLUCAO_AUTOMATICA não seja None
                         if "SOLUCAO_AUTOMATICA" in divergencias_legitimas.columns:
@@ -1121,10 +1121,10 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                         else:
                             logging.error(f"[C170 x C190] ❌ SOLUCAO_AUTOMATICA NÃO está nas colunas antes de adicionar ao relatório!")
                         
-                # Adicionar ao relatório
-                out["C170 x C190 (Divergências)"] = divergencias_legitimas
-            else:
-                checklist.append(("Divergências C170 x C190", 0))
+                        # Adicionar ao relatório
+                        out["C170 x C190 (Divergências)"] = divergencias_legitimas
+                    else:
+                        checklist.append(("Divergências C170 x C190", 0))
         except Exception as e:
             error_msg = str(e)
             logging.error(f"Erro ao verificar C170 x C190: {error_msg}")
