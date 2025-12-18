@@ -936,7 +936,7 @@
         "description": "Implementar o motor de validação estrutural básico que detecta divergências entre XMLs e registros SPED (C100, C170, C190)",
         "details": "Validação de Leiaute e Versão: identificação automática de período do SPED, registro de versão do Guia Prático, log de versões utilizadas. Motor de Match XML → C100: match por CHV_NFE (chave de 44 dígitos), match fallback por (CNPJ + modelo + série + número + data), score de confiança para matches fallback, detecção de duplicidades, lista de XMLs sem C100 e vice-versa. Validação C100 ↔ C170: contagem de itens (nItem XML x NUM_ITEM C170), validação básica de COD_ITEM, NCM, CFOP, CST, validação de QTD, UNID, VL_ITEM, detecção de divergências por item. Validação C170 → C190: agrupamento de C170s por (CST, CFOP, ALIQ), cálculo de totais esperados (VL_OPR, VL_BC_ICMS, VL_ICMS), comparação com C190 correspondente, detecção de C190 faltante ou divergente. Interface Básica de Visualização: lista de divergências detectadas, filtros básicos (tipo, prioridade), exportação básica (CSV).",
         "testStrategy": "Testes unitários para cada motor de validação, testes de integração para o pipeline completo, testes de performance com arquivos grandes",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           24
         ],
@@ -967,7 +967,7 @@
             "title": "Validação C100 ↔ C170 (Itens)",
             "description": "Validar correspondência entre itens do XML e registros C170 no SPED",
             "details": "- Validar contagem de itens (nItem XML x NUM_ITEM C170)\n- Validar campos fiscais: COD_ITEM, NCM, CFOP, CST\n- Validar quantidades: QTD e UNID do C170 vs XML\n- Validar valores: VL_ITEM do C170 vs valor do item no XML\n- Validar bases e alíquotas quando aplicável\n- Identificar e validar rateios de frete, seguro, outros e desconto\n- Gerar lista de itens com divergências por documento",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
@@ -978,7 +978,7 @@
             "title": "Validação C170 → C190 (Resumo por CST/CFOP/ALIQ)",
             "description": "Validar coerência entre os itens (C170) e os resumos (C190) agrupados por combinação CST/CFOP/ALIQ",
             "details": "- Para cada C100, agrupar C170s por combinação (CST, CFOP, ALIQ)\n- Calcular totais esperados de VL_OPR, VL_BC_ICMS, VL_ICMS\n- Comparar valores esperados com C190 correspondente\n- Identificar quando falta C190 para uma combinação\n- Apontar combinação e itens causadores da divergência",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
@@ -989,7 +989,7 @@
             "title": "Validação C100.VL_DOC x Σ(C190.VL_OPR)",
             "description": "Validar coerência entre o valor total do documento (C100) e a soma dos valores de operação dos resumos (C190)",
             "details": "- Somar todos os VL_OPR dos C190s vinculados ao C100\n- Comparar com VL_DOC do C100\n- Aplicar tolerância configurável para diferenças de arredondamento\n- Considerar descontos, fretes, seguros e outros rateios documentados\n- Apontar quando há diferença significativa sem justificativa\n- Registrar divergências encontradas",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               4
             ],
@@ -1000,7 +1000,7 @@
             "title": "Interface Básica de Visualização",
             "description": "Criar interface básica para visualização de divergências detectadas",
             "details": "- Lista de divergências detectadas com detalhes\n- Filtros básicos (tipo, prioridade, documento)\n- Exportação básica em CSV\n- Indicadores de quantidade de divergências por tipo\n- Visualização de detalhes de cada divergência",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               5
             ],
@@ -1337,7 +1337,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-12-18T19:46:22.720Z",
+      "updated": "2025-12-18T19:54:33.780Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF e Sistema de Conferência SPED"
     }
   }
