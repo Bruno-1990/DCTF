@@ -1127,7 +1127,7 @@
         "description": "Adicionar validações de conteúdo fiscal (IPI, ST, Simples Nacional) e operações especiais",
         "details": "Validação de IPI: consistência de totais entre C100 e C190, validação quando aplicável ao cenário. Validação de Substituição Tributária (ST): distinção entre ICMS próprio e ICMS ST, tratamento correto para contribuinte substituído, identificação de quando ST não gera crédito. Validação de Simples Nacional: busca de crédito em múltiplos locais (C197, E111), validação de ajustes de documento e apuração. Validação de Operações Especiais: identificação de cenários especiais (cupom, referência, CFOPs específicos), checklist próprio para cada cenário.",
         "testStrategy": "Testes unitários para cada tipo de validação fiscal, testes de integração para cenários complexos, testes de casos especiais",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           27
         ],
@@ -1138,7 +1138,7 @@
             "title": "Validação de IPI",
             "description": "Validar consistência de totais de IPI entre C100 e C190",
             "details": "- Validar consistência de totais de IPI entre total do documento (C100) e somatórios do resumo (C190)\n- Validar quando aplicável ao cenário fiscal\n- Detectar divergências de IPI\n- Apontar origem das divergências",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 28
           },
@@ -1147,7 +1147,7 @@
             "title": "Validação de Substituição Tributária (ST)",
             "description": "Validar tratamento correto de ICMS ST",
             "details": "- Distinguir ICMS próprio vs ICMS ST\n- Não exigir bloco/fechamentos de substituto quando contribuinte é apenas substituído\n- Identificar quando ST não gera crédito para adquirente\n- Validar cálculos de ST corretamente",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 28
           },
@@ -1156,7 +1156,7 @@
             "title": "Validação de Simples Nacional",
             "description": "Validar tratamento correto de créditos no Simples Nacional",
             "details": "- Buscar crédito em múltiplos locais (C197, E111, campos de ICMS do item)\n- Validar ajustes de documento e apuração\n- Identificar cenários específicos do Simples Nacional\n- Validar regras específicas do regime",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 28
           },
@@ -1165,7 +1165,7 @@
             "title": "Validação de Operações Especiais",
             "description": "Identificar e validar cenários especiais (cupom, referência, CFOPs específicos)",
             "details": "- Identificar cenários especiais (cupom, referência, CFOPs específicos)\n- Aplicar checklist próprio para cada cenário\n- Validar regras específicas de cada tipo de operação\n- Documentar casos especiais tratados",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 28
           }
@@ -1337,7 +1337,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-12-18T20:20:40.272Z",
+      "updated": "2025-12-18T20:27:56.547Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF e Sistema de Conferência SPED"
     }
   }
