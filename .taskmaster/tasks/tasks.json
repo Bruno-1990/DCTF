@@ -1014,7 +1014,7 @@
         "description": "Aplicar correções automáticas nas divergências detectadas com rastreabilidade completa",
         "details": "Algoritmo de Correção C170: correção de valores (VL_ITEM) baseado em XML, correção de quantidades (QTD) baseado em XML, correção de CFOP, CST, NCM quando score de confiança ≥ 50%, normalização de CFOP (remover espaços, zeros à esquerda). Recálculo Automático de C190: após correção de C170, recalcula C190 correspondente, cria C190 se não existir, atualiza C190 existente com novos totais. Sistema de Rastreabilidade: log de todas as correções aplicadas, timestamp, usuário, justificativa, histórico de alterações. Interface de Aplicação de Correções: botão \"Aplicar Todas as Correções Automáticas\", modal de confirmação com estatísticas, feedback em tempo real durante aplicação, download de SPED corrigido.",
         "testStrategy": "Testes unitários para algoritmos de correção, testes de integração para recálculo de C190, testes de rastreabilidade e auditoria",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           25
         ],
@@ -1025,7 +1025,7 @@
             "title": "Algoritmo de Correção C170",
             "description": "Implementar correções automáticas nos registros C170 baseadas em dados do XML",
             "details": "- Correção de valores (VL_ITEM) baseado em XML\n- Correção de quantidades (QTD) baseado em XML\n- Correção de CFOP, CST, NCM quando score de confiança ≥ 50%\n- Normalização de CFOP (remover espaços, zeros à esquerda)\n- Validação de score mínimo antes de aplicar correção\n- Log detalhado de cada correção aplicada",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 26
           },
@@ -1034,7 +1034,7 @@
             "title": "Algoritmo de Correção C100",
             "description": "Implementar correções automáticas nos registros C100 baseadas em dados do XML",
             "details": "- Correção de valores (VL_DOC) baseado em XML\n- Correção de datas (DT_DOC, DT_E_S) baseado em XML\n- Correção de situações (COD_SIT) quando aplicável\n- Validação de score mínimo antes de aplicar correção\n- Log detalhado de cada correção aplicada\n- Considerar documentos autorizados, cancelados, denegados e inutilizados",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
@@ -1045,7 +1045,7 @@
             "title": "Recálculo Automático de C190",
             "description": "Recalcular C190 automaticamente após correção de C170",
             "details": "- Após correção de C170, recalcular C190 correspondente\n- Criar C190 se não existir para a combinação CST/CFOP/ALIQ\n- Atualizar C190 existente com novos totais\n- Agrupar todos os C170s relacionados antes de recalcular\n- Validar coerência dos totais recalculados",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
@@ -1056,7 +1056,7 @@
             "title": "Sistema de Rastreabilidade",
             "description": "Implementar log completo de todas as correções aplicadas",
             "details": "- Registrar todas as correções aplicadas com timestamp\n- Registrar usuário que aplicou a correção\n- Registrar justificativa para cada correção\n- Manter histórico completo de alterações\n- Permitir auditoria de todas as correções realizadas",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
@@ -1067,7 +1067,7 @@
             "title": "Interface de Aplicação de Correções",
             "description": "Criar interface para aplicação de correções automáticas",
             "details": "- Botão \"Aplicar Todas as Correções Automáticas\"\n- Modal de confirmação com estatísticas (total, por prioridade, valor total)\n- Feedback em tempo real durante aplicação\n- Download de SPED corrigido após aplicação\n- Indicador de progresso durante processamento",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3,
               4
@@ -1337,7 +1337,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-12-18T19:54:33.780Z",
+      "updated": "2025-12-18T20:05:01.157Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF e Sistema de Conferência SPED"
     }
   }
