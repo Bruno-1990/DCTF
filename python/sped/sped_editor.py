@@ -215,7 +215,15 @@ class SpedEditor:
                                 if cand:
                                     linha_chave = cand
                                     break
-                        if linha_chave is None or linha_chave != chave:
+                        
+                        # CORREÇÃO: Normalizar chaves para comparação (remover espaços e caracteres especiais)
+                        chave_normalizada = "".join(str(chave).split())
+                        linha_chave_normalizada = "".join(str(linha_chave).split()) if linha_chave else ""
+                        
+                        if linha_chave is None or linha_chave_normalizada != chave_normalizada:
+                            # Log de debug quando não corresponde
+                            if linha_chave:
+                                logger.debug(f"[find_line_by_record] Chave não corresponde: esperado='{chave_normalizada[:20]}...', encontrado='{linha_chave_normalizada[:20]}...'")
                             continue
                     elif registro == "C170":
                         # C170 precisa verificar chave do C100 pai
