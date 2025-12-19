@@ -1028,7 +1028,7 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                     # Encontrar C170 relacionados a este C100
                     # C170 vem logo após o C100 no SPED
                     c100_idx = indices_c100[0]
-                    cfop_cst_encontrados = set()
+                    # cfop_cst_encontrados já foi inicializado acima
                     
                     # Buscar C170 que vêm após este C100 (até encontrar próximo C100 ou C195)
                     logger.info(f"[CORREÇÃO] Buscando C170 após C100 na linha {c100_idx+1}...")
