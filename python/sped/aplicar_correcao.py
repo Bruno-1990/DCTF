@@ -72,20 +72,32 @@ def main():
                     }), flush=True)
                     sys.exit(1)
                 
-                # Ler primeiras linhas para verificar se tem C100
+                # Ler arquivo inteiro para verificar se tem C100 (não apenas primeiras linhas)
+                # CORREÇÃO: C100 pode estar em qualquer parte do arquivo, não apenas no início
                 with sped_path.open('r', encoding='latin1', errors='ignore') as f:
-                    primeiras_linhas = ''.join(f.readlines()[:100])
-                    tem_c100 = '|C100|' in primeiras_linhas
+                    # Ler arquivo inteiro para busca completa
+                    conteudo_completo = f.read()
+                    tem_c100 = '|C100|' in conteudo_completo
                     
                     if not tem_c100:
-                        # Contar registros encontrados
+                        # Contar registros encontrados (usar primeiras linhas para diagnóstico)
                         import re
                         registros_encontrados = {}
-                        for linha in primeiras_linhas.split('\n')[:200]:
+                        # Verificar primeiras 500 linhas para diagnóstico
+                        primeiras_linhas = '\n'.join(conteudo_completo.split('\n')[:500])
+                        for linha in primeiras_linhas.split('\n'):
                             match = re.match(r'^\|(\d{4})\|', linha)
                             if match:
                                 reg = match.group(1)
                                 registros_encontrados[reg] = registros_encontrados.get(reg, 0) + 1
+                        
+                        # Se não encontrou nas primeiras 500, verificar arquivo inteiro
+                        if not registros_encontrados:
+                            for linha in conteudo_completo.split('\n')[:1000]:
+                                match = re.match(r'^\|(\d{4})\|', linha)
+                                if match:
+                                    reg = match.group(1)
+                                    registros_encontrados[reg] = registros_encontrados.get(reg, 0) + 1
                         
                         print(json.dumps({
                             "success": False,
