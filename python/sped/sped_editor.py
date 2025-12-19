@@ -1101,6 +1101,18 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                             # Buscar C170 relacionados para calcular valores
                             indices_c170 = editor.find_line_by_record("C170", cfop=cfop_encontrado_clean, cst=cst_encontrado_norm)
                             
+                            # Se não encontrou C170 com CFOP/CST exatos, tentar buscar C170 do bloco do C100
+                            if not indices_c170 and c170_encontrados > 0:
+                                logger.info(f"[CORREÇÃO] Buscando C170 do bloco do C100 para calcular valores do C190...")
+                                print(f"[CORREÇÃO] Buscando C170 do bloco do C100 para calcular valores do C190...", flush=True)
+                                # Buscar C170 no bloco do C100
+                                for idx in range(c100_idx + 1, len(editor.lines)):
+                                    line = editor.lines[idx]
+                                    if line.startswith("|C100|") or line.startswith("|C195|"):
+                                        break
+                                    if line.startswith("|C170|"):
+                                        indices_c170.append(idx)
+                            
                             if indices_c170:
                                 # Calcular valores baseados nos C170
                                 vl_bc_icms = 0.0
