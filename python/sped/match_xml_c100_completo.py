@@ -410,7 +410,7 @@ def gerar_relatorio_match(report: MatchReport) -> Dict[str, Any]:
     return {
         "resumo": {
             "total_matches": len(report.matches_encontrados),
-            "total_xmls_sem_c100": len(report.xmls_sem_xml),
+            "total_xmls_sem_c100": len(report.xmls_sem_c100),
             "total_c100s_sem_xml": len(report.c100s_sem_xml),
             "total_duplicidades_chave": len(report.duplicidades_chave),
             "total_duplicidades_fallback": len(report.duplicidades_fallback),
