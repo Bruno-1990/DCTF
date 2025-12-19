@@ -845,6 +845,85 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                             editor.save(output_path)
                             resumo = editor.get_changes_summary()
                             return (True, output_path, resumo)
+                        else:
+                            # C190 não existe, precisa criar
+                            logger.info(f"[CORREÇÃO] C190 não encontrado para atualizar. Criando novo C190...")
+                            print(f"[CORREÇÃO] C190 não encontrado para atualizar. Criando novo C190...", flush=True)
+                            
+                            # Buscar C170 relacionados para calcular valores
+                            indices_c170 = editor.find_line_by_record("C170", cfop=cfop_encontrado_clean, cst=cst_encontrado_norm)
+                            
+                            if indices_c170:
+                                # Calcular valores baseados nos C170
+                                vl_bc_icms = 0.0
+                                vl_icms = 0.0
+                                vl_bc_icms_st = 0.0
+                                vl_icms_st = 0.0
+                                vl_ipi = 0.0
+                                vl_opr = 0.0
+                                
+                                for idx in indices_c170:
+                                    parts = split_sped_line(editor.lines[idx], min_fields=21)
+                                    if len(parts) > 9:
+                                        vl_bc_icms += float(parts[9] or 0) if parts[9] else 0.0
+                                    if len(parts) > 10:
+                                        vl_icms += float(parts[10] or 0) if parts[10] else 0.0
+                                    if len(parts) > 11:
+                                        vl_bc_icms_st += float(parts[11] or 0) if parts[11] else 0.0
+                                    if len(parts) > 12:
+                                        vl_icms_st += float(parts[12] or 0) if parts[12] else 0.0
+                                    if len(parts) > 13:
+                                        vl_ipi += float(parts[13] or 0) if parts[13] else 0.0
+                                    if len(parts) > 15:
+                                        vl_opr += float(parts[15] or 0) if parts[15] else 0.0
+                                
+                                # Mapear campo para variável
+                                if campo == "VL_BC_ICMS":
+                                    vl_bc_icms = valor_correto
+                                elif campo == "VL_ICMS":
+                                    vl_icms = valor_correto
+                                elif campo == "VL_BC_ICMS_ST":
+                                    vl_bc_icms_st = valor_correto
+                                elif campo == "VL_ICMS_ST":
+                                    vl_icms_st = valor_correto
+                                elif campo == "VL_IPI":
+                                    vl_ipi = valor_correto
+                                
+                                # Criar linha C190
+                                campos_c190 = [
+                                    "",
+                                    "C190",
+                                    cst_encontrado_norm or "",
+                                    cfop_encontrado_clean or "",
+                                    "",
+                                    f"{vl_opr:.2f}",
+                                    f"{vl_bc_icms:.2f}",
+                                    f"{vl_icms:.2f}",
+                                    f"{vl_bc_icms_st:.2f}",
+                                    f"{vl_icms_st:.2f}",
+                                    "",
+                                    f"{vl_ipi:.2f}",
+                                    ""
+                                ]
+                                
+                                linha_c190 = "|".join(campos_c190) + "|\n"
+                                
+                                # Inserir após o último C170 relacionado
+                                posicao_inserir = max(indices_c170) + 1 if indices_c170 else len(editor.lines)
+                                
+                                editor.lines.insert(posicao_inserir, linha_c190)
+                                logger.info(f"[CORREÇÃO] ✅ C190 criado na linha {posicao_inserir + 1}")
+                                print(f"[CORREÇÃO] ✅ C190 criado na linha {posicao_inserir + 1}", flush=True)
+                                
+                                # Salvar arquivo corrigido
+                                if output_path is None:
+                                    output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+                                else:
+                                    output_path = Path(output_path)
+                                
+                                editor.save(output_path)
+                                resumo = editor.get_changes_summary()
+                                return (True, output_path, resumo)
                     else:
                         logger.warning(f"[CORREÇÃO] Não encontrou C170 relacionados ao C100 com chave {chave}")
                         print(f"[CORREÇÃO] Não encontrou C170 relacionados ao C100 com chave {chave}", flush=True)
