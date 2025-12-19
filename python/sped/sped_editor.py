@@ -126,6 +126,13 @@ class SpedEditor:
                 self.original_lines = self.lines.copy()
             
             logger.info(f"Arquivo SPED carregado: {len(self.lines)} linhas (encoding: {encoding})")
+            
+            # DEBUG: Verificar se há C100 e C190 no arquivo carregado
+            c100_count = sum(1 for line in self.lines if line.strip().startswith("|C100|"))
+            c190_count = sum(1 for line in self.lines if line.strip().startswith("|C190|"))
+            logger.info(f"[_load_file] Registros encontrados no arquivo carregado: C100={c100_count}, C190={c190_count}")
+            if c190_count == 0 and c100_count > 0:
+                logger.warning(f"[_load_file] ⚠️ Arquivo tem {c100_count} C100 mas 0 C190. Isso pode ser normal se C190 ainda não foi gerado.")
         except (UnicodeDecodeError, UnicodeError) as e:
             logger.error(f"Erro ao ler arquivo com encoding {encoding}: {e}")
             # Tentar latin-1 como último recurso com tratamento de erros
@@ -194,6 +201,20 @@ class SpedEditor:
         
         indices = []
         registro_pattern = f"^{registro}\\|"
+        
+        # DEBUG: Logar informações sobre busca
+        if registro == "C190":
+            logger.debug(f"[find_line_by_record] Buscando C190. Total de linhas no arquivo: {len(self.lines)}")
+            # Contar quantas linhas começam com |C190| para diagnóstico
+            c190_count = sum(1 for line in self.lines if line.strip().startswith("|C190|"))
+            logger.debug(f"[find_line_by_record] Linhas que começam com |C190|: {c190_count}")
+            if c190_count > 0:
+                # Mostrar primeiras 3 linhas C190 encontradas
+                for idx_debug, line_debug in enumerate(self.lines):
+                    if line_debug.strip().startswith("|C190|"):
+                        logger.debug(f"[find_line_by_record] Exemplo C190 linha {idx_debug+1}: {line_debug[:100]}...")
+                        if idx_debug >= 2:  # Mostrar apenas 3 primeiros
+                            break
         
         for idx, line in enumerate(self.lines):
             if re.match(registro_pattern, line):
