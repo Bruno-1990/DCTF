@@ -787,17 +787,28 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                     cfop_cst_encontrados = set()
                     
                     # Buscar C170 que vêm após este C100 (até encontrar próximo C100 ou C190)
+                    logger.info(f"[CORREÇÃO] Buscando C170 após C100 na linha {c100_idx+1}...")
+                    print(f"[CORREÇÃO] Buscando C170 após C100 na linha {c100_idx+1}...", flush=True)
+                    c170_encontrados = 0
                     for idx in range(c100_idx + 1, len(editor.lines)):
                         line = editor.lines[idx]
-                        if line.startswith("|C100|") or line.startswith("|C190|") or line.startswith("|C195|"):
+                        if line.startswith("|C100|") or line.startswith("|C195|"):
                             break
                         if line.startswith("|C170|"):
+                            c170_encontrados += 1
                             parts = split_sped_line(line, min_fields=21)
                             if len(parts) > 11:
                                 cfop_c170 = parts[11].strip()
                                 cst_c170 = parts[10].strip() if len(parts) > 10 else ""
                                 if cfop_c170 and cst_c170:
                                     cfop_cst_encontrados.add((cfop_c170, cst_c170))
+                                    logger.debug(f"[CORREÇÃO] C170 encontrado: CFOP={cfop_c170}, CST={cst_c170}")
+                        elif line.startswith("|C190|"):
+                            # C190 pode vir antes dos C170 em alguns casos, continuar buscando
+                            pass
+                    
+                    logger.info(f"[CORREÇÃO] Total de C170 encontrados: {c170_encontrados}, CFOP/CST únicos: {len(cfop_cst_encontrados)}")
+                    print(f"[CORREÇÃO] Total de C170 encontrados: {c170_encontrados}, CFOP/CST únicos: {len(cfop_cst_encontrados)}", flush=True)
                     
                     # Se encontrou CFOP/CST, usar o primeiro para buscar/atualizar C190
                     if cfop_cst_encontrados:
@@ -834,11 +845,21 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                             editor.save(output_path)
                             resumo = editor.get_changes_summary()
                             return (True, output_path, resumo)
+                    else:
+                        logger.warning(f"[CORREÇÃO] Não encontrou C170 relacionados ao C100 com chave {chave}")
+                        print(f"[CORREÇÃO] Não encontrou C170 relacionados ao C100 com chave {chave}", flush=True)
             
             # Se não encontrou via chave, buscar todos os C190 e tentar atualizar um com valor zerado
+            # CORREÇÃO: Também tentar buscar C190 que correspondem ao campo que queremos corrigir
             todos_c190 = editor.find_line_by_record("C190")
+            logger.info(f"[CORREÇÃO] Total de C190 encontrados no arquivo: {len(todos_c190)}")
+            print(f"[CORREÇÃO] Total de C190 encontrados no arquivo: {len(todos_c190)}", flush=True)
+            
             if todos_c190:
                 # Tentar encontrar um C190 com o campo zerado que precisa ser atualizado
+                logger.info(f"[CORREÇÃO] Buscando C190 com campo {campo} zerado...")
+                print(f"[CORREÇÃO] Buscando C190 com campo {campo} zerado...", flush=True)
+                
                 for idx in todos_c190:
                     line = editor.lines[idx]
                     parts = split_sped_line(line, min_fields=13)
@@ -849,13 +870,16 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                             valor_atual = float(parts[posicao_campo] or 0) if parts[posicao_campo] else 0.0
                             # Se o valor atual está zerado ou muito próximo de zero, atualizar
                             if abs(valor_atual) < 0.01:
-                                logger.info(f"[CORREÇÃO] Encontrado C190 na linha {idx+1} com {campo} zerado. Atualizando...")
-                                print(f"[CORREÇÃO] Encontrado C190 na linha {idx+1} com {campo} zerado. Atualizando...", flush=True)
+                                logger.info(f"[CORREÇÃO] Encontrado C190 na linha {idx+1} com {campo} zerado (valor atual: {valor_atual}). Atualizando...")
+                                print(f"[CORREÇÃO] Encontrado C190 na linha {idx+1} com {campo} zerado (valor atual: {valor_atual}). Atualizando...", flush=True)
                                 
                                 # Extrair CFOP e CST deste C190 para usar na atualização
                                 if len(parts) > 3:
                                     cfop_encontrado = parts[3].strip()
                                     cst_encontrado = parts[2].strip() if len(parts) > 2 else ""
+                                    
+                                    logger.info(f"[CORREÇÃO] C190 encontrado - CFOP: '{cfop_encontrado}', CST: '{cst_encontrado}'")
+                                    print(f"[CORREÇÃO] C190 encontrado - CFOP: '{cfop_encontrado}', CST: '{cst_encontrado}'", flush=True)
                                     
                                     # Limpar CFOP encontrado
                                     cfop_encontrado_clean = "".join(cfop_encontrado.split())
@@ -878,6 +902,9 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                                     )
                                     
                                     if sucesso:
+                                        logger.info(f"[CORREÇÃO] ✅ SUCESSO: C190 atualizado na linha {idx+1}")
+                                        print(f"[CORREÇÃO] ✅ SUCESSO: C190 atualizado na linha {idx+1}", flush=True)
+                                        
                                         # Salvar arquivo corrigido
                                         if output_path is None:
                                             output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
@@ -887,6 +914,17 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                                         editor.save(output_path)
                                         resumo = editor.get_changes_summary()
                                         return (True, output_path, resumo)
+                                    else:
+                                        logger.warning(f"[CORREÇÃO] ⚠️ Falha ao atualizar C190 na linha {idx+1}")
+                                        print(f"[CORREÇÃO] ⚠️ Falha ao atualizar C190 na linha {idx+1}", flush=True)
+                                else:
+                                    logger.warning(f"[CORREÇÃO] C190 na linha {idx+1} não tem CFOP/CST suficientes (parts length: {len(parts)})")
+                                    print(f"[CORREÇÃO] C190 na linha {idx+1} não tem CFOP/CST suficientes (parts length: {len(parts)})", flush=True)
+                            else:
+                                logger.debug(f"[CORREÇÃO] C190 na linha {idx+1} tem {campo} = {valor_atual} (não zerado)")
+                        else:
+                            logger.warning(f"[CORREÇÃO] C190 na linha {idx+1} não tem posição {posicao_campo} para campo {campo}")
+                            print(f"[CORREÇÃO] C190 na linha {idx+1} não tem posição {posicao_campo} para campo {campo}", flush=True)
                 
                 # Se não encontrou C190 com valor zerado, retornar erro informativo
                 return (False, sped_path, {
