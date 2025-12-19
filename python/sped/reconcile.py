@@ -1041,6 +1041,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                                             divergencias_legitimas[col] = (
                                                 divergencias_legitimas[col]
                                                 .fillna("")
+                                                .infer_objects(copy=False)
                                                 .astype(str)
                                                 .replace("nan", "")
                                                 .replace("None", "")
@@ -1074,6 +1075,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                             divergencias_legitimas["SOLUCAO_AUTOMATICA"] = (
                                 divergencias_legitimas["SOLUCAO_AUTOMATICA"]
                                 .fillna("")
+                                .infer_objects(copy=False)
                                 .astype(str)
                                 .replace("nan", "")
                                 .replace("None", "")
@@ -1251,6 +1253,7 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                         divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"] = (
                             divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"]
                             .fillna("")
+                            .infer_objects(copy=False)
                             .astype(str)
                             .replace("nan", "")
                             .replace("None", "")

@@ -135,9 +135,11 @@ def main():
                     for col in colunas_solucao:
                         if col in df_filled.columns:
                             # Garantir que seja string válida, tratando todos os casos
+                            # Usar infer_objects para evitar FutureWarning
                             df_filled[col] = (
                                 df_filled[col]
                                 .fillna("")
+                                .infer_objects(copy=False)
                                 .astype(str)
                                 .replace("nan", "")
                                 .replace("None", "")
@@ -153,7 +155,8 @@ def main():
                             df_filled[col] = ""
                     
                     # Preencher demais colunas com string vazia para evitar erro de fillna
-                    df_filled = df_filled.fillna("")
+                    # Usar infer_objects para evitar FutureWarning
+                    df_filled = df_filled.fillna("").infer_objects(copy=False)
                     records = df_filled.to_dict('records')
                     
                     # Garantir que colunas de solução estejam presentes em todos os registros
