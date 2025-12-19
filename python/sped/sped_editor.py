@@ -956,15 +956,73 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
             logger.warning(f"[CORREÇÃO] CFOP ou CST vazios para C190. Tentando atualizar C190 existente com valor zerado...")
             print(f"[CORREÇÃO] CFOP ou CST vazios para C190. Tentando atualizar C190 existente com valor zerado...", flush=True)
             
+            # CORREÇÃO CRÍTICA: Inicializar cfop_cst_encontrados ANTES de usar
+            cfop_cst_encontrados = set()
+            
             # Se temos chave, tentar encontrar C170 relacionados para obter CFOP/CST
             if chave:
                 logger.info(f"[CORREÇÃO] Tentando encontrar CFOP/CST usando chave NF: {chave}")
                 print(f"[CORREÇÃO] Tentando encontrar CFOP/CST usando chave NF: {chave}", flush=True)
                 
+                # VALIDAÇÃO: Verificar se arquivo foi carregado
+                if not editor.lines:
+                    logger.error(f"[CORREÇÃO] Arquivo SPED não foi carregado corretamente")
+                    print(f"[CORREÇÃO] Arquivo SPED não foi carregado corretamente", flush=True)
+                    return (False, sped_path, {
+                        "erro": "Arquivo SPED não foi carregado corretamente",
+                        "detalhes": "O arquivo SPED não possui linhas carregadas. Verifique se o arquivo existe e está acessível.",
+                        "sugestao": "Verifique se o caminho do arquivo está correto e se o arquivo não está corrompido."
+                    })
+                
                 # Buscar C100 com esta chave
                 indices_c100 = editor.find_line_by_record("C100", chave=chave)
                 logger.info(f"[CORREÇÃO] C100 encontrados com chave {chave[:20]}...: {len(indices_c100)}")
                 print(f"[CORREÇÃO] C100 encontrados com chave {chave[:20]}...: {len(indices_c100)}", flush=True)
+                
+                # DEBUG: Verificar se há C100 no arquivo (sem filtro de chave)
+                todos_c100 = editor.find_line_by_record("C100")
+                logger.info(f"[CORREÇÃO] Total de C100 no arquivo (sem filtro): {len(todos_c100)}")
+                print(f"[CORREÇÃO] Total de C100 no arquivo (sem filtro): {len(todos_c100)}", flush=True)
+                
+                # Se não encontrou C100, mostrar exemplos para debug
+                if len(todos_c100) == 0:
+                    logger.error(f"[CORREÇÃO] Nenhum C100 encontrado no arquivo SPED")
+                    print(f"[CORREÇÃO] Nenhum C100 encontrado no arquivo SPED", flush=True)
+                    
+                    # Verificar se há outros registros no arquivo
+                    outros_registros = {}
+                    for idx, line in enumerate(editor.lines[:100]):  # Primeiras 100 linhas
+                        if line.startswith("|") and "|" in line[1:]:
+                            reg = line.split("|")[1]
+                            outros_registros[reg] = outros_registros.get(reg, 0) + 1
+                    
+                    logger.info(f"[CORREÇÃO] Registros encontrados no arquivo: {outros_registros}")
+                    print(f"[CORREÇÃO] Registros encontrados no arquivo: {outros_registros}", flush=True)
+                    
+                    return (False, sped_path, {
+                        "erro": "Nenhum registro C100 encontrado no arquivo SPED",
+                        "detalhes": f"O arquivo SPED não contém registros C100. Registros encontrados: {list(outros_registros.keys())[:10]}",
+                        "sugestao": "Verifique se o arquivo SPED está completo e contém o Bloco C (Documentos Fiscais)."
+                    })
+                
+                # Se encontrou C100 mas não com a chave específica, mostrar exemplos
+                if len(indices_c100) == 0 and len(todos_c100) > 0:
+                    logger.warning(f"[CORREÇÃO] C100 não encontrado com chave específica. Mostrando exemplos de chaves no arquivo...")
+                    print(f"[CORREÇÃO] C100 não encontrado com chave específica. Mostrando exemplos de chaves no arquivo...", flush=True)
+                    
+                    # Mostrar primeiras 3 chaves encontradas
+                    for idx in todos_c100[:3]:
+                        line = editor.lines[idx]
+                        parts = split_sped_line(line, min_fields=10)
+                        if len(parts) > 9:
+                            chave_exemplo = parts[9].strip()
+                            logger.info(f"[CORREÇÃO]   Exemplo de chave C100 na linha {idx+1}: {chave_exemplo[:20]}...")
+                            print(f"[CORREÇÃO]   Exemplo de chave C100 na linha {idx+1}: {chave_exemplo[:20]}...", flush=True)
+                    
+                    # Tentar normalizar a chave fornecida e comparar novamente
+                    chave_normalizada_fornecida = "".join(str(chave).split())
+                    logger.info(f"[CORREÇÃO] Chave fornecida (normalizada): {chave_normalizada_fornecida}")
+                    print(f"[CORREÇÃO] Chave fornecida (normalizada): {chave_normalizada_fornecida}", flush=True)
                 
                 if indices_c100:
                     # Encontrar C170 relacionados a este C100
