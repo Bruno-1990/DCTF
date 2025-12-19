@@ -1382,10 +1382,12 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                 })
             else:
                 # Não há C190 no arquivo, mas também não temos CFOP/CST para criar um novo
+                logger.error(f"[CORREÇÃO] Não foi possível encontrar CFOP/CST para criar C190")
+                print(f"[CORREÇÃO] Não foi possível encontrar CFOP/CST para criar C190", flush=True)
                 return (False, sped_path, {
-                    "erro": "Não foi possível aplicar correção: CFOP e CST são obrigatórios para criar C190",
-                    "detalhes": "Não existem registros C190 no arquivo e não foi possível criar um novo sem CFOP e CST.",
-                    "sugestao": "Verifique se CFOP e CST estão sendo fornecidos na correção."
+                    "erro": "CFOP e CST são obrigatórios para criar C190",
+                    "detalhes": f"Não foi possível encontrar CFOP e CST relacionados à chave NF {chave[:20] if chave else 'N/A'}... no arquivo SPED. Verifique se o arquivo contém os registros C100 e C170 necessários.",
+                    "sugestao": "Verifique se CFOP e CST estão sendo fornecidos na correção ou se existem registros C170 relacionados ao C100 com a chave fornecida."
                 })
         
         # Se C190 não existe e precisa ser criado
