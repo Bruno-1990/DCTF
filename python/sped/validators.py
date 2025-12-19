@@ -1413,7 +1413,8 @@ def check_divergencias_valores_legitimas(
                     confianca = "ALTA"
                 
                 # 2. Aplicar regras específicas do setor (PRIORIDADE ALTA - antes de outras validações)
-                elif rules:
+                # CORREÇÃO: Não marcar como legítima se a diferença é muito alta (provavelmente erro)
+                elif rules and abs(delta_valor) < 100.0:  # Apenas para diferenças menores que R$ 100
                     try:
                         val_xml_num = float(valor_xml) if valor_xml else 0
                         val_sped_num = float(valor_sped) if valor_sped else 0
@@ -1429,6 +1430,11 @@ def check_divergencias_valores_legitimas(
                             confianca = "ALTA"
                     except (ValueError, TypeError):
                         pass
+                # CORREÇÃO: Se a diferença é muito alta, manter como ERRO_HUMANO mesmo que regras de setor digam o contrário
+                elif abs(delta_valor) >= 100.0:
+                    tipo_divergencia = "ERRO_HUMANO"
+                    motivo_classificacao = f"Diferença alta (R$ {abs(delta_valor):.2f}) - provável erro no preenchimento, não legítima"
+                    confianca = "ALTA"
                 
                 # 3. Verificar tipo de operação (CFOP/COD_SIT)
                 if tipo_divergencia == "ERRO_HUMANO" and CFOPClassifier and cfop:

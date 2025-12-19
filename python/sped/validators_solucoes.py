@@ -387,6 +387,8 @@ def identificar_onde_esta_erro(
         "BC ST": ("VL_BC_ICMS_ST", "VL_BC_ICMS_ST", "VL_BC_ICMS_ST"),
         "ST": ("VL_ICMS_ST", "VL_ICMS_ST", "VL_ICMS_ST"),
         "IPI": ("VL_IPI", "VL_IPI", "VL_IPI"),
+        "Desconto": ("VL_DESC", None, None),  # Desconto é apenas no C100
+        "VL_DESC": ("VL_DESC", None, None),  # Alias para Desconto
     }
     
     if campo not in campo_map:
@@ -768,8 +770,30 @@ def gerar_solucao_automatica(
         "BC ST": ("VL_BC_ICMS_ST", "VL_BC_ICMS_ST", "VL_BC_ICMS_ST"),
         "ST": ("VL_ICMS_ST", "VL_ICMS_ST", "VL_ICMS_ST"),
         "IPI": ("VL_IPI", "VL_IPI", "VL_IPI"),
+        "Desconto": ("VL_DESC", None, None),  # Desconto é apenas no C100
+        "VL_DESC": ("VL_DESC", None, None),  # Alias para Desconto
     }
     campo_c100, campo_c190, campo_c170 = campo_map_formula.get(campo, (campo, campo, campo))
+    
+    # CORREÇÃO: Para campos que são apenas do C100 (como Desconto), determinar registro imediatamente
+    if campo in ["Desconto", "VL_DESC"]:
+        if c100_info:
+            valor_c100 = float(c100_info.get("VL_DESC", 0) or 0)
+            diferenca_c100 = abs(valor_xml - valor_c100)
+            
+            # Se a diferença está no C100, corrigir C100
+            if diferenca_c100 > 0.02:
+                solucao["registro_corrigir"] = "C100"
+                solucao["campo_corrigir"] = "VL_DESC"
+                solucao["valor_correto"] = valor_xml
+                solucao["solucao"] = (
+                    f"Corrigir campo VL_DESC no registro C100. "
+                    f"Valor atual: R$ {valor_c100:.2f}, Valor correto (XML): R$ {valor_xml:.2f}. "
+                    f"Conforme Guia Prático EFD-ICMS/IPI, Capítulo III, Seção 3: "
+                    f"Valores informados no SPED devem corresponder aos valores dos documentos fiscais."
+                )
+                solucao["formula_legal"] = "C100.VL_DESC = valor do desconto no documento fiscal (XML)"
+                return solucao
     
     # CASO ESPECIAL: Se C190 está zerado mas C170 tem valor, o erro está no C190
     # Calcular soma dos C170 para comparar
