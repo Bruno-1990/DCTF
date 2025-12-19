@@ -1165,8 +1165,59 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                                 resumo = editor.get_changes_summary()
                                 return (True, output_path, resumo)
                     else:
-                        logger.warning(f"[CORREÇÃO] Não encontrou C170 relacionados ao C100 com chave {chave}")
-                        print(f"[CORREÇÃO] Não encontrou C170 relacionados ao C100 com chave {chave}", flush=True)
+                        logger.warning(f"[CORREÇÃO] Não encontrou C170 no bloco do C100. Tentando busca alternativa...")
+                        print(f"[CORREÇÃO] Não encontrou C170 no bloco do C100. Tentando busca alternativa...", flush=True)
+                        
+                        # FALLBACK: Buscar todos os C170 do arquivo e verificar se algum pertence a este C100
+                        # Isso pode acontecer se a estrutura do SPED não está ordenada corretamente
+                        todos_c170 = editor.find_line_by_record("C170")
+                        logger.info(f"[CORREÇÃO] Buscando entre {len(todos_c170)} C170 do arquivo...")
+                        print(f"[CORREÇÃO] Buscando entre {len(todos_c170)} C170 do arquivo...", flush=True)
+                        
+                        # Buscar C170 que estão entre este C100 e o próximo C100
+                        # Ou que estão antes do próximo C195
+                        c170_alternativos = []
+                        for idx in todos_c170:
+                            # Verificar se este C170 está no bloco do C100
+                            if idx > c100_idx:
+                                # Verificar se não passou do próximo C100 ou C195
+                                if proximo_c100_idx and idx >= proximo_c100_idx:
+                                    break
+                                
+                                # Verificar se não passou de um C195
+                                linha_c170 = editor.lines[idx]
+                                # Verificar se há C195 entre o C100 e este C170
+                                tem_c195_entre = False
+                                for check_idx in range(c100_idx + 1, idx):
+                                    if editor.lines[check_idx].startswith("|C195|"):
+                                        tem_c195_entre = True
+                                        break
+                                
+                                if not tem_c195_entre:
+                                    c170_alternativos.append(idx)
+                        
+                        if c170_alternativos:
+                            logger.info(f"[CORREÇÃO] Encontrados {len(c170_alternativos)} C170 alternativos no bloco")
+                            print(f"[CORREÇÃO] Encontrados {len(c170_alternativos)} C170 alternativos no bloco", flush=True)
+                            
+                            # Extrair CFOP/CST dos C170 alternativos
+                            for idx in c170_alternativos:
+                                line = editor.lines[idx]
+                                parts = split_sped_line(line, min_fields=21)
+                                if len(parts) > 11:
+                                    cfop_c170 = parts[11].strip()
+                                    cst_c170 = parts[10].strip() if len(parts) > 10 else ""
+                                    if cfop_c170 and cst_c170:
+                                        cfop_cst_encontrados.add((cfop_c170, cst_c170))
+                                        logger.info(f"[CORREÇÃO] C170 alternativo na linha {idx+1}: CFOP={cfop_c170}, CST={cst_c170}")
+                                        print(f"[CORREÇÃO] C170 alternativo na linha {idx+1}: CFOP={cfop_c170}, CST={cst_c170}", flush=True)
+                            
+                            if cfop_cst_encontrados:
+                                logger.info(f"[CORREÇÃO] ✅ CFOP/CST encontrados via busca alternativa: {len(cfop_cst_encontrados)} pares únicos")
+                                print(f"[CORREÇÃO] ✅ CFOP/CST encontrados via busca alternativa: {len(cfop_cst_encontrados)} pares únicos", flush=True)
+                        else:
+                            logger.warning(f"[CORREÇÃO] Não encontrou C170 relacionados ao C100 com chave {chave}")
+                            print(f"[CORREÇÃO] Não encontrou C170 relacionados ao C100 com chave {chave}", flush=True)
             
             # Se não encontrou via chave, buscar todos os C190 e tentar atualizar um com valor zerado
             # CORREÇÃO: Também tentar buscar C190 que correspondem ao campo que queremos corrigir
