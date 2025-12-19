@@ -328,6 +328,21 @@ class SpedService {
    * Aplica uma correção automática específica
    */
   async aplicarCorrecao(validationId: string, correcao: CorrecaoAutomatica): Promise<ResultadoCorrecao> {
+    // Validação prévia no cliente
+    if (!correcao.registro_corrigir || !correcao.campo || correcao.valor_correto === undefined) {
+      return {
+        success: false,
+        message: 'Dados de correção incompletos. Verifique registro, campo e valor correto.'
+      };
+    }
+    
+    // Validação específica para C190 sem CFOP/CST
+    if (correcao.registro_corrigir === 'C190' && !correcao.cfop && !correcao.cst && !correcao.chave) {
+      return {
+        success: false,
+        message: 'Para correções em C190, é necessário fornecer CFOP/CST ou chave NF para localizar o registro.'
+      };
+    }
     try {
       const response = await axios.post<ResultadoCorrecao>(
         `${API_BASE_URL}/api/sped/correcoes/aplicar`,
@@ -336,6 +351,20 @@ class SpedService {
       return response.data;
     } catch (error: any) {
       console.error('Erro ao aplicar correção:', error);
+      
+      // Melhorar tratamento de erro HTTP
+      if (error.response?.data) {
+        const errorData = error.response.data;
+        const errorMessage = errorData.error || errorData.message || 'Erro ao aplicar correção';
+        const detalhes = errorData.detalhes ? `\n\nDetalhes: ${errorData.detalhes}` : '';
+        const sugestao = errorData.sugestao ? `\n\nSugestão: ${errorData.sugestao}` : '';
+        
+        // Criar objeto de erro melhorado
+        const improvedError = new Error(errorMessage + detalhes + sugestao);
+        (improvedError as any).response = error.response;
+        throw improvedError;
+      }
+      
       throw error;
     }
   }
