@@ -272,6 +272,7 @@ class SpedEditor:
                 "VL_FRETE": 20,
                 "VL_SEG": 21,
                 "VL_DESC": 22,
+                "Desconto": 22,  # Alias para VL_DESC
                 "VL_OUT_ENT": 23,
                 "VL_TOT": 24,
             },
@@ -712,6 +713,22 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
         cst_raw = correcao.get("cst")
         linha_sped = correcao.get("linha_sped")
         
+        # CORREÇÃO: Tratar caso especial quando registro é "DESCONHECIDO"
+        # Se o campo é "Desconto", isso significa que é VL_DESC no C100
+        if registro == "DESCONHECIDO" or registro == "":
+            if campo == "Desconto" or campo == "VL_DESC":
+                registro = "C100"
+                campo = "VL_DESC"
+                logger.info(f"[CORREÇÃO] Registro 'DESCONHECIDO' mapeado para C100, campo 'Desconto' mapeado para VL_DESC")
+                print(f"[CORREÇÃO] Registro 'DESCONHECIDO' mapeado para C100, campo 'Desconto' mapeado para VL_DESC", flush=True)
+            else:
+                # Para outros campos com registro desconhecido, tentar inferir do campo
+                # Por enquanto, retornar erro informativo
+                return (False, sped_path, {
+                    "erro": f"Não foi possível determinar o registro para correção. Registro: '{registro}', Campo: '{campo}'",
+                    "sugestao": "Verifique se o campo e registro estão corretos na correção."
+                })
+        
         # CORREÇÃO: Normalizar CST antes de usar (pode vir do DataFrame em formato diferente)
         # O CST pode vir como "00", "000", "0", etc. e precisa ser normalizado para 3 dígitos
         try:
@@ -1103,24 +1120,36 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                     if indices_c170:
                         logger.info(f"SUCESSO: VALIDAÇÃO LEGAL: C190.{campo} = {valor_correto:.2f} = Σ C170.{campo} por CFOP/CST (conforme Guia Prático EFD-ICMS/IPI, Seção 3, Bloco C)")
         else:
+            # Caso para C100, C170 ou outros registros que não são C190
             # Normalizar CST antes de atualizar (pode vir do XML em formato diferente)
             try:
                 from common import normalize_cst_for_compare
-                cst_normalizado = normalize_cst_for_compare(cst) if cst else None
+                cst_normalizado = normalize_cst_for_compare(cst_raw) if cst_raw else None
             except ImportError:
                 # Fallback se não conseguir importar
-                cst_normalizado = str(cst).strip().zfill(3) if cst else None
+                cst_normalizado = str(cst_raw).strip().zfill(3) if cst_raw else None
             
-            # Atualizar campo existente
-            sucesso = editor.update_field(
-                registro=registro,
-                campo=campo,
-                novo_valor=valor_correto,
-                chave=chave,
-                cfop=cfop,
-                cst=cst_normalizado,  # Usar CST normalizado
-                linha_sped=linha_sped
-            )
+            # Para C100, não precisamos de CFOP ou CST, apenas da chave
+            if registro == "C100":
+                # Atualizar campo no C100 usando a chave
+                sucesso = editor.update_field(
+                    registro=registro,
+                    campo=campo,
+                    novo_valor=valor_correto,
+                    chave=chave,
+                    linha_sped=linha_sped
+                )
+            else:
+                # Para C170 e outros, usar CFOP e CST se disponíveis
+                sucesso = editor.update_field(
+                    registro=registro,
+                    campo=campo,
+                    novo_valor=valor_correto,
+                    chave=chave,
+                    cfop=cfop_clean if cfop else None,
+                    cst=cst_normalizado,  # Usar CST normalizado
+                    linha_sped=linha_sped
+                )
         
         if not sucesso:
             return (False, sped_path, {"erro": "Não foi possível aplicar correção"})
