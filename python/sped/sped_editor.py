@@ -221,10 +221,13 @@ class SpedEditor:
                         linha_chave_normalizada = "".join(str(linha_chave).split()) if linha_chave else ""
                         
                         if linha_chave is None or linha_chave_normalizada != chave_normalizada:
-                            # Log de debug quando não corresponde
-                            if linha_chave:
-                                logger.debug(f"[find_line_by_record] Chave não corresponde: esperado='{chave_normalizada[:20]}...', encontrado='{linha_chave_normalizada[:20]}...'")
+                            # Log de debug quando não corresponde (apenas para primeiros 3 para não poluir logs)
+                            if linha_chave and len(indices) < 3:
+                                logger.debug(f"[find_line_by_record] C100 linha {idx+1}: chave não corresponde - esperado='{chave_normalizada[:20]}...', encontrado='{linha_chave_normalizada[:20]}...'")
                             continue
+                        
+                        # Se chegou aqui, encontrou correspondência
+                        logger.debug(f"[find_line_by_record] ✅ C100 encontrado na linha {idx+1} com chave correspondente")
                     elif registro == "C170":
                         # C170 precisa verificar chave do C100 pai
                         # Por enquanto, vamos buscar por CFOP/CST
