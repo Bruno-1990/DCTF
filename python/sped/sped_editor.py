@@ -955,20 +955,50 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                 
                 # Buscar C100 com esta chave
                 indices_c100 = editor.find_line_by_record("C100", chave=chave)
+                logger.info(f"[CORREÇÃO] C100 encontrados com chave {chave[:20]}...: {len(indices_c100)}")
+                print(f"[CORREÇÃO] C100 encontrados com chave {chave[:20]}...: {len(indices_c100)}", flush=True)
+                
                 if indices_c100:
                     # Encontrar C170 relacionados a este C100
                     # C170 vem logo após o C100 no SPED
                     c100_idx = indices_c100[0]
                     cfop_cst_encontrados = set()
                     
-                    # Buscar C170 que vêm após este C100 (até encontrar próximo C100 ou C190)
+                    # Buscar C170 que vêm após este C100 (até encontrar próximo C100 ou C195)
                     logger.info(f"[CORREÇÃO] Buscando C170 após C100 na linha {c100_idx+1}...")
                     print(f"[CORREÇÃO] Buscando C170 após C100 na linha {c100_idx+1}...", flush=True)
+                    
+                    # Verificar linha do C100 para debug
+                    if c100_idx < len(editor.lines):
+                        c100_line = editor.lines[c100_idx]
+                        logger.debug(f"[CORREÇÃO] Linha C100: {c100_line[:100]}...")
+                        print(f"[CORREÇÃO] Linha C100: {c100_line[:100]}...", flush=True)
+                    
                     c170_encontrados = 0
+                    c190_encontrados_no_bloco = 0
+                    proximo_c100_idx = None
+                    
+                    # Buscar próximo C100 para delimitar o bloco
                     for idx in range(c100_idx + 1, len(editor.lines)):
                         line = editor.lines[idx]
+                        if line.startswith("|C100|"):
+                            proximo_c100_idx = idx
+                            logger.info(f"[CORREÇÃO] Próximo C100 encontrado na linha {idx+1}, delimitando bloco")
+                            print(f"[CORREÇÃO] Próximo C100 encontrado na linha {idx+1}, delimitando bloco", flush=True)
+                            break
+                    
+                    # Buscar C170 no bloco (até próximo C100 ou fim do arquivo)
+                    limite_busca = proximo_c100_idx if proximo_c100_idx else len(editor.lines)
+                    logger.info(f"[CORREÇÃO] Buscando C170 entre linhas {c100_idx+2} e {limite_busca}")
+                    print(f"[CORREÇÃO] Buscando C170 entre linhas {c100_idx+2} e {limite_busca}", flush=True)
+                    
+                    for idx in range(c100_idx + 1, limite_busca):
+                        line = editor.lines[idx]
+                        
+                        # Parar se encontrar próximo C100 ou C195 (fim do bloco)
                         if line.startswith("|C100|") or line.startswith("|C195|"):
                             break
+                        
                         if line.startswith("|C170|"):
                             c170_encontrados += 1
                             parts = split_sped_line(line, min_fields=21)
@@ -977,13 +1007,48 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                                 cst_c170 = parts[10].strip() if len(parts) > 10 else ""
                                 if cfop_c170 and cst_c170:
                                     cfop_cst_encontrados.add((cfop_c170, cst_c170))
-                                    logger.debug(f"[CORREÇÃO] C170 encontrado: CFOP={cfop_c170}, CST={cst_c170}")
+                                    logger.info(f"[CORREÇÃO] C170 encontrado na linha {idx+1}: CFOP={cfop_c170}, CST={cst_c170}")
+                                    print(f"[CORREÇÃO] C170 encontrado na linha {idx+1}: CFOP={cfop_c170}, CST={cst_c170}", flush=True)
+                                else:
+                                    logger.warning(f"[CORREÇÃO] C170 na linha {idx+1} sem CFOP/CST válidos: CFOP='{cfop_c170}', CST='{cst_c170}'")
+                                    print(f"[CORREÇÃO] C170 na linha {idx+1} sem CFOP/CST válidos: CFOP='{cfop_c170}', CST='{cst_c170}'", flush=True)
+                            else:
+                                logger.warning(f"[CORREÇÃO] C170 na linha {idx+1} tem menos de 12 campos: {len(parts)}")
+                                print(f"[CORREÇÃO] C170 na linha {idx+1} tem menos de 12 campos: {len(parts)}", flush=True)
                         elif line.startswith("|C190|"):
+                            c190_encontrados_no_bloco += 1
                             # C190 pode vir antes dos C170 em alguns casos, continuar buscando
-                            pass
+                            logger.debug(f"[CORREÇÃO] C190 encontrado no bloco na linha {idx+1}")
                     
-                    logger.info(f"[CORREÇÃO] Total de C170 encontrados: {c170_encontrados}, CFOP/CST únicos: {len(cfop_cst_encontrados)}")
-                    print(f"[CORREÇÃO] Total de C170 encontrados: {c170_encontrados}, CFOP/CST únicos: {len(cfop_cst_encontrados)}", flush=True)
+                    logger.info(f"[CORREÇÃO] Total de C170 encontrados: {c170_encontrados}, C190 no bloco: {c190_encontrados_no_bloco}, CFOP/CST únicos: {len(cfop_cst_encontrados)}")
+                    print(f"[CORREÇÃO] Total de C170 encontrados: {c170_encontrados}, C190 no bloco: {c190_encontrados_no_bloco}, CFOP/CST únicos: {len(cfop_cst_encontrados)}", flush=True)
+                    
+                    # Se não encontrou C170, tentar buscar todos os C170 do arquivo para debug
+                    if c170_encontrados == 0:
+                        todos_c170 = editor.find_line_by_record("C170")
+                        logger.warning(f"[CORREÇÃO] Nenhum C170 encontrado no bloco do C100. Total de C170 no arquivo: {len(todos_c170)}")
+                        print(f"[CORREÇÃO] Nenhum C170 encontrado no bloco do C100. Total de C170 no arquivo: {len(todos_c170)}", flush=True)
+                        
+                        # Mostrar alguns exemplos de C170 do arquivo
+                        if todos_c170:
+                            logger.info(f"[CORREÇÃO] Exemplos de C170 no arquivo (primeiros 3):")
+                            print(f"[CORREÇÃO] Exemplos de C170 no arquivo (primeiros 3):", flush=True)
+                            for idx in todos_c170[:3]:
+                                line = editor.lines[idx]
+                                parts = split_sped_line(line, min_fields=21)
+                                if len(parts) > 11:
+                                    cfop_ex = parts[11].strip()
+                                    cst_ex = parts[10].strip() if len(parts) > 10 else ""
+                                    logger.info(f"[CORREÇÃO]   Linha {idx+1}: CFOP={cfop_ex}, CST={cst_ex}")
+                                    print(f"[CORREÇÃO]   Linha {idx+1}: CFOP={cfop_ex}, CST={cst_ex}", flush=True)
+                else:
+                    logger.warning(f"[CORREÇÃO] C100 não encontrado com chave {chave[:20]}...")
+                    print(f"[CORREÇÃO] C100 não encontrado com chave {chave[:20]}...", flush=True)
+                    
+                    # Tentar buscar todos os C100 do arquivo para debug
+                    todos_c100 = editor.find_line_by_record("C100")
+                    logger.info(f"[CORREÇÃO] Total de C100 no arquivo: {len(todos_c100)}")
+                    print(f"[CORREÇÃO] Total de C100 no arquivo: {len(todos_c100)}", flush=True)
                     
                     # Se encontrou CFOP/CST, usar o primeiro para buscar/atualizar C190
                     if cfop_cst_encontrados:
