@@ -292,8 +292,13 @@ class SpedEditor:
                 "VL_BC_ICMS": 6,
                 "VL_ICMS": 7,
                 "VL_BC_ICMS_ST": 8,
+                "BC ST": 8,  # Alias para VL_BC_ICMS_ST
+                "Base ST": 8,  # Alias para VL_BC_ICMS_ST
                 "VL_ICMS_ST": 9,
+                "ST": 9,  # Alias para VL_ICMS_ST
+                "ICMS ST": 9,  # Alias para VL_ICMS_ST
                 "VL_IPI": 11,
+                "IPI": 11,  # Alias para VL_IPI
             }
         }
         
@@ -729,6 +734,24 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                     "sugestao": "Verifique se o campo e registro estão corretos na correção."
                 })
         
+        # CORREÇÃO: Mapear nomes de campos amigáveis para nomes técnicos
+        campo_map = {
+            "BC ST": "VL_BC_ICMS_ST",
+            "Base ST": "VL_BC_ICMS_ST",
+            "ST": "VL_ICMS_ST",
+            "ICMS ST": "VL_ICMS_ST",
+            "Desconto": "VL_DESC",
+            "BC ICMS": "VL_BC_ICMS",
+            "Base ICMS": "VL_BC_ICMS",
+            "ICMS": "VL_ICMS",
+            "IPI": "VL_IPI",
+        }
+        if campo in campo_map:
+            campo_original = campo
+            campo = campo_map[campo]
+            logger.info(f"[CORREÇÃO] Campo '{campo_original}' mapeado para '{campo}'")
+            print(f"[CORREÇÃO] Campo '{campo_original}' mapeado para '{campo}'", flush=True)
+        
         # CORREÇÃO: Normalizar CST antes de usar (pode vir do DataFrame em formato diferente)
         # O CST pode vir como "00", "000", "0", etc. e precisa ser normalizado para 3 dígitos
         try:
@@ -743,6 +766,69 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
         # CORREÇÃO: Limpar CFOP (remover espaços) antes de usar
         cfop_clean = str(cfop).strip() if cfop else ""
         cfop_clean = "".join(cfop_clean.split())  # Remove todos os espaços (incluindo internos)
+        
+        # CORREÇÃO: Se CFOP e CST estão vazios para C190, tentar atualizar C190 existente primeiro
+        # antes de tentar criar um novo
+        if registro == "C190" and (not cfop_clean or not cst_normalizado):
+            logger.warning(f"[CORREÇÃO] CFOP ou CST vazios para C190. Tentando atualizar C190 existente com valor zerado...")
+            print(f"[CORREÇÃO] CFOP ou CST vazios para C190. Tentando atualizar C190 existente com valor zerado...", flush=True)
+            
+            # Buscar todos os C190 no arquivo
+            todos_c190 = editor.find_line_by_record("C190")
+            if todos_c190:
+                # Tentar encontrar um C190 com o campo zerado que precisa ser atualizado
+                for idx in todos_c190:
+                    line = editor.lines[idx]
+                    parts = split_sped_line(line, min_fields=13)
+                    if len(parts) > 1:
+                        # Verificar se o campo que queremos corrigir está zerado neste C190
+                        posicao_campo = editor.get_field_position("C190", campo)
+                        if posicao_campo and len(parts) > posicao_campo:
+                            valor_atual = float(parts[posicao_campo] or 0) if parts[posicao_campo] else 0.0
+                            # Se o valor atual está zerado ou muito próximo de zero, atualizar
+                            if abs(valor_atual) < 0.01:
+                                logger.info(f"[CORREÇÃO] Encontrado C190 na linha {idx+1} com {campo} zerado. Atualizando...")
+                                print(f"[CORREÇÃO] Encontrado C190 na linha {idx+1} com {campo} zerado. Atualizando...", flush=True)
+                                
+                                # Extrair CFOP e CST deste C190 para usar na atualização
+                                if len(parts) > 3:
+                                    cfop_encontrado = parts[3].strip()
+                                    cst_encontrado = parts[2].strip() if len(parts) > 2 else ""
+                                    
+                                    # Atualizar usando o CFOP e CST encontrados
+                                    sucesso = editor.update_field(
+                                        registro="C190",
+                                        campo=campo,
+                                        novo_valor=valor_correto,
+                                        cfop=cfop_encontrado,
+                                        cst=cst_encontrado,
+                                        linha_sped=idx+1  # linha_sped é 1-indexed
+                                    )
+                                    
+                                    if sucesso:
+                                        # Salvar arquivo corrigido
+                                        if output_path is None:
+                                            output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+                                        else:
+                                            output_path = Path(output_path)
+                                        
+                                        editor.save(output_path)
+                                        resumo = editor.get_changes_summary()
+                                        return (True, output_path, resumo)
+                
+                # Se não encontrou C190 com valor zerado, retornar erro informativo
+                return (False, sped_path, {
+                    "erro": "Não foi possível aplicar correção: CFOP e CST são obrigatórios para identificar o C190 correto",
+                    "detalhes": f"Existem {len(todos_c190)} registros C190 no arquivo, mas não foi possível identificar qual atualizar sem CFOP e CST.",
+                    "sugestao": "Verifique se CFOP e CST estão sendo fornecidos na correção. Se não, a correção precisa incluir essas informações para identificar o C190 correto."
+                })
+            else:
+                # Não há C190 no arquivo, mas também não temos CFOP/CST para criar um novo
+                return (False, sped_path, {
+                    "erro": "Não foi possível aplicar correção: CFOP e CST são obrigatórios para criar C190",
+                    "detalhes": "Não existem registros C190 no arquivo e não foi possível criar um novo sem CFOP e CST.",
+                    "sugestao": "Verifique se CFOP e CST estão sendo fornecidos na correção."
+                })
         
         # Se C190 não existe e precisa ser criado
         if registro == "C190" and valor_correto > 0:
