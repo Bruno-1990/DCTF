@@ -36,18 +36,78 @@ def main():
             correcao = json.loads(str(correcao_json_path))
         
         # Log para debug
+        registro_corrigir = correcao.get("registro_corrigir", "")
+        campo = correcao.get("campo", "")
+        valor_correto = correcao.get("valor_correto")
+        cfop = correcao.get("cfop", "")
+        cst = correcao.get("cst", "")
+        chave = correcao.get("chave", "")
+        
         print(json.dumps({
             "debug": "Iniciando aplicação de correção",
             "sped_path": str(sped_path),
             "output_path": str(output_path),
             "correcao": {
-                "registro": correcao.get("registro_corrigir"),
-                "campo": correcao.get("campo"),
-                "valor_correto": correcao.get("valor_correto"),
-                "cfop": correcao.get("cfop"),
-                "cst": correcao.get("cst")
+                "registro": registro_corrigir,
+                "campo": campo,
+                "valor_correto": valor_correto,
+                "cfop": cfop,
+                "cst": cst,
+                "chave": chave[:20] + "..." if chave else ""
             }
         }), flush=True)
+        
+        # VALIDAÇÃO PRÉVIA: Verificar se arquivo SPED contém C100 quando necessário
+        if registro_corrigir == "C190" and (not cfop or not cst) and chave:
+            try:
+                if not sped_path.exists():
+                    print(json.dumps({
+                        "success": False,
+                        "error": f"Arquivo SPED não encontrado: {sped_path}",
+                        "resumo": {
+                            "erro": f"Arquivo SPED não encontrado: {sped_path}",
+                            "detalhes": "O arquivo SPED especificado não existe.",
+                            "sugestao": "Verifique se o caminho do arquivo está correto."
+                        }
+                    }), flush=True)
+                    sys.exit(1)
+                
+                # Ler primeiras linhas para verificar se tem C100
+                with sped_path.open('r', encoding='latin1', errors='ignore') as f:
+                    primeiras_linhas = ''.join(f.readlines()[:100])
+                    tem_c100 = '|C100|' in primeiras_linhas
+                    
+                    if not tem_c100:
+                        # Contar registros encontrados
+                        import re
+                        registros_encontrados = {}
+                        for linha in primeiras_linhas.split('\n')[:200]:
+                            match = re.match(r'^\|(\d{4})\|', linha)
+                            if match:
+                                reg = match.group(1)
+                                registros_encontrados[reg] = registros_encontrados.get(reg, 0) + 1
+                        
+                        print(json.dumps({
+                            "success": False,
+                            "error": "Nenhum registro C100 encontrado no arquivo SPED",
+                            "resumo": {
+                                "erro": "Nenhum registro C100 encontrado no arquivo SPED",
+                                "detalhes": f"O arquivo SPED não contém registros C100. Registros encontrados: {list(registros_encontrados.keys())[:10]}",
+                                "sugestao": "Verifique se o arquivo SPED está completo e contém o Bloco C (Documentos Fiscais)."
+                            }
+                        }), flush=True)
+                        sys.exit(1)
+            except Exception as e:
+                print(json.dumps({
+                    "success": False,
+                    "error": f"Erro ao verificar arquivo SPED: {e}",
+                    "resumo": {
+                        "erro": f"Erro ao verificar arquivo SPED: {e}",
+                        "detalhes": str(e),
+                        "sugestao": "Verifique se o arquivo SPED está acessível e não está corrompido."
+                    }
+                }), flush=True)
+                sys.exit(1)
         
         # Aplicar correção passando o output_path diretamente
         sucesso, arquivo_corrigido, resumo = aplicar_correcao_c170_c190(sped_path, correcao, output_path)
