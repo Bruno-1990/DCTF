@@ -144,15 +144,37 @@ router.post('/aplicar', async (req: Request, res: Response) => {
     }
 
     // Validação 12: Verificar se arquivo SPED contém registros C100 (necessário para correções C190 sem CFOP/CST)
-    if (registro_corrigir === 'C190' && (!cfop || !cst) && chave) {
+    // CORREÇÃO: Verificar se cfop e cst são strings vazias ou undefined/null
+    const cfopVazio = !cfop || String(cfop).trim() === '';
+    const cstVazio = !cst || String(cst).trim() === '';
+    const precisaC100 = registro_corrigir === 'C190' && cfopVazio && cstVazio && chave;
+    
+    console.log('[sped_correcoes] Validação C100:', {
+      registro_corrigir,
+      cfop: cfop || '(vazio)',
+      cst: cst || '(vazio)',
+      chave: chave ? `${chave.substring(0, 20)}...` : '(sem chave)',
+      cfopVazio,
+      cstVazio,
+      precisaC100
+    });
+    
+    if (precisaC100) {
       try {
+        console.log('[sped_correcoes] Verificando se arquivo SPED contém C100...');
         const spedContent = fs.readFileSync(spedPath, 'latin1');
         const temC100 = spedContent.includes('|C100|');
+        
+        console.log('[sped_correcoes] Resultado verificação C100:', {
+          temC100,
+          tamanho_arquivo: spedContent.length,
+          primeiras_linhas: spedContent.split('\n').slice(0, 5).join(' | ')
+        });
         
         if (!temC100) {
           // Contar outros registros para diagnóstico
           const registrosEncontrados: Record<string, number> = {};
-          spedContent.split('\n').slice(0, 200).forEach(line => {
+          spedContent.split('\n').slice(0, 500).forEach(line => {
             const match = line.match(/^\|(\d{4})\|/);
             if (match) {
               const reg = match[1];
@@ -160,17 +182,23 @@ router.post('/aplicar', async (req: Request, res: Response) => {
             }
           });
           
+          console.error('[sped_correcoes] ❌ Arquivo SPED não contém C100. Registros encontrados:', registrosEncontrados);
+          
           return res.status(400).json({
             error: 'Arquivo SPED não contém registros C100',
             detalhes: `O arquivo SPED não contém registros C100 (Documentos Fiscais), que são necessários para aplicar correções em C190 quando CFOP/CST não são fornecidos.`,
-            registros_encontrados: Object.keys(registrosEncontrados).slice(0, 10),
+            registros_encontrados: Object.keys(registrosEncontrados).slice(0, 20),
             sugestao: 'Verifique se o arquivo SPED está completo e contém o Bloco C (Documentos Fiscais). Se o arquivo contém apenas cadastros, não é possível aplicar correções em C190 sem fornecer CFOP e CST explicitamente.'
           });
         }
+        
+        console.log('[sped_correcoes] ✅ Arquivo SPED contém C100, prosseguindo com correção...');
       } catch (error: any) {
         console.error('[sped_correcoes] Erro ao verificar C100 no arquivo:', error);
-        // Continuar mesmo se houver erro na verificação
+        // Continuar mesmo se houver erro na verificação (não bloquear)
       }
+    } else {
+      console.log('[sped_correcoes] Validação C100 não necessária (CFOP/CST fornecidos ou não é C190)');
     }
 
     // Executar script Python para aplicar correção
