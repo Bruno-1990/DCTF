@@ -244,3 +244,4 @@ def aplicar_normalizacao(dados: Dict[str, Any]) -> Dict[str, Any]:
     
     return dados_normalizados
 
+

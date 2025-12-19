@@ -740,24 +740,74 @@ const DivergenciasInteligentes: React.FC<Props> = ({
 
     const dadosOriginais = div.dadosOriginais || div;
     
-    // Verificar se tem solução automática implementável
-    if (!dadosOriginais.SOLUCAO_AUTOMATICA || !dadosOriginais.REGISTRO_CORRIGIR || dadosOriginais.VALOR_CORRETO === undefined) {
+    // VALIDAÇÃO 1: Verificar se tem solução automática implementável
+    if (!dadosOriginais.SOLUCAO_AUTOMATICA || dadosOriginais.SOLUCAO_AUTOMATICA === false) {
       alert('Esta divergência não possui correção automática disponível');
       return;
+    }
+    
+    // VALIDAÇÃO 2: Verificar que tem registro para corrigir
+    if (!dadosOriginais.REGISTRO_CORRIGIR || dadosOriginais.REGISTRO_CORRIGIR === 'NENHUM') {
+      alert('Não é possível aplicar correção automática para esta divergência');
+      return;
+    }
+    
+    // VALIDAÇÃO 3: Verificar que tem valor correto
+    const valorCorreto = parseFloat(String(dadosOriginais.VALOR_CORRETO || 0));
+    if (isNaN(valorCorreto)) {
+      alert('Valor correto inválido');
+      return;
+    }
+    
+    // VALIDAÇÃO 4: Verificar que tem campo
+    const campo = String(dadosOriginais.CAMPO || dadosOriginais.CAMPO_CORRIGIR || '').trim();
+    if (!campo || campo.length === 0) {
+      alert('Campo não especificado');
+      return;
+    }
+    
+    // VALIDAÇÃO 5: Chave NF quando necessário para C100
+    const registro = String(dadosOriginais.REGISTRO_CORRIGIR || '').trim();
+    const chave = String(dadosOriginais.CHAVE || '').trim();
+    if (registro === 'C100' && (!chave || chave.length === 0)) {
+      alert('Chave NF é obrigatória para correção em C100');
+      return;
+    }
+    
+    // VALIDAÇÃO 6: Validar formato da chave (quando fornecida)
+    if (chave) {
+      const chaveLimpa = chave.replace(/\s/g, '');
+      if (chaveLimpa.length !== 44) {
+        console.warn(`Chave NF tem tamanho inválido: ${chaveLimpa.length} (esperado: 44)`);
+        // Não bloquear, apenas avisar
+      }
     }
 
     setAplicandoCorrecao(index);
 
     try {
       const correcao = {
-        registro_corrigir: String(dadosOriginais.REGISTRO_CORRIGIR || '').trim(),
-        campo: String(dadosOriginais.CAMPO || dadosOriginais.CAMPO_CORRIGIR || '').trim(),
-        valor_correto: parseFloat(String(dadosOriginais.VALOR_CORRETO || 0)),
-        chave: String(dadosOriginais.CHAVE || '').trim(),
+        registro_corrigir: registro,
+        campo: campo,
+        valor_correto: valorCorreto,
+        chave: chave,
         cfop: String(dadosOriginais.CFOP || '').trim(),
         cst: String(dadosOriginais.CST || '').trim(),
         linha_sped: dadosOriginais.LINHA_SPED ? parseInt(String(dadosOriginais.LINHA_SPED)) : undefined
       };
+      
+      // VALIDAÇÃO 7: Validar correção montada
+      if (!correcao.registro_corrigir || !correcao.campo) {
+        alert('Dados de correção incompletos');
+        setAplicandoCorrecao(-1);
+        return;
+      }
+      
+      // VALIDAÇÃO 8: Validar linha_sped (se fornecida)
+      if (correcao.linha_sped !== undefined && (isNaN(correcao.linha_sped) || correcao.linha_sped < 1)) {
+        console.warn(`linha_sped inválida: ${correcao.linha_sped}, ignorando...`);
+        correcao.linha_sped = undefined;
+      }
 
       const resultado = await spedService.aplicarCorrecao(validationId, correcao);
 

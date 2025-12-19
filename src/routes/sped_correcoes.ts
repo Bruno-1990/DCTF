@@ -38,19 +38,108 @@ router.post('/aplicar', async (req: Request, res: Response) => {
     // Validar estrutura da correção
     const { registro_corrigir, campo, valor_correto, chave, cfop, cst, linha_sped } = correcao;
     
+    // Validação 1: Campos obrigatórios
     if (!registro_corrigir || !campo || valor_correto === undefined) {
       return res.status(400).json({
         error: 'correcao deve conter: registro_corrigir, campo, valor_correto'
       });
+    }
+    
+    // Validação 2: Tipo de valor_correto
+    if (typeof valor_correto !== 'number' || isNaN(valor_correto)) {
+      return res.status(400).json({
+        error: 'valor_correto deve ser um número válido',
+        recebido: typeof valor_correto,
+        valor: valor_correto
+      });
+    }
+    
+    // Validação 3: Registro válido
+    const registros_validos = ['C100', 'C170', 'C190', 'DESCONHECIDO'];
+    if (!registros_validos.includes(registro_corrigir)) {
+      return res.status(400).json({
+        error: `registro_corrigir inválido: ${registro_corrigir}`,
+        sugestao: `Deve ser um dos: ${registros_validos.join(', ')}`
+      });
+    }
+    
+    // Validação 4: Campo não vazio
+    if (!campo || String(campo).trim().length === 0) {
+      return res.status(400).json({
+        error: 'campo não pode estar vazio'
+      });
+    }
+    
+    // Validação 5: Chave NF quando necessário para C100
+    if (registro_corrigir === 'C100' && (!chave || String(chave).trim().length === 0)) {
+      return res.status(400).json({
+        error: 'chave NF é obrigatória para correção em C100'
+      });
+    }
+    
+    // Validação 6: CFOP/CST ou chave quando necessário para C190
+    if (registro_corrigir === 'C190' && !cfop && !cst && !chave) {
+      return res.status(400).json({
+        error: 'Para C190, é necessário fornecer CFOP/CST ou chave NF para localizar o registro',
+        sugestao: 'Forneça pelo menos um dos seguintes: cfop, cst, ou chave'
+      });
+    }
+    
+    // Validação 7: Valor não negativo para campos monetários
+    const campos_monetarios = ['VL_BC_ICMS', 'VL_ICMS', 'VL_BC_ICMS_ST', 'VL_ICMS_ST', 'VL_IPI', 'VL_DESC', 
+                               'BC ST', 'ST', 'ICMS', 'BC ICMS', 'IPI', 'Desconto'];
+    if (campos_monetarios.some(c => campo.includes(c)) && valor_correto < 0) {
+      return res.status(400).json({
+        error: `Valor não pode ser negativo para campo ${campo}`,
+        valor_recebido: valor_correto
+      });
+    }
+    
+    // Validação 8: linha_sped válida (se fornecida)
+    if (linha_sped !== undefined) {
+      const linhaNum = parseInt(String(linha_sped));
+      if (isNaN(linhaNum) || linhaNum < 1) {
+        return res.status(400).json({
+          error: `linha_sped deve ser um número inteiro maior que 0`,
+          recebido: linha_sped
+        });
+      }
     }
 
     // Obter caminho do arquivo SPED original
     const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
     const spedPath = path.join(tmpDir, 'sped.txt');
 
+    // Validação 9: Arquivo SPED existe
     if (!fs.existsSync(spedPath)) {
       return res.status(404).json({
-        error: 'Arquivo SPED não encontrado para esta validação'
+        error: 'Arquivo SPED não encontrado para esta validação',
+        caminho: spedPath
+      });
+    }
+    
+    // Validação 10: Arquivo SPED não está vazio
+    try {
+      const stats = fs.statSync(spedPath);
+      if (stats.size === 0) {
+        return res.status(400).json({
+          error: 'Arquivo SPED está vazio',
+          caminho: spedPath
+        });
+      }
+      
+      // Validação 11: Arquivo não é muito grande (prevenir DoS)
+      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+      if (stats.size > MAX_FILE_SIZE) {
+        return res.status(400).json({
+          error: `Arquivo SPED muito grande: ${(stats.size / 1024 / 1024).toFixed(2)}MB`,
+          maximo_permitido: `${(MAX_FILE_SIZE / 1024 / 1024).toFixed(2)}MB`
+        });
+      }
+    } catch (err: any) {
+      return res.status(500).json({
+        error: 'Erro ao verificar arquivo SPED',
+        detalhes: err.message
       });
     }
 

@@ -140,3 +140,4 @@ def registrar_diferenca_tolerancia(
     
     return registro
 
+

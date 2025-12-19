@@ -174,3 +174,4 @@ def limpar_logs():
     global _logs_correcoes
     _logs_correcoes = []
 
+

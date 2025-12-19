@@ -157,3 +157,4 @@ def detectar_inconsistencias_fechamento(e110_record: Dict[str, Any]) -> Resultad
     
     return resultado
 
+

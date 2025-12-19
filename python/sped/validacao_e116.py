@@ -118,3 +118,4 @@ def detectar_valores_sem_suporte(
     
     return resultado
 
+

@@ -188,3 +188,4 @@ class TestValidacaoC100VL_DOC_C190(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+

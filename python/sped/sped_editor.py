@@ -93,8 +93,28 @@ class SpedEditor:
     
     def _load_file(self):
         """Carrega arquivo SPED em memória com detecção automática de encoding"""
+        # VALIDAÇÃO 1: Arquivo existe
         if not self.sped_path.exists():
             raise FileNotFoundError(f"Arquivo SPED não encontrado: {self.sped_path}")
+        
+        # VALIDAÇÃO 2: É um arquivo (não diretório)
+        if not self.sped_path.is_file():
+            raise Exception(f"Caminho não é um arquivo: {self.sped_path}")
+        
+        # VALIDAÇÃO 3: Arquivo é legível
+        import os
+        if not os.access(self.sped_path, os.R_OK):
+            raise Exception(f"Arquivo não é legível: {self.sped_path}")
+        
+        # VALIDAÇÃO 4: Tamanho máximo do arquivo (prevenir DoS)
+        MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+        file_size = self.sped_path.stat().st_size
+        if file_size > MAX_FILE_SIZE:
+            raise Exception(f"Arquivo muito grande: {file_size} bytes (máximo: {MAX_FILE_SIZE} bytes)")
+        
+        # VALIDAÇÃO 5: Arquivo não está vazio
+        if file_size == 0:
+            raise Exception(f"Arquivo SPED está vazio: {self.sped_path}")
         
         # Detectar encoding
         encoding = self._detect_encoding()
@@ -149,6 +169,20 @@ class SpedEditor:
         Returns:
             Lista de índices de linhas que correspondem (0-indexed)
         """
+        # VALIDAÇÃO 1: Registro não está vazio
+        if not registro or registro.strip() == "":
+            logger.error("Registro não pode estar vazio")
+            return []
+        
+        # VALIDAÇÃO 2: Arquivo foi carregado
+        if not self.lines:
+            logger.error("Arquivo não foi carregado")
+            return []
+        
+        # VALIDAÇÃO 3: Formato do registro (deve começar com letra e número)
+        if len(registro) < 2 or not registro[0].isalpha() or not registro[1:].isdigit():
+            logger.warning(f"Formato de registro suspeito: {registro}")
+        
         # Se temos linha_sped, usar diretamente (convertendo de 1-indexed para 0-indexed)
         if linha_sped is not None and linha_sped > 0:
             idx = linha_sped - 1  # Converter de 1-indexed para 0-indexed
@@ -351,13 +385,29 @@ class SpedEditor:
         # Atualizar cada linha encontrada
         atualizado = False
         for idx in indices:
+            # VALIDAÇÃO 7: Índice dentro do range
+            if idx >= len(self.lines):
+                logger.warning(f"Índice {idx} fora do range do arquivo (total: {len(self.lines)} linhas)")
+                continue
+            
             line = self.lines[idx]
+            
+            # VALIDAÇÃO 8: Linha não está vazia
+            if not line or line.strip() == "":
+                logger.warning(f"Linha {idx + 1} está vazia")
+                continue
+            
             # Usar split_sped_line para garantir índices corretos
             parts = split_sped_line(line)
             
-            # Verificar se tem posição suficiente
+            # VALIDAÇÃO 9: Linha tem posição suficiente
             if len(parts) <= posicao:
                 logger.warning(f"Linha {idx + 1} não tem posição {posicao} para campo {campo} (tem {len(parts)} campos)")
+                continue
+            
+            # VALIDAÇÃO 10: Linha corresponde ao registro esperado
+            if not line.startswith(f"|{registro}|") and not line.startswith(f"{registro}|"):
+                logger.warning(f"Linha {idx + 1} não corresponde ao registro {registro}: {line[:50]}...")
                 continue
             
             # Atualizar valor
@@ -611,11 +661,35 @@ class SpedEditor:
             logger.error(error_msg)
             raise Exception(error_msg) from e
         
-        # Validar que há linhas para salvar
+        # VALIDAÇÃO 1: Validar que há linhas para salvar
         if not self.lines:
             error_msg = "Nenhuma linha para salvar (arquivo vazio)"
             logger.error(error_msg)
             raise Exception(error_msg)
+        
+        # VALIDAÇÃO 2: Validar estrutura básica do arquivo
+        tem_registro_inicial = any(line.startswith("|0000|") or line.startswith("|0001|") for line in self.lines)
+        tem_registro_final = any(line.startswith("|9999|") for line in self.lines)
+        
+        if not tem_registro_inicial:
+            logger.warning("Arquivo SPED não tem registro inicial (0000 ou 0001)")
+        
+        if not tem_registro_final:
+            logger.warning("Arquivo SPED não tem registro final (9999)")
+        
+        # VALIDAÇÃO 3: Verificar linhas vazias no meio do arquivo
+        linhas_vazias = [i for i, line in enumerate(self.lines) if line.strip() == ""]
+        if linhas_vazias:
+            logger.warning(f"Arquivo tem {len(linhas_vazias)} linhas vazias nas posições: {linhas_vazias[:10]}")
+        
+        # VALIDAÇÃO 4: Validar encoding antes de salvar
+        try:
+            # Testar se consegue escrever com o encoding
+            test_line = self.lines[0] if self.lines else ""
+            test_line.encode(self.encoding)
+        except UnicodeEncodeError:
+            logger.warning(f"Encoding {self.encoding} não suporta todos os caracteres, usando latin-1 como fallback")
+            self.encoding = 'latin-1'
         
         # Usar o mesmo encoding do arquivo original para preservar caracteres especiais
         # Se o encoding original for latin-1 ou windows-1252, manter; caso contrário, usar UTF-8
@@ -708,15 +782,116 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
         Tupla (sucesso, caminho_arquivo_corrigido, resumo_alteracoes)
     """
     try:
+        # VALIDAÇÃO 1: Arquivo SPED existe
+        if not sped_path.exists():
+            return (False, sped_path, {
+                "erro": f"Arquivo SPED não encontrado: {sped_path}",
+                "sugestao": "Verifique se o caminho do arquivo está correto"
+            })
+        
+        # VALIDAÇÃO 2: Arquivo não está vazio
+        try:
+            file_size = sped_path.stat().st_size
+            if file_size == 0:
+                return (False, sped_path, {
+                    "erro": "Arquivo SPED está vazio",
+                    "sugestao": "Verifique se o arquivo foi carregado corretamente"
+                })
+        except OSError as e:
+            return (False, sped_path, {
+                "erro": f"Erro ao acessar arquivo SPED: {e}",
+                "sugestao": "Verifique permissões do arquivo"
+            })
+        
         editor = SpedEditor(sped_path)
         
         registro = correcao.get("registro_corrigir", "C190")
         campo = correcao.get("campo", "VL_BC_ICMS")
-        valor_correto = float(correcao.get("valor_correto", 0))
+        
+        # VALIDAÇÃO 3: Registro válido
+        registros_validos = ["C100", "C170", "C190"]
+        if registro not in registros_validos and registro != "DESCONHECIDO":
+            return (False, sped_path, {
+                "erro": f"Registro inválido: {registro}",
+                "sugestao": f"Registro deve ser um dos: {', '.join(registros_validos)}"
+            })
+        
+        # VALIDAÇÃO 4: Campo não vazio
+        if not campo or str(campo).strip() == "":
+            return (False, sped_path, {
+                "erro": "Campo não pode estar vazio",
+                "sugestao": "Forneça um campo válido para correção"
+            })
+        
+        # VALIDAÇÃO 5: Valor correto é numérico
+        try:
+            valor_correto = float(correcao.get("valor_correto", 0))
+        except (ValueError, TypeError) as e:
+            return (False, sped_path, {
+                "erro": f"valor_correto inválido: {correcao.get('valor_correto')}",
+                "sugestao": "valor_correto deve ser um número válido",
+                "detalhes": str(e)
+            })
+        
+        # VALIDAÇÃO 6: Valor não é NaN ou infinito
+        from math import isnan, isinf
+        if isnan(valor_correto) or isinf(valor_correto):
+            return (False, sped_path, {
+                "erro": f"valor_correto inválido: {valor_correto}",
+                "sugestao": "valor_correto deve ser um número finito"
+            })
+        
         chave = correcao.get("chave")
         cfop = correcao.get("cfop")
         cst_raw = correcao.get("cst")
         linha_sped = correcao.get("linha_sped")
+        
+        # VALIDAÇÃO 7: Chave NF formato (quando fornecida)
+        if chave:
+            chave_limpa = "".join(str(chave).split())  # Remove espaços
+            if len(chave_limpa) != 44:
+                logger.warning(f"[VALIDAÇÃO] Chave NF tem tamanho inválido: {len(chave_limpa)} (esperado: 44)")
+                # Não falhar, apenas avisar - pode ser chave parcial
+        
+        # VALIDAÇÃO 8: CFOP formato (quando fornecido)
+        if cfop:
+            cfop_limpo = "".join(str(cfop).split())
+            if len(cfop_limpo) != 4 or not cfop_limpo.isdigit():
+                logger.warning(f"[VALIDAÇÃO] CFOP formato inválido: {cfop} (esperado: 4 dígitos)")
+        
+        # VALIDAÇÃO 9: CST formato (quando fornecido)
+        if cst_raw:
+            cst_limpo = str(cst_raw).strip()
+            if len(cst_limpo) > 3 or not cst_limpo.isdigit():
+                logger.warning(f"[VALIDAÇÃO] CST formato inválido: {cst_raw} (esperado: até 3 dígitos)")
+        
+        # VALIDAÇÃO 10: linha_sped válida (quando fornecida)
+        if linha_sped is not None:
+            try:
+                linha_sped = int(linha_sped)
+                if linha_sped < 1:
+                    return (False, sped_path, {
+                        "erro": f"linha_sped deve ser maior que 0: {linha_sped}",
+                        "sugestao": "linha_sped deve ser um número positivo (1-indexed)"
+                    })
+            except (ValueError, TypeError):
+                return (False, sped_path, {
+                    "erro": f"linha_sped inválido: {correcao.get('linha_sped')}",
+                    "sugestao": "linha_sped deve ser um número inteiro"
+                })
+        
+        # VALIDAÇÃO 11: output_path é válido (se fornecido)
+        if output_path:
+            output_path = Path(output_path)
+            # Verificar se diretório pai existe ou pode ser criado
+            try:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                return (False, sped_path, {
+                    "erro": f"Não foi possível criar diretório para arquivo de saída: {e}",
+                    "sugestao": "Verifique permissões do diretório",
+                    "caminho": str(output_path.parent)
+                })
         
         # CORREÇÃO: Tratar caso especial quando registro é "DESCONHECIDO"
         # Se o campo é "Desconto", isso significa que é VL_DESC no C100

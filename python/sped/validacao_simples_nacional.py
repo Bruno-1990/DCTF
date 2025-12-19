@@ -220,3 +220,4 @@ def validar_regras_simples_nacional(
         creditos_encontrados=creditos
     )
 
+

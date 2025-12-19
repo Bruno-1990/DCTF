@@ -211,3 +211,4 @@ def validar_regras_operacao_especial(
         checklist=checklist
     )
 
+

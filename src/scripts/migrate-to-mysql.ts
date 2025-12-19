@@ -50,3 +50,5 @@ console.log('✅ Adapter MySQL configurado. Use este módulo em vez de config/da
 
 
 
+
+

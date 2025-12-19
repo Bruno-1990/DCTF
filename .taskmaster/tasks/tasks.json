@@ -1296,7 +1296,7 @@
         "description": "Dashboard executivo e relatórios completos de riscos e divergências",
         "details": "Painel de Riscos: classificação de riscos (estrutural, fiscal, operacional), priorização (alta, média, baixa), gráficos de distribuição, filtros por período, cliente, tipo. Relatórios Avançados: relatório completo de divergências (PDF/Excel), relatório de correções aplicadas, relatório de auditoria (rastreabilidade completa), relatório executivo (KPIs, métricas consolidadas). Dashboard Executivo: visão consolidada de múltiplos clientes, KPIs principais (taxa de divergências, taxa de correção, tempo médio), gráficos de tendências, alertas de prazos.",
         "testStrategy": "Testes de geração de relatórios, testes de dashboard executivo, testes de visualizações e gráficos",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           30
         ],
@@ -1307,7 +1307,7 @@
             "title": "Painel de Riscos",
             "description": "Criar painel de visualização de riscos classificados",
             "details": "- Classificar riscos: estrutural (afeta aceitação do arquivo), fiscal (afeta créditos/débitos), operacional (afeta prazos/retificações)\n- Priorizar por: alta, média, baixa\n- Visualizar com gráficos de distribuição de riscos\n- Tabelas detalhadas por tipo\n- Filtros por período, cliente, tipo de risco\n- Exportar relatórios de riscos",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 31
           },
@@ -1316,7 +1316,7 @@
             "title": "Relatórios Avançados",
             "description": "Gerar relatórios completos de divergências, correções e auditoria",
             "details": "- Relatório completo de divergências (PDF/Excel)\n- Relatório de correções aplicadas\n- Relatório de auditoria (rastreabilidade completa)\n- Relatório executivo (KPIs, métricas consolidadas)\n- Lista XMLs autorizados sem C100 correspondente\n- Lista C100s sem XML correspondente\n- Lista duplicidades\n- Lista divergências por documento e item\n- Validação de fechamento (E110) e recolhimento (E116)",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 31
           },
@@ -1325,7 +1325,7 @@
             "title": "Dashboard Executivo",
             "description": "Criar dashboard executivo com visão consolidada",
             "details": "- Visão consolidada de múltiplos clientes\n- KPIs principais (taxa de divergências, taxa de correção, tempo médio)\n- Gráficos de tendências\n- Alertas de prazos\n- Métricas consolidadas por período\n- Comparação entre períodos",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2
@@ -1337,7 +1337,7 @@
     ],
     "metadata": {
       "created": "2025-10-29T13:30:29.963Z",
-      "updated": "2025-12-18T20:46:20.394Z",
+      "updated": "2025-12-18T20:49:22.558Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF e Sistema de Conferência SPED"
     }
   }

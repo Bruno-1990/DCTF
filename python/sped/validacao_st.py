@@ -186,3 +186,4 @@ def validar_calculos_st(
         diferenca=diferenca
     )
 
+

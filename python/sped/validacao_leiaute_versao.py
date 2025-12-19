@@ -352,3 +352,4 @@ def registrar_versao_utilizada(resultado: ResultadoValidacaoLeiaute, log_file: O
     for log_item in resultado.logs:
         logger.debug(log_item)
 
+

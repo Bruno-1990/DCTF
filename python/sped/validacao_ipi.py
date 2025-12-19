@@ -153,3 +153,4 @@ def validar_ipi_c100_c190(
         aplicavel=aplicavel
     )
 
+

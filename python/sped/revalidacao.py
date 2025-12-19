@@ -99,3 +99,4 @@ def comparar_metricas_antes_depois(
         novas_divergencias=novas_divergencias
     )
 
+
