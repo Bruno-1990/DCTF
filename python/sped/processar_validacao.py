@@ -154,9 +154,11 @@ def main():
                         if col not in df_filled.columns:
                             df_filled[col] = ""
                     
-                    # Preencher demais colunas com string vazia para evitar erro de fillna
-                    # Usar infer_objects para evitar FutureWarning
-                    df_filled = df_filled.fillna("").infer_objects(copy=False)
+                    # Preencher demais colunas com string vazia
+                    # Converter para string primeiro para evitar FutureWarning de downcasting
+                    for col in df_filled.columns:
+                        if col not in colunas_solucao:
+                            df_filled[col] = df_filled[col].astype(str).str.replace("nan", "").str.replace("None", "").str.replace("NaT", "")
                     records = df_filled.to_dict('records')
                     
                     # Garantir que colunas de solução estejam presentes em todos os registros

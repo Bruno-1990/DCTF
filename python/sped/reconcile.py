@@ -703,9 +703,10 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
         # strings auxiliares sem zeros à esquerda
         def _norm(s):
             series = pd.Series(s, dtype="object")
-            # Usar infer_objects para evitar warning de downcasting
-            filled = series.fillna("").infer_objects(copy=False)
-            return filled.astype(str).str.replace(r"[^0-9]", "", regex=True).str.lstrip("0").replace({"": "0"})
+            # Converter para string primeiro para evitar FutureWarning de downcasting
+            # Isso evita o warning porque não há downcasting quando já é string
+            filled = series.astype(str).str.replace("nan", "").str.replace("None", "").str.replace("NaT", "")
+            return filled.str.replace(r"[^0-9]", "", regex=True).str.lstrip("0").replace({"": "0"})
 
         if not df_xml.empty:
             df_xml["SER_str"] = _norm(df_xml["serie"])
@@ -1038,14 +1039,14 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                                     # Garantir que strings vazias sejam preservadas (não None)
                                     for col in ["SOLUCAO_AUTOMATICA", "REGISTRO_CORRIGIR", "FORMULA_LEGAL"]:
                                         if col in divergencias_legitimas.columns:
+                                            # Converter para string primeiro para evitar FutureWarning
                                             divergencias_legitimas[col] = (
                                                 divergencias_legitimas[col]
-                                                .fillna("")
-                                                .infer_objects(copy=False)
                                                 .astype(str)
-                                                .replace("nan", "")
-                                                .replace("None", "")
-                                                .replace("null", "")
+                                                .str.replace("nan", "")
+                                                .str.replace("None", "")
+                                                .str.replace("null", "")
+                                                .str.replace("NaT", "")
                                             )
                                     
                                     # Verificar se soluções foram aplicadas
@@ -1072,14 +1073,14 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                         
                         # Validação final: garantir que SOLUCAO_AUTOMATICA não seja None
                         if "SOLUCAO_AUTOMATICA" in divergencias_legitimas.columns:
+                            # Converter para string primeiro para evitar FutureWarning
                             divergencias_legitimas["SOLUCAO_AUTOMATICA"] = (
                                 divergencias_legitimas["SOLUCAO_AUTOMATICA"]
-                                .fillna("")
-                                .infer_objects(copy=False)
                                 .astype(str)
-                                .replace("nan", "")
-                                .replace("None", "")
-                                .replace("null", "")
+                                .str.replace("nan", "")
+                                .str.replace("None", "")
+                                .str.replace("null", "")
+                                .str.replace("NaT", "")
                             )
                             
                             # Log final para debug
@@ -1250,14 +1251,14 @@ def make_reports(data: Materiais, rules: Optional[Dict[str, Any]] = None, efd_pa
                     # Validação final: garantir que SOLUCAO_AUTOMATICA existe e não é None
                     if "SOLUCAO_AUTOMATICA" in divergencias_valores_classificadas.columns:
                         # Converter None para string vazia
+                        # Converter para string primeiro para evitar FutureWarning
                         divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"] = (
                             divergencias_valores_classificadas["SOLUCAO_AUTOMATICA"]
-                            .fillna("")
-                            .infer_objects(copy=False)
                             .astype(str)
-                            .replace("nan", "")
-                            .replace("None", "")
-                            .replace("null", "")
+                            .str.replace("nan", "")
+                            .str.replace("None", "")
+                            .str.replace("null", "")
+                            .str.replace("NaT", "")
                         )
                         # Log de validação
                         solucoes_validas = divergencias_valores_classificadas[
