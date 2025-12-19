@@ -773,7 +773,69 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
             logger.warning(f"[CORREÇÃO] CFOP ou CST vazios para C190. Tentando atualizar C190 existente com valor zerado...")
             print(f"[CORREÇÃO] CFOP ou CST vazios para C190. Tentando atualizar C190 existente com valor zerado...", flush=True)
             
-            # Buscar todos os C190 no arquivo
+            # Se temos chave, tentar encontrar C170 relacionados para obter CFOP/CST
+            if chave:
+                logger.info(f"[CORREÇÃO] Tentando encontrar CFOP/CST usando chave NF: {chave}")
+                print(f"[CORREÇÃO] Tentando encontrar CFOP/CST usando chave NF: {chave}", flush=True)
+                
+                # Buscar C100 com esta chave
+                indices_c100 = editor.find_line_by_record("C100", chave=chave)
+                if indices_c100:
+                    # Encontrar C170 relacionados a este C100
+                    # C170 vem logo após o C100 no SPED
+                    c100_idx = indices_c100[0]
+                    cfop_cst_encontrados = set()
+                    
+                    # Buscar C170 que vêm após este C100 (até encontrar próximo C100 ou C190)
+                    for idx in range(c100_idx + 1, len(editor.lines)):
+                        line = editor.lines[idx]
+                        if line.startswith("|C100|") or line.startswith("|C190|") or line.startswith("|C195|"):
+                            break
+                        if line.startswith("|C170|"):
+                            parts = split_sped_line(line, min_fields=21)
+                            if len(parts) > 11:
+                                cfop_c170 = parts[11].strip()
+                                cst_c170 = parts[10].strip() if len(parts) > 10 else ""
+                                if cfop_c170 and cst_c170:
+                                    cfop_cst_encontrados.add((cfop_c170, cst_c170))
+                    
+                    # Se encontrou CFOP/CST, usar o primeiro para buscar/atualizar C190
+                    if cfop_cst_encontrados:
+                        cfop_encontrado, cst_encontrado = list(cfop_cst_encontrados)[0]
+                        logger.info(f"[CORREÇÃO] Encontrado CFOP/CST via chave: CFOP={cfop_encontrado}, CST={cst_encontrado}")
+                        print(f"[CORREÇÃO] Encontrado CFOP/CST via chave: CFOP={cfop_encontrado}, CST={cst_encontrado}", flush=True)
+                        
+                        # Limpar CFOP encontrado
+                        cfop_encontrado_clean = "".join(cfop_encontrado.split())
+                        
+                        # Normalizar CST encontrado
+                        try:
+                            from common import normalize_cst_for_compare
+                            cst_encontrado_norm = normalize_cst_for_compare(cst_encontrado)
+                        except ImportError:
+                            cst_encontrado_norm = cst_encontrado.strip().zfill(3)
+                        
+                        # Tentar atualizar C190 com CFOP/CST encontrados
+                        sucesso = editor.update_field(
+                            registro="C190",
+                            campo=campo,
+                            novo_valor=valor_correto,
+                            cfop=cfop_encontrado_clean,
+                            cst=cst_encontrado_norm
+                        )
+                        
+                        if sucesso:
+                            # Salvar arquivo corrigido
+                            if output_path is None:
+                                output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+                            else:
+                                output_path = Path(output_path)
+                            
+                            editor.save(output_path)
+                            resumo = editor.get_changes_summary()
+                            return (True, output_path, resumo)
+            
+            # Se não encontrou via chave, buscar todos os C190 e tentar atualizar um com valor zerado
             todos_c190 = editor.find_line_by_record("C190")
             if todos_c190:
                 # Tentar encontrar um C190 com o campo zerado que precisa ser atualizado
@@ -795,13 +857,23 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                                     cfop_encontrado = parts[3].strip()
                                     cst_encontrado = parts[2].strip() if len(parts) > 2 else ""
                                     
+                                    # Limpar CFOP encontrado
+                                    cfop_encontrado_clean = "".join(cfop_encontrado.split())
+                                    
+                                    # Normalizar CST encontrado
+                                    try:
+                                        from common import normalize_cst_for_compare
+                                        cst_encontrado_norm = normalize_cst_for_compare(cst_encontrado)
+                                    except ImportError:
+                                        cst_encontrado_norm = cst_encontrado.strip().zfill(3)
+                                    
                                     # Atualizar usando o CFOP e CST encontrados
                                     sucesso = editor.update_field(
                                         registro="C190",
                                         campo=campo,
                                         novo_valor=valor_correto,
-                                        cfop=cfop_encontrado,
-                                        cst=cst_encontrado,
+                                        cfop=cfop_encontrado_clean,
+                                        cst=cst_encontrado_norm,
                                         linha_sped=idx+1  # linha_sped é 1-indexed
                                     )
                                     
