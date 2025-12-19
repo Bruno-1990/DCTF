@@ -55,6 +55,46 @@ export class SpedValidationService {
       const spedPath = path.join(validationDir, 'sped.txt');
       fs.writeFileSync(spedPath, spedBuffer);
 
+      // VALIDAÇÃO PRÉVIA: Verificar estrutura básica do arquivo SPED
+      this.updateStatus(validationId, 5, 'Validando estrutura do arquivo SPED...');
+      try {
+        const spedContent = spedBuffer.toString('latin1');
+        
+        // Verificar se arquivo tem registros básicos
+        const tem0000 = spedContent.includes('|0000|');
+        const temC100 = spedContent.includes('|C100|');
+        const temC170 = spedContent.includes('|C170|');
+        
+        if (!tem0000) {
+          console.warn(`[SpedValidationService] Arquivo SPED pode estar incompleto: não encontrou registro 0000`);
+        }
+        
+        // Log informativo sobre estrutura do arquivo
+        const registrosEncontrados: Record<string, number> = {};
+        spedContent.split('\n').slice(0, 500).forEach(line => {
+          const match = line.match(/^\|(\d{4})\|/);
+          if (match) {
+            const reg = match[1];
+            registrosEncontrados[reg] = (registrosEncontrados[reg] || 0) + 1;
+          }
+        });
+        
+        console.log(`[SpedValidationService] Estrutura do arquivo SPED:`, {
+          tem0000,
+          temC100,
+          temC170,
+          registros_encontrados: Object.keys(registrosEncontrados).slice(0, 20)
+        });
+        
+        // Avisar se não tem C100 (mas não bloquear, pois pode ser arquivo apenas de cadastros)
+        if (!temC100) {
+          console.warn(`[SpedValidationService] ⚠️ Arquivo SPED não contém registros C100. Correções em C190 podem falhar se CFOP/CST não forem fornecidos.`);
+        }
+      } catch (error: any) {
+        console.error(`[SpedValidationService] Erro ao validar estrutura do arquivo:`, error);
+        // Continuar mesmo se houver erro na validação
+      }
+
       // Salvar XMLs
       const xmlDir = path.join(validationDir, 'xmls');
       fs.mkdirSync(xmlDir, { recursive: true });

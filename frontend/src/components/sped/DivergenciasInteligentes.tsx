@@ -815,11 +815,43 @@ const DivergenciasInteligentes: React.FC<Props> = ({
         setCorrecoesAplicadas(new Set([...correcoesAplicadas, index]));
         alert(`✅ Correção aplicada com sucesso!\n\n${resultado.message}`);
       } else {
-        alert(`❌ Erro ao aplicar correção: ${resultado.message || 'Erro desconhecido'}`);
+        // Melhorar mensagem de erro para casos específicos
+        let mensagemErro = resultado.message || 'Erro desconhecido';
+        
+        // Verificar se é erro de arquivo sem C100
+        if (mensagemErro.includes('C100') || mensagemErro.includes('Bloco C')) {
+          mensagemErro = `❌ Não é possível aplicar esta correção:\n\n` +
+            `O arquivo SPED não contém registros C100 (Documentos Fiscais), ` +
+            `que são necessários para aplicar correções em C190 quando CFOP/CST não são fornecidos.\n\n` +
+            `Solução: Verifique se o arquivo SPED está completo e contém o Bloco C, ` +
+            `ou forneça CFOP e CST explicitamente na correção.`;
+        }
+        
+        alert(`❌ Erro ao aplicar correção:\n\n${mensagemErro}`);
       }
     } catch (error: any) {
       console.error('Erro ao aplicar correção:', error);
-      alert(`❌ Erro ao aplicar correção: ${error.message || 'Erro desconhecido'}`);
+      
+      // Melhorar tratamento de erro HTTP
+      let mensagemErro = error.message || 'Erro desconhecido';
+      
+      if (error.response?.data?.error) {
+        mensagemErro = error.response.data.error;
+        if (error.response.data.detalhes) {
+          mensagemErro += `\n\nDetalhes: ${error.response.data.detalhes}`;
+        }
+        if (error.response.data.sugestao) {
+          mensagemErro += `\n\nSugestão: ${error.response.data.sugestao}`;
+        }
+      } else if (error.message?.includes('C100') || error.message?.includes('Bloco C')) {
+        mensagemErro = `❌ Não é possível aplicar esta correção:\n\n` +
+          `O arquivo SPED não contém registros C100 (Documentos Fiscais), ` +
+          `que são necessários para aplicar correções em C190 quando CFOP/CST não são fornecidos.\n\n` +
+          `Solução: Verifique se o arquivo SPED está completo e contém o Bloco C, ` +
+          `ou forneça CFOP e CST explicitamente na correção.`;
+      }
+      
+      alert(`❌ Erro ao aplicar correção:\n\n${mensagemErro}`);
     } finally {
       setAplicandoCorrecao(null);
     }
