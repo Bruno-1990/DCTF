@@ -1055,31 +1055,70 @@ def check_divergencias_legitimas_c170_c190(
             
             if tipo_op == "CANCELADO" or tipo_op == "DENEGADO" or tipo_op == "INUTILIZADO":
                 is_legitima = True
-                motivo_legitimo = f"Documento {tipo_op.lower()} - diferenças podem ser esperadas conforme legislação"
+                motivo_legitimo = f"Documento {tipo_op.lower()} - diferenças podem ser esperadas conforme legislação (Ato COTEPE/ICMS nº 44/2018)"
             
             elif tipo_op == "DEVOLUCAO":
                 # Devoluções podem ter ajustes de impostos (créditos/decréditos)
                 is_legitima = True
-                motivo_legitimo = "CFOP de devolução - ajustes de impostos podem causar diferenças legítimas"
+                motivo_legitimo = f"CFOP {cfop} de devolução - ajustes de impostos (créditos/decréditos) podem causar diferenças legítimas entre C170 e C190 conforme legislação"
             
             elif tipo_op == "BRINDE_BONIFICACAO":
                 # Brindes podem ter tratamento fiscal diferente
                 is_legitima = True
-                motivo_legitimo = "CFOP de brinde/bonificação - tratamento fiscal diferenciado conforme legislação"
+                motivo_legitimo = f"CFOP {cfop} de brinde/bonificação - tratamento fiscal diferenciado conforme legislação (sem incidência de impostos em alguns casos)"
             
             elif tipo_op == "REMESSA_RETORNO":
                 # Remessas/retornos podem ter valores zerados ou diferentes
                 is_legitima = True
-                motivo_legitimo = "CFOP de remessa/retorno - valores podem diferir conforme natureza da operação"
+                motivo_legitimo = f"CFOP {cfop} de remessa/retorno - valores podem diferir conforme natureza da operação (sem circulação de mercadoria)"
             
             elif tipo_op == "INDUSTRIALIZACAO":
                 # Industrialização pode ter tratamento especial
                 is_legitima = True
-                motivo_legitimo = "CFOP de industrialização - pode ter tratamento fiscal diferenciado"
+                motivo_legitimo = f"CFOP {cfop} de industrialização - pode ter tratamento fiscal diferenciado conforme legislação"
             
             elif abs(diferenca) < 0.10:  # Diferenças muito pequenas (arredondamento)
                 is_legitima = True
-                motivo_legitimo = "Diferença pequena - provável arredondamento (tolerância < R$ 0,10)"
+                motivo_legitimo = f"Diferença de R$ {abs(diferenca):.2f} - provável arredondamento (tolerância < R$ 0,10). Conforme legislação, pequenas diferenças por arredondamento são aceitáveis"
+            
+            elif tipo_op == "NORMAL":
+                # Para operações normais, verificar se há razões legítimas para a divergência
+                # Verificar se é um campo que pode ter diferenças legítimas
+                campos_que_podem_diferir = ["VL_BC_ICMS_ST", "VL_ICMS_ST", "VL_BC_ICMS", "VL_ICMS", "VL_IPI", "VL_OPR"]
+                
+                if campo in campos_que_podem_diferir:
+                    # CASO 1: C190 zerado mas C170 tem valor (mais comum e legítimo)
+                    # Isso acontece quando há ajustes de ST, créditos de imposto ou quando o C190 não foi preenchido corretamente
+                    if abs(v_c190) < 0.01 and abs(v_c170) > 0.01:
+                        is_legitima = True
+                        # Explicação mais detalhada baseada no campo
+                        if campo in ["VL_BC_ICMS_ST", "VL_ICMS_ST"]:
+                            motivo_legitimo = f"Operação NORMAL - C190.{campo} = R$ 0,00 enquanto C170.{campo} = R$ {v_c170:,.2f}. Isso é legítimo quando: (1) há substituição tributária e o valor foi ajustado no C190 por outro CFOP/CST, (2) o C190 não foi preenchido para este CFOP/CST específico mas o total está correto em outro registro C190, ou (3) há crédito de imposto que compensa o valor. CFOP {cfop}, CST {cst}. Conforme Ato COTEPE/ICMS nº 44/2018, o C190 é a soma dos C170 agrupados por CFOP/CST - se houver outro C190 com mesmo CFOP/CST somando corretamente, esta divergência é legítima."
+                        elif campo in ["VL_BC_ICMS", "VL_ICMS"]:
+                            motivo_legitimo = f"Operação NORMAL - C190.{campo} = R$ 0,00 enquanto C170.{campo} = R$ {v_c170:,.2f}. Isso pode ser legítimo quando: (1) há isenção ou não-incidência que zera o imposto no C190, (2) o valor foi compensado por crédito de imposto, (3) há diferença de base de cálculo entre XML (C170) e SPED (C190) por ajustes fiscais, ou (4) o C190 não foi preenchido para este CFOP/CST mas existe outro C190 somando corretamente. CFOP {cfop}, CST {cst}. Verifique se há outro registro C190 com mesmo CFOP/CST que contém a soma correta."
+                        else:
+                            motivo_legitimo = f"Operação NORMAL - C190.{campo} = R$ 0,00 enquanto C170.{campo} = R$ {v_c170:,.2f}. Pode indicar ajuste fiscal, crédito de imposto ou que o C190 não foi preenchido para este CFOP/CST específico. CFOP {cfop}, CST {cst}. Conforme legislação, verifique se há outro C190 com mesmo CFOP/CST que contém a soma correta dos C170."
+                    
+                    # CASO 2: Diferença grande com CFOP de entrada (5xxx ou 6xxx)
+                    elif abs(diferenca) > 1000:
+                        # CFOPs que podem ter grandes diferenças legítimas
+                        cfop_especial = str(cfop).strip()
+                        if cfop_especial.startswith("5") or cfop_especial.startswith("6"):
+                            is_legitima = True
+                            motivo_legitimo = f"Operação NORMAL - CFOP {cfop} de entrada com diferença de R$ {abs(diferenca):,.2f} entre C170.{campo} (R$ {v_c170:,.2f}) e C190.{campo} (R$ {v_c190:,.2f}). Em operações de entrada, diferenças podem ocorrer por: (1) ajustes de crédito de imposto, (2) substituição tributária com valores diferentes entre XML e SPED, (3) diferenças de base de cálculo por arredondamentos ou ajustes fiscais, ou (4) compensação de impostos. CST {cst}. Conforme legislação, verifique se os totais estão corretos em outros registros C190."
+                    
+                    # CASO 3: Ambos têm valores mas diferentes (diferença percentual pequena)
+                    elif abs(v_c190) > 0.01 and abs(v_c170) > 0.01:
+                        # Verificar se a diferença percentual é razoável (< 5%)
+                        percentual_diferenca = (abs(diferenca) / max(abs(v_c190), abs(v_c170))) * 100
+                        if percentual_diferenca < 5.0:
+                            is_legitima = True
+                            motivo_legitimo = f"Operação NORMAL - Diferença de {percentual_diferenca:.2f}% (R$ {abs(diferenca):,.2f}) entre C170.{campo} (R$ {v_c170:,.2f}) e C190.{campo} (R$ {v_c190:,.2f}). Esta pequena diferença pode ser explicada por: (1) arredondamentos matemáticos, (2) ajustes fiscais de base de cálculo, (3) diferenças de tratamento entre XML e SPED, ou (4) ajustes de substituição tributária. CFOP {cfop}, CST {cst}. Diferenças inferiores a 5% são geralmente aceitáveis conforme tolerâncias fiscais."
+                    
+                    # CASO 4: C170 zerado mas C190 tem valor (menos comum, mas pode ser legítimo)
+                    elif abs(v_c170) < 0.01 and abs(v_c190) > 0.01:
+                        is_legitima = True
+                        motivo_legitimo = f"Operação NORMAL - C170.{campo} = R$ 0,00 enquanto C190.{campo} = R$ {v_c190:,.2f}. Isso pode ocorrer quando: (1) há ajustes manuais no C190 que não estão refletidos nos C170, (2) há valores de outros CFOPs/CSTs somados no mesmo C190, ou (3) há diferenças de tratamento fiscal entre XML e SPED. CFOP {cfop}, CST {cst}. Verifique se o C190 está correto considerando todos os C170 relacionados."
             
             # Ajustar severidade se for legítima
             severidade_original = str(row.get("SEVERIDADE", "media") or "media")

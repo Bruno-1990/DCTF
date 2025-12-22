@@ -121,3 +121,4 @@ A aplicação está funcionalmente independente do Supabase. Basta remover as va
 
 
 
+

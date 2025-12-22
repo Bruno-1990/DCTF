@@ -329,3 +329,4 @@ def aplicar_correcoes_c100(
         return ResultadoCorrecaoC100(corrigido=False)
 
 
+

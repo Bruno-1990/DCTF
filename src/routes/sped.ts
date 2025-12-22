@@ -273,6 +273,7 @@ router.get('/validacao/:validationId', async (req: Request, res: Response) => {
         }
       } else {
         console.log(`[GET /validacao] Arquivo resultado.json não encontrado em: ${resultadoPath}`);
+        
         // Verificar se há arquivo de status ou se está ainda processando
         const statusPath = path.join(tmpDir, 'status.json');
         if (fs.existsSync(statusPath)) {
@@ -282,6 +283,49 @@ router.get('/validacao/:validationId', async (req: Request, res: Response) => {
             console.log(`[GET /validacao] Status lido do arquivo status.json`);
           } catch (e) {
             console.log(`[GET /validacao] Erro ao ler status.json:`, e);
+          }
+        }
+        
+        // Se o diretório existe mas não há resultado nem status, pode estar processando
+        // ou pode ter falhado. Retornar status "processing" para permitir polling
+        if (!status && fs.existsSync(tmpDir)) {
+          // Verificar se há arquivos de erro ou log
+          const errorLogPath = path.join(tmpDir, 'error.log');
+          const pythonLogPath = path.join(tmpDir, 'python_output.log');
+          
+          let errorMessage: string | undefined;
+          if (fs.existsSync(errorLogPath)) {
+            try {
+              errorMessage = fs.readFileSync(errorLogPath, 'utf-8');
+              console.log(`[GET /validacao] Arquivo de erro encontrado: ${errorMessage.substring(0, 200)}`);
+            } catch (e) {
+              console.log(`[GET /validacao] Erro ao ler error.log:`, e);
+            }
+          }
+          
+          // Se há erro, retornar status de erro
+          if (errorMessage) {
+            status = {
+              validationId,
+              status: 'error' as const,
+              progress: 0,
+              message: 'Erro durante processamento',
+              error: errorMessage.substring(0, 500) // Limitar tamanho
+            };
+            // Adicionar ao Map para próximas consultas
+            spedValidationService.adicionarStatusAoMap(validationId, status);
+          } else {
+            // Se não há erro mas também não há resultado, assumir que está processando
+            // Isso permite que o frontend continue fazendo polling
+            status = {
+              validationId,
+              status: 'processing' as const,
+              progress: 50, // Progresso intermediário desconhecido
+              message: 'Validação em processamento...'
+            };
+            // Adicionar ao Map temporariamente (pode ser atualizado quando o resultado aparecer)
+            spedValidationService.adicionarStatusAoMap(validationId, status);
+            console.log(`[GET /validacao] Status temporário criado para ${validationId} (diretório existe mas resultado não encontrado)`);
           }
         }
       }

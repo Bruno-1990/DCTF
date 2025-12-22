@@ -60,3 +60,4 @@ SHOW COLUMNS FROM dctf_declaracoes WHERE Field = 'periodo';
 
 
 
+

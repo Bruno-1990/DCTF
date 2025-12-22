@@ -221,3 +221,4 @@ def exportar_relatorio_excel(relatorio: Dict[str, Any], caminho: str) -> Dict[st
     }
 
 
+

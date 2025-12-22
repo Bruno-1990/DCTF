@@ -1303,6 +1303,12 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                         {div.tipoOperacao && (
                           <p><span className="font-medium">Tipo Operação:</span> {div.tipoOperacao}</p>
                         )}
+                        {div.legítima && div.dadosOriginais?.MOTIVO_LEGITIMO && (
+                          <div className="mt-2 p-2 bg-green-50 border-l-4 border-green-500 rounded">
+                            <p className="text-xs font-semibold text-green-800 mb-1">ℹ️ Por que é legítima:</p>
+                            <p className="text-xs text-green-700">{div.dadosOriginais.MOTIVO_LEGITIMO}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-4" data-no-expand>
@@ -1449,6 +1455,81 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                           </div>
                         );
                       } else {
+                        // Se for legítima, mostrar motivo de forma destacada
+                        if (div.legítima && div.dadosOriginais?.MOTIVO_LEGITIMO) {
+                          return (
+                            <div className="p-4 rounded-lg bg-green-50 border-2 border-green-500">
+                              <div className="flex items-start gap-3">
+                                <CheckCircleIcon className="h-6 w-6 text-green-600 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <h4 className="font-bold text-lg text-green-900 mb-3">
+                                    ✅ Divergência Legítima - Não Requer Correção
+                                  </h4>
+                                  
+                                  {/* Tipo de Operação */}
+                                  {div.tipoOperacao && (
+                                    <div className="mb-3 p-2 bg-blue-50 rounded border border-blue-200">
+                                      <p className="text-xs font-semibold text-blue-900 mb-1">Tipo de Operação:</p>
+                                      <p className="text-sm font-mono text-blue-700">{div.tipoOperacao}</p>
+                                    </div>
+                                  )}
+                                  
+                                  <div className="bg-white p-4 rounded border border-green-200 mb-4">
+                                    <p className="font-semibold text-green-900 mb-3 flex items-center gap-2">
+                                      <InformationCircleIcon className="h-5 w-5" />
+                                      Por que esta divergência é considerada legítima:
+                                    </p>
+                                    <div className="text-sm text-gray-700 leading-relaxed space-y-2">
+                                      {/* Dividir o motivo em parágrafos se tiver múltiplas explicações */}
+                                      {div.dadosOriginais.MOTIVO_LEGITIMO.split('. ').map((sentenca, idx) => {
+                                        if (!sentenca.trim()) return null;
+                                        // Destacar explicações numeradas
+                                        const isNumered = /^\(\d+\)/.test(sentenca.trim());
+                                        return (
+                                          <p key={idx} className={isNumered ? "ml-4 pl-2 border-l-2 border-green-300" : ""}>
+                                            {sentenca.trim()}
+                                            {!sentenca.endsWith('.') && '.'}
+                                          </p>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Valores específicos para contexto */}
+                                  {div.valor1 !== undefined && div.valor2 !== undefined && (
+                                    <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
+                                      <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                                        <p className="font-semibold text-gray-700 mb-1">C170 (XML):</p>
+                                        <p className="text-lg font-bold text-blue-600">{formatCurrency(div.valor1)}</p>
+                                        <p className="text-xs text-gray-500 mt-1">Valor no XML da NF-e</p>
+                                      </div>
+                                      <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                                        <p className="font-semibold text-gray-700 mb-1">C190 (SPED):</p>
+                                        <p className="text-lg font-bold text-orange-600">{formatCurrency(div.valor2)}</p>
+                                        <p className="text-xs text-gray-500 mt-1">Valor no SPED Fiscal</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {div.recomendacao.referenciaLegal && (
+                                    <div className="bg-gray-50 p-3 rounded border border-gray-200 text-xs">
+                                      <p className="font-semibold text-gray-900 mb-2">📚 Referência Legal:</p>
+                                      <p className="text-gray-700 mb-1">
+                                        <span className="font-medium">Artigo/Norma:</span> {div.recomendacao.referenciaLegal.artigo}
+                                      </p>
+                                      <p className="text-gray-700 mb-1">
+                                        <span className="font-medium">Norma:</span> {div.recomendacao.referenciaLegal.norma}
+                                      </p>
+                                      <p className="text-gray-700">
+                                        <span className="font-medium">Prazo:</span> {div.recomendacao.referenciaLegal.prazo}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+                        
                         // Fallback para recomendações genéricas (quando não há solução automática)
                         return (
                           <div className={`p-4 rounded-lg ${

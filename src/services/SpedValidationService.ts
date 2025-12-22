@@ -231,7 +231,24 @@ export class SpedValidationService {
           );
           if (errorLine) {
             errorMessage = errorLine.trim();
+          } else {
+            // Se não encontrou linha específica, usar todo o stderr
+            errorMessage = stderrBuffer.trim();
           }
+        }
+        
+        // Salvar log de erro no diretório de validação para diagnóstico
+        try {
+          const errorLogPath = path.join(validationDir, 'error.log');
+          const fullErrorLog = `Erro durante processamento Python:\n\n` +
+            `Mensagem: ${errorMessage}\n\n` +
+            `STDERR:\n${stderrBuffer || '(vazio)'}\n\n` +
+            `STDOUT:\n${stdoutBuffer || '(vazio)'}\n\n` +
+            `Stack Trace:\n${execError.stack || '(não disponível)'}`;
+          fs.writeFileSync(errorLogPath, fullErrorLog, 'utf-8');
+          console.log(`[${validationId}] Log de erro salvo em: ${errorLogPath}`);
+        } catch (logError) {
+          console.error(`[${validationId}] Erro ao salvar log de erro:`, logError);
         }
         
         throw new Error(errorMessage);
@@ -343,6 +360,23 @@ export class SpedValidationService {
 
     } catch (error: any) {
       console.error(`Erro no processamento ${validationId}:`, error);
+      
+      // Salvar log de erro no diretório de validação para diagnóstico
+      try {
+        const validationDir = path.join(this.tmpDir, validationId);
+        if (fs.existsSync(validationDir)) {
+          const errorLogPath = path.join(validationDir, 'error.log');
+          const fullErrorLog = `Erro durante processamento:\n\n` +
+            `Mensagem: ${error.message || 'Erro desconhecido'}\n\n` +
+            `Stack Trace:\n${error.stack || '(não disponível)'}\n\n` +
+            `Timestamp: ${new Date().toISOString()}`;
+          fs.writeFileSync(errorLogPath, fullErrorLog, 'utf-8');
+          console.log(`[${validationId}] Log de erro salvo em: ${errorLogPath}`);
+        }
+      } catch (logError) {
+        console.error(`[${validationId}] Erro ao salvar log de erro:`, logError);
+      }
+      
       this.updateStatus(validationId, 0, 'Erro no processamento', undefined, error.message);
     }
   }
