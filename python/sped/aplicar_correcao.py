@@ -122,7 +122,15 @@ def main():
                 sys.exit(1)
         
         # Aplicar correção passando o output_path diretamente
+        sys.stderr.write(f"[aplicar_correcao.py] ANTES DE CHAMAR aplicar_correcao_c170_c190\n")
+        sys.stderr.write(f"[aplicar_correcao.py] sped_path={sped_path}\n")
+        sys.stderr.write(f"[aplicar_correcao.py] correcao={correcao}\n")
+        sys.stderr.flush()
+        
         sucesso, arquivo_corrigido, resumo = aplicar_correcao_c170_c190(sped_path, correcao, output_path)
+        
+        sys.stderr.write(f"[aplicar_correcao.py] DEPOIS DE CHAMAR - sucesso={sucesso}\n")
+        sys.stderr.flush()
         
         if sucesso:
             

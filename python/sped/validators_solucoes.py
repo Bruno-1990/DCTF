@@ -154,11 +154,24 @@ def cruzar_item_item_xml_sped(
     xml_items: List[Dict[str, Any]],
     c170_items: List[Dict[str, Any]],
     campo: str,
-    rules: Optional[Dict[str, Any]] = None
+    rules: Optional[Dict[str, Any]] = None,
+    efd_txt: Optional[Path] = None,
+    c100_info: Optional[Dict[str, Any]] = None,
+    usar_matching_robusto: bool = True
 ) -> Dict[str, Any]:
     """
     Cruza item a item XML ↔ C170 para identificar divergências específicas.
     MELHORADO: Verifica também NCM, quantidade, unidade e descrição para garantir que é o mesmo produto.
+    NOVO: Suporte a matching robusto multi-critério quando usar_matching_robusto=True.
+    
+    Args:
+        xml_items: Lista de itens do XML
+        c170_items: Lista de itens C170 do SPED
+        campo: Campo a ser validado ("BC ICMS", "ICMS", "BC ST", "ST", "IPI")
+        rules: Regras do setor (opcional)
+        efd_txt: Caminho do arquivo SPED para parsear 0200 (opcional, usado no matching robusto)
+        c100_info: Informações do C100 (opcional, usado no matching robusto)
+        usar_matching_robusto: Se True, usa matching multi-critério robusto (padrão: True)
     
     Retorna:
     {
@@ -169,7 +182,8 @@ def cruzar_item_item_xml_sped(
         "itens_qtd_divergente": [...],  # Itens com quantidade diferente
         "total_xml": float,
         "total_sped": float,
-        "diferenca": float
+        "diferenca": float,
+        "matches_robustos": [...]  # Informações sobre matches robustos (se usar_matching_robusto=True)
     }
     """
     resultado = {
@@ -180,14 +194,26 @@ def cruzar_item_item_xml_sped(
         "itens_qtd_divergente": [],
         "total_xml": 0.0,
         "total_sped": 0.0,
-        "diferenca": 0.0
+        "diferenca": 0.0,
+        "matches_robustos": []
     }
     
-    # Mapear C170 por NUM_ITEM
+    # Mapear C170 por NUM_ITEM (para compatibilidade com código antigo)
     c170_map = {str(item.get("NUM_ITEM", "")).strip(): item for item in c170_items}
     
     # Mapear XML por nItem
     xml_map = {str(item.get("nItem", "")).strip(): item for item in xml_items}
+    
+    # Carregar cadastro 0200 se disponível e matching robusto estiver habilitado
+    map_0200 = None
+    if usar_matching_robusto and efd_txt:
+        try:
+            from match_items_robusto import parse_efd_0200
+            map_0200 = parse_efd_0200(str(efd_txt))
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Erro ao carregar cadastro 0200: {e}")
     
     # Mapear campo XML para campo SPED
     campo_map = {
@@ -230,11 +256,33 @@ def cruzar_item_item_xml_sped(
         icms_data = xml_item.get("ICMS", {})
         cst_xml_normalizado = normalizar_cst_xml(icms_data)
         
+        # Tentar matching robusto se habilitado
         c170_item = c170_map.get(n_item)
+        match_robusto = None
+        
+        if usar_matching_robusto and not c170_item:
+            try:
+                from match_items_robusto import match_item_xml_sped_robusto
+                match_robusto = match_item_xml_sped_robusto(
+                    xml_item, c170_items, map_0200, c100_info, rules
+                )
+                if match_robusto.c170_match and match_robusto.score >= 60.0:
+                    c170_item = match_robusto.c170_match
+                    resultado["matches_robustos"].append({
+                        "nItem": n_item,
+                        "tipo_match": match_robusto.tipo_match,
+                        "score": match_robusto.score,
+                        "confianca": match_robusto.confianca,
+                        "detalhes": match_robusto.detalhes
+                    })
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Erro no matching robusto para item {n_item}: {e}")
         
         if not c170_item:
             # Item existe no XML mas não no SPED
-            resultado["itens_faltantes_sped"].append({
+            item_faltante = {
                 "nItem": n_item,
                 "CFOP": xml_item.get("CFOP", ""),
                 "CST": cst_xml_normalizado,  # USAR CST NORMALIZADO
@@ -245,7 +293,15 @@ def cruzar_item_item_xml_sped(
                 "valor_xml": valor_xml,
                 "valor_sped": 0.0,
                 "diferenca": valor_xml
-            })
+            }
+            
+            # Se matching robusto encontrou CFOP/CST inferido, adicionar
+            if match_robusto and match_robusto.cfop_inferido:
+                item_faltante["CFOP_INFERIDO"] = match_robusto.cfop_inferido
+                item_faltante["CST_INFERIDO"] = match_robusto.cst_inferido
+                item_faltante["CONFIANCA_CFOP_CST"] = match_robusto.confianca_cfop_cst
+            
+            resultado["itens_faltantes_sped"].append(item_faltante)
         else:
             # Item existe em ambos - verificar valor e consistência
             valor_sped = float(c170_item.get(campo_sped, 0) or 0)
@@ -319,6 +375,14 @@ def cruzar_item_item_xml_sped(
                 # Se CST diverge mas é legítimo conforme regras do setor, adicionar flag
                 if cst_divergente_legitimo:
                     item_divergente["cst_divergente_legitimo"] = True
+                
+                # Adicionar informações do matching robusto se disponível
+                if match_robusto:
+                    item_divergente["MATCH_ROBUSTO"] = {
+                        "tipo_match": match_robusto.tipo_match,
+                        "score": match_robusto.score,
+                        "confianca": match_robusto.confianca
+                    }
                 
                 resultado["itens_divergentes"].append(item_divergente)
     
@@ -886,7 +950,10 @@ def gerar_solucao_automatica(
     
     # 3. CRUZAMENTO XML x SPED: Usar valores do XML como referência
     if xml_items and c170_items:
-        cruzamento = cruzar_item_item_xml_sped(xml_items, c170_items, campo, rules)
+        cruzamento = cruzar_item_item_xml_sped(
+            xml_items, c170_items, campo, rules,
+            efd_txt=efd_txt, c100_info=c100_info, usar_matching_robusto=True
+        )
         
         # Se há itens faltantes no SPED
         if cruzamento["itens_faltantes_sped"]:

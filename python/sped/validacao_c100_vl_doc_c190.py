@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+image.png#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Módulo de Validação C100.VL_DOC x Σ(C190.VL_OPR)

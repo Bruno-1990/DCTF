@@ -4,6 +4,7 @@
 Sistema de edição de arquivos SPED
 Permite modificar valores específicos preservando a estrutura do arquivo
 """
+import sys
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -32,6 +33,37 @@ except ImportError:
         return fields
 
 logger = logging.getLogger(__name__)
+
+
+def parse_float_br(value: str) -> float:
+    """
+    Converte string para float, suportando formato brasileiro (vírgula como separador decimal).
+    
+    Args:
+        value: String com número (pode ter vírgula ou ponto como separador decimal)
+    
+    Returns:
+        float: Valor convertido, ou 0.0 se vazio/inválido
+    """
+    if not value or not value.strip():
+        return 0.0
+    
+    # Remove espaços
+    value = value.strip()
+    
+    # Tenta converter diretamente (formato padrão com ponto)
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    
+    # Se falhar, tenta substituir vírgula por ponto (formato brasileiro)
+    try:
+        # Remove pontos de milhar e substitui vírgula por ponto
+        value_clean = value.replace('.', '').replace(',', '.')
+        return float(value_clean)
+    except (ValueError, AttributeError):
+        return 0.0
 
 
 class SpedEditor:
@@ -204,6 +236,29 @@ class SpedEditor:
         # Exemplo: |C100|... ou C100|... ou   |C100|...
         registro_pattern = f"^\\s*\\|?{registro}\\|"
         
+        # CORREÇÃO: Normalizar chave UMA VEZ antes do loop (mais eficiente)
+        chave_normalizada = None
+        if chave and registro == "C100":
+            chave_normalizada = "".join(str(chave).split())
+            logger.info(f"[find_line_by_record] Buscando C100 com chave normalizada: '{chave_normalizada}' (tamanho: {len(chave_normalizada)})")
+            print(f"[find_line_by_record] Buscando C100 com chave normalizada: '{chave_normalizada}' (tamanho: {len(chave_normalizada)})", flush=True)
+            
+            # DEBUG: Mostrar primeiros 3 C100 encontrados no arquivo para comparar chaves
+            c100_count_debug = 0
+            for idx_debug, line_debug in enumerate(self.lines):
+                if line_debug.strip().startswith("|C100|"):
+                    parts_debug = split_sped_line(line_debug)
+                    logger.info(f"[find_line_by_record] DEBUG - C100 #{c100_count_debug+1} na linha {idx_debug+1}:")
+                    print(f"[find_line_by_record] DEBUG - C100 #{c100_count_debug+1} na linha {idx_debug+1}:", flush=True)
+                    if len(parts_debug) > 9:
+                        for i in [8, 9]:  # Verificar índices 8 e 9
+                            chave_debug = "".join(parts_debug[i].strip().split()) if i < len(parts_debug) else "N/A"
+                            logger.info(f"[find_line_by_record] DEBUG -   parts[{i}] = '{chave_debug}' (len={len(chave_debug)})")
+                            print(f"[find_line_by_record] DEBUG -   parts[{i}] = '{chave_debug}' (len={len(chave_debug)})", flush=True)
+                    c100_count_debug += 1
+                    if c100_count_debug >= 3:
+                        break
+        
         # DEBUG: Logar informações sobre busca
         if registro == "C190":
             logger.debug(f"[find_line_by_record] Buscando C190. Total de linhas no arquivo: {len(self.lines)}")
@@ -227,6 +282,47 @@ class SpedEditor:
         for idx, line in enumerate(self.lines):
             # CORREÇÃO: Usar strip() para remover espaços em branco antes de fazer match
             line_stripped = line.strip()
+            
+            # CORREÇÃO: Busca otimizada para C100 com chave - verificar apenas se começa com |C100|
+            if registro == "C100" and chave_normalizada:
+                # Busca mais rápida: apenas verificar se linha começa com |C100|
+                if not line_stripped.startswith("|C100|"):
+                    continue  # Pular linha imediatamente se não for C100
+                
+                # Se é C100, fazer split e comparar diretamente
+                parts = split_sped_line(line)
+                
+                # DEBUG: Logar primeiros 3 C100 para ver o que tem nas posições
+                if len(indices) < 3:
+                    logger.info(f"[find_line_by_record] DEBUG - Analisando C100 na linha {idx+1}:")
+                    print(f"[find_line_by_record] DEBUG - Analisando C100 na linha {idx+1}:", flush=True)
+                    for i in [8, 9]:
+                        if i < len(parts):
+                            val = "".join(parts[i].strip().split())
+                            match = "[OK MATCH]" if val == chave_normalizada else "[NAO CORRESPONDE]"
+                            logger.info(f"[find_line_by_record] DEBUG -   parts[{i}] = '{val[:20]}...' (len={len(val)}) {match}")
+                            print(f"[find_line_by_record] DEBUG -   parts[{i}] = '{val[:20]}...' (len={len(val)}) {match}", flush=True)
+                
+                # Tentar AMBOS os índices (8 e 9) sem assumir qual é o correto
+                found = False
+                for idx_tentativa in [8, 9]:
+                    if len(parts) > idx_tentativa:
+                        cand_clean = "".join(parts[idx_tentativa].strip().split())
+                        
+                        # Comparação direta
+                        if cand_clean == chave_normalizada:
+                            logger.info(f"[find_line_by_record] [OK] C100 encontrado na linha {idx+1} com chave em parts[{idx_tentativa}]")
+                            print(f"[find_line_by_record] [OK] C100 encontrado na linha {idx+1} com chave em parts[{idx_tentativa}]", flush=True)
+                            indices.append(idx)
+                            found = True
+                            break
+                
+                if found:
+                    continue  # Já encontrou, próxima linha
+                    
+                continue  # Já processou, pular para próxima linha
+            
+            # Para outros casos, usar regex normal
             if re.match(registro_pattern, line_stripped):
                 # Usar split_sped_line com a linha original (não stripada) para preservar estrutura
                 # mas usar line_stripped para comparações de conteúdo
@@ -236,43 +332,22 @@ class SpedEditor:
                 if registro == "C100" and len(indices) < 3:
                     logger.debug(f"[find_line_by_record] C100 encontrado na linha {idx+1}: {line[:100]}...")
                 
-                # Se temos chave, verificar se corresponde
-                if chave:
-                    # Extrair chave da linha (posição varia por registro)
-                    if registro == "C100":
-                        # C100 layout oficial: CHV_NFE é o 9º campo após REG (pos 9 considerando split com campo vazio inicial)
-                        # Exemplo split: ["", "C100", ind_oper, ind_emit, cod_part, cod_mod, cod_sit, ser, num_doc, chv_nfe, dt_doc, ...]
-                        # Portanto o índice da chave é 9 (ou 8 em alguns arquivos sem campo vazio inicial)
-                        chv_idx_candidates = [9, 8, 2]  # fallback para casos antigos/formatos diferentes
-                        linha_chave = None
-                        for idx_cand in chv_idx_candidates:
-                            if len(parts) > idx_cand:
-                                cand = parts[idx_cand].strip()
-                                if cand:
-                                    linha_chave = cand
-                                    break
-                        
-                        # DEBUG: Logar quando não encontra chave na linha
-                        if not linha_chave:
-                            if len(indices) < 3:  # Log apenas para primeiros 3 para não poluir
-                                logger.debug(f"[find_line_by_record] C100 linha {idx+1}: não encontrou chave nos índices {chv_idx_candidates}. Parts length: {len(parts)}")
-                                if len(parts) > 0:
-                                    logger.debug(f"[find_line_by_record] Primeiros 12 campos: {parts[:12]}")
-                        
-                        # CORREÇÃO: Normalizar chaves para comparação (remover espaços e caracteres especiais)
-                        chave_normalizada = "".join(str(chave).split())
-                        linha_chave_normalizada = "".join(str(linha_chave).split()) if linha_chave else ""
-                        
-                        if linha_chave is None or linha_chave_normalizada != chave_normalizada:
-                            # Log de debug quando não corresponde (apenas para primeiros 3 para não poluir logs)
-                            if linha_chave and len(indices) < 3:
-                                logger.debug(f"[find_line_by_record] C100 linha {idx+1}: chave não corresponde - esperado='{chave_normalizada[:20]}...', encontrado='{linha_chave_normalizada[:20]}...'")
+                # Se temos chave, verificar se corresponde (para outros registros ou C100 sem chave normalizada)
+                if chave and registro == "C100" and not chave_normalizada:
+                    # Fallback para caso chave não foi normalizada antes
+                    chave_normalizada = "".join(str(chave).split())
+                    if len(parts) > 8:
+                        cand_clean = "".join(parts[8].strip().split())
+                        if cand_clean == chave_normalizada:
+                            indices.append(idx)
                             continue
-                        
-                        # Se chegou aqui, encontrou correspondência
-                        logger.info(f"[find_line_by_record] [OK] C100 encontrado na linha {idx+1} com chave correspondente: {chave_normalizada[:20]}...")
-                        print(f"[find_line_by_record] [OK] C100 encontrado na linha {idx+1} com chave correspondente: {chave_normalizada[:20]}...", flush=True)
-                    elif registro == "C170":
+                    elif len(parts) > 9:
+                        cand_clean = "".join(parts[9].strip().split())
+                        if cand_clean == chave_normalizada:
+                            indices.append(idx)
+                            continue
+                    continue
+                elif registro == "C170" and chave:
                         # C170 precisa verificar chave do C100 pai
                         # Por enquanto, vamos buscar por CFOP/CST
                         pass
@@ -338,6 +413,61 @@ class SpedEditor:
                 indices.append(idx)
         
         return indices
+    
+    def find_children_records(self, c100_index: int) -> Tuple[List[int], List[int]]:
+        """
+        Encontra C170 e C190 relacionados a um C100 específico.
+        C170 e C190 são registros filhos que aparecem após o C100 até o próximo C100.
+        
+        Args:
+            c100_index: Índice da linha do C100 (0-indexed)
+        
+        Returns:
+            Tupla (indices_c170, indices_c190) com listas de índices das linhas
+        """
+        indices_c170 = []
+        indices_c190 = []
+        
+        if c100_index < 0 or c100_index >= len(self.lines):
+            return (indices_c170, indices_c190)
+        
+        # Procurar C170 e C190 a partir da linha seguinte ao C100
+        # Parar quando encontrar outro C100 ou um registro que inicia novo bloco
+        # CORREÇÃO: C110-C197 são TODOS filhos de C100, não parar neles!
+        # Registros que indicam NOVO documento (devem parar a busca):
+        registros_novo_documento = ["C100", "C300", "C350", "C400", "C495", "C500", "C600", "C700", "C800", "D100", "D300", "D500"]
+        
+        for idx in range(c100_index + 1, len(self.lines)):
+            line = self.lines[idx].strip()
+            
+            # Se linha vazia, continuar
+            if not line:
+                continue
+            
+            # Extrair tipo de registro
+            if line.startswith("|") and "|" in line[1:]:
+                registro = line.split("|")[1] if len(line.split("|")) > 1 else ""
+            else:
+                registro = ""
+            
+            # Se encontrou registro que inicia novo documento/bloco, parar
+            if registro in registros_novo_documento:
+                break
+            
+            # Se encontrou registro de outro bloco (não C ou 1), parar
+            if registro and len(registro) > 0:
+                if registro[0] not in ['C', '1']:
+                    break
+            
+            # Coletar TODOS os C170 e C190 dentro do bloco do C100
+            # (Não parar em C110, C111, etc. - eles são filhos do C100 também!)
+            if line.startswith("|C170|"):
+                indices_c170.append(idx)
+            
+            if line.startswith("|C190|"):
+                indices_c190.append(idx)
+        
+        return (indices_c170, indices_c190)
     
     def get_field_position(self, registro: str, campo: str) -> Optional[int]:
         """
@@ -419,17 +549,20 @@ class SpedEditor:
         if linha_indice is not None:
             indices = [linha_indice]
         elif linha_sped is not None:
-            # linha_sped é 1-indexed, converter para 0-indexed
-            indices = self.find_line_by_record(registro, chave=chave, cfop=cfop, cst=cst, linha_sped=linha_sped)
+            # CORREÇÃO CRÍTICA: Se linha_sped é fornecida, usar diretamente!
+            # linha_sped é 1-indexed (número da linha no SPED), converter para 0-indexed
+            indices = [linha_sped - 1]
         else:
             indices = self.find_line_by_record(registro, chave=chave, cfop=cfop, cst=cst)
         
         if not indices:
-            logger.warning(f"Nenhuma linha encontrada para {registro} com chave={chave}, cfop={cfop}, cst={cst}")
+            # Log mais silencioso - só logar em modo debug para evitar poluir logs
+            logger.debug(f"Nenhuma linha encontrada para {registro} com chave={chave}, cfop={cfop}, cst={cst}")
             return False
         
         # Obter posição do campo
         posicao = self.get_field_position(registro, campo)
+        
         if posicao is None:
             logger.warning(f"Campo {campo} não encontrado no registro {registro}")
             return False
@@ -439,6 +572,7 @@ class SpedEditor:
         
         # Atualizar cada linha encontrada
         atualizado = False
+        
         for idx in indices:
             # VALIDAÇÃO 7: Índice dentro do range
             if idx >= len(self.lines):
@@ -836,6 +970,9 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
     Returns:
         Tupla (sucesso, caminho_arquivo_corrigido, resumo_alteracoes)
     """
+    # LOG: Início do processamento de correção
+    logger.info(f"[CORREÇÃO] Iniciando aplicação de correção: {correcao.get('registro_corrigir')} - Campo: {correcao.get('campo')}")
+    
     try:
         # VALIDAÇÃO 1: Arquivo SPED existe
         if not sped_path.exists():
@@ -920,6 +1057,20 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
         cfop = correcao.get("cfop")
         cst_raw = correcao.get("cst")
         linha_sped = correcao.get("linha_sped")
+        
+        # DEBUG: Logar valores recebidos da correção - VERSÃO SEGURA COM STDERR
+        try:
+            chave_str = str(chave) if chave else "None"
+            cfop_str = str(cfop) if cfop else "None"
+            cst_str = str(cst_raw) if cst_raw else "None"
+            chave_len = len(chave_str) if chave else 0
+            chave_bool = bool(chave)
+            sys.stderr.write(f"[CORRECAO] DEBUG - chave='{chave_str[:30]}...' (len={chave_len}, bool={chave_bool}, type={type(chave)})\n")
+            sys.stderr.write(f"[CORRECAO] DEBUG - cfop='{cfop_str}' (type={type(cfop)}), cst='{cst_str}' (type={type(cst_raw)})\n")
+            sys.stderr.flush()
+        except Exception as e:
+            sys.stderr.write(f"[CORRECAO] DEBUG - Erro ao logar valores: {e}\n")
+            sys.stderr.flush()
         
         # VALIDAÇÃO 7: Chave NF formato (quando fornecida)
         if chave:
@@ -1023,17 +1174,32 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
             logger.warning(f"[CORREÇÃO] CFOP ou CST vazios para C190. Tentando atualizar C190 existente com valor zerado...")
             print(f"[CORREÇÃO] CFOP ou CST vazios para C190. Tentando atualizar C190 existente com valor zerado...", flush=True)
             
+            # DEBUG: Verificar o que está vindo em chave
+            sys.stderr.write(f"[CORREÇÃO] DEBUG - Valor de chave recebido: '{chave}' (type={type(chave)}, bool={bool(chave)}, len={len(str(chave)) if chave else 0})\n")
+            sys.stderr.flush()
+            
             # CORREÇÃO CRÍTICA: Inicializar cfop_cst_encontrados ANTES de usar
             cfop_cst_encontrados = set()
             indices_c100 = []  # Inicializar para estar disponível em todo o escopo
             
             # Se temos chave, tentar encontrar C170 relacionados para obter CFOP/CST
+            sys.stderr.write(f"[CORREÇÃO] DEBUG - Testando if chave: chave={chave}, bool(chave)={bool(chave)}\n")
+            sys.stderr.flush()
+            
             if chave:
-                logger.info(f"[CORREÇÃO] Tentando encontrar CFOP/CST usando chave NF: {chave}")
-                print(f"[CORREÇÃO] Tentando encontrar CFOP/CST usando chave NF: {chave}", flush=True)
+                sys.stderr.write(f"[CORREÇÃO] DEBUG - ENTROU NO IF CHAVE!\n")
+                sys.stderr.flush()
+                
+                sys.stderr.write(f"[CORREÇÃO] DEBUG - Linha 1194 - Tentando encontrar CFOP/CST...\n")
+                sys.stderr.flush()
                 
                 # VALIDAÇÃO: Verificar se arquivo foi carregado
+                sys.stderr.write(f"[CORREÇÃO] DEBUG - Linha 1198 - Verificando editor.lines: len={len(editor.lines) if hasattr(editor, 'lines') and editor.lines else 0}\n")
+                sys.stderr.flush()
+                
                 if not editor.lines:
+                    sys.stderr.write(f"[CORREÇÃO] DEBUG - editor.lines está vazio! RETORNANDO ERRO.\n")
+                    sys.stderr.flush()
                     logger.error(f"[CORREÇÃO] Arquivo SPED não foi carregado corretamente")
                     print(f"[CORREÇÃO] Arquivo SPED não foi carregado corretamente", flush=True)
                     return (False, sped_path, {
@@ -1042,10 +1208,197 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                         "sugestao": "Verifique se o caminho do arquivo está correto e se o arquivo não está corrompido."
                     })
                 
-                # Buscar C100 com esta chave
-                indices_c100 = editor.find_line_by_record("C100", chave=chave)
-                logger.info(f"[CORREÇÃO] C100 encontrados com chave {chave[:20]}...: {len(indices_c100)}")
-                print(f"[CORREÇÃO] C100 encontrados com chave {chave[:20]}...: {len(indices_c100)}", flush=True)
+                sys.stderr.write(f"[CORREÇÃO] DEBUG - Linha 1207 - INICIANDO BUSCA DO C100\n")
+                sys.stderr.flush()
+                
+                try:
+                    # Buscar C100 com esta chave
+                    sys.stderr.write(f"[CORREÇÃO] ========== INÍCIO DA BUSCA DO C100 ==========\n")
+                    sys.stderr.flush()
+                    
+                    sys.stderr.write(f"[CORREÇÃO] Chave fornecida para busca: '{chave[:30] if len(str(chave)) >= 30 else chave}...'\n")
+                    sys.stderr.flush()
+                    
+                    sys.stderr.write(f"[CORREÇÃO] DEBUG - Linha 1222 - ANTES de chamar find_line_by_record\n")
+                    sys.stderr.flush()
+                    
+                    indices_c100 = editor.find_line_by_record("C100", chave=chave)
+                    
+                    sys.stderr.write(f"[CORREÇÃO] DEBUG - Linha 1227 - DEPOIS de chamar find_line_by_record. Resultado: {len(indices_c100)} C100s encontrados\n")
+                    sys.stderr.flush()
+                except Exception as e:
+                    sys.stderr.write(f"[CORREÇÃO] !!!!! ERRO CAPTURADO na busca do C100: {type(e).__name__}: {e}\n")
+                    import traceback
+                    sys.stderr.write(f"[CORREÇÃO] Traceback:\n{traceback.format_exc()}\n")
+                    sys.stderr.flush()
+                    # Continuar mesmo com erro
+                    indices_c100 = []
+                
+                sys.stderr.write(f"[CORREÇÃO] C100 encontrados: {len(indices_c100)}\n")
+                sys.stderr.flush()
+                
+                # Se encontrou C100, buscar C170 e C190 relacionados (filhos do C100)
+                sys.stderr.write(f"[CORREÇÃO] DEBUG - Testando if indices_c100: len={len(indices_c100)}, bool={bool(indices_c100)}\n")
+                sys.stderr.flush()
+                
+                if indices_c100:
+                    sys.stderr.write(f"[CORREÇÃO] DEBUG - ENTROU NO IF indices_c100! Processando C100 encontrado...\n")
+                    sys.stderr.flush()
+                    
+                    c100_idx = indices_c100[0]  # Usar o primeiro C100 encontrado
+                    sys.stderr.write(f"[CORREÇÃO] C100 encontrado na linha {c100_idx+1}. Buscando C170 e C190 relacionados...\n")
+                    sys.stderr.flush()
+                    
+                    # DEBUG: Mostrar próximos 15 registros após C100 para diagnóstico
+                    logger.info(f"[CORREÇÃO] DEBUG - Próximos 15 registros após C100 (linha {c100_idx+1}):")
+                    print(f"[CORREÇÃO] DEBUG - Próximos 15 registros após C100 (linha {c100_idx+1}):", flush=True)
+                    for debug_idx in range(c100_idx + 1, min(c100_idx + 16, len(editor.lines))):
+                        debug_line = editor.lines[debug_idx].strip()
+                        if debug_line and debug_line.startswith("|"):
+                            tipo_reg = debug_line.split("|")[1] if len(debug_line.split("|")) > 1 else "?"
+                            logger.info(f"[CORREÇÃO] DEBUG -   Linha {debug_idx+1}: |{tipo_reg}| {debug_line[:80]}")
+                            print(f"[CORREÇÃO] DEBUG -   Linha {debug_idx+1}: |{tipo_reg}|", flush=True)
+                    
+                    # Buscar registros filhos do C100
+                    sys.stderr.write(f"[CORREÇÃO] DEBUG - Chamando find_children_records para C100 idx={c100_idx}...\n")
+                    sys.stderr.flush()
+                    
+                    indices_c170_relacionados, indices_c190_relacionados = editor.find_children_records(c100_idx)
+                    
+                    sys.stderr.write(f"[CORREÇÃO] Encontrados {len(indices_c170_relacionados)} C170 e {len(indices_c190_relacionados)} C190 relacionados ao C100\n")
+                    sys.stderr.flush()
+                    
+                    # Extrair CFOP/CST dos C170 relacionados
+                    sys.stderr.write(f"[CORREÇÃO] DEBUG - Extraindo CFOP/CST de {len(indices_c170_relacionados)} C170 relacionados...\n")
+                    sys.stderr.flush()
+                    
+                    for idx_c170 in indices_c170_relacionados:
+                        sys.stderr.write(f"[CORREÇÃO] DEBUG - Processando C170 idx={idx_c170}...\n")
+                        sys.stderr.flush()
+                        line_c170 = editor.lines[idx_c170]
+                        parts_c170 = split_sped_line(line_c170, min_fields=21)
+                        
+                        sys.stderr.write(f"[CORREÇÃO] DEBUG - C170 parts: len={len(parts_c170)}\n")
+                        sys.stderr.flush()
+                        
+                        if len(parts_c170) > 11:
+                            cfop_c170 = parts_c170[11].strip()  # Campo 11 do C170 é CFOP
+                            cst_c170 = parts_c170[10].strip() if len(parts_c170) > 10 else ""  # Campo 10 é CST_ICMS
+                            
+                            sys.stderr.write(f"[CORREÇÃO] DEBUG - C170 extraído: cfop='{cfop_c170}', cst='{cst_c170}'\n")
+                            sys.stderr.flush()
+                            
+                            if cfop_c170 and cst_c170:
+                                sys.stderr.write(f"[CORREÇÃO] DEBUG - C170 tem CFOP e CST! Normalizando...\n")
+                                sys.stderr.flush()
+                                
+                                try:
+                                    from common import normalize_cst_for_compare
+                                    cst_c170_norm = normalize_cst_for_compare(cst_c170)
+                                except ImportError:
+                                    cst_c170_norm = cst_c170.strip().zfill(3)
+                                
+                                cfop_c170_clean = "".join(cfop_c170.split())
+                                cfop_cst_encontrados.add((cfop_c170_clean, cst_c170_norm))
+                                
+                                sys.stderr.write(f"[CORREÇÃO] [OK] C170 relacionado encontrado (linha {idx_c170+1}): CFOP={cfop_c170_clean}, CST={cst_c170_norm}\n")
+                                sys.stderr.flush()
+                            else:
+                                sys.stderr.write(f"[CORREÇÃO] DEBUG - C170 não tem CFOP/CST válidos\n")
+                                sys.stderr.flush()
+                    
+                    # Buscar C190 relacionado com o campo zerado
+                    if indices_c190_relacionados and campo:
+                        posicao_campo = editor.get_field_position("C190", campo)
+                        if posicao_campo:
+                            for idx_c190 in indices_c190_relacionados:
+                                line_c190 = editor.lines[idx_c190]
+                                parts_c190 = split_sped_line(line_c190, min_fields=13)
+                                
+                                # Verificar se o campo está zerado
+                                if len(parts_c190) > posicao_campo:
+                                    valor_atual = parse_float_br(parts_c190[posicao_campo] or "0")
+                                    if abs(valor_atual) < 0.01:  # Campo zerado
+                                        # Extrair CFOP/CST deste C190
+                                        if len(parts_c190) > 3:
+                                            cfop_c190 = parts_c190[3].strip()
+                                            cst_c190 = parts_c190[2].strip() if len(parts_c190) > 2 else ""
+                                            
+                                            if cfop_c190 and cst_c190:
+                                                cfop_c190_clean = "".join(cfop_c190.split())
+                                                try:
+                                                    from common import normalize_cst_for_compare
+                                                    cst_c190_norm = normalize_cst_for_compare(cst_c190)
+                                                except ImportError:
+                                                    cst_c190_norm = cst_c190.strip().zfill(3)
+                                                
+                                                # Tentar atualizar este C190
+                                                sucesso = editor.update_field(
+                                                    registro="C190",
+                                                    campo=campo,
+                                                    novo_valor=valor_correto,
+                                                    cfop=cfop_c190_clean,
+                                                    cst=cst_c190_norm,
+                                                    linha_sped=idx_c190+1
+                                                )
+                                                
+                                                sys.stderr.write(f"[CORREÇÃO] DEBUG - update_field retornou sucesso={sucesso}\n")
+                                                sys.stderr.flush()
+                                                
+                                                if sucesso:
+                                                    sys.stderr.write(f"[CORREÇÃO] [SUCESSO] C190 atualizado na linha {idx_c190+1}! Salvando e retornando...\n")
+                                                    sys.stderr.flush()
+                                                    
+                                                    if output_path is None:
+                                                        output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+                                                    else:
+                                                        output_path = Path(output_path)
+                                                    
+                                                    editor.save(output_path)
+                                                    resumo = editor.get_changes_summary()
+                                                    return (True, output_path, resumo)
+                                                
+                                                sys.stderr.write(f"[CORREÇÃO] Não conseguiu atualizar C190 na linha {idx_c190+1}, continuando busca...\n")
+                                                sys.stderr.flush()
+                    
+                    # Se encontrou CFOP/CST via C170 relacionados, usar para continuar
+                    sys.stderr.write(f"[CORREÇÃO] DEBUG - Verificando cfop_cst_encontrados: {len(cfop_cst_encontrados)} encontrados\n")
+                    sys.stderr.flush()
+                    
+                    if cfop_cst_encontrados:
+                        sys.stderr.write(f"[CORREÇÃO] [OK] CFOP/CST encontrados via C170: {len(cfop_cst_encontrados)} combinações\n")
+                        sys.stderr.flush()
+                        # Continuar o processamento normalmente (o código abaixo vai usar cfop_cst_encontrados)
+                    else:
+                        sys.stderr.write(f"[CORREÇÃO] DEBUG - NENHUM CFOP/CST encontrado via C170! Continuando...\n")
+                        sys.stderr.flush()
+                
+                sys.stderr.write(f"[CORREÇÃO] DEBUG - SAIU DO IF indices_c100. Continuando processamento...\n")
+                sys.stderr.write(f"[CORREÇÃO] DEBUG - indices_c100={len(indices_c100) if indices_c100 else 0}, cfop_cst_encontrados={len(cfop_cst_encontrados)}\n")
+                sys.stderr.flush()
+                
+                # Log resumido
+                if not indices_c100:
+                    sys.stderr.write(f"[CORREÇÃO] Nenhum C100 encontrado com a chave fornecida: {chave}\n")
+                    sys.stderr.flush()
+                    # DEBUG: Tentar buscar sem chave para ver se há C100 no arquivo
+                    todos_c100_debug = editor.find_line_by_record("C100")
+                    logger.info(f"[CORREÇÃO] DEBUG - Total de C100 no arquivo (sem filtro): {len(todos_c100_debug)}")
+                    print(f"[CORREÇÃO] DEBUG - Total de C100 no arquivo (sem filtro): {len(todos_c100_debug)}", flush=True)
+                    if todos_c100_debug:
+                        logger.info(f"[CORREÇÃO] DEBUG - Encontrados {len(todos_c100_debug)} C100 no arquivo. Comparando chaves...")
+                        print(f"[CORREÇÃO] DEBUG - Encontrados {len(todos_c100_debug)} C100 no arquivo. Comparando chaves...", flush=True)
+                        
+                        chave_fornecida_norm = "".join(str(chave).split())
+                        for idx_debug in todos_c100_debug[:5]:  # Primeiros 5
+                            linha_debug = editor.lines[idx_debug]
+                            parts_debug = split_sped_line(linha_debug, min_fields=10)
+                            if len(parts_debug) > 9:
+                                chave_encontrada = parts_debug[9].strip()
+                                chave_encontrada_norm = "".join(chave_encontrada.split())
+                                match = "[OK] MATCH" if chave_encontrada_norm == chave_fornecida_norm else "[DIFERENTE]"
+                                logger.info(f"[CORREÇÃO] DEBUG - Linha {idx_debug+1}: {match} | Fornecida: '{chave_fornecida_norm[:30]}...' | Encontrada: '{chave_encontrada_norm[:30]}...'")
+                                print(f"[CORREÇÃO] DEBUG - Linha {idx_debug+1}: {match} | Fornecida: '{chave_fornecida_norm[:30]}...' | Encontrada: '{chave_encontrada_norm[:30]}...'", flush=True)
                 
                 # DEBUG: Verificar se há C100 no arquivo (sem filtro de chave)
                 todos_c100 = editor.find_line_by_record("C100")
@@ -1108,7 +1461,7 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                                     
                                     # Verificar se o campo está zerado
                                     if len(parts) > posicao_campo:
-                                        valor_atual = float(parts[posicao_campo] or 0) if parts[posicao_campo] else 0.0
+                                        valor_atual = parse_float_br(parts[posicao_campo] or "0")
                                         if abs(valor_atual) < 0.01:  # Campo zerado
                                             # Extrair CFOP/CST deste C190
                                             if len(parts) > 3:
@@ -1167,9 +1520,9 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                             print(f"[CORREÇÃO] Registros encontrados no arquivo: {outros_registros}", flush=True)
                             
                             return (False, sped_path, {
-                                "erro": "Não foi possível encontrar CFOP/CST para o C190",
-                                "detalhes": f"Nenhum C100, C170 ou C190 com a chave '{chave[:20] if chave else 'N/A'}...' foi encontrado. Registros encontrados: {list(outros_registros.keys())[:10]}",
-                                "sugestao": "Verifique se o arquivo SPED contém registros C100, C170 ou C190. Alguns arquivos podem ter apenas C100 e C190 (sem C170)."
+                                        "erro": "Não foi possível encontrar CFOP/CST para o C190",
+                                        "detalhes": f"Nenhum C100, C170 ou C190 com a chave '{chave[:20] if chave else 'N/A'}...' foi encontrado. Registros encontrados: {list(outros_registros.keys())[:10]}",
+                                        "sugestao": "Verifique se o arquivo SPED contém registros C100, C170 ou C190. Alguns arquivos podem ter apenas C100 e C190 (sem C170)."
                             })
                 
                 # Se encontrou C100 mas não com a chave específica, mostrar exemplos
@@ -1196,197 +1549,235 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                     logger.info(f"[CORREÇÃO] CFOP/CST já encontrados via C170 direto, pulando busca no bloco C100")
                     print(f"[CORREÇÃO] CFOP/CST já encontrados via C170 direto, pulando busca no bloco C100", flush=True)
                 elif indices_c100:
-                    # Encontrar C170 relacionados a este C100
-                    # C170 vem logo após o C100 no SPED
+                    # C100 encontrado pela chave - verificar próxima(s) linha(s) até encontrar C170 ou C190
                     c100_idx = indices_c100[0]
-                    # cfop_cst_encontrados já foi inicializado acima
+                    logger.info(f"[CORREÇÃO] ========== PASSO 5 - C100 ENCONTRADO NA LINHA {c100_idx+1} ==========")
+                    print(f"[CORREÇÃO] ========== PASSO 5 - C100 ENCONTRADO NA LINHA {c100_idx+1} ==========", flush=True)
+                    logger.info(f"[CORREÇÃO] PASSO 5.1 - Linha C100 completa: '{editor.lines[c100_idx].rstrip()[:150]}'")
+                    print(f"[CORREÇÃO] PASSO 5.1 - Linha C100 completa: '{editor.lines[c100_idx].rstrip()[:150]}'", flush=True)
+                    logger.info(f"[CORREÇÃO] PASSO 5.2 - Iniciando busca por C170 ou C190 após C100...")
+                    print(f"[CORREÇÃO] PASSO 5.2 - Iniciando busca por C170 ou C190 após C100...", flush=True)
                     
-                    # Buscar C170 que vêm após este C100 (até encontrar próximo C100 ou C195)
-                    logger.info(f"[CORREÇÃO] Buscando C170 após C100 na linha {c100_idx+1}...")
-                    print(f"[CORREÇÃO] Buscando C170 após C100 na linha {c100_idx+1}...", flush=True)
+                    encontrou_cfop_cst = False
                     
-                    # Verificar linha do C100 para debug
-                    if c100_idx < len(editor.lines):
-                        c100_line = editor.lines[c100_idx]
-                        logger.debug(f"[CORREÇÃO] Linha C100: {c100_line[:100]}...")
-                        print(f"[CORREÇÃO] Linha C100: {c100_line[:100]}...", flush=True)
-                    
-                    c170_encontrados = 0
-                    c190_encontrados_no_bloco = 0
+                    # Buscar próximo C100 ou C195 para delimitar o bloco
+                    logger.info(f"[CORREÇÃO] PASSO 5.3 - Buscando próximo C100/C195 para delimitar bloco...")
+                    print(f"[CORREÇÃO] PASSO 5.3 - Buscando próximo C100/C195 para delimitar bloco...", flush=True)
                     proximo_c100_idx = None
-                    
-                    # Buscar próximo C100 para delimitar o bloco
                     for idx in range(c100_idx + 1, len(editor.lines)):
                         line = editor.lines[idx]
-                        if line.strip().startswith("|C100|"):
+                        if line.strip().startswith("|C100|") or line.strip().startswith("|C195|"):
                             proximo_c100_idx = idx
-                            logger.info(f"[CORREÇÃO] Próximo C100 encontrado na linha {idx+1}, delimitando bloco")
-                            print(f"[CORREÇÃO] Próximo C100 encontrado na linha {idx+1}, delimitando bloco", flush=True)
+                            logger.info(f"[CORREÇÃO] PASSO 5.3.1 - Próximo C100/C195 encontrado na linha {idx+1}")
+                            print(f"[CORREÇÃO] PASSO 5.3.1 - Próximo C100/C195 encontrado na linha {idx+1}", flush=True)
                             break
                     
-                    # Buscar C170 no bloco (até próximo C100 ou fim do arquivo)
                     limite_busca = proximo_c100_idx if proximo_c100_idx else len(editor.lines)
-                    logger.info(f"[CORREÇÃO] Buscando C170 entre linhas {c100_idx+2} e {limite_busca}")
-                    print(f"[CORREÇÃO] Buscando C170 entre linhas {c100_idx+2} e {limite_busca}", flush=True)
+                    logger.info(f"[CORREÇÃO] PASSO 5.4 - Limite de busca: linha {limite_busca} (total de linhas: {len(editor.lines)})")
+                    print(f"[CORREÇÃO] PASSO 5.4 - Limite de busca: linha {limite_busca} (total de linhas: {len(editor.lines)})", flush=True)
+                    logger.info(f"[CORREÇÃO] PASSO 5.5 - Verificando linhas de {c100_idx+2} até {limite_busca} (ou próximo C100/C195)")
+                    print(f"[CORREÇÃO] PASSO 5.5 - Verificando linhas de {c100_idx+2} até {limite_busca} (ou próximo C100/C195)", flush=True)
                     
+                    # Verificar cada linha após o C100 até encontrar C170 ou C190
+                    linhas_verificadas = 0
                     for idx in range(c100_idx + 1, limite_busca):
                         line = editor.lines[idx]
                         line_stripped = line.strip()
+                        linhas_verificadas += 1
+                        
+                        # LOG DETALHADO: Primeiras 10 linhas e depois a cada 50
+                        if linhas_verificadas <= 10 or linhas_verificadas % 50 == 0:
+                            tipo_linha = "VAZIA" if not line_stripped else (line_stripped.split("|")[1] if "|" in line_stripped and len(line_stripped.split("|")) > 1 else "DESCONHECIDA")
+                            logger.info(f"[CORREÇÃO] PASSO 6.{linhas_verificadas} - Linha {idx+1}: [{tipo_linha}] '{line_stripped[:100]}'")
+                            print(f"[CORREÇÃO] PASSO 6.{linhas_verificadas} - Linha {idx+1}: [{tipo_linha}] '{line_stripped[:100]}'", flush=True)
+                        
+                        # Pular apenas linhas realmente vazias
+                        if not line_stripped or line_stripped == "":
+                            if linhas_verificadas <= 10:
+                                logger.debug(f"[CORREÇÃO] PASSO 6.{linhas_verificadas} - Linha {idx+1} está vazia, pulando...")
+                            continue
                         
                         # Parar se encontrar próximo C100 ou C195 (fim do bloco)
                         if line_stripped.startswith("|C100|") or line_stripped.startswith("|C195|"):
+                            logger.info(f"[CORREÇÃO] PASSO 6.{linhas_verificadas} - [FIM DO BLOCO] Encontrado próximo C100/C195 na linha {idx+1}")
+                            print(f"[CORREÇÃO] PASSO 6.{linhas_verificadas} - [FIM DO BLOCO] Encontrado próximo C100/C195 na linha {idx+1}", flush=True)
                             break
                         
+                        # CORREÇÃO: IGNORAR C110 (não é C170 nem C190, mas não é fim do bloco)
+                        if line_stripped.startswith("|C110|"):
+                            if linhas_verificadas <= 10:
+                                logger.debug(f"[CORREÇÃO] PASSO 6.{linhas_verificadas} - Linha {idx+1} é C110, continuando busca...")
+                            continue
+                        
+                        # CASO 1: Encontrou C170
                         if line_stripped.startswith("|C170|"):
-                            c170_encontrados += 1
+                            logger.info(f"[CORREÇÃO] ========== PASSO 7 - C170 ENCONTRADO NA LINHA {idx+1} ==========")
+                            print(f"[CORREÇÃO] ========== PASSO 7 - C170 ENCONTRADO NA LINHA {idx+1} ==========", flush=True)
+                            logger.info(f"[CORREÇÃO] PASSO 7.1 - Linha C170 completa: '{line.rstrip()[:150]}'")
+                            print(f"[CORREÇÃO] PASSO 7.1 - Linha C170 completa: '{line.rstrip()[:150]}'", flush=True)
+                            
                             parts = split_sped_line(line, min_fields=21)
+                            logger.info(f"[CORREÇÃO] PASSO 7.2 - C170 split resultou em {len(parts)} campos")
+                            print(f"[CORREÇÃO] PASSO 7.2 - C170 split resultou em {len(parts)} campos", flush=True)
+                            
+                            # DEBUG: Mostrar estrutura do C170
+                            if len(parts) > 12:
+                                logger.info(f"[CORREÇÃO] PASSO 7.3 - parts[10] (CST)='{parts[10]}', parts[11] (CFOP)='{parts[11]}'")
+                                print(f"[CORREÇÃO] PASSO 7.3 - parts[10] (CST)='{parts[10]}', parts[11] (CFOP)='{parts[11]}'", flush=True)
+                            
                             if len(parts) > 11:
-                                cfop_c170 = parts[11].strip()
-                                cst_c170 = parts[10].strip() if len(parts) > 10 else ""
-                                if cfop_c170 and cst_c170:
-                                    cfop_cst_encontrados.add((cfop_c170, cst_c170))
-                                    logger.info(f"[CORREÇÃO] C170 encontrado na linha {idx+1}: CFOP={cfop_c170}, CST={cst_c170}")
-                                    print(f"[CORREÇÃO] C170 encontrado na linha {idx+1}: CFOP={cfop_c170}, CST={cst_c170}", flush=True)
-                                else:
-                                    logger.warning(f"[CORREÇÃO] C170 na linha {idx+1} sem CFOP/CST válidos: CFOP='{cfop_c170}', CST='{cst_c170}'")
-                                    print(f"[CORREÇÃO] C170 na linha {idx+1} sem CFOP/CST válidos: CFOP='{cfop_c170}', CST='{cst_c170}'", flush=True)
-                            else:
-                                logger.warning(f"[CORREÇÃO] C170 na linha {idx+1} tem menos de 12 campos: {len(parts)}")
-                                print(f"[CORREÇÃO] C170 na linha {idx+1} tem menos de 12 campos: {len(parts)}", flush=True)
-                        elif line_stripped.startswith("|C190|"):
-                            c190_encontrados_no_bloco += 1
-                            # C190 pode vir antes dos C170 em alguns casos, continuar buscando
-                            logger.debug(f"[CORREÇÃO] C190 encontrado no bloco na linha {idx+1}")
-                    
-                    logger.info(f"[CORREÇÃO] Total de C170 encontrados: {c170_encontrados}, C190 no bloco: {c190_encontrados_no_bloco}, CFOP/CST únicos: {len(cfop_cst_encontrados)}")
-                    print(f"[CORREÇÃO] Total de C170 encontrados: {c170_encontrados}, C190 no bloco: {c190_encontrados_no_bloco}, CFOP/CST únicos: {len(cfop_cst_encontrados)}", flush=True)
-                    
-                    # CAMADA 2: Se não encontrou C170, SEMPRE buscar C190 no bloco do C100 (mesmo que não tenha encontrado durante a busca de C170)
-                    if c170_encontrados == 0 and not cfop_cst_encontrados:
-                        logger.info(f"[CORREÇÃO] Não encontrou C170 no bloco do C100. Buscando C190 no bloco para extrair CFOP/CST...")
-                        print(f"[CORREÇÃO] Não encontrou C170 no bloco do C100. Buscando C190 no bloco para extrair CFOP/CST...", flush=True)
-                        
-                        # Buscar C190 no bloco novamente para extrair CFOP/CST
-                        limite_busca_c190 = proximo_c100_idx if proximo_c100_idx else len(editor.lines)
-                        logger.info(f"[CORREÇÃO] Buscando C190 no bloco entre linhas {c100_idx+2} e {limite_busca_c190}")
-                        print(f"[CORREÇÃO] Buscando C190 no bloco entre linhas {c100_idx+2} e {limite_busca_c190}", flush=True)
-                        c190_encontrados_busca = 0
-                        for idx in range(c100_idx + 1, limite_busca_c190):
-                            line = editor.lines[idx]
-                            if line.startswith("|C100|") or line.startswith("|C195|"):
-                                break
-                            
-                            if line.strip().startswith("|C190|"):
-                                c190_encontrados_busca += 1
-                                logger.debug(f"[CORREÇÃO] C190 encontrado na linha {idx+1} durante busca no bloco")
-                                print(f"[CORREÇÃO] C190 encontrado na linha {idx+1} durante busca no bloco", flush=True)
-                                parts = split_sped_line(line, min_fields=13)
-                                if len(parts) > 3:
-                                    cfop_c190 = parts[3].strip()  # Campo 3 do C190 é CFOP
-                                    cst_c190 = parts[2].strip() if len(parts) > 2 else ""  # Campo 2 é CST
+                                cfop_c170 = parts[11].strip()  # Campo 11 = CFOP
+                                cst_c170 = parts[10].strip() if len(parts) > 10 else ""  # Campo 10 = CST_ICMS
+                                
+                                logger.info(f"[CORREÇÃO] PASSO 7.4 - Extraídos: CFOP='{cfop_c170}', CST='{cst_c170}'")
+                                print(f"[CORREÇÃO] PASSO 7.4 - Extraídos: CFOP='{cfop_c170}', CST='{cst_c170}'", flush=True)
+                                
+                                # CORREÇÃO: Validação mais flexível - aceitar qualquer valor não vazio (incluindo "0")
+                                cfop_valido = bool(cfop_c170 and str(cfop_c170).strip())
+                                cst_valido = bool(cst_c170 and str(cst_c170).strip())
+                                
+                                logger.info(f"[CORREÇÃO] PASSO 7.5 - Validação: CFOP válido={cfop_valido}, CST válido={cst_valido}")
+                                print(f"[CORREÇÃO] PASSO 7.5 - Validação: CFOP válido={cfop_valido}, CST válido={cst_valido}", flush=True)
+                                
+                                if cfop_valido and cst_valido:
+                                    cfop_c170_clean = "".join(cfop_c170.split())
+                                    try:
+                                        from common import normalize_cst_for_compare
+                                        cst_c170_norm = normalize_cst_for_compare(cst_c170)
+                                    except ImportError:
+                                        cst_c170_norm = cst_c170.strip().zfill(3)
                                     
-                                    if cfop_c190 and cst_c190:
-                                        cfop_c190_clean = "".join(cfop_c190.split())
-                                        try:
-                                            from common import normalize_cst_for_compare
-                                            cst_c190_norm = normalize_cst_for_compare(cst_c190)
-                                        except ImportError:
-                                            cst_c190_norm = cst_c190.strip().zfill(3)
-                                        
-                                        cfop_cst_encontrados.add((cfop_c190_clean, cst_c190_norm))
-                                        logger.info(f"[CORREÇÃO] [OK] C190 encontrado no bloco do C100 (linha {idx+1}): CFOP={cfop_c190_clean}, CST={cst_c190_norm}")
-                                        print(f"[CORREÇÃO] [OK] C190 encontrado no bloco do C100 (linha {idx+1}): CFOP={cfop_c190_clean}, CST={cst_c190_norm}", flush=True)
-                                        # Usar o primeiro C190 encontrado no bloco
-                                        break
+                                    cfop_cst_encontrados.add((cfop_c170_clean, cst_c170_norm))
+                                    logger.info(f"[CORREÇÃO] PASSO 7.6 - [OK] CFOP/CST extraído do C170: CFOP={cfop_c170_clean}, CST={cst_c170_norm}")
+                                    print(f"[CORREÇÃO] PASSO 7.6 - [OK] CFOP/CST extraído do C170: CFOP={cfop_c170_clean}, CST={cst_c170_norm}", flush=True)
+                                    encontrou_cfop_cst = True
+                                    continue  # Continuar buscando mais C170 ou C190
+                                else:
+                                    logger.warning(f"[CORREÇÃO] PASSO 7.6 - [FALHOU] C170 sem CFOP/CST válidos: CFOP='{cfop_c170}' (válido={cfop_valido}), CST='{cst_c170}' (válido={cst_valido})")
+                                    print(f"[CORREÇÃO] PASSO 7.6 - [FALHOU] C170 sem CFOP/CST válidos: CFOP='{cfop_c170}' (válido={cfop_valido}), CST='{cst_c170}' (válido={cst_valido})", flush=True)
+                            else:
+                                logger.warning(f"[CORREÇÃO] PASSO 7.6 - [FALHOU] C170 tem menos de 12 campos: {len(parts)}")
+                                print(f"[CORREÇÃO] PASSO 7.6 - [FALHOU] C170 tem menos de 12 campos: {len(parts)}", flush=True)
                         
-                        if c190_encontrados_busca == 0:
-                            logger.warning(f"[CORREÇÃO] Nenhum C190 encontrado no bloco do C100 entre linhas {c100_idx+2} e {limite_busca_c190}")
-                            print(f"[CORREÇÃO] Nenhum C190 encontrado no bloco do C100 entre linhas {c100_idx+2} e {limite_busca_c190}", flush=True)
-                        elif not cfop_cst_encontrados:
-                            logger.warning(f"[CORREÇÃO] Encontrou {c190_encontrados_busca} C190 no bloco, mas nenhum tinha CFOP/CST válidos")
-                            print(f"[CORREÇÃO] Encontrou {c190_encontrados_busca} C190 no bloco, mas nenhum tinha CFOP/CST válidos", flush=True)
+                        # CASO 2: Encontrou C190
+                        elif line_stripped.startswith("|C190|"):
+                            logger.info(f"[CORREÇÃO] ========== PASSO 8 - C190 ENCONTRADO NA LINHA {idx+1} ==========")
+                            print(f"[CORREÇÃO] ========== PASSO 8 - C190 ENCONTRADO NA LINHA {idx+1} ==========", flush=True)
+                            logger.info(f"[CORREÇÃO] PASSO 8.1 - Linha C190 completa: '{line.rstrip()[:150]}'")
+                            print(f"[CORREÇÃO] PASSO 8.1 - Linha C190 completa: '{line.rstrip()[:150]}'", flush=True)
+                            
+                            parts = split_sped_line(line, min_fields=13)
+                            logger.info(f"[CORREÇÃO] PASSO 8.2 - C190 split resultou em {len(parts)} campos")
+                            print(f"[CORREÇÃO] PASSO 8.2 - C190 split resultou em {len(parts)} campos", flush=True)
+                            
+                            # Mostrar campos relevantes para debug
+                            if len(parts) > 4:
+                                logger.info(f"[CORREÇÃO] PASSO 8.3 - parts[1]='{parts[1]}', parts[2]='{parts[2]}' (CST), parts[3]='{parts[3]}' (CFOP)")
+                                print(f"[CORREÇÃO] PASSO 8.3 - parts[1]='{parts[1]}', parts[2]='{parts[2]}' (CST), parts[3]='{parts[3]}' (CFOP)", flush=True)
+                            
+                            if len(parts) > 3:
+                                # CORREÇÃO: C190 layout: parts[2]=CST, parts[3]=CFOP
+                                cst_c190 = parts[2].strip() if len(parts) > 2 else ""  # Campo 2 = CST_ICMS
+                                cfop_c190 = parts[3].strip()  # Campo 3 = CFOP
+                                
+                                logger.info(f"[CORREÇÃO] PASSO 8.4 - Extraídos: CFOP (parts[3])='{cfop_c190}', CST (parts[2])='{cst_c190}'")
+                                print(f"[CORREÇÃO] PASSO 8.4 - Extraídos: CFOP (parts[3])='{cfop_c190}', CST (parts[2])='{cst_c190}'", flush=True)
+                                
+                                # CORREÇÃO: Validação mais flexível - aceitar qualquer valor não vazio (incluindo "0")
+                                cfop_valido = bool(cfop_c190 and str(cfop_c190).strip())
+                                cst_valido = bool(cst_c190 and str(cst_c190).strip())
+                                
+                                logger.info(f"[CORREÇÃO] PASSO 8.5 - Validação: CFOP válido={cfop_valido} ('{cfop_c190}'), CST válido={cst_valido} ('{cst_c190}')")
+                                print(f"[CORREÇÃO] PASSO 8.5 - Validação: CFOP válido={cfop_valido} ('{cfop_c190}'), CST válido={cst_valido} ('{cst_c190}')", flush=True)
+                                
+                                if cfop_valido and cst_valido:
+                                    cfop_c190_clean = "".join(cfop_c190.split())
+                                    try:
+                                        from common import normalize_cst_for_compare
+                                        cst_c190_norm = normalize_cst_for_compare(cst_c190)
+                                    except ImportError:
+                                        cst_c190_norm = cst_c190.strip().zfill(3)
+                                    
+                                    cfop_cst_encontrados.add((cfop_c190_clean, cst_c190_norm))
+                                    logger.info(f"[CORREÇÃO] PASSO 8.6 - [OK] CFOP/CST extraído do C190: CFOP={cfop_c190_clean}, CST={cst_c190_norm}")
+                                    print(f"[CORREÇÃO] PASSO 8.6 - [OK] CFOP/CST extraído do C190: CFOP={cfop_c190_clean}, CST={cst_c190_norm}", flush=True)
+                                    encontrou_cfop_cst = True
+                                    continue  # Continuar buscando mais C190
+                                else:
+                                    logger.warning(f"[CORREÇÃO] PASSO 8.6 - [FALHOU] C190 sem CFOP/CST válidos: CFOP='{cfop_c190}' (válido={cfop_valido}), CST='{cst_c190}' (válido={cst_valido})")
+                                    print(f"[CORREÇÃO] PASSO 8.6 - [FALHOU] C190 sem CFOP/CST válidos: CFOP='{cfop_c190}' (válido={cfop_valido}), CST='{cst_c190}' (válido={cst_valido})", flush=True)
+                            else:
+                                logger.warning(f"[CORREÇÃO] PASSO 8.6 - [FALHOU] C190 tem menos de 4 campos: {len(parts)}")
+                                print(f"[CORREÇÃO] PASSO 8.6 - [FALHOU] C190 tem menos de 4 campos: {len(parts)}", flush=True)
+                                # Mostrar todos os campos para diagnóstico
+                                logger.info(f"[CORREÇÃO] PASSO 8.6 - Todos os campos: {parts[:10]}")
+                                print(f"[CORREÇÃO] PASSO 8.6 - Todos os campos: {parts[:10]}", flush=True)
                     
-                    # Se não encontrou C170, tentar buscar todos os C170 do arquivo para debug
-                    if c170_encontrados == 0:
-                        todos_c170 = editor.find_line_by_record("C170")
-                        logger.warning(f"[CORREÇÃO] Nenhum C170 encontrado no bloco do C100. Total de C170 no arquivo: {len(todos_c170)}")
-                        print(f"[CORREÇÃO] Nenhum C170 encontrado no bloco do C100. Total de C170 no arquivo: {len(todos_c170)}", flush=True)
-                        
-                        # Mostrar alguns exemplos de C170 do arquivo
-                        if todos_c170:
-                            logger.info(f"[CORREÇÃO] Exemplos de C170 no arquivo (primeiros 3):")
-                            print(f"[CORREÇÃO] Exemplos de C170 no arquivo (primeiros 3):", flush=True)
-                            for idx in todos_c170[:3]:
-                                line = editor.lines[idx]
-                                parts = split_sped_line(line, min_fields=21)
-                                if len(parts) > 11:
-                                    cfop_ex = parts[11].strip()
-                                    cst_ex = parts[10].strip() if len(parts) > 10 else ""
-                                    logger.info(f"[CORREÇÃO]   Linha {idx+1}: CFOP={cfop_ex}, CST={cst_ex}")
-                                    print(f"[CORREÇÃO]   Linha {idx+1}: CFOP={cfop_ex}, CST={cst_ex}", flush=True)
-                        
-                        # CAMADA 2b: Se não encontrou C170 no bloco mas encontrou C100, buscar C190 próximo ao C100
-                        if c170_encontrados == 0 and not cfop_cst_encontrados and indices_c100:
-                            logger.info(f"[CORREÇÃO] Não encontrou C170 no bloco. Buscando C190 próximo ao C100 (até 50 linhas após)...")
-                            print(f"[CORREÇÃO] Não encontrou C170 no bloco. Buscando C190 próximo ao C100 (até 50 linhas após)...", flush=True)
-                            
-                            c100_idx = indices_c100[0]
-                            # Buscar C190 próximo (até 50 linhas após o C100 ou até próximo C100/C195)
-                            limite_busca_c190_proximo = proximo_c100_idx if proximo_c100_idx else min(c100_idx + 50, len(editor.lines))
-                            
-                            for idx in range(c100_idx + 1, limite_busca_c190_proximo):
-                                line = editor.lines[idx]
-                                line_stripped = line.strip()
-                                
-                                # Parar se encontrar próximo C100 ou C195
-                                if line_stripped.startswith("|C100|") or line_stripped.startswith("|C195|"):
-                                    break
-                                
-                                if line_stripped.startswith("|C190|"):
-                                    parts = split_sped_line(line, min_fields=13)
-                                    if len(parts) > 3:
-                                        cfop_c190 = parts[3].strip()
-                                        cst_c190 = parts[2].strip() if len(parts) > 2 else ""
-                                        
-                                        if cfop_c190 and cst_c190:
-                                            cfop_c190_clean = "".join(cfop_c190.split())
-                                            try:
-                                                from common import normalize_cst_for_compare
-                                                cst_c190_norm = normalize_cst_for_compare(cst_c190)
-                                            except ImportError:
-                                                cst_c190_norm = cst_c190.strip().zfill(3)
-                                            
-                                            cfop_cst_encontrados.add((cfop_c190_clean, cst_c190_norm))
-                                            logger.info(f"[CORREÇÃO] [OK] C190 encontrado próximo ao C100 (linha {idx+1}): CFOP={cfop_c190_clean}, CST={cst_c190_norm}")
-                                            print(f"[CORREÇÃO] [OK] C190 encontrado próximo ao C100 (linha {idx+1}): CFOP={cfop_c190_clean}, CST={cst_c190_norm}", flush=True)
-                                            break  # Usar o primeiro encontrado
+                    # Log final
+                    logger.info(f"[CORREÇÃO] ========== PASSO 9 - RESULTADO FINAL ==========")
+                    print(f"[CORREÇÃO] ========== PASSO 9 - RESULTADO FINAL ==========", flush=True)
+                    logger.info(f"[CORREÇÃO] PASSO 9.1 - Linhas verificadas: {linhas_verificadas}")
+                    print(f"[CORREÇÃO] PASSO 9.1 - Linhas verificadas: {linhas_verificadas}", flush=True)
+                    logger.info(f"[CORREÇÃO] PASSO 9.2 - CFOP/CST encontrados: {encontrou_cfop_cst}")
+                    print(f"[CORREÇÃO] PASSO 9.2 - CFOP/CST encontrados: {encontrou_cfop_cst}", flush=True)
+                    logger.info(f"[CORREÇÃO] PASSO 9.3 - Total de combinações CFOP/CST: {len(cfop_cst_encontrados)}")
+                    print(f"[CORREÇÃO] PASSO 9.3 - Total de combinações CFOP/CST: {len(cfop_cst_encontrados)}", flush=True)
+                    
+                    if encontrou_cfop_cst and cfop_cst_encontrados:
+                        logger.info(f"[CORREÇÃO] PASSO 9.4 - [OK] CFOP/CST encontrados: {len(cfop_cst_encontrados)} combinações")
+                        print(f"[CORREÇÃO] PASSO 9.4 - [OK] CFOP/CST encontrados: {len(cfop_cst_encontrados)} combinações", flush=True)
+                        for cfop_found, cst_found in cfop_cst_encontrados:
+                            logger.info(f"[CORREÇÃO] PASSO 9.4 - CFOP={cfop_found}, CST={cst_found}")
+                            print(f"[CORREÇÃO] PASSO 9.4 - CFOP={cfop_found}, CST={cst_found}", flush=True)
+                    else:
+                        logger.warning(f"[CORREÇÃO] PASSO 9.4 - [FALHOU] Não foi possível encontrar C170 ou C190 após C100 na linha {c100_idx+1}")
+                        print(f"[CORREÇÃO] PASSO 9.4 - [FALHOU] Não foi possível encontrar C170 ou C190 após C100 na linha {c100_idx+1}", flush=True)
+                        # DEBUG: Mostrar próximas 10 linhas após o C100 para diagnóstico
+                        logger.info(f"[CORREÇÃO] PASSO 9.5 - Próximas 10 linhas após C100 (linha {c100_idx+1}):")
+                        print(f"[CORREÇÃO] PASSO 9.5 - Próximas 10 linhas após C100 (linha {c100_idx+1}):", flush=True)
+                        for debug_idx in range(c100_idx + 1, min(c100_idx + 11, len(editor.lines))):
+                            debug_line = editor.lines[debug_idx]
+                            debug_stripped = debug_line.strip()
+                            tipo_linha = "VAZIA" if not debug_stripped else debug_stripped.split("|")[1] if "|" in debug_stripped else "DESCONHECIDA"
+                            logger.info(f"[CORREÇÃO] PASSO 9.5 - Linha {debug_idx+1}: [{tipo_linha}] '{debug_stripped[:100]}'")
+                            print(f"[CORREÇÃO] PASSO 9.5 - Linha {debug_idx+1}: [{tipo_linha}] '{debug_stripped[:100]}'", flush=True)
                 
                 # Se encontrou CFOP/CST (seja via C100→C170, C100→C190, C170 direto, ou C190 direto), usar para atualizar C190
                 if cfop_cst_encontrados:
-                    cfop_encontrado, cst_encontrado = list(cfop_cst_encontrados)[0]
-                    logger.info(f"[CORREÇÃO] Encontrado CFOP/CST: CFOP={cfop_encontrado}, CST={cst_encontrado}")
-                    print(f"[CORREÇÃO] Encontrado CFOP/CST: CFOP={cfop_encontrado}, CST={cst_encontrado}", flush=True)
+                    logger.info(f"[CORREÇÃO] Encontradas {len(cfop_cst_encontrados)} combinações CFOP/CST. Tentando atualizar C190...")
+                    print(f"[CORREÇÃO] Encontradas {len(cfop_cst_encontrados)} combinações CFOP/CST. Tentando atualizar C190...", flush=True)
                     
-                    # Limpar CFOP encontrado
-                    cfop_encontrado_clean = "".join(cfop_encontrado.split())
+                    # Tentar cada combinação CFOP/CST encontrada
+                    tentativas_sucesso = False
+                    for cfop_encontrado, cst_encontrado in cfop_cst_encontrados:
+                        # Limpar CFOP encontrado
+                        cfop_encontrado_clean = "".join(cfop_encontrado.split())
+                        
+                        # Normalizar CST encontrado
+                        try:
+                            from common import normalize_cst_for_compare
+                            cst_encontrado_norm = normalize_cst_for_compare(cst_encontrado)
+                        except ImportError:
+                            cst_encontrado_norm = cst_encontrado.strip().zfill(3)
+                        
+                        logger.debug(f"[CORREÇÃO] Tentando atualizar C190 com CFOP={cfop_encontrado_clean}, CST={cst_encontrado_norm}")
+                        
+                        # Tentar atualizar C190 com CFOP/CST encontrados
+                        sucesso = editor.update_field(
+                            registro="C190",
+                            campo=campo,
+                            novo_valor=valor_correto,
+                            cfop=cfop_encontrado_clean,
+                            cst=cst_encontrado_norm
+                        )
+                        
+                        if sucesso:
+                            logger.info(f"[CORREÇÃO] [SUCESSO] C190 atualizado com CFOP={cfop_encontrado_clean}, CST={cst_encontrado_norm}")
+                            print(f"[CORREÇÃO] [SUCESSO] C190 atualizado com CFOP={cfop_encontrado_clean}, CST={cst_encontrado_norm}", flush=True)
+                            tentativas_sucesso = True
+                            break  # Encontrou e atualizou, não precisa tentar outras combinações
                     
-                    # Normalizar CST encontrado
-                    try:
-                        from common import normalize_cst_for_compare
-                        cst_encontrado_norm = normalize_cst_for_compare(cst_encontrado)
-                    except ImportError:
-                        cst_encontrado_norm = cst_encontrado.strip().zfill(3)
-                    
-                    # Tentar atualizar C190 com CFOP/CST encontrados
-                    sucesso = editor.update_field(
-                        registro="C190",
-                        campo=campo,
-                        novo_valor=valor_correto,
-                        cfop=cfop_encontrado_clean,
-                        cst=cst_encontrado_norm
-                    )
-                    
-                    if sucesso:
+                    if tentativas_sucesso:
                         # Salvar arquivo corrigido
                         if output_path is None:
                             output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
@@ -1397,9 +1788,18 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                         resumo = editor.get_changes_summary()
                         return (True, output_path, resumo)
                     else:
-                        # C190 não existe, precisa criar
-                        logger.info(f"[CORREÇÃO] C190 não encontrado para atualizar. Criando novo C190...")
-                        print(f"[CORREÇÃO] C190 não encontrado para atualizar. Criando novo C190...", flush=True)
+                        # C190 não existe para nenhuma combinação, precisa criar
+                        logger.info(f"[CORREÇÃO] C190 não encontrado para nenhuma das {len(cfop_cst_encontrados)} combinações. Criando novo C190...")
+                        print(f"[CORREÇÃO] C190 não encontrado para nenhuma das {len(cfop_cst_encontrados)} combinações. Criando novo C190...", flush=True)
+                        
+                        # Usar a primeira combinação para criar
+                        cfop_encontrado, cst_encontrado = list(cfop_cst_encontrados)[0]
+                        cfop_encontrado_clean = "".join(cfop_encontrado.split())
+                        try:
+                            from common import normalize_cst_for_compare
+                            cst_encontrado_norm = normalize_cst_for_compare(cst_encontrado)
+                        except ImportError:
+                            cst_encontrado_norm = cst_encontrado.strip().zfill(3)
                         
                         # Buscar C170 relacionados para calcular valores
                         indices_c170 = editor.find_line_by_record("C170", cfop=cfop_encontrado_clean, cst=cst_encontrado_norm)
@@ -1506,9 +1906,69 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                             resumo = editor.get_changes_summary()
                             return (True, output_path, resumo)
                 else:
-                    # Se não encontrou CFOP/CST em nenhum lugar
-                    logger.warning(f"[CORREÇÃO] Não foi possível encontrar CFOP/CST para o C190")
-                    print(f"[CORREÇÃO] Não foi possível encontrar CFOP/CST para o C190", flush=True)
+                    # Se não encontrou CFOP/CST em nenhum lugar, tentar última camada: buscar C190 com campo zerado
+                    logger.warning(f"[CORREÇÃO] Não foi possível encontrar CFOP/CST via chave. Tentando última camada: buscar C190 com campo '{campo}' zerado...")
+                    print(f"[CORREÇÃO] Não foi possível encontrar CFOP/CST via chave. Tentando última camada: buscar C190 com campo '{campo}' zerado...", flush=True)
+                    
+                    # CAMADA FINAL: Buscar C190 com o campo que precisa ser corrigido zerado
+                    todos_c190 = editor.find_line_by_record("C190")
+                    logger.info(f"[CORREÇÃO] Total de C190 no arquivo para busca final: {len(todos_c190)}")
+                    print(f"[CORREÇÃO] Total de C190 no arquivo para busca final: {len(todos_c190)}", flush=True)
+                    
+                    if todos_c190 and campo:
+                        posicao_campo = editor.get_field_position("C190", campo)
+                        if posicao_campo:
+                            for idx in todos_c190:
+                                line = editor.lines[idx]
+                                parts = split_sped_line(line, min_fields=13)
+                                
+                                # Verificar se o campo está zerado
+                                if len(parts) > posicao_campo:
+                                    valor_atual = parse_float_br(parts[posicao_campo] or "0")
+                                    if abs(valor_atual) < 0.01:  # Campo zerado
+                                        # Extrair CFOP/CST deste C190
+                                        if len(parts) > 3:
+                                            cfop_c190 = parts[3].strip()
+                                            cst_c190 = parts[2].strip() if len(parts) > 2 else ""
+                                            
+                                            if cfop_c190 and cst_c190:
+                                                cfop_c190_clean = "".join(cfop_c190.split())
+                                                try:
+                                                    from common import normalize_cst_for_compare
+                                                    cst_c190_norm = normalize_cst_for_compare(cst_c190)
+                                                except ImportError:
+                                                    cst_c190_norm = cst_c190.strip().zfill(3)
+                                                
+                                                # Usar este CFOP/CST para atualizar
+                                                logger.info(f"[CORREÇÃO] [OK] C190 encontrado com {campo} zerado (linha {idx+1}): CFOP={cfop_c190_clean}, CST={cst_c190_norm}")
+                                                print(f"[CORREÇÃO] [OK] C190 encontrado com {campo} zerado (linha {idx+1}): CFOP={cfop_c190_clean}, CST={cst_c190_norm}", flush=True)
+                                                
+                                                sucesso = editor.update_field(
+                                                    registro="C190",
+                                                    campo=campo,
+                                                    novo_valor=valor_correto,
+                                                    cfop=cfop_c190_clean,
+                                                    cst=cst_c190_norm,
+                                                    linha_sped=idx+1
+                                                )
+                                                
+                                                if sucesso:
+                                                    if output_path is None:
+                                                        output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+                                                    else:
+                                                        output_path = Path(output_path)
+                                                    
+                                                    editor.save(output_path)
+                                                    resumo = editor.get_changes_summary()
+                                                    return (True, output_path, resumo)
+                                                
+                                                # Se não conseguiu atualizar este, continuar procurando
+                                                logger.warning(f"[CORREÇÃO] Não conseguiu atualizar C190 na linha {idx+1}, continuando busca...")
+                                                print(f"[CORREÇÃO] Não conseguiu atualizar C190 na linha {idx+1}, continuando busca...", flush=True)
+                    
+                    # Se chegou aqui, realmente não encontrou CFOP/CST em nenhum lugar
+                    logger.warning(f"[CORREÇÃO] Não foi possível encontrar CFOP/CST para o C190 após todas as tentativas")
+                    print(f"[CORREÇÃO] Não foi possível encontrar CFOP/CST para o C190 após todas as tentativas", flush=True)
                     
                     # Verificar se há outros registros no arquivo para diagnóstico
                     outros_registros = {}
@@ -1519,9 +1979,13 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                     
                     return (False, sped_path, {
                         "erro": "Não foi possível encontrar CFOP/CST para o C190",
-                        "detalhes": f"Não foram encontrados C100 ou C170 com a chave '{chave[:20] if chave else 'N/A'}...' para obter CFOP/CST. Registros encontrados: {list(outros_registros.keys())[:10]}",
-                        "sugestao": "Verifique se o arquivo SPED contém registros C100 ou C170 com a chave da NF correspondente."
+                        "detalhes": f"Não foram encontrados C100, C170 ou C190 com a chave '{chave[:20] if chave else 'N/A'}...' para obter CFOP/CST. Registros encontrados: {list(outros_registros.keys())[:10]}",
+                        "sugestao": "Verifique se o arquivo SPED contém registros C100, C170 ou C190 com a chave da NF correspondente, ou C190 com o campo zerado."
                     })
+            else:
+                # DEBUG: Se não entrou no if chave
+                sys.stderr.write(f"[CORREÇÃO] DEBUG - NÃO ENTROU NO IF CHAVE! chave='{chave}', bool(chave)={bool(chave)}, type={type(chave)}\n")
+                sys.stderr.flush()
             
             # Se não encontrou via chave, buscar todos os C190 e tentar atualizar um com valor zerado
             # CORREÇÃO: Também tentar buscar C190 que correspondem ao campo que queremos corrigir
@@ -1541,7 +2005,7 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                         # Verificar se o campo que queremos corrigir está zerado neste C190
                         posicao_campo = editor.get_field_position("C190", campo)
                         if posicao_campo and len(parts) > posicao_campo:
-                            valor_atual = float(parts[posicao_campo] or 0) if parts[posicao_campo] else 0.0
+                            valor_atual = parse_float_br(parts[posicao_campo] or "0")
                             # Se o valor atual está zerado ou muito próximo de zero, atualizar
                             if abs(valor_atual) < 0.01:
                                 logger.info(f"[CORREÇÃO] Encontrado C190 na linha {idx+1} com {campo} zerado (valor atual: {valor_atual}). Atualizando...")
@@ -1833,17 +2297,17 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                         # Layout C170 após split: fs[0]="", fs[1]="C170", fs[2]=NUM_ITEM, ...
                         # fs[9]=VL_BC_ICMS, fs[10]=VL_ICMS, fs[11]=VL_BC_ICMS_ST, fs[12]=VL_ICMS_ST, fs[13]=VL_IPI, fs[15]=VL_ITEM
                         if len(parts) > 9:
-                            vl_bc_icms += float(parts[9] or 0) if parts[9] else 0.0
+                            vl_bc_icms += parse_float_br(parts[9] or "0")
                         if len(parts) > 10:
-                            vl_icms += float(parts[10] or 0) if parts[10] else 0.0
+                            vl_icms += parse_float_br(parts[10] or "0")
                         if len(parts) > 11:
-                            vl_bc_icms_st += float(parts[11] or 0) if parts[11] else 0.0
+                            vl_bc_icms_st += parse_float_br(parts[11] or "0")
                         if len(parts) > 12:
-                            vl_icms_st += float(parts[12] or 0) if parts[12] else 0.0
+                            vl_icms_st += parse_float_br(parts[12] or "0")
                         if len(parts) > 13:
-                            vl_ipi += float(parts[13] or 0) if parts[13] else 0.0
+                            vl_ipi += parse_float_br(parts[13] or "0")
                         if len(parts) > 15:
-                            vl_opr += float(parts[15] or 0) if parts[15] else 0.0
+                            vl_opr += parse_float_br(parts[15] or "0")
                     
                     # VALIDAÇÃO LEGAL: O valor do campo corrigido deve ser igual à soma dos C170
                     # Tolerância de 0.02 para arredondamentos
@@ -1968,7 +2432,7 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                         }.get(campo, 9)
                         
                         if len(parts) > posicao_campo:
-                            soma_c170 += float(parts[posicao_campo] or 0) if parts[posicao_campo] else 0.0
+                            soma_c170 += parse_float_br(parts[posicao_campo] or "0")
                     
                     # Validar se o valor da correção está de acordo com a legislação
                     diferenca = abs(valor_correto - soma_c170)

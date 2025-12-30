@@ -603,7 +603,7 @@ const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf
   const totalDivergencias = divergenciasAgrupadas.reduce((sum, d) => sum + d.totalDivergencias, 0);
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg shadow-md border-2 border-gray-300 p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-2 mb-2">
@@ -617,7 +617,7 @@ const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-sm font-semibold text-gray-700 bg-gray-50 px-4 py-2 rounded-lg border border-gray-300">
+          <div className="text-sm font-semibold text-gray-700 bg-gray-50 px-4 py-2 rounded-lg border-2 border-gray-400">
             {divergenciasAgrupadas.length} chave(s) • {totalDivergencias} divergência(s)
           </div>
           {divergenciasAgrupadas.length > 0 && (
@@ -674,11 +674,11 @@ const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf
               .map((divergenciaPorChave) => {
                 const isExpanded = expandedChaves.has(divergenciaPorChave.chaveNf);
                 return (
-                  <div key={divergenciaPorChave.chaveNf} className="bg-white">
+                  <div key={divergenciaPorChave.chaveNf} className="bg-white border-2 border-gray-300 rounded-lg mb-3">
                     {/* Cabeçalho da chave */}
                     <div
                       onClick={() => toggleChave(divergenciaPorChave.chaveNf)}
-                      className="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer flex items-center justify-between"
+                      className="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer flex items-center justify-between rounded-t-lg"
                     >
                       <div className="flex items-center gap-3 flex-1">
                         {isExpanded ? (
@@ -765,7 +765,7 @@ const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf
             Divergências legítimas são marcadas conforme legislação EFD-ICMS/IPI.
           </p>
           
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-lg border-2 border-gray-300 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
