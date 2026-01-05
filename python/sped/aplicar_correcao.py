@@ -7,35 +7,103 @@ Chamado pelo backend Node.js para corrigir divergências identificadas
 import sys
 import json
 from pathlib import Path
+from typing import Optional
 
 # Adicionar diretório atual ao path
 sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from sped_editor import aplicar_correcao_c170_c190
+    from sped_editor import aplicar_correcao_c170_c190, aplicar_correcao_com_xml, aplicar_correcoes_multiplas_c170_c190
+    from xml_extractor import extrair_dados_xml_nfe
+    HAS_XML_SUPPORT = True
 except ImportError as e:
-    print(json.dumps({"error": f"Erro ao importar módulos: {e}"}))
-    sys.exit(1)
+    print(json.dumps({"warning": f"Suporte a XML limitado: {e}"}))
+    try:
+        from sped_editor import aplicar_correcao_c170_c190, aplicar_correcoes_multiplas_c170_c190
+    except ImportError:
+        from sped_editor import aplicar_correcao_c170_c190
+        # Fallback: se não tem a função de lote, criar um wrapper
+        def aplicar_correcoes_multiplas_c170_c190(sped_path, correcoes, output_path=None):
+            # Aplicar correções sequencialmente (modo compatibilidade)
+            for correcao in correcoes:
+                sucesso, sped_path, resumo = aplicar_correcao_c170_c190(sped_path, correcao, output_path)
+                if not sucesso:
+                    return (sucesso, sped_path, resumo)
+            return (True, sped_path, {"total_alteracoes": len(correcoes)})
+    HAS_XML_SUPPORT = False
+
+def buscar_xml_por_chave(diretorio_xmls: Path, chave_nfe: str) -> Optional[Path]:
+    """Busca XML no diretório pelo nome do arquivo ou pela chave dentro do XML"""
+    if not diretorio_xmls or not diretorio_xmls.exists():
+        return None
+    
+    # Tentar encontrar por nome do arquivo (chave.xml)
+    xml_direto = diretorio_xmls / f"{chave_nfe}.xml"
+    if xml_direto.exists():
+        return xml_direto
+    
+    # Buscar em todos os XMLs do diretório
+    for xml_file in diretorio_xmls.glob("*.xml"):
+        try:
+            # Ler e verificar se a chave bate
+            dados = extrair_dados_xml_nfe(xml_file)
+            if dados and dados.chave_nfe == chave_nfe:
+                return xml_file
+        except:
+            continue
+    
+    return None
+
 
 def main():
     if len(sys.argv) < 4:
-        print(json.dumps({"error": "Argumentos insuficientes. Esperado: sped_path output_path correcao_json_path"}))
+        print(json.dumps({"error": "Argumentos insuficientes. Esperado: sped_path output_path correcao_json_path [xmls_dir]"}))
         sys.exit(1)
     
     sped_path = Path(sys.argv[1])
     output_path = Path(sys.argv[2])
     correcao_json_path = Path(sys.argv[3])
+    xmls_dir = Path(sys.argv[4]) if len(sys.argv) > 4 else None
     
     try:
         # Ler e parsear JSON da correção (pode ser arquivo ou string JSON)
         if correcao_json_path.exists():
             # É um arquivo
-            correcao = json.loads(correcao_json_path.read_text(encoding='utf-8'))
+            correcao_data = json.loads(correcao_json_path.read_text(encoding='utf-8'))
         else:
             # Tentar como string JSON direta (compatibilidade)
-            correcao = json.loads(str(correcao_json_path))
+            correcao_data = json.loads(str(correcao_json_path))
         
-        # Log para debug
+        # NOVO: Suporte para múltiplas correções (array) ou correção única (objeto)
+        # Se for um array, é um lote de correções para a mesma chave
+        # Se for um objeto, é uma correção única (retrocompatibilidade)
+        if isinstance(correcao_data, list):
+            correcoes = correcao_data
+            print(json.dumps({
+                "info": f"Modo LOTE: {len(correcoes)} correções para aplicar na mesma chave"
+            }), flush=True)
+        else:
+            correcoes = [correcao_data]
+            print(json.dumps({
+                "info": "Modo ÚNICA correção (retrocompatibilidade)"
+            }), flush=True)
+        
+        # Validar que todas as correções são da mesma chave (se houver chave)
+        chaves = [c.get("chave", "") for c in correcoes if c.get("chave")]
+        if len(set(chaves)) > 1:
+            print(json.dumps({
+                "success": False,
+                "error": "Múltiplas chaves diferentes no lote de correções",
+                "resumo": {
+                    "erro": "Todas as correções de um lote devem ser da mesma NF (mesma chave)",
+                    "detalhes": f"Chaves encontradas: {set(chaves)}",
+                    "sugestao": "Agrupe as correções por chave e envie lotes separados para cada chave."
+                }
+            }), flush=True)
+            sys.exit(1)
+        
+        # Usar primeira correção para extrair dados comuns (chave, cfop, cst)
+        correcao = correcoes[0]
         registro_corrigir = correcao.get("registro_corrigir", "")
         campo = correcao.get("campo", "")
         valor_correto = correcao.get("valor_correto")
@@ -121,13 +189,54 @@ def main():
                 }), flush=True)
                 sys.exit(1)
         
-        # Aplicar correção passando o output_path diretamente
-        sys.stderr.write(f"[aplicar_correcao.py] ANTES DE CHAMAR aplicar_correcao_c170_c190\n")
-        sys.stderr.write(f"[aplicar_correcao.py] sped_path={sped_path}\n")
-        sys.stderr.write(f"[aplicar_correcao.py] correcao={correcao}\n")
-        sys.stderr.flush()
-        
-        sucesso, arquivo_corrigido, resumo = aplicar_correcao_c170_c190(sped_path, correcao, output_path)
+        # DECISÃO: Usar função de lote ou única?
+        if len(correcoes) > 1:
+            # MODO LOTE: Múltiplas correções na mesma NF
+            sys.stderr.write(f"[aplicar_correcao.py] MODO LOTE: {len(correcoes)} correções\n")
+            sys.stderr.flush()
+            
+            sucesso, arquivo_corrigido, resumo = aplicar_correcoes_multiplas_c170_c190(
+                sped_path=sped_path,
+                correcoes=correcoes,
+                output_path=output_path
+            )
+        else:
+            # MODO ÚNICO: Uma correção apenas (retrocompatibilidade)
+            sys.stderr.write(f"[aplicar_correcao.py] MODO ÚNICO: 1 correção\n")
+            sys.stderr.flush()
+            
+            # ESTRATÉGIA NOVA: Tentar usar XML quando disponível
+            xml_path = None
+            if HAS_XML_SUPPORT and xmls_dir and chave:
+                sys.stderr.write(f"[aplicar_correcao.py] Buscando XML para chave {chave[:20]}...\n")
+                sys.stderr.flush()
+                xml_path = buscar_xml_por_chave(xmls_dir, chave)
+                if xml_path:
+                    sys.stderr.write(f"[aplicar_correcao.py] OK XML encontrado: {xml_path}\n")
+                    sys.stderr.flush()
+                else:
+                    sys.stderr.write(f"[aplicar_correcao.py] AVISO XML não encontrado no diretório {xmls_dir}\n")
+                    sys.stderr.flush()
+            
+            # Se temos XML, usar a nova lógica baseada em XML
+            if xml_path and HAS_XML_SUPPORT:
+                sys.stderr.write(f"[aplicar_correcao.py] Usando NOVA LÓGICA BASEADA EM XML\n")
+                sys.stderr.flush()
+                
+                sucesso, arquivo_corrigido, resumo = aplicar_correcao_com_xml(
+                    sped_path=sped_path,
+                    xml_path=xml_path,
+                    chave_nfe=chave,
+                    campo=campo,
+                    valor_correto=valor_correto,
+                    output_path=output_path
+                )
+            else:
+                # Fallback para lógica antiga (tentar extrair do próprio SPED)
+                sys.stderr.write(f"[aplicar_correcao.py] Usando lógica tradicional (sem XML)\n")
+                sys.stderr.flush()
+                
+                sucesso, arquivo_corrigido, resumo = aplicar_correcao_c170_c190(sped_path, correcao, output_path)
         
         sys.stderr.write(f"[aplicar_correcao.py] DEPOIS DE CHAMAR - sucesso={sucesso}\n")
         sys.stderr.flush()

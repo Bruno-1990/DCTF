@@ -34,6 +34,14 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Importar extrator de XML
+try:
+    from xml_extractor import extrair_dados_xml_nfe, consolidar_itens_por_cfop_cst, DadosNFe
+    HAS_XML_EXTRACTOR = True
+except ImportError:
+    logger.warning("xml_extractor não disponível. Funcionalidade de correção por XML limitada.")
+    HAS_XML_EXTRACTOR = False
+
 
 def parse_float_br(value: str) -> float:
     """
@@ -154,10 +162,23 @@ class SpedEditor:
         
         try:
             with open(self.sped_path, 'r', encoding=encoding) as f:
-                self.lines = f.readlines()
-                self.original_lines = self.lines.copy()
+                all_lines = f.readlines()
             
-            logger.info(f"Arquivo SPED carregado: {len(self.lines)} linhas (encoding: {encoding})")
+            # Filtrar linhas vazias e registrar suas posições
+            linhas_vazias = []
+            self.lines = []
+            for idx, line in enumerate(all_lines, start=1):
+                if line.strip():  # Se a linha não está vazia (após remover espaços)
+                    self.lines.append(line)
+                else:
+                    linhas_vazias.append(idx)
+            
+            self.original_lines = self.lines.copy()
+            
+            if linhas_vazias:
+                logger.warning(f"Arquivo tinha {len(linhas_vazias)} linhas vazias nas posições: {linhas_vazias[:10]} {'...' if len(linhas_vazias) > 10 else ''} (removidas automaticamente)")
+            
+            logger.info(f"Arquivo SPED carregado: {len(self.lines)} linhas úteis (encoding: {encoding})")
             
             # DEBUG: Verificar se há C100 e C190 no arquivo carregado
             c100_count = sum(1 for line in self.lines if line.strip().startswith("|C100|"))
@@ -173,22 +194,28 @@ class SpedEditor:
                 self.encoding = 'latin-1'
                 try:
                     with open(self.sped_path, 'r', encoding='latin-1') as f:
-                        self.lines = f.readlines()
-                        self.original_lines = self.lines.copy()
+                        all_lines = f.readlines()
+                    # Filtrar linhas vazias
+                    self.lines = [line for line in all_lines if line.strip()]
+                    self.original_lines = self.lines.copy()
                     logger.info(f"Arquivo SPED carregado com latin-1: {len(self.lines)} linhas")
                 except (UnicodeDecodeError, UnicodeError):
                     # Se ainda falhar, usar errors='replace' para substituir caracteres inválidos
                     logger.warning("Usando latin-1 com substituição de caracteres inválidos...")
                     with open(self.sped_path, 'r', encoding='latin-1', errors='replace') as f:
-                        self.lines = f.readlines()
-                        self.original_lines = self.lines.copy()
+                        all_lines = f.readlines()
+                    # Filtrar linhas vazias
+                    self.lines = [line for line in all_lines if line.strip()]
+                    self.original_lines = self.lines.copy()
                     logger.info(f"Arquivo SPED carregado com latin-1 (com substituição de erros): {len(self.lines)} linhas")
             else:
                 # Se já estava tentando latin-1, usar errors='replace'
                 logger.warning("Usando latin-1 com substituição de caracteres inválidos...")
                 with open(self.sped_path, 'r', encoding='latin-1', errors='replace') as f:
-                    self.lines = f.readlines()
-                    self.original_lines = self.lines.copy()
+                    all_lines = f.readlines()
+                # Filtrar linhas vazias
+                self.lines = [line for line in all_lines if line.strip()]
+                self.original_lines = self.lines.copy()
                 logger.info(f"Arquivo SPED carregado com latin-1 (com substituição de erros): {len(self.lines)} linhas")
     
     def find_line_by_record(self, registro: str, chave: Optional[str] = None, 
@@ -866,10 +893,10 @@ class SpedEditor:
         if not tem_registro_final:
             logger.warning("Arquivo SPED não tem registro final (9999)")
         
-        # VALIDAÇÃO 3: Verificar linhas vazias no meio do arquivo
+        # VALIDAÇÃO 3: Verificar linhas vazias no meio do arquivo (NÃO DEVE HAVER, pois já foram removidas ao carregar)
         linhas_vazias = [i for i, line in enumerate(self.lines) if line.strip() == ""]
         if linhas_vazias:
-            logger.warning(f"Arquivo tem {len(linhas_vazias)} linhas vazias nas posições: {linhas_vazias[:10]}")
+            logger.error(f"ERRO CRÍTICO: Encontradas {len(linhas_vazias)} linhas vazias após filtragem inicial! Posições: {linhas_vazias[:10]}")
         
         # VALIDAÇÃO 4: Validar encoding antes de salvar
         try:
@@ -948,6 +975,140 @@ class SpedEditor:
             "total_alteracoes": len(changes),
             "alteracoes": changes
         }
+
+
+def aplicar_correcao_com_xml(
+    sped_path: Path, 
+    xml_path: Path, 
+    chave_nfe: str,
+    campo: str,
+    valor_correto: float,
+    output_path: Optional[Path] = None
+) -> Tuple[bool, Path, Dict[str, any]]:
+    """
+    Aplica correção no SPED usando dados extraídos do XML da NF-e
+    
+    Esta é a abordagem CORRETA: usar os dados do XML (que são a fonte da verdade)
+    para corrigir o SPED, em vez de tentar extrair dados do próprio SPED que pode estar errado.
+    
+    Args:
+        sped_path: Caminho do arquivo SPED
+        xml_path: Caminho do arquivo XML da NF-e
+        chave_nfe: Chave da NF-e
+        campo: Campo a corrigir (VL_ICMS_ST, VL_BC_ICMS_ST, etc.)
+        valor_correto: Valor correto do campo
+        output_path: Caminho para salvar arquivo corrigido
+        
+    Returns:
+        Tupla (sucesso, caminho_arquivo, resumo)
+    """
+    if not HAS_XML_EXTRACTOR:
+        logger.error("xml_extractor não disponível!")
+        return (False, sped_path, {"erro": "Módulo xml_extractor não disponível"})
+    
+    try:
+        logger.info(f"[CORREÇÃO XML] Iniciando correção usando XML: {xml_path}")
+        logger.info(f"[CORREÇÃO XML] Chave NF-e: {chave_nfe}")
+        logger.info(f"[CORREÇÃO XML] Campo: {campo}, Valor: {valor_correto}")
+        
+        # 1. Extrair dados do XML
+        dados_xml = extrair_dados_xml_nfe(xml_path)
+        if not dados_xml:
+            logger.error(f"[CORREÇÃO XML] Falha ao extrair dados do XML")
+            return (False, sped_path, {"erro": "Falha ao extrair dados do XML"})
+        
+        logger.info(f"[CORREÇÃO XML] XML extraído: {len(dados_xml.itens)} itens encontrados")
+        
+        # 2. Consolidar itens por CFOP/CST (para C190)
+        consolidado = consolidar_itens_por_cfop_cst(dados_xml.itens)
+        logger.info(f"[CORREÇÃO XML] Consolidado em {len(consolidado)} combinações CFOP/CST")
+        
+        # 3. Carregar SPED
+        editor = SpedEditor(sped_path)
+        logger.info(f"[CORREÇÃO XML] SPED carregado: {len(editor.lines)} linhas")
+        
+        # 4. Encontrar C100
+        indices_c100 = editor.find_line_by_record("C100", chave=chave_nfe)
+        if not indices_c100:
+            logger.error(f"[CORREÇÃO XML] C100 não encontrado para chave {chave_nfe}")
+            return (False, sped_path, {"erro": f"C100 não encontrado para chave {chave_nfe}"})
+        
+        c100_idx = indices_c100[0]
+        logger.info(f"[CORREÇÃO XML] C100 encontrado na linha {c100_idx + 1}")
+        
+        # 5. Adicionar/Atualizar C170 para cada item do XML
+        c170_adicionados = 0
+        c170_atualizados = 0
+        
+        for item in dados_xml.itens:
+            # TODO: Implementar adição de C170
+            # Por enquanto, vamos focar em atualizar C190 existente
+            pass
+        
+        # 6. Atualizar C190 com dados consolidados do XML
+        c190_atualizados = 0
+        
+        for (cfop, cst), valores in consolidado.items():
+            logger.info(f"[CORREÇÃO XML] Processando CFOP={cfop}, CST={cst}")
+            logger.info(f"[CORREÇÃO XML]   BC ST: {valores['bc_icms_st']}, ICMS ST: {valores['valor_icms_st']}")
+            
+            # Buscar C190 existente para este CFOP/CST
+            indices_c190 = editor.find_line_by_record("C190", cfop=cfop, cst=cst)
+            
+            if indices_c190:
+                # C190 existe - atualizar
+                idx_c190 = indices_c190[0]
+                logger.info(f"[CORREÇÃO XML] C190 encontrado na linha {idx_c190 + 1}")
+                
+                # Atualizar o campo específico
+                sucesso = editor.update_field(
+                    registro="C190",
+                    campo=campo,
+                    novo_valor=valor_correto,
+                    cfop=cfop,
+                    cst=cst,
+                    linha_sped=idx_c190 + 1
+                )
+                
+                if sucesso:
+                    c190_atualizados += 1
+                    logger.info(f"[CORREÇÃO XML] C190 atualizado com sucesso!")
+                else:
+                    logger.warning(f"[CORREÇÃO XML] Falha ao atualizar C190")
+            else:
+                logger.warning(f"[CORREÇÃO XML] C190 não encontrado para CFOP={cfop}, CST={cst}")
+                # TODO: Criar novo C190 se necessário
+        
+        # 7. Salvar arquivo corrigido
+        if output_path is None:
+            output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+        else:
+            output_path = Path(output_path)
+        
+        editor.save(output_path)
+        logger.info(f"[CORREÇÃO XML] Arquivo salvo: {output_path}")
+        
+        # 8. Gerar resumo
+        resumo = {
+            "sucesso": True,
+            "chave_nfe": chave_nfe,
+            "itens_xml": len(dados_xml.itens),
+            "cfop_cst_distintos": len(consolidado),
+            "c170_adicionados": c170_adicionados,
+            "c170_atualizados": c170_atualizados,
+            "c190_atualizados": c190_atualizados,
+            "campo_corrigido": campo,
+            "valor_corrigido": valor_correto,
+        }
+        
+        logger.info(f"[CORREÇÃO XML] Resumo: {resumo}")
+        return (True, output_path, resumo)
+        
+    except Exception as e:
+        logger.error(f"[CORREÇÃO XML] Erro: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return (False, sped_path, {"erro": str(e)})
 
 
 def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output_path: Optional[Path] = None) -> Tuple[bool, Path, Dict[str, any]]:
@@ -1307,7 +1468,8 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                                 sys.stderr.write(f"[CORREÇÃO] DEBUG - C170 não tem CFOP/CST válidos\n")
                                 sys.stderr.flush()
                     
-                    # Buscar C190 relacionado com o campo zerado
+                    # Buscar C190 relacionado (não importa se campo está zerado ou não)
+                    # CRÍTICO: Para correções acumulativas, precisamos atualizar o C190 mesmo que já tenha valor
                     if indices_c190_relacionados and campo:
                         posicao_campo = editor.get_field_position("C190", campo)
                         if posicao_campo:
@@ -1315,51 +1477,53 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                                 line_c190 = editor.lines[idx_c190]
                                 parts_c190 = split_sped_line(line_c190, min_fields=13)
                                 
-                                # Verificar se o campo está zerado
+                                # CORREÇÃO: Não verificar se está zerado - atualizar sempre!
                                 if len(parts_c190) > posicao_campo:
                                     valor_atual = parse_float_br(parts_c190[posicao_campo] or "0")
-                                    if abs(valor_atual) < 0.01:  # Campo zerado
-                                        # Extrair CFOP/CST deste C190
-                                        if len(parts_c190) > 3:
-                                            cfop_c190 = parts_c190[3].strip()
-                                            cst_c190 = parts_c190[2].strip() if len(parts_c190) > 2 else ""
+                                    sys.stderr.write(f"[CORREÇÃO] C190 idx={idx_c190} campo={campo} valor_atual={valor_atual} -> novo={valor_correto}\n")
+                                    sys.stderr.flush()
+                                    
+                                    # Extrair CFOP/CST deste C190
+                                    if len(parts_c190) > 3:
+                                        cfop_c190 = parts_c190[3].strip()
+                                        cst_c190 = parts_c190[2].strip() if len(parts_c190) > 2 else ""
+                                        
+                                        if cfop_c190 and cst_c190:
+                                            cfop_c190_clean = "".join(cfop_c190.split())
+                                            try:
+                                                from common import normalize_cst_for_compare
+                                                cst_c190_norm = normalize_cst_for_compare(cst_c190)
+                                            except ImportError:
+                                                cst_c190_norm = cst_c190.strip().zfill(3)
                                             
-                                            if cfop_c190 and cst_c190:
-                                                cfop_c190_clean = "".join(cfop_c190.split())
-                                                try:
-                                                    from common import normalize_cst_for_compare
-                                                    cst_c190_norm = normalize_cst_for_compare(cst_c190)
-                                                except ImportError:
-                                                    cst_c190_norm = cst_c190.strip().zfill(3)
-                                                
-                                                # Tentar atualizar este C190
-                                                sucesso = editor.update_field(
-                                                    registro="C190",
-                                                    campo=campo,
-                                                    novo_valor=valor_correto,
-                                                    cfop=cfop_c190_clean,
-                                                    cst=cst_c190_norm,
-                                                    linha_sped=idx_c190+1
-                                                )
-                                                
-                                                sys.stderr.write(f"[CORREÇÃO] DEBUG - update_field retornou sucesso={sucesso}\n")
+                                            # Tentar atualizar este C190
+                                            sucesso = editor.update_field(
+                                                registro="C190",
+                                                campo=campo,
+                                                novo_valor=valor_correto,
+                                                cfop=cfop_c190_clean,
+                                                cst=cst_c190_norm,
+                                                linha_sped=idx_c190+1
+                                            )
+                                            
+                                            sys.stderr.write(f"[CORREÇÃO] DEBUG - update_field retornou sucesso={sucesso}\n")
+                                            sys.stderr.flush()
+                                            
+                                            if sucesso:
+                                                sys.stderr.write(f"[CORREÇÃO] [SUCESSO] C190 atualizado na linha {idx_c190+1}! Salvando e retornando...\n")
                                                 sys.stderr.flush()
                                                 
-                                                if sucesso:
-                                                    sys.stderr.write(f"[CORREÇÃO] [SUCESSO] C190 atualizado na linha {idx_c190+1}! Salvando e retornando...\n")
-                                                    sys.stderr.flush()
-                                                    
-                                                    if output_path is None:
-                                                        output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
-                                                    else:
-                                                        output_path = Path(output_path)
-                                                    
-                                                    editor.save(output_path)
-                                                    resumo = editor.get_changes_summary()
-                                                    return (True, output_path, resumo)
+                                                if output_path is None:
+                                                    output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+                                                else:
+                                                    output_path = Path(output_path)
                                                 
-                                                sys.stderr.write(f"[CORREÇÃO] Não conseguiu atualizar C190 na linha {idx_c190+1}, continuando busca...\n")
-                                                sys.stderr.flush()
+                                                editor.save(output_path)
+                                                resumo = editor.get_changes_summary()
+                                                return (True, output_path, resumo)
+                                            
+                                            sys.stderr.write(f"[CORREÇÃO] Não conseguiu atualizar C190 na linha {idx_c190+1}, continuando busca...\n")
+                                            sys.stderr.flush()
                     
                     # Se encontrou CFOP/CST via C170 relacionados, usar para continuar
                     sys.stderr.write(f"[CORREÇÃO] DEBUG - Verificando cfop_cst_encontrados: {len(cfop_cst_encontrados)} encontrados\n")
@@ -1742,7 +1906,7 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                             logger.info(f"[CORREÇÃO] PASSO 9.5 - Linha {debug_idx+1}: [{tipo_linha}] '{debug_stripped[:100]}'")
                             print(f"[CORREÇÃO] PASSO 9.5 - Linha {debug_idx+1}: [{tipo_linha}] '{debug_stripped[:100]}'", flush=True)
                 
-                # Se encontrou CFOP/CST (seja via C100→C170, C100→C190, C170 direto, ou C190 direto), usar para atualizar C190
+                # Se encontrou CFOP/CST (seja via C100->C170, C100->C190, C170 direto, ou C190 direto), usar para atualizar C190
                 if cfop_cst_encontrados:
                     logger.info(f"[CORREÇÃO] Encontradas {len(cfop_cst_encontrados)} combinações CFOP/CST. Tentando atualizar C190...")
                     print(f"[CORREÇÃO] Encontradas {len(cfop_cst_encontrados)} combinações CFOP/CST. Tentando atualizar C190...", flush=True)
@@ -1987,16 +2151,79 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
                 sys.stderr.write(f"[CORREÇÃO] DEBUG - NÃO ENTROU NO IF CHAVE! chave='{chave}', bool(chave)={bool(chave)}, type={type(chave)}\n")
                 sys.stderr.flush()
             
-            # Se não encontrou via chave, buscar todos os C190 e tentar atualizar um com valor zerado
-            # CORREÇÃO: Também tentar buscar C190 que correspondem ao campo que queremos corrigir
+            # Se não encontrou via chave, buscar C190 relacionados
+            # CRÍTICO: Se temos chave, procurar apenas C190s filhos do C100 da chave
+            # Se não temos chave, buscar globalmente (mas ainda exigir campo zerado para segurança)
+            if chave:
+                # Quando temos chave, procurar apenas C190s relacionados ao C100 da chave
+                logger.info(f"[CORREÇÃO] Última camada COM CHAVE: buscando C190s filhos do C100 da chave {chave[:20]}...")
+                print(f"[CORREÇÃO] Última camada COM CHAVE: buscando C190s filhos do C100 da chave {chave[:20]}...", flush=True)
+                
+                # Re-localizar o C100 da chave
+                indices_c100 = editor.find_line_by_record_and_key("C100", chave)
+                if indices_c100:
+                    c100_idx = indices_c100[0]
+                    # Buscar C190s filhos deste C100
+                    indices_c190_relacionados = editor.find_children_records(c100_idx, "C190")
+                    logger.info(f"[CORREÇÃO] Encontrados {len(indices_c190_relacionados)} C190s filhos do C100")
+                    print(f"[CORREÇÃO] Encontrados {len(indices_c190_relacionados)} C190s filhos do C100", flush=True)
+                    
+                    if indices_c190_relacionados and campo:
+                        posicao_campo = editor.get_field_position("C190", campo)
+                        if posicao_campo:
+                            for idx_c190 in indices_c190_relacionados:
+                                line_c190 = editor.lines[idx_c190]
+                                parts_c190 = split_sped_line(line_c190, min_fields=13)
+                                
+                                # CORREÇÃO ACUMULATIVA: Não verificar se está zerado - atualizar sempre!
+                                if len(parts_c190) > posicao_campo:
+                                    # Extrair CFOP/CST deste C190
+                                    if len(parts_c190) > 3:
+                                        cfop_c190 = parts_c190[3].strip()
+                                        cst_c190 = parts_c190[2].strip() if len(parts_c190) > 2 else ""
+                                        
+                                        if cfop_c190 and cst_c190:
+                                            cfop_c190_clean = "".join(cfop_c190.split())
+                                            try:
+                                                from common import normalize_cst_for_compare
+                                                cst_c190_norm = normalize_cst_for_compare(cst_c190)
+                                            except ImportError:
+                                                cst_c190_norm = cst_c190.strip().zfill(3)
+                                            
+                                            logger.info(f"[CORREÇÃO] Tentando atualizar C190 na linha {idx_c190+1} (CFOP={cfop_c190_clean}, CST={cst_c190_norm})")
+                                            print(f"[CORREÇÃO] Tentando atualizar C190 na linha {idx_c190+1} (CFOP={cfop_c190_clean}, CST={cst_c190_norm})", flush=True)
+                                            
+                                            sucesso = editor.update_field(
+                                                registro="C190",
+                                                campo=campo,
+                                                novo_valor=valor_correto,
+                                                cfop=cfop_c190_clean,
+                                                cst=cst_c190_norm,
+                                                linha_sped=idx_c190+1
+                                            )
+                                            
+                                            if sucesso:
+                                                logger.info(f"[CORREÇÃO] [OK] SUCESSO na última camada: C190 atualizado na linha {idx_c190+1}!")
+                                                print(f"[CORREÇÃO] [OK] SUCESSO na última camada: C190 atualizado na linha {idx_c190+1}!", flush=True)
+                                                
+                                                if output_path is None:
+                                                    output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+                                                else:
+                                                    output_path = Path(output_path)
+                                                
+                                                editor.save(output_path)
+                                                resumo = editor.get_changes_summary()
+                                                return (True, output_path, resumo)
+            
+            # Se não tem chave, buscar globalmente (e exigir campo zerado para segurança)
             todos_c190 = editor.find_line_by_record("C190")
             logger.info(f"[CORREÇÃO] Total de C190 encontrados no arquivo: {len(todos_c190)}")
             print(f"[CORREÇÃO] Total de C190 encontrados no arquivo: {len(todos_c190)}", flush=True)
             
-            if todos_c190:
+            if todos_c190 and not chave:
                 # Tentar encontrar um C190 com o campo zerado que precisa ser atualizado
-                logger.info(f"[CORREÇÃO] Buscando C190 com campo {campo} zerado...")
-                print(f"[CORREÇÃO] Buscando C190 com campo {campo} zerado...", flush=True)
+                logger.info(f"[CORREÇÃO] Buscando C190 com campo {campo} zerado (busca global sem chave)...")
+                print(f"[CORREÇÃO] Buscando C190 com campo {campo} zerado (busca global sem chave)...", flush=True)
                 
                 for idx in todos_c190:
                     line = editor.lines[idx]
@@ -2507,4 +2734,316 @@ def aplicar_correcao_c170_c190(sped_path: Path, correcao: Dict[str, any], output
         import traceback
         traceback.print_exc()
         return (False, sped_path, {"erro": str(e)})
+
+
+def aplicar_correcoes_multiplas_c170_c190(
+    sped_path: Path,
+    correcoes: List[Dict],
+    output_path: Optional[Path] = None
+) -> Tuple[bool, Path, Dict]:
+    """
+    Aplica múltiplas correções de C170/C190 de uma só vez (para a mesma NF/chave).
+    
+    VANTAGENS:
+    - ✅ Carrega SPED 1x (não N vezes)
+    - ✅ Salva SPED 1x (não N vezes)
+    - ✅ Atomicidade: ou aplica todas ou nenhuma
+    - ✅ Mutex mais simples no backend
+    - ✅ Muito mais rápido!
+    
+    Args:
+        sped_path: Caminho para o arquivo SPED original
+        correcoes: Lista de dicionários com correções a aplicar
+        output_path: Caminho para salvar arquivo corrigido
+    
+    Returns:
+        (sucesso, arquivo_corrigido, resumo)
+    """
+    try:
+        logger.info(f"=" * 80)
+        logger.info(f"LOTE: APLICANDO {len(correcoes)} CORRECOES NA MESMA NF")
+        logger.info(f"=" * 80)
+        print(f"=" * 80, flush=True)
+        print(f"[LOTE] Aplicando {len(correcoes)} correções...", flush=True)
+        print(f"=" * 80, flush=True)
+        
+        # ESTRATÉGIA CORRETA: Criar UMA instância do SpedEditor e aplicar TODAS as correções
+        # no MESMO C190 (encontrado uma única vez)
+        editor = SpedEditor(sped_path)
+        
+        correcoes_aplicadas = 0
+        correcoes_falhadas = 0
+        detalhes_correcoes = []
+        
+        # PASSO 1: Encontrar o C190 UMA VEZ usando a primeira correção
+        primeira_correcao = correcoes[0]
+        chave = primeira_correcao.get("chave", "")
+        cfop = primeira_correcao.get("cfop", "")
+        cst = primeira_correcao.get("cst", "")
+        linha_sped_inicial = primeira_correcao.get("linha_sped")
+        
+        # Normalizar CFOP/CST
+        cfop_clean = str(cfop).strip() if cfop else ""
+        cfop_clean = "".join(cfop_clean.split())
+        
+        cst_normalizado = cst
+        if cst:
+            try:
+                from common import normalize_cst_for_compare
+                cst_normalizado = normalize_cst_for_compare(cst)
+            except ImportError:
+                cst_normalizado = str(cst).strip().zfill(3)
+        
+        # Encontrar o índice do C190 que será corrigido
+        if linha_sped_inicial:
+            # Se a linha foi fornecida, usar diretamente
+            indice_c190 = linha_sped_inicial - 1  # Converter de 1-indexed para 0-indexed
+            logger.info(f"[LOTE] Usando linha especificada: {linha_sped_inicial} (índice {indice_c190})")
+        else:
+            # CORRECAO CRITICA: Buscar C190 usando hierarquia C100->C190
+            # Para garantir que aplicamos na NF-e correta quando ha multiplas NFs com mesmo CFOP/CST
+            indice_c190 = None
+            
+            if chave:
+                # PASSO 1: Buscar C100 pela chave
+                logger.info(f"[LOTE] Buscando C100 com chave {chave[:20]}...")
+                print(f"[LOTE] Buscando C100 com chave {chave[:20]}...", flush=True)
+                
+                indices_c100 = editor.find_line_by_record("C100", chave=chave)
+                
+                if not indices_c100:
+                    logger.error(f"[LOTE] C100 não encontrado para chave={chave[:20]}...")
+                    return (False, sped_path, {
+                        "erro": f"C100 não encontrado para aplicar {len(correcoes)} correções",
+                        "detalhes": f"Chave NF-e: {chave[:20]}... não foi encontrada no arquivo SPED"
+                    })
+                
+                c100_idx = indices_c100[0]
+                logger.info(f"[LOTE] [OK] C100 encontrado no indice {c100_idx} (linha {c100_idx + 1})")
+                print(f"[LOTE] [OK] C100 encontrado no indice {c100_idx} (linha {c100_idx + 1})", flush=True)
+                
+                # PASSO 2: Buscar C190s FILHOS deste C100 específico
+                indices_c170, indices_c190 = editor.find_children_records(c100_idx)
+                logger.info(f"[LOTE] Encontrados {len(indices_c190)} C190s filhos do C100")
+                print(f"[LOTE] Encontrados {len(indices_c190)} C190s filhos do C100", flush=True)
+                
+                if not indices_c190:
+                    logger.error(f"[LOTE] Nenhum C190 filho encontrado para o C100 da chave {chave[:20]}...")
+                    return (False, sped_path, {
+                        "erro": f"C190 não encontrado como filho do C100",
+                        "detalhes": f"O C100 com chave {chave[:20]}... não possui registros C190 filhos"
+                    })
+                
+                # PASSO 3: Filtrar por CFOP/CST se fornecidos
+                if cfop_clean or cst_normalizado:
+                    logger.info(f"[LOTE] Filtrando C190s por CFOP={cfop_clean}, CST={cst_normalizado}")
+                    print(f"[LOTE] Filtrando C190s por CFOP={cfop_clean}, CST={cst_normalizado}", flush=True)
+                    
+                    for idx_c190 in indices_c190:
+                        line_c190 = editor.lines[idx_c190]
+                        parts_c190 = split_sped_line(line_c190, min_fields=4)
+                        
+                        # Layout C190: |C190|CST_ICMS|CFOP|...
+                        # parts[2]=CST_ICMS, parts[3]=CFOP
+                        cfop_match = True
+                        cst_match = True
+                        
+                        if cfop_clean and len(parts_c190) > 3:
+                            cfop_c190 = "".join(parts_c190[3].strip().split())
+                            cfop_match = (cfop_c190 == cfop_clean)
+                        
+                        if cst_normalizado and len(parts_c190) > 2:
+                            cst_c190 = parts_c190[2].strip()
+                            try:
+                                from common import normalize_cst_for_compare
+                                cst_c190_norm = normalize_cst_for_compare(cst_c190)
+                            except ImportError:
+                                cst_c190_norm = cst_c190.strip().zfill(3)
+                            cst_match = (cst_c190_norm == cst_normalizado)
+                        
+                        if cfop_match and cst_match:
+                            indice_c190 = idx_c190
+                            logger.info(f"[LOTE] [OK] C190 correspondente encontrado no indice {indice_c190} (CFOP={cfop_clean}, CST={cst_normalizado})")
+                            print(f"[LOTE] [OK] C190 correspondente encontrado no indice {indice_c190} (CFOP={cfop_clean}, CST={cst_normalizado})", flush=True)
+                            break
+                else:
+                    # Se não tem CFOP/CST para filtrar, usar o primeiro C190 filho
+                    indice_c190 = indices_c190[0]
+                    logger.info(f"[LOTE] Usando primeiro C190 filho (índice {indice_c190})")
+                    print(f"[LOTE] Usando primeiro C190 filho (índice {indice_c190})", flush=True)
+            
+            else:
+                # Fallback: Busca global por CFOP/CST (quando não há chave)
+                logger.warning(f"[LOTE] [AVISO] Buscando C190 SEM CHAVE (pode aplicar na NF errada se houver multiplas com mesmo CFOP/CST)")
+                print(f"[LOTE] [AVISO] Buscando C190 SEM CHAVE (pode aplicar na NF errada se houver multiplas com mesmo CFOP/CST)", flush=True)
+                
+                indices = editor.find_line_by_record(
+                    "C190",
+                    cfop=cfop_clean if cfop_clean else None,
+                    cst=cst_normalizado if cst_normalizado else None
+                )
+                if indices:
+                    indice_c190 = indices[0]
+            
+            # Validar se encontrou o C190
+            if indice_c190 is None:
+                logger.error(f"[LOTE] Nenhum C190 encontrado para chave={chave[:20] if chave else 'N/A'}..., CFOP={cfop_clean}, CST={cst_normalizado}")
+                return (False, sped_path, {
+                    "erro": f"C190 não encontrado para aplicar {len(correcoes)} correções",
+                    "detalhes": f"Chave: {chave[:20] if chave else 'N/A'}..., CFOP: {cfop_clean}, CST: {cst_normalizado}"
+                })
+            
+            logger.info(f"[LOTE] C190 encontrado no índice {indice_c190} (linha {indice_c190 + 1})")
+            print(f"[LOTE] C190 encontrado no índice {indice_c190} (linha {indice_c190 + 1})", flush=True)
+            
+            # DEBUG: Mostrar qual C190 foi encontrado
+            linha_c190_encontrada = editor.lines[indice_c190].strip()
+            logger.info(f"[DEBUG] C190 que será modificado:")
+            logger.info(f"[DEBUG]   {linha_c190_encontrada[:150]}...")
+            print(f"[DEBUG] C190 que será modificado:", flush=True)
+            print(f"[DEBUG]   {linha_c190_encontrada[:150]}...", flush=True)
+        
+        # PASSO 2: Aplicar TODAS as correções no MESMO C190
+        for idx, correcao in enumerate(correcoes, 1):
+            campo = correcao.get("campo", "")
+            valor_correto = float(correcao.get("valor_correto", 0))
+            
+            logger.info(f"[{idx}/{len(correcoes)}] Corrigindo: {campo} -> {valor_correto}")
+            print(f"[{idx}/{len(correcoes)}] Corrigindo: {campo} -> {valor_correto}", flush=True)
+            
+            try:
+                # Atualizar o campo diretamente no índice encontrado
+                posicao_campo = editor.get_field_position("C190", campo)
+                if not posicao_campo:
+                    correcoes_falhadas += 1
+                    erro_msg = f"Campo '{campo}' não encontrado no layout C190"
+                    detalhes_correcoes.append({
+                        "campo": campo,
+                        "valor": valor_correto,
+                        "status": "falha",
+                        "erro": erro_msg
+                    })
+                    logger.warning(f"[{idx}/{len(correcoes)}] FALHA: {erro_msg}")
+                    continue
+                
+                # Ler linha atual
+                linha_atual = editor.lines[indice_c190]
+                # Preservar o terminador de linha (\n, \r\n, etc)
+                tem_newline = linha_atual.endswith('\n') or linha_atual.endswith('\r\n') or linha_atual.endswith('\r')
+                linha_sem_newline = linha_atual.rstrip('\r\n')
+                
+                parts = linha_sem_newline.split('|')
+                
+                # Garantir que temos campos suficientes
+                while len(parts) <= posicao_campo:
+                    parts.append('')
+                
+                # Guardar valor antigo para log
+                valor_antigo = parts[posicao_campo] if posicao_campo < len(parts) else '(vazio)'
+                
+                # Atualizar o campo
+                valor_novo_formatado = f"{valor_correto:.2f}".replace('.', ',')
+                parts[posicao_campo] = valor_novo_formatado
+                
+                # DEBUG: Log da linha ANTES e DEPOIS
+                logger.info(f"[DEBUG] Linha ANTES (índice {indice_c190}):")
+                logger.info(f"[DEBUG]   {linha_sem_newline[:200]}...")
+                print(f"[DEBUG] Linha ANTES (índice {indice_c190}):", flush=True)
+                print(f"[DEBUG]   {linha_sem_newline[:200]}...", flush=True)
+                
+                # Remontar a linha COM o terminador de linha original
+                linha_nova = '|'.join(parts)
+                if tem_newline:
+                    # Preservar o terminador original (geralmente \n)
+                    if linha_atual.endswith('\r\n'):
+                        linha_nova += '\r\n'
+                    elif linha_atual.endswith('\n'):
+                        linha_nova += '\n'
+                    elif linha_atual.endswith('\r'):
+                        linha_nova += '\r'
+                
+                logger.info(f"[DEBUG] Linha DEPOIS (campo {campo} na posição {posicao_campo}):")
+                logger.info(f"[DEBUG]   {linha_nova.rstrip()[:200]}...")
+                logger.info(f"[DEBUG] Mudança: {valor_antigo} -> {valor_novo_formatado}")
+                print(f"[DEBUG] Linha DEPOIS (campo {campo} na posição {posicao_campo}):", flush=True)
+                print(f"[DEBUG]   {linha_nova.rstrip()[:200]}...", flush=True)
+                print(f"[DEBUG] Mudança: {valor_antigo} -> {valor_novo_formatado}", flush=True)
+                
+                editor.lines[indice_c190] = linha_nova
+                
+                # Registrar mudança
+                if not hasattr(editor, 'changes'):
+                    editor.changes = []
+                editor.changes.append({
+                    "linha": indice_c190 + 1,
+                    "registro": "C190",
+                    "campo": campo,
+                    "valor_antigo": parts[posicao_campo] if posicao_campo < len(parts) else '',
+                    "valor_novo": f"{valor_correto:.2f}".replace('.', ',')
+                })
+                
+                correcoes_aplicadas += 1
+                detalhes_correcoes.append({
+                    "campo": campo,
+                    "valor": valor_correto,
+                    "status": "sucesso"
+                })
+                logger.info(f"[{idx}/{len(correcoes)}] SUCESSO: {campo} = {valor_correto}")
+            
+            except Exception as e_individual:
+                correcoes_falhadas += 1
+                detalhes_correcoes.append({
+                    "campo": campo,
+                    "valor": valor_correto,
+                    "status": "erro",
+                    "erro": str(e_individual)
+                })
+                logger.error(f"[{idx}/{len(correcoes)}] ERRO: {campo} - {e_individual}")
+        
+        # Salvar UMA VEZ no final com TODAS as correções aplicadas
+        if output_path is None:
+            output_path = sped_path.parent / f"{sped_path.stem}_corrigido{sped_path.suffix}"
+        else:
+            output_path = Path(output_path)
+        
+        print(f"[LOTE] Salvando arquivo corrigido em: {output_path}", flush=True)
+        editor.save(output_path)
+        print(f"[LOTE] Arquivo salvo com sucesso!", flush=True)
+        
+        # Obter resumo das mudanças
+        resumo_mudancas = editor.get_changes_summary()
+        
+        # 🔧 FIX: Usar correcoes_aplicadas como total_alteracoes (mais confiável que get_changes_summary para lote)
+        # O get_changes_summary pode falhar se houver problemas de formatação de linhas
+        total_alteracoes_real = max(resumo_mudancas.get("total_alteracoes", 0), correcoes_aplicadas)
+        
+        logger.info(f"[LOTE] Mudanças detectadas: get_changes_summary={resumo_mudancas.get('total_alteracoes', 0)}, correcoes_aplicadas={correcoes_aplicadas}, usando={total_alteracoes_real}")
+        
+        # Resumo consolidado
+        resumo = {
+            "total_correcoes": len(correcoes),
+            "correcoes_aplicadas": correcoes_aplicadas,
+            "correcoes_falhadas": correcoes_falhadas,
+            "detalhes": detalhes_correcoes,
+            "total_alteracoes": total_alteracoes_real,  # Garantir que seja > 0 se correcoes_aplicadas > 0
+            "mudancas": resumo_mudancas
+        }
+        
+        logger.info(f"=" * 80)
+        logger.info(f"LOTE CONCLUIDO: {correcoes_aplicadas}/{len(correcoes)} correções aplicadas")
+        logger.info(f"=" * 80)
+        print(f"[LOTE] OK Concluído: {correcoes_aplicadas}/{len(correcoes)} correções aplicadas", flush=True)
+        
+        sucesso_geral = correcoes_aplicadas > 0
+        
+        return (sucesso_geral, output_path, resumo)
+    
+    except Exception as e:
+        logger.error(f"Erro ao aplicar lote de correções: {e}")
+        import traceback
+        traceback.print_exc()
+        return (False, sped_path, {
+            "erro": str(e),
+            "detalhes": traceback.format_exc()
+        })
 
