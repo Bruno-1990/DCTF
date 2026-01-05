@@ -18,6 +18,7 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { spedService } from '../../services/sped';
 import ResultadoCorrecoes from './ResultadoCorrecoes';
 import ModalConfirmacaoCorrecoes from './ModalConfirmacaoCorrecoes';
+import { useToast } from '../../hooks/useToast';
 
 interface DivergenciaC170C190 {
   CHAVE?: string;
@@ -495,10 +496,12 @@ const DivergenciasInteligentes: React.FC<Props> = ({
   outrasDivergencias = [],
   validationId
 }) => {
+  const toast = useToast();
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas');
   const [filtroPrioridade, setFiltroPrioridade] = useState<string>('todas');
   const [busca, setBusca] = useState<string>('');
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
+  const [expandedRefs, setExpandedRefs] = useState<Set<number>>(new Set()); // Estado para controlar referências legais expandidas
   const [copiedChave, setCopiedChave] = useState<string | null>(null);
   const [aplicandoCorrecao, setAplicandoCorrecao] = useState<number | null>(null);
   const [correcoesAplicadas, setCorrecoesAplicadas] = useState<Set<number>>(new Set());
@@ -544,90 +547,136 @@ const DivergenciasInteligentes: React.FC<Props> = ({
     }
   }, [divergenciasC170C190, divergenciasValores, divergenciasApuracao, divergenciasC190Preenchimento]);
 
-  // Agrupar e formatar todas as divergências
+  // 🔥 Agrupar divergências por chave para correção em lote (RESTAURADO)
   const divergenciasFormatadas = useMemo(() => {
+    const todasDivergencias: Array<{ tipo: string; dados: any }> = [];
+    
+    // Coletar todas as divergências
+    divergenciasC170C190.forEach(div => {
+      todasDivergencias.push({ tipo: 'C170 x C190', dados: div });
+    });
+    
+    divergenciasValores.forEach(div => {
+      todasDivergencias.push({ tipo: 'Valores Divergentes', dados: div });
+    });
+    
+    // Agrupar por chave normalizada
+    const divsPorChave = new Map<string, Array<{ tipo: string; dados: any }>>();
+    
+    todasDivergencias.forEach(item => {
+      const chaveNormalizada = (item.dados.CHAVE || '').replace(/\s/g, '');
+      
+      if (!chaveNormalizada) {
+        divsPorChave.set(`sem_chave_${Math.random()}`, [item]);
+        return;
+      }
+      
+      if (!divsPorChave.has(chaveNormalizada)) {
+        divsPorChave.set(chaveNormalizada, []);
+      }
+      divsPorChave.get(chaveNormalizada)!.push(item);
+    });
+    
     const resultado: any[] = [];
     
-    // Adicionar C170 x C190
-    divergenciasC170C190.forEach((div, idx) => {
-      // Debug detalhado para C170 x C190 (apenas primeira)
-      if (idx === 0) {
-        console.log('[DivergenciasInteligentes] Primeira divergência C170 x C190:', div);
-        console.log('[DivergenciasInteligentes] Todas as chaves do objeto:', Object.keys(div));
-        console.log('[DivergenciasInteligentes] Tem SOLUCAO_AUTOMATICA?', 'SOLUCAO_AUTOMATICA' in div);
-        console.log('[DivergenciasInteligentes] Valor SOLUCAO_AUTOMATICA:', div.SOLUCAO_AUTOMATICA);
-        console.log('[DivergenciasInteligentes] Tipo SOLUCAO_AUTOMATICA:', typeof div.SOLUCAO_AUTOMATICA);
-        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA truthy?', !!div.SOLUCAO_AUTOMATICA);
-        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === null?', div.SOLUCAO_AUTOMATICA === null);
-        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === undefined?', div.SOLUCAO_AUTOMATICA === undefined);
-        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === ""?', div.SOLUCAO_AUTOMATICA === '');
-        console.log('[DivergenciasInteligentes] String(SOLUCAO_AUTOMATICA):', String(div.SOLUCAO_AUTOMATICA || ''));
-        console.log('[DivergenciasInteligentes] REGISTRO_CORRIGIR:', div.REGISTRO_CORRIGIR);
-        console.log('[DivergenciasInteligentes] VALOR_CORRETO:', div.VALOR_CORRETO);
-        console.log('[DivergenciasInteligentes] FORMULA_LEGAL:', div.FORMULA_LEGAL);
-      }
+    // Processar cada grupo
+    divsPorChave.forEach((grupo, chaveNormalizada) => {
+      const chaveOriginal = grupo[0].dados.CHAVE || '';
       
-      const rec = gerarRecomendacao(div);
-      resultado.push({
-        categoria: 'C170 x C190',
-        chave: div.CHAVE || '',
-        campo: div.CAMPO || '',
-        valor1: div.C170,
-        valor2: div.C190,
-        diferenca: div.DIFERENCA,
-        severidade: div.SEVERIDADE || 'media',
-        legítima: div.E_LEGITIMA || false,
-        tipoOperacao: div.TIPO_OPERACAO,
-        motivo: div.MOTIVO_LEGITIMO,
-        recomendacao: rec,
-        dadosOriginais: div
+      // Filtrar divergências com solução automática
+      const divsComSolucao = grupo.filter(item => {
+        const solucao = item.dados.SOLUCAO_AUTOMATICA;
+        const registro = item.dados.REGISTRO_CORRIGIR;
+        const valor = item.dados.VALOR_CORRETO;
+        
+        return solucao && 
+               solucao !== '' && 
+               solucao !== 'null' && 
+               registro && 
+               registro !== 'NENHUM' && 
+               valor !== undefined && 
+               valor !== null;
       });
-    });
-    
-    // Adicionar Divergências de Valores
-    divergenciasValores.forEach((div, index) => {
-      // Debug: Log da primeira divergência para inspeção
-      if (index === 0) {
-        console.log('[DivergenciasInteligentes] Processando primeira divergência de valores:', div);
-        console.log('[DivergenciasInteligentes] Tem SOLUCAO_AUTOMATICA?', 'SOLUCAO_AUTOMATICA' in div);
-        console.log('[DivergenciasInteligentes] Valor SOLUCAO_AUTOMATICA:', div.SOLUCAO_AUTOMATICA);
-        console.log('[DivergenciasInteligentes] Tipo SOLUCAO_AUTOMATICA:', typeof div.SOLUCAO_AUTOMATICA);
-        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA truthy?', !!div.SOLUCAO_AUTOMATICA);
-        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === null?', div.SOLUCAO_AUTOMATICA === null);
-        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === undefined?', div.SOLUCAO_AUTOMATICA === undefined);
-        console.log('[DivergenciasInteligentes] SOLUCAO_AUTOMATICA === ""?', div.SOLUCAO_AUTOMATICA === '');
-        console.log('[DivergenciasInteligentes] String(SOLUCAO_AUTOMATICA):', String(div.SOLUCAO_AUTOMATICA || ''));
-        console.log('[DivergenciasInteligentes] Todas as chaves:', Object.keys(div));
-        console.log('[DivergenciasInteligentes] JSON completo:', JSON.stringify(div, null, 2));
-      }
       
-      const rec = gerarRecomendacao(div);
-      
-      // Debug: Verificar se a recomendação tem detalhes da solução
-      if (index === 0 && rec && rec.detalhes) {
-        console.log('[DivergenciasInteligentes] Recomendação gerada:', {
-          acao: rec.acao,
-          detalhesCount: rec.detalhes.length,
-          primeiroDetalhe: rec.detalhes[0]?.substring(0, 100)
+      // Se tem 2+ correções da mesma NF, AGRUPAR
+      if (divsComSolucao.length > 1) {
+        const correcoes = divsComSolucao.map(item => {
+          const div = item.dados;
+          return {
+            tipo: item.tipo,
+            campo: div.CAMPO || div.DELTA_COLUNA || '',
+            valor1: div.C170 || div.VALOR_XML,
+            valor2: div.C190 || div.VALOR_SPED,
+            diferenca: div.DIFERENCA,
+            recomendacao: gerarRecomendacao(div),
+            dadosOriginais: div
+          };
+        });
+        
+        const severidadeGrupo = divsComSolucao.some(item => 
+          item.dados.SEVERIDADE === 'alta' || item.dados.CONFIANCA === 'ALTA'
+        ) ? 'alta' : 'media';
+        
+        resultado.push({
+          categoria: 'Correções em Lote',
+          chave: chaveOriginal,
+          campo: `${divsComSolucao.length} campos a corrigir`,
+          isGrupo: true,
+          correcoes: correcoes,
+          severidade: severidadeGrupo,
+          legítima: false,
+          recomendacao: {
+            acao: `Corrigir ${divsComSolucao.length} campos da mesma NF`,
+            prioridade: severidadeGrupo as 'alta' | 'media',
+            detalhes: correcoes.map(c => `${c.campo}: ${formatCurrency(c.dadosOriginais.VALOR_CORRETO || 0)}`),
+            icon: <WrenchScrewdriverIcon className="h-5 w-5 text-orange-600" />
+          },
+          dadosOriginais: divsComSolucao.map(item => item.dados)
+        });
+      } else {
+        // Cards individuais
+        grupo.forEach(item => {
+          const div = item.dados;
+          const rec = gerarRecomendacao(div);
+          
+          if (item.tipo === 'C170 x C190') {
+            resultado.push({
+              categoria: 'C170 x C190',
+              chave: div.CHAVE || '',
+              campo: div.CAMPO || '',
+              valor1: div.C170,
+              valor2: div.C190,
+              diferenca: div.DIFERENCA,
+              severidade: div.SEVERIDADE || 'media',
+              legítima: div.E_LEGITIMA || false,
+              tipoOperacao: div.TIPO_OPERACAO,
+              motivo: div.MOTIVO_LEGITIMO,
+              recomendacao: rec,
+              dadosOriginais: div
+            });
+          } else if (item.tipo === 'Valores Divergentes') {
+            resultado.push({
+              categoria: 'Valores Divergentes',
+              chave: div.CHAVE || '',
+              campo: div.CAMPO || div.DELTA_COLUNA || '',
+              valor1: div.VALOR_XML,
+              valor2: div.VALOR_SPED,
+              diferenca: div.DIFERENCA,
+              severidade: div.CONFIANCA === 'ALTA' ? 'alta' : 'media',
+              legítima: !['ERRO_HUMANO', 'ERRO_SISTEMATICO'].includes(div.TIPO_DIVERGENCIA || ''),
+              tipoDivergencia: div.TIPO_DIVERGENCIA,
+              motivo: div.MOTIVO_CLASSIFICACAO,
+              recomendacao: rec,
+              dadosOriginais: div
+            });
+          }
         });
       }
-      resultado.push({
-        categoria: 'Valores Divergentes',
-        chave: div.CHAVE || '',
-        campo: div.CAMPO || div.DELTA_COLUNA || '',
-        valor1: div.VALOR_XML,
-        valor2: div.VALOR_SPED,
-        diferenca: div.DIFERENCA,
-        severidade: div.CONFIANCA === 'ALTA' ? 'alta' : 'media',
-        legítima: !['ERRO_HUMANO', 'ERRO_SISTEMATICO'].includes(div.TIPO_DIVERGENCIA || ''),
-        tipoDivergencia: div.TIPO_DIVERGENCIA,
-        motivo: div.MOTIVO_CLASSIFICACAO,
-        recomendacao: rec,
-        dadosOriginais: div
-      });
     });
     
-    // Adicionar Divergências de Apuração
+    // Adicionar divergências de Apuração, C190 Preenchimento e Outras
+    
+    // Divergências de Apuração (não agrupáveis)
     divergenciasApuracao.forEach(div => {
       const rec = gerarRecomendacao(div);
       resultado.push({
@@ -732,37 +781,124 @@ const DivergenciasInteligentes: React.FC<Props> = ({
     setExpandedCards(new Set());
   };
 
+  const toggleRefLegal = (index: number) => {
+    const newExpanded = new Set(expandedRefs);
+    if (newExpanded.has(index)) {
+      newExpanded.delete(index);
+    } else {
+      newExpanded.add(index);
+    }
+    setExpandedRefs(newExpanded);
+  };
+
   const aplicarCorrecao = async (index: number, div: any) => {
     if (!validationId) {
-      alert('ID de validação não disponível');
+      toast.error('ID de validação não disponível');
       return;
     }
 
+    // 🔥 DETECTAR MODO LOTE (múltiplas correções da mesma NF)
+    if (div.isGrupo && Array.isArray(div.dadosOriginais)) {
+      console.log(`[LOTE] Aplicando ${div.dadosOriginais.length} correções da chave ${div.chave.slice(0, 20)}...`);
+      
+      const correcoesValidas = [];
+      
+      for (const dadosOriginais of div.dadosOriginais) {
+        if (!dadosOriginais.SOLUCAO_AUTOMATICA || dadosOriginais.SOLUCAO_AUTOMATICA === false) {
+          continue;
+        }
+        
+        if (!dadosOriginais.REGISTRO_CORRIGIR || dadosOriginais.REGISTRO_CORRIGIR === 'NENHUM') {
+          continue;
+        }
+        
+        const valorCorreto = parseFloat(String(dadosOriginais.VALOR_CORRETO || 0));
+        if (isNaN(valorCorreto)) {
+          continue;
+        }
+        
+        // 🔧 Usar nome técnico SPED
+        let campo = String(dadosOriginais.CAMPO_CORRIGIR || dadosOriginais.CAMPO || '').trim();
+        campo = campo.replace(/^C\d+\./, ''); // Remover prefixo C190., C170., etc
+        
+        if (!campo) {
+          continue;
+        }
+        
+        const registro = String(dadosOriginais.REGISTRO_CORRIGIR || '').trim();
+        const chave = String(dadosOriginais.CHAVE || '').trim();
+        
+        correcoesValidas.push({
+          registro_corrigir: registro,
+          campo: campo,
+          valor_correto: valorCorreto,
+          chave: chave,
+          cfop: String(dadosOriginais.CFOP || '').trim(),
+          cst: String(dadosOriginais.CST || '').trim(),
+          linha_sped: dadosOriginais.LINHA_SPED ? parseInt(String(dadosOriginais.LINHA_SPED)) : undefined
+        });
+      }
+      
+      if (correcoesValidas.length === 0) {
+        toast.error('Nenhuma correção válida encontrada');
+        return;
+      }
+      
+      setAplicandoCorrecao(index);
+      
+      try {
+        toast.info(`Aplicando ${correcoesValidas.length} correções em lote...`);
+        
+        const resultado = await spedService.aplicarCorrecao(validationId, correcoesValidas);
+        
+        if (resultado.success) {
+          setCorrecoesAplicadas(new Set([...correcoesAplicadas, index]));
+          toast.success(`✅ ${correcoesValidas.length} correções aplicadas com sucesso!`);
+        } else {
+          const mensagemErro = resultado.message || resultado.error || 'Erro desconhecido';
+          toast.error(`Erro: ${mensagemErro}`);
+        }
+      } catch (error: any) {
+        console.error('[LOTE] Erro:', error);
+        toast.error(`Erro: ${error.message || 'Erro desconhecido'}`);
+      } finally {
+        setAplicandoCorrecao(null);
+      }
+      
+      return;
+    }
+
+    // 📌 MODO INDIVIDUAL
     const dadosOriginais = div.dadosOriginais || div;
     
     // VALIDAÇÃO 1: Verificar se tem solução automática implementável
     if (!dadosOriginais.SOLUCAO_AUTOMATICA || dadosOriginais.SOLUCAO_AUTOMATICA === false) {
-      alert('Esta divergência não possui correção automática disponível');
+      toast.info('Esta divergência não possui correção automática disponível');
       return;
     }
     
     // VALIDAÇÃO 2: Verificar que tem registro para corrigir
     if (!dadosOriginais.REGISTRO_CORRIGIR || dadosOriginais.REGISTRO_CORRIGIR === 'NENHUM') {
-      alert('Não é possível aplicar correção automática para esta divergência');
+      toast.error('Não é possível aplicar correção automática para esta divergência');
       return;
     }
     
     // VALIDAÇÃO 3: Verificar que tem valor correto
     const valorCorreto = parseFloat(String(dadosOriginais.VALOR_CORRETO || 0));
     if (isNaN(valorCorreto)) {
-      alert('Valor correto inválido');
+      toast.error('Valor correto inválido');
       return;
     }
     
     // VALIDAÇÃO 4: Verificar que tem campo
-    const campo = String(dadosOriginais.CAMPO || dadosOriginais.CAMPO_CORRIGIR || '').trim();
+    // 🔧 USAR CAMPO_CORRIGIR (nome técnico SPED) se disponível, senão CAMPO (nome amigável)
+    let campo = String(dadosOriginais.CAMPO_CORRIGIR || dadosOriginais.CAMPO || '').trim();
+    
+    // Remover prefixos "C190." ou "C170." se presentes
+    campo = campo.replace(/^C\d+\./, '');
+    
     if (!campo || campo.length === 0) {
-      alert('Campo não especificado');
+      toast.error('Campo não especificado');
       return;
     }
     
@@ -770,7 +906,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
     const registro = String(dadosOriginais.REGISTRO_CORRIGIR || '').trim();
     const chave = String(dadosOriginais.CHAVE || '').trim();
     if (registro === 'C100' && (!chave || chave.length === 0)) {
-      alert('Chave NF é obrigatória para correção em C100');
+      toast.error('Chave NF é obrigatória para correção em C100');
       return;
     }
     
@@ -798,7 +934,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
       
       // VALIDAÇÃO 7: Validar correção montada
       if (!correcao.registro_corrigir || !correcao.campo) {
-        alert('Dados de correção incompletos');
+        toast.error('Dados de correção incompletos');
         setAplicandoCorrecao(-1);
         return;
       }
@@ -813,7 +949,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
 
       if (resultado.success) {
         setCorrecoesAplicadas(new Set([...correcoesAplicadas, index]));
-        alert(`✅ Correção aplicada com sucesso!\n\n${resultado.message}`);
+        toast.success('Correção aplicada com sucesso!');
       } else {
         // Melhorar mensagem de erro para casos específicos
         let mensagemErro = resultado.message || 'Erro desconhecido';
@@ -827,7 +963,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
             `ou forneça CFOP e CST explicitamente na correção.`;
         }
         
-        alert(`❌ Erro ao aplicar correção:\n\n${mensagemErro}`);
+        toast.error(`Erro ao aplicar correção: ${mensagemErro}`);
       }
     } catch (error: any) {
       console.error('Erro ao aplicar correção:', error);
@@ -851,7 +987,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
           `ou forneça CFOP e CST explicitamente na correção.`;
       }
       
-      alert(`❌ Erro ao aplicar correção:\n\n${mensagemErro}`);
+      toast.error(`Erro ao aplicar correção: ${mensagemErro}`);
     } finally {
       setAplicandoCorrecao(null);
     }
@@ -957,7 +1093,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
 
   const baixarSpedCorrigido = async () => {
     if (!validationId) {
-      alert('ID de validação não disponível');
+      toast.error('ID de validação não disponível');
       return;
     }
 
@@ -965,7 +1101,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
       await spedService.baixarSpedCorrigido(validationId);
     } catch (error: any) {
       console.error('Erro ao baixar SPED corrigido:', error);
-      alert(`❌ Erro ao baixar SPED corrigido: ${error.message || 'Erro desconhecido'}`);
+      toast.error(`Erro ao baixar SPED corrigido: ${error.message || 'Erro desconhecido'}`);
     }
   };
 
@@ -1237,47 +1373,217 @@ const DivergenciasInteligentes: React.FC<Props> = ({
             const isExpanded = expandedCards.has(index);
             const chaveLimpa = div.chave ? div.chave.replace(/\s/g, '') : '';
             const isCopied = copiedChave === chaveLimpa;
+            const correcaoAplicada = correcoesAplicadas.has(index);
             
+            // 🔥 CARD AGRUPADO: Múltiplas correções da mesma NF
+            if (div.isGrupo && div.correcoes && div.correcoes.length > 1) {
+              return (
+                <div
+                  key={index}
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 transition-all hover:shadow-md"
+                >
+                  {/* Cabeçalho compacto - sempre visível */}
+                  <div 
+                    className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => toggleExpand(index)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className="flex items-center justify-center w-8 h-8 bg-orange-50 border border-orange-200 rounded">
+                          <span className="text-sm font-bold text-orange-700">{div.correcoes.length}</span>
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-sm font-semibold text-gray-900">
+                              Valores Divergentes
+                            </h3>
+                            <span className="px-2 py-0.5 text-xs font-medium rounded bg-orange-50 text-orange-700 border border-orange-200">
+                              {div.correcoes.length} campos
+                            </span>
+                          </div>
+                          {div.chave && (
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs text-gray-600">
+                                <span className="font-medium">Chave:</span>{' '}
+                                <span className="font-mono">{formatarChave(div.chave)}</span>
+                              </p>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyToClipboard(div.chave);
+                                }}
+                                className="p-0.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                title="Copiar chave"
+                              >
+                                {isCopied ? (
+                                  <CheckIcon className="h-3 w-3 text-green-600" />
+                                ) : (
+                                  <ClipboardIcon className="h-3 w-3" />
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="text-xs text-gray-500">Diferença total</p>
+                          <p className="text-sm font-bold text-red-600">
+                            {formatCurrency(div.correcoes.reduce((sum: number, c: any) => 
+                              sum + Math.abs(c.diferenca || 0), 0))}
+                          </p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleExpand(index);
+                          }}
+                          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          {isExpanded ? (
+                            <ChevronUpIcon className="h-5 w-5" />
+                          ) : (
+                            <ChevronDownIcon className="h-5 w-5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Conteúdo expandido - detalhes das correções */}
+                  {isExpanded && (
+                    <div className="border-t border-gray-200 bg-gray-50">
+                      <div className="p-4 space-y-3">
+                        {div.correcoes.map((correcao: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
+                            <div className="flex items-center gap-3 flex-1">
+                              <div className="flex items-center justify-center w-6 h-6 bg-orange-100 text-orange-700 text-xs font-semibold rounded">
+                                {idx + 1}
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-gray-900">{correcao.campo}</p>
+                                <div className="flex items-center gap-4 mt-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-xs text-gray-600">
+                                      C170: <span className="font-semibold text-blue-600">{formatCurrency(correcao.dadosOriginais?.C170 || 0)}</span>
+                                    </p>
+                                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded" title="Valor do XML da NF-e">
+                                      XML
+                                    </span>
+                                  </div>
+                                  <span className="text-xs text-gray-400">→</span>
+                                  <p className="text-xs text-gray-600">
+                                    C190: <span className="font-semibold text-gray-900">{formatCurrency(correcao.dadosOriginais?.C190 || 0)}</span>
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right ml-4">
+                              <div className="flex items-center justify-end gap-1.5 mb-1">
+                                <p className="text-xs text-gray-500">Corrigir para</p>
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-50 text-green-700 border border-green-200 rounded" title="Valor que será aplicado (origem: XML)">
+                                  do XML
+                                </span>
+                              </div>
+                              <p className="text-sm font-bold text-green-600">
+                                {formatCurrency(correcao.dadosOriginais?.VALOR_CORRETO || 0)}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* Botão de aplicação em lote */}
+                      <div className="px-4 pb-4">
+                        {correcaoAplicada ? (
+                          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="flex items-center gap-2">
+                              <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0" />
+                              <p className="text-sm text-green-800 font-medium">
+                                {div.correcoes.length} correções aplicadas com sucesso
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => aplicarCorrecao(index, div)}
+                            disabled={aplicandoCorrecao === index}
+                            className="w-full py-2.5 px-4 bg-orange-600 text-white font-medium text-sm rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {aplicandoCorrecao === index ? (
+                              <>
+                                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                                <span>Aplicando correções...</span>
+                              </>
+                            ) : (
+                              <>
+                                <WrenchScrewdriverIcon className="h-4 w-4" />
+                                <span>Aplicar {div.correcoes.length} Correções</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            
+            // 📌 CARD INDIVIDUAL: Correção única (comportamento original)
             return (
               <div
                 key={index}
-                className={`bg-white rounded-lg shadow-md border-l-4 transition-all cursor-pointer hover:shadow-lg ${
-                  div.recomendacao.prioridade === 'alta' ? 'border-red-500' :
-                  div.recomendacao.prioridade === 'media' ? 'border-yellow-500' :
-                  'border-blue-500'
-                }`}
-                onClick={(e) => {
-                  // Não expandir se clicar no botão de copiar ou no botão de expandir
-                  const target = e.target as HTMLElement;
-                  if (!target.closest('button') && !target.closest('[data-no-expand]')) {
-                    toggleExpand(index);
-                  }
-                }}
+                className="bg-white rounded-lg shadow-sm border border-gray-200 transition-all hover:shadow-md"
               >
-                <div className="p-4">
-                  {/* Cabeçalho - Sempre visível */}
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        {div.recomendacao.icon}
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {div.categoria}
-                        </h3>
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                          div.legítima 
-                            ? 'bg-green-100 text-green-800' 
-                            : div.recomendacao.prioridade === 'alta'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
+                {/* Cabeçalho compacto - sempre visível */}
+                <div 
+                  className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (!target.closest('button') && !target.closest('[data-no-expand]')) {
+                      toggleExpand(index);
+                    }
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className={`flex items-center justify-center w-8 h-8 rounded border ${
+                        div.recomendacao.prioridade === 'alta' 
+                          ? 'bg-red-50 border-red-200' 
+                          : div.recomendacao.prioridade === 'media'
+                          ? 'bg-yellow-50 border-yellow-200'
+                          : 'bg-blue-50 border-blue-200'
+                      }`}>
+                        <span className={`text-sm font-bold ${
+                          div.recomendacao.prioridade === 'alta' 
+                            ? 'text-red-700' 
+                            : div.recomendacao.prioridade === 'media'
+                            ? 'text-yellow-700'
+                            : 'text-blue-700'
                         }`}>
-                          {div.legítima ? 'Legítima' : div.recomendacao.prioridade.toUpperCase()}
+                          !
                         </span>
                       </div>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-sm font-semibold text-gray-900">
+                            {div.categoria}
+                          </h3>
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded border ${
+                            div.legítima 
+                              ? 'bg-green-50 text-green-700 border-green-200' 
+                              : div.recomendacao.prioridade === 'alta'
+                              ? 'bg-red-50 text-red-700 border-red-200'
+                              : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                          }`}>
+                            {div.legítima ? 'Legítima' : div.recomendacao.prioridade.toUpperCase()}
+                          </span>
+                        </div>
                         {div.chave && (
                           <div className="flex items-center gap-2">
-                            <p>
-                              <span className="font-medium">Chave NF:</span>{' '}
+                            <p className="text-xs text-gray-600">
+                              <span className="font-medium">Chave:</span>{' '}
                               <span className="font-mono">{formatarChave(div.chave)}</span>
                             </p>
                             <button
@@ -1286,36 +1592,27 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                                 e.stopPropagation();
                                 copyToClipboard(div.chave);
                               }}
-                              className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              className="p-0.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                               title="Copiar chave"
                             >
                               {isCopied ? (
-                                <CheckIcon className="h-4 w-4 text-green-600" />
+                                <CheckIcon className="h-3 w-3 text-green-600" />
                               ) : (
-                                <ClipboardIcon className="h-4 w-4" />
+                                <ClipboardIcon className="h-3 w-3" />
                               )}
                             </button>
                           </div>
                         )}
-                        {div.campo && (
-                          <p><span className="font-medium">Campo:</span> {div.campo}</p>
-                        )}
-                        {div.tipoOperacao && (
-                          <p><span className="font-medium">Tipo Operação:</span> {div.tipoOperacao}</p>
-                        )}
-                        {div.legítima && div.dadosOriginais?.MOTIVO_LEGITIMO && (
-                          <div className="mt-2 p-2 bg-green-50 border-l-4 border-green-500 rounded">
-                            <p className="text-xs font-semibold text-green-800 mb-1">ℹ️ Por que é legítima:</p>
-                            <p className="text-xs text-green-700">{div.dadosOriginais.MOTIVO_LEGITIMO}</p>
-                          </div>
+                        {div.campo && !isExpanded && (
+                          <p className="text-xs text-gray-500"><span className="font-medium">Campo:</span> {div.campo}</p>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-4" data-no-expand>
+                    <div className="flex items-center gap-3">
                       {div.valor1 !== undefined && div.valor2 !== undefined && (
-                        <div className="text-sm text-right">
-                          <p className="text-gray-600">Diferença</p>
-                          <p className={`text-lg font-bold ${
+                        <div className="text-right">
+                          <p className="text-xs text-gray-500">Diferença</p>
+                          <p className={`text-sm font-bold ${
                             Math.abs(div.diferenca || 0) > 100 ? 'text-red-600' : 'text-gray-900'
                           }`}>
                             {formatCurrency(Math.abs(div.diferenca || 0))}
@@ -1323,12 +1620,13 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                         </div>
                       )}
                       <button
+                        data-no-expand
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleExpand(index);
                         }}
-                        className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
-                        title={isExpanded ? "Recolher detalhes" : "Expandir detalhes"}
+                        className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                        title={isExpanded ? "Recolher" : "Expandir"}
                       >
                         {isExpanded ? (
                           <ChevronUpIcon className="h-5 w-5" />
@@ -1338,11 +1636,17 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                       </button>
                     </div>
                   </div>
+                  {div.legítima && div.dadosOriginais?.MOTIVO_LEGITIMO && !isExpanded && (
+                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-700">
+                      <span className="font-semibold">Legítima:</span> {div.dadosOriginais.MOTIVO_LEGITIMO.substring(0, 80)}...
+                    </div>
+                  )}
                 </div>
 
                 {/* Conteúdo expandível */}
                 {isExpanded && (
-                  <div className="px-4 pb-4 border-t border-gray-200 pt-4 space-y-4">
+                  <div className="border-t border-gray-200 bg-gray-50">
+                    <div className="p-4 space-y-3">
                     {/* Solução Implementável ou Recomendação */}
                     {(() => {
                       const dadosOriginais = div.dadosOriginais || div;
@@ -1366,93 +1670,74 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                       
                       if (temSolucaoAutomatica) {
                         return (
-                          <div className={`p-4 rounded-lg ${
-                            correcaoAplicada 
-                              ? 'bg-green-50 border-2 border-green-500' 
-                              : 'bg-blue-50 border-2 border-blue-500'
-                          }`}>
-                            <div className="flex items-start gap-3">
-                              {correcaoAplicada ? (
-                                <CheckCircleIcon className="h-6 w-6 text-green-600 mt-0.5 flex-shrink-0" />
-                              ) : (
-                                <WrenchScrewdriverIcon className="h-6 w-6 text-blue-600 mt-0.5 flex-shrink-0" />
-                              )}
-                              <div className="flex-1">
-                                <h4 className={`font-bold text-lg mb-3 ${
-                                  correcaoAplicada ? 'text-green-900' : 'text-blue-900'
-                                }`}>
-                                  {correcaoAplicada ? '✅ Correção Aplicada' : '🔧 Solução Automática Implementável'}
-                                </h4>
-                                
-                                <div className="space-y-3 mb-4">
-                                  <div className="bg-white p-3 rounded border border-gray-200">
-                                    <p className="font-semibold text-gray-900 mb-2">Instrução de Correção:</p>
-                                    <p className="text-sm text-gray-700 whitespace-pre-line">
-                                      {String(solucaoAutomatica || '').trim()}
-                                    </p>
-                                  </div>
-                                  
-                                  <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div>
-                                      <span className="font-medium text-gray-700">Registro a corrigir:</span>
-                                      <span className="ml-2 font-mono text-blue-700">{String(registroCorrigir || '').trim()}</span>
-                                    </div>
-                                    <div>
-                                      <span className="font-medium text-gray-700">Campo:</span>
-                                      <span className="ml-2 font-mono text-blue-700">{String(dadosOriginais.CAMPO || dadosOriginais.CAMPO_CORRIGIR || '').trim()}</span>
-                                    </div>
-                                    <div>
-                                      <span className="font-medium text-gray-700">Valor atual:</span>
-                                      <span className="ml-2 text-red-600 font-semibold">
-                                        {formatCurrency(div.valor2 || 0)}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      <span className="font-medium text-gray-700">Valor correto:</span>
-                                      <span className="ml-2 text-green-600 font-semibold">
-                                        {formatCurrency(valorCorreto || 0)}
-                                      </span>
-                                    </div>
-                                    {dadosOriginais.LINHA_SPED && (
-                                      <div className="col-span-2">
-                                        <span className="font-medium text-gray-700">Linha no SPED:</span>
-                                        <span className="ml-2 font-mono text-blue-700">{dadosOriginais.LINHA_SPED}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  
-                                  {dadosOriginais.FORMULA_LEGAL && (
-                                    <div className="bg-gray-50 p-2 rounded text-xs font-mono text-gray-700">
-                                      <span className="font-semibold">Fórmula Legal:</span> {dadosOriginais.FORMULA_LEGAL}
-                                    </div>
-                                  )}
+                          <>
+                            <div className="p-3 bg-white rounded border border-gray-200">
+                              <p className="text-xs font-semibold text-gray-700 mb-2">Instrução de Correção:</p>
+                              <p className="text-xs text-gray-600 whitespace-pre-line">
+                                {String(solucaoAutomatica || '').trim()}
+                              </p>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div className="p-2 bg-white rounded border border-gray-200">
+                                <span className="font-medium text-gray-600">Registro:</span>
+                                <span className="ml-1 font-mono text-blue-600">{String(registroCorrigir || '').trim()}</span>
+                              </div>
+                              <div className="p-2 bg-white rounded border border-gray-200">
+                                <span className="font-medium text-gray-600">Campo:</span>
+                                <span className="ml-1 font-mono text-blue-600">{String(dadosOriginais.CAMPO || dadosOriginais.CAMPO_CORRIGIR || '').trim()}</span>
+                              </div>
+                              <div className="p-2 bg-white rounded border border-gray-200">
+                                <span className="font-medium text-gray-600">Atual SPED:</span>
+                                <span className="ml-1 text-red-600 font-semibold">
+                                  {formatCurrency(div.valor2 || 0)}
+                                </span>
+                              </div>
+                              <div className="p-2 bg-white rounded border border-gray-200">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="font-medium text-gray-600">Correto:</span>
+                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded" title="Valor extraído do XML da NF-e">
+                                    XML
+                                  </span>
                                 </div>
-                                
-                                {!correcaoAplicada && validationId && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      aplicarCorrecao(index, div);
-                                    }}
-                                    disabled={aplicandoCorrecao === index}
-                                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2"
-                                  >
-                                    {aplicandoCorrecao === index ? (
-                                      <>
-                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                        Aplicando correção...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <WrenchScrewdriverIcon className="h-5 w-5" />
-                                        Aplicar Correção Automaticamente
-                                      </>
-                                    )}
-                                  </button>
-                                )}
+                                <span className="ml-1 text-green-600 font-semibold">
+                                  {formatCurrency(valorCorreto || 0)}
+                                </span>
                               </div>
                             </div>
-                          </div>
+                            
+                            {correcaoAplicada ? (
+                              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                                <div className="flex items-center gap-2">
+                                  <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0" />
+                                  <p className="text-sm text-green-800 font-medium">
+                                    Correção aplicada com sucesso
+                                  </p>
+                                </div>
+                              </div>
+                            ) : validationId ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  aplicarCorrecao(index, div);
+                                }}
+                                disabled={aplicandoCorrecao === index}
+                                className="w-full py-2.5 px-4 bg-orange-600 text-white font-medium text-sm rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                              >
+                                {aplicandoCorrecao === index ? (
+                                  <>
+                                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                                    <span>Aplicando...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <WrenchScrewdriverIcon className="h-4 w-4" />
+                                    <span>Aplicar Correção</span>
+                                  </>
+                                )}
+                              </button>
+                            ) : null}
+                          </>
                         );
                       } else {
                         // Se for legítima, mostrar motivo de forma destacada
@@ -1498,30 +1783,62 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                                   {/* Valores específicos para contexto */}
                                   {div.valor1 !== undefined && div.valor2 !== undefined && (
                                     <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
-                                      <div className="bg-gray-50 p-3 rounded border border-gray-200">
-                                        <p className="font-semibold text-gray-700 mb-1">C170 (XML):</p>
-                                        <p className="text-lg font-bold text-blue-600">{formatCurrency(div.valor1)}</p>
-                                        <p className="text-xs text-gray-500 mt-1">Valor no XML da NF-e</p>
+                                      <div className="bg-blue-50 p-3 rounded border-2 border-blue-200">
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <p className="font-semibold text-blue-900">C170</p>
+                                          <span className="px-2 py-0.5 text-xs font-bold bg-blue-600 text-white rounded" title="Valor extraído do XML da NF-e">
+                                            XML
+                                          </span>
+                                        </div>
+                                        <p className="text-xl font-bold text-blue-700">{formatCurrency(div.valor1)}</p>
+                                        <p className="text-xs text-blue-600 mt-1 font-medium">✓ Valor correto (do XML)</p>
                                       </div>
-                                      <div className="bg-gray-50 p-3 rounded border border-gray-200">
-                                        <p className="font-semibold text-gray-700 mb-1">C190 (SPED):</p>
-                                        <p className="text-lg font-bold text-orange-600">{formatCurrency(div.valor2)}</p>
-                                        <p className="text-xs text-gray-500 mt-1">Valor no SPED Fiscal</p>
+                                      <div className="bg-gray-50 p-3 rounded border border-gray-300">
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <p className="font-semibold text-gray-700">C190</p>
+                                          <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded" title="Valor atual no SPED Fiscal">
+                                            SPED
+                                          </span>
+                                        </div>
+                                        <p className="text-xl font-bold text-orange-600">{formatCurrency(div.valor2)}</p>
+                                        <p className="text-xs text-gray-600 mt-1">Valor a ser corrigido</p>
                                       </div>
                                     </div>
                                   )}
                                   {div.recomendacao.referenciaLegal && (
-                                    <div className="bg-gray-50 p-3 rounded border border-gray-200 text-xs">
-                                      <p className="font-semibold text-gray-900 mb-2">📚 Referência Legal:</p>
-                                      <p className="text-gray-700 mb-1">
-                                        <span className="font-medium">Artigo/Norma:</span> {div.recomendacao.referenciaLegal.artigo}
-                                      </p>
-                                      <p className="text-gray-700 mb-1">
-                                        <span className="font-medium">Norma:</span> {div.recomendacao.referenciaLegal.norma}
-                                      </p>
-                                      <p className="text-gray-700">
-                                        <span className="font-medium">Prazo:</span> {div.recomendacao.referenciaLegal.prazo}
-                                      </p>
+                                    <div className="bg-gray-50 border border-gray-200 rounded overflow-hidden">
+                                      {/* Header clicável */}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleRefLegal(index);
+                                        }}
+                                        className="w-full p-3 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                                      >
+                                        <p className="font-semibold text-gray-900 text-xs flex items-center gap-2">
+                                          📚 Referência Legal
+                                        </p>
+                                        {expandedRefs.has(index) ? (
+                                          <ChevronUpIcon className="h-4 w-4 text-gray-600" />
+                                        ) : (
+                                          <ChevronDownIcon className="h-4 w-4 text-gray-600" />
+                                        )}
+                                      </button>
+                                      
+                                      {/* Conteúdo colapsável */}
+                                      {expandedRefs.has(index) && (
+                                        <div className="px-3 pb-3 text-xs text-gray-700 space-y-1">
+                                          <p className="mb-1">
+                                            <span className="font-medium">Artigo/Norma:</span> {div.recomendacao.referenciaLegal.artigo}
+                                          </p>
+                                          <p className="mb-1">
+                                            <span className="font-medium">Norma:</span> {div.recomendacao.referenciaLegal.norma}
+                                          </p>
+                                          <p>
+                                            <span className="font-medium">Prazo:</span> {div.recomendacao.referenciaLegal.prazo}
+                                          </p>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -1555,38 +1872,58 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                       }
                     })()}
 
-                    {/* Referência Legal */}
+                    {/* Referência Legal (Colapsável) */}
                     {div.recomendacao.referenciaLegal && (
-                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <h5 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                          <DocumentTextIcon className="h-5 w-5" />
-                          Referência Legal
-                        </h5>
-                        <div className="text-sm text-blue-800 space-y-1">
-                          <p><span className="font-medium">Artigo/Norma:</span> {div.recomendacao.referenciaLegal.artigo}</p>
-                          <p><span className="font-medium">Norma:</span> {div.recomendacao.referenciaLegal.norma}</p>
-                          <p><span className="font-medium">Prazo para correção:</span> {div.recomendacao.referenciaLegal.prazo}</p>
-                          {div.recomendacao.referenciaLegal.penalidade && (
-                            <p className="text-red-700">
-                              <span className="font-medium">⚠️ Penalidade:</span> {div.recomendacao.referenciaLegal.penalidade}
-                            </p>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg overflow-hidden">
+                        {/* Header clicável */}
+                        <button
+                          onClick={() => toggleRefLegal(index)}
+                          className="w-full p-4 flex items-center justify-between hover:bg-blue-100 transition-colors"
+                        >
+                          <h5 className="font-semibold text-blue-900 flex items-center gap-2">
+                            <DocumentTextIcon className="h-5 w-5" />
+                            Referência Legal
+                          </h5>
+                          {expandedRefs.has(index) ? (
+                            <ChevronUpIcon className="h-5 w-5 text-blue-600" />
+                          ) : (
+                            <ChevronDownIcon className="h-5 w-5 text-blue-600" />
                           )}
-                        </div>
+                        </button>
+                        
+                        {/* Conteúdo colapsável */}
+                        {expandedRefs.has(index) && (
+                          <div className="px-4 pb-4 text-sm text-blue-800 space-y-1">
+                            <p><span className="font-medium">Artigo/Norma:</span> {div.recomendacao.referenciaLegal.artigo}</p>
+                            <p><span className="font-medium">Norma:</span> {div.recomendacao.referenciaLegal.norma}</p>
+                            <p><span className="font-medium">Prazo para correção:</span> {div.recomendacao.referenciaLegal.prazo}</p>
+                            {div.recomendacao.referenciaLegal.penalidade && (
+                              <p className="text-red-700">
+                                <span className="font-medium">⚠️ Penalidade:</span> {div.recomendacao.referenciaLegal.penalidade}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {/* Valores comparativos */}
                     {div.valor1 !== undefined && div.valor2 !== undefined && (
                       <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="bg-gray-50 p-3 rounded">
-                          <p className="text-gray-600 font-medium mb-1">
-                            {div.categoria === 'C170 x C190' ? 'C170 (Itens)' : 'XML'}
-                          </p>
-                          <p className="text-lg font-semibold text-gray-900">
+                        <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-blue-900 font-semibold">
+                              {div.categoria === 'C170 x C190' ? 'C170 (Itens)' : 'XML'}
+                            </p>
+                            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded" title="Valor do XML da NF-e">
+                              XML
+                            </span>
+                          </div>
+                          <p className="text-lg font-bold text-blue-700">
                             {formatCurrency(div.valor1 || 0)}
                           </p>
                         </div>
-                        <div className="bg-gray-50 p-3 rounded">
+                        <div className="bg-gray-50 p-3 rounded border border-gray-200">
                           <p className="text-gray-600 font-medium mb-1">
                             {div.categoria === 'C170 x C190' ? 'C190 (Total)' : 'SPED'}
                           </p>
@@ -1596,6 +1933,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                         </div>
                       </div>
                     )}
+                    </div>
                   </div>
                 )}
               </div>
