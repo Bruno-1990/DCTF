@@ -78,6 +78,22 @@ const Clientes: React.FC = () => {
   // Refs para evitar múltiplas execuções simultâneas
   const carregandoParticipacaoRef = useRef(false);
   const toastInfoRef = useRef<string | null>(null);
+  const cancelarCarregamentoRef = useRef(false);
+
+  // Função para mudar de aba e atualizar URL
+  const handleTabChange = (tab: 'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos') => {
+    setActiveTab(tab);
+    // Atualizar URL sem recarregar a página
+    const params = new URLSearchParams(location.search);
+    if (tab === 'clientes') {
+      params.delete('tab'); // 'clientes' é o padrão, não precisa na URL
+    } else {
+      params.set('tab', tab);
+    }
+    navigate({ search: params.toString() }, { replace: true });
+    // Salvar no localStorage também
+    localStorage.setItem('clientes_active_tab', tab);
+  };
 
   const limparForm = () => {
     setShowForm(false);
@@ -232,13 +248,20 @@ const Clientes: React.FC = () => {
         return;
       }
       
+      // Se já tem clientes carregados, não recarregar
+      if (clientesParticipacao.length > 0) {
+        console.log('[Clientes] Clientes já carregados para Participação. Não recarregando.');
+        return;
+      }
+      
       carregandoParticipacaoRef.current = true;
+      cancelarCarregamentoRef.current = false;
       setLoadingParticipacao(true);
       
       // Carregar todos os clientes fazendo múltiplas requisições (backend limita a 100 por página)
       const carregarTodosClientes = async () => {
         try {
-          // Mostrar toast apenas uma vez
+          // Mostrar toast apenas uma vez por sessão de carregamento
           if (!toastInfoRef.current) {
             toastInfoRef.current = 'loading';
             toast.info('Carregando empresas... Isso pode levar alguns segundos.', 5000);
@@ -247,7 +270,7 @@ const Clientes: React.FC = () => {
           let pagina = 1;
           let temMais = true;
           
-          while (temMais) {
+          while (temMais && !cancelarCarregamentoRef.current) {
             let tentativas = 0;
             let sucesso = false;
             let items: Cliente[] = [];
@@ -334,9 +357,22 @@ const Clientes: React.FC = () => {
         }
       };
       
-      void carregarTodosClientes();
+      void carregarTodosClientes().catch(() => {
+        if (!cancelarCarregamentoRef.current) {
+          carregandoParticipacaoRef.current = false;
+          toastInfoRef.current = null;
+        }
+      });
+      
+      // Cleanup: cancelar se o componente desmontar ou a tab mudar
+      return () => {
+        cancelarCarregamentoRef.current = true;
+        carregandoParticipacaoRef.current = false;
+        toastInfoRef.current = null;
+      };
     } else {
       // Limpar clientes da participação quando sair da aba
+      cancelarCarregamentoRef.current = true;
       setClientesParticipacao([]);
       setSearchParticipacao(''); // Limpar busca ao sair da aba
       carregandoParticipacaoRef.current = false;
@@ -910,7 +946,7 @@ const Clientes: React.FC = () => {
           <div className="flex space-x-1">
             <button
               type="button"
-              onClick={() => setActiveTab('clientes')}
+              onClick={() => handleTabChange('clientes')}
               className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'clientes'
                   ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 transform scale-105'
@@ -924,7 +960,7 @@ const Clientes: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('participacao')}
+              onClick={() => handleTabChange('participacao')}
               className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'participacao'
                   ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/30 transform scale-105'
@@ -938,7 +974,7 @@ const Clientes: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('lancamentos')}
+              onClick={() => handleTabChange('lancamentos')}
               className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'lancamentos'
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30 transform scale-105'
@@ -952,7 +988,7 @@ const Clientes: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('pagamentos')}
+              onClick={() => handleTabChange('pagamentos')}
               className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'pagamentos'
                   ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/30 transform scale-105'
@@ -966,7 +1002,7 @@ const Clientes: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('e-processos')}
+              onClick={() => handleTabChange('e-processos')}
               className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'e-processos'
                   ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg shadow-indigo-500/30 transform scale-105'
