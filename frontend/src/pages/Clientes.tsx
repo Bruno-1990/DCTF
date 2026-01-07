@@ -188,12 +188,17 @@ const Clientes: React.FC = () => {
   }, [activeTab]);
 
   // Load clientes when filters/pagination change (server-side for payments filter)
+  // Não carregar se estiver na aba Participação (ela tem seu próprio carregamento)
   useEffect(() => {
+    if (activeTab === 'participacao') {
+      return; // Não fazer requisições na aba principal quando estiver em Participação
+    }
+    
     loadClientes({ page, limit, search: debouncedSearch, socio: socioFiltro || undefined }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
-  }, [page, limit, debouncedSearch, socioFiltro]);
+  }, [page, limit, debouncedSearch, socioFiltro, activeTab]);
 
   // Carregar todos os clientes para a aba Participação
   useEffect(() => {
@@ -202,17 +207,46 @@ const Clientes: React.FC = () => {
       // Carregar todos os clientes fazendo múltiplas requisições (backend limita a 100 por página)
       const carregarTodosClientes = async () => {
         try {
+          toast.info('Carregando empresas... Isso pode levar alguns segundos.', 3000);
           const todosClientes: Cliente[] = [];
           let pagina = 1;
           let temMais = true;
           
           while (temMais) {
-            const { items, pagination } = await loadClientes({ 
-              page: pagina, 
-              limit: 100, // Máximo permitido pelo backend
-              search: '', 
-              socio: undefined 
-            });
+            let tentativas = 0;
+            let sucesso = false;
+            let items: Cliente[] = [];
+            let pagination: any = null;
+            
+            // Retry com backoff exponencial em caso de 429
+            while (!sucesso && tentativas < 3) {
+              try {
+                const resultado = await loadClientes({ 
+                  page: pagina, 
+                  limit: 100, // Máximo permitido pelo backend
+                  search: '', 
+                  socio: undefined 
+                });
+                
+                items = resultado.items;
+                pagination = resultado.pagination;
+                sucesso = true;
+              } catch (error: any) {
+                tentativas++;
+                if (error?.response?.status === 429 && tentativas < 3) {
+                  // Backoff exponencial: 2s, 4s, 8s
+                  const delay = Math.min(2000 * Math.pow(2, tentativas - 1), 8000);
+                  console.warn(`[Clientes] Rate limit (429) na página ${pagina}. Aguardando ${delay}ms antes de tentar novamente... (tentativa ${tentativas}/3)`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                  throw error; // Re-lançar se não for 429 ou se esgotou tentativas
+                }
+              }
+            }
+            
+            if (!sucesso) {
+              throw new Error(`Falha ao carregar página ${pagina} após ${tentativas} tentativas`);
+            }
             
             todosClientes.push(...items);
             
@@ -226,9 +260,10 @@ const Clientes: React.FC = () => {
             
             pagina++;
             
-            // Aguardar 300ms entre cada requisição para evitar rate limit
+            // Aguardar 1 segundo entre cada requisição para evitar rate limit (429)
+            // Delay maior para garantir que o backend não bloqueie
             if (temMais) {
-              await new Promise(resolve => setTimeout(resolve, 300));
+              await new Promise(resolve => setTimeout(resolve, 1000));
             }
           }
           
@@ -252,9 +287,9 @@ const Clientes: React.FC = () => {
         } catch (error: any) {
           console.error('[Clientes] Erro ao carregar todos os clientes para Participação:', error);
           if (error?.response?.status === 429) {
-            toast.error('Muitas requisições. Por favor, aguarde um momento e recarregue a página.');
+            toast.error('Muitas requisições ao servidor. Aguarde 30 segundos e recarregue a página (F5).', 5000);
           } else {
-            toast.error('Erro ao carregar clientes');
+            toast.error(`Erro ao carregar clientes: ${error?.message || 'Erro desconhecido'}`);
           }
           setLoadingParticipacao(false);
         }
