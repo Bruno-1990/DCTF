@@ -7,6 +7,173 @@
 
 import { randomUUID } from 'crypto';
 import { executeQuery } from '../config/mysql';
+import { Cliente } from '../models/Cliente';
+
+/**
+ * Valida e normaliza um CPF ou CNPJ
+ * Remove formatação e valida tamanho
+ */
+function validarCpfCnpj(valor: string | null | undefined): string | null {
+  if (!valor || typeof valor !== 'string') {
+    return null;
+  }
+  
+  const limpo = valor.replace(/\D/g, '');
+  
+  // Validar tamanhos: CPF (11 dígitos) ou CNPJ (14 dígitos)
+  if (limpo.length !== 11 && limpo.length !== 14) {
+    console.warn(`[Sitf Data Extractor] ⚠️ CPF/CNPJ com tamanho inválido: ${valor} (${limpo.length} dígitos)`);
+    return null;
+  }
+  
+  return limpo;
+}
+
+/**
+ * Normaliza um nome (remove espaços extras, converte para título)
+ */
+function normalizarNome(nome: string | null | undefined): string | null {
+  if (!nome || typeof nome !== 'string') {
+    return null;
+  }
+  
+  // Remover espaços extras e converter para maiúsculas
+  const limpo = nome.trim().replace(/\s+/g, ' ').toUpperCase();
+  
+  if (!limpo || limpo.length < 2) {
+    return null;
+  }
+  
+  return limpo;
+}
+
+/**
+ * Normaliza e valida capital social
+ * Se vazio ou inválido, retorna 0
+ */
+function normalizarCapitalSocial(valor: any): number {
+  if (valor === null || valor === undefined || valor === '') {
+    return 0;
+  }
+  
+  // Se já for número
+  if (typeof valor === 'number') {
+    return valor < 0 ? 0 : valor;
+  }
+  
+  // Se for string, tentar converter
+  if (typeof valor === 'string') {
+    // Remover formatação monetária (R$, pontos, vírgulas)
+    const limpo = valor
+      .replace(/R\$\s*/gi, '')
+      .replace(/\./g, '')
+      .replace(',', '.')
+      .trim();
+    
+    const numero = parseFloat(limpo);
+    
+    if (isNaN(numero) || numero < 0) {
+      console.warn(`[Sitf Data Extractor] ⚠️ Capital social inválido: ${valor}, usando 0`);
+      return 0;
+    }
+    
+    return numero;
+  }
+  
+  console.warn(`[Sitf Data Extractor] ⚠️ Capital social em formato desconhecido: ${typeof valor}, usando 0`);
+  return 0;
+}
+
+/**
+ * Valida e normaliza sócios extraídos
+ */
+function validarSocios(socios: any[]): Array<{
+  cpf?: string | null;
+  nome: string;
+  qualificacao?: string | null;
+  situacao_cadastral?: string | null;
+  participacao_percentual?: number | null;
+}> {
+  if (!Array.isArray(socios)) {
+    return [];
+  }
+  
+  const sociosValidos: any[] = [];
+  
+  for (const socio of socios) {
+    // Nome é obrigatório
+    const nome = normalizarNome(socio.nome);
+    if (!nome) {
+      console.warn(`[Sitf Data Extractor] ⚠️ Sócio sem nome válido ignorado:`, socio);
+      continue;
+    }
+    
+    // Validar CPF se presente
+    const cpf = validarCpfCnpj(socio.cpf);
+    
+    // Normalizar qualificação
+    const qualificacao = socio.qualificacao ? socio.qualificacao.trim().toUpperCase() : null;
+    
+    // Normalizar situação cadastral
+    const situacao_cadastral = socio.situacao_cadastral ? socio.situacao_cadastral.trim().toUpperCase() : 'REGULAR';
+    
+    // Validar percentual (deve estar entre 0 e 100)
+    let participacao_percentual: number | null = null;
+    if (socio.participacao_percentual !== undefined && socio.participacao_percentual !== null) {
+      const percent = typeof socio.participacao_percentual === 'number' 
+        ? socio.participacao_percentual 
+        : parseFloat(socio.participacao_percentual);
+      
+      if (!isNaN(percent) && percent >= 0 && percent <= 100) {
+        participacao_percentual = parseFloat(percent.toFixed(2));
+      } else {
+        console.warn(`[Sitf Data Extractor] ⚠️ Percentual inválido para ${nome}: ${socio.participacao_percentual}`);
+      }
+    }
+    
+    sociosValidos.push({
+      cpf,
+      nome,
+      qualificacao,
+      situacao_cadastral,
+      participacao_percentual,
+    });
+  }
+  
+  console.log(`[Sitf Data Extractor] ✅ Sócios validados: ${sociosValidos.length} de ${socios.length}`);
+  return sociosValidos;
+}
+
+/**
+ * Ajusta os percentuais de participação para totalizar exatamente 100%
+ */
+function ajustarPercentuais(socios: Array<{ participacao_percentual?: number | null }>): Array<{ participacao_percentual?: number | null }> {
+  const totalPercentual = socios.reduce((sum, s) => {
+    const percent = s.participacao_percentual || 0;
+    return sum + percent;
+  }, 0);
+  
+  if (totalPercentual > 0 && Math.abs(totalPercentual - 100) > 0.01) {
+    console.warn(`[Sitf Data Extractor] ⚠️ Soma dos percentuais (${totalPercentual.toFixed(2)}%) não é 100%. Ajustando proporcionalmente...`);
+    
+    const fator = 100 / totalPercentual;
+    const ajustados = socios.map(s => {
+      if (s.participacao_percentual !== undefined && s.participacao_percentual !== null) {
+        return {
+          ...s,
+          participacao_percentual: parseFloat((s.participacao_percentual * fator).toFixed(2))
+        };
+      }
+      return s;
+    });
+    
+    const novoTotal = ajustados.reduce((sum, s) => sum + (s.participacao_percentual || 0), 0);
+    console.log(`[Sitf Data Extractor] ✅ Percentuais ajustados. Novo total: ${novoTotal.toFixed(2)}%`);
+    return ajustados;
+  }
+  
+  return socios;
+}
 
 /**
  * Converte uma data do formato brasileiro (DD/MM/YYYY) ou ISO para formato MySQL (YYYY-MM-DD)
@@ -147,18 +314,34 @@ export async function getExtractedSitfDataByDownloadId(
     if (results && results.length > 0) {
       const data: any = results[0];
       
-      // Parsear campos JSON
-      if (data.empresa_natureza_juridica) {
-        data.empresa_natureza_juridica = JSON.parse(data.empresa_natureza_juridica);
+      // Parsear campos JSON (apenas se forem strings)
+      if (data.empresa_natureza_juridica && typeof data.empresa_natureza_juridica === 'string') {
+        try {
+          data.empresa_natureza_juridica = JSON.parse(data.empresa_natureza_juridica);
+        } catch (e) {
+          console.warn('[Sitf Data Extractor] Erro ao parsear natureza_juridica:', e);
+        }
       }
-      if (data.empresa_cnae_principal) {
-        data.empresa_cnae_principal = JSON.parse(data.empresa_cnae_principal);
+      if (data.empresa_cnae_principal && typeof data.empresa_cnae_principal === 'string') {
+        try {
+          data.empresa_cnae_principal = JSON.parse(data.empresa_cnae_principal);
+        } catch (e) {
+          console.warn('[Sitf Data Extractor] Erro ao parsear cnae_principal:', e);
+        }
       }
-      if (data.socios) {
-        data.socios = JSON.parse(data.socios);
+      if (data.socios && typeof data.socios === 'string') {
+        try {
+          data.socios = JSON.parse(data.socios);
+        } catch (e) {
+          console.warn('[Sitf Data Extractor] Erro ao parsear socios:', e);
+        }
       }
-      if (data.dados_completos) {
-        data.dados_completos = JSON.parse(data.dados_completos);
+      if (data.dados_completos && typeof data.dados_completos === 'string') {
+        try {
+          data.dados_completos = JSON.parse(data.dados_completos);
+        } catch (e) {
+          console.warn('[Sitf Data Extractor] Erro ao parsear dados_completos:', e);
+        }
       }
       
       return data;
@@ -266,6 +449,63 @@ export async function updateExtractedSitfData(
       cnpj: cnpjLimpo,
       razaoSocial: updateData.empresa_razao_social,
     });
+
+    // Atualizar sócios do cliente com participação se houver dados
+    if (extractedData.socios && Array.isArray(extractedData.socios) && extractedData.socios.length > 0) {
+      try {
+        if (cnpjLimpo && cnpjLimpo.length === 14) {
+          // Buscar cliente pelo CNPJ
+          const clienteModel = new Cliente();
+          const clienteResult = await clienteModel.findByCNPJ(cnpjLimpo);
+          
+          if (clienteResult.success && clienteResult.data) {
+            const cliente = clienteResult.data;
+            // Buscar e normalizar capital social do cliente
+            const capitalSocial = normalizarCapitalSocial((cliente as any).capital_social);
+            
+            // Validar e preparar sócios com participação
+            let sociosValidados = validarSocios(extractedData.socios);
+            
+            // Ajustar percentuais para totalizar 100%
+            sociosValidados = ajustarPercentuais(sociosValidados) as any[];
+            
+            // Converter para formato esperado pelo modelo
+            const sociosComParticipacao = sociosValidados.map((s: any) => ({
+              nome: s.nome,
+              cpf: s.cpf,
+              qual: s.qualificacao,
+              participacao_percentual: s.participacao_percentual,
+            }));
+
+            console.log('[Sitf Data Extractor] Atualizando sócios com participação (UPDATE):', {
+              cnpj: cnpjLimpo,
+              clienteId: cliente.id,
+              sociosCount: sociosComParticipacao.length,
+              capitalSocial,
+              socios: sociosComParticipacao,
+            });
+
+            // Atualizar sócios
+            const updateResult = await clienteModel.atualizarSociosComParticipacao(
+              cliente.id!,
+              sociosComParticipacao,
+              capitalSocial
+            );
+            
+            if (updateResult.success) {
+              console.log('[Sitf Data Extractor] ✅ Sócios atualizados com sucesso (UPDATE):', updateResult.data);
+            } else {
+              console.error('[Sitf Data Extractor] ❌ Erro ao atualizar sócios (UPDATE):', updateResult.error);
+            }
+          } else {
+            console.warn('[Sitf Data Extractor] ⚠️ Cliente não encontrado para CNPJ (UPDATE):', cnpjLimpo);
+          }
+        }
+      } catch (sociosError: any) {
+        console.error('[Sitf Data Extractor] ❌ Erro ao atualizar sócios (UPDATE, não crítico):', sociosError);
+        // Não falhar a extração se houver erro ao atualizar sócios
+      }
+    }
   } catch (error: any) {
     console.error('[Sitf Data Extractor] ❌ Erro ao atualizar dados estruturados:', error);
     throw error;
@@ -474,6 +714,63 @@ export async function saveExtractedSitfData(
       cnpj: cnpjLimpo,
       razaoSocial: insertData.empresa_razao_social,
     });
+
+    // Atualizar sócios do cliente com participação se houver dados
+    if (extractedData.socios && Array.isArray(extractedData.socios) && extractedData.socios.length > 0) {
+      try {
+        if (cnpjLimpo && cnpjLimpo.length === 14) {
+          // Buscar cliente pelo CNPJ
+          const clienteModel = new Cliente();
+          const clienteResult = await clienteModel.findByCNPJ(cnpjLimpo);
+          
+          if (clienteResult.success && clienteResult.data) {
+            const cliente = clienteResult.data;
+            // Buscar e normalizar capital social do cliente
+            const capitalSocial = normalizarCapitalSocial((cliente as any).capital_social);
+            
+            // Validar e preparar sócios com participação
+            let sociosValidados = validarSocios(extractedData.socios);
+            
+            // Ajustar percentuais para totalizar 100%
+            sociosValidados = ajustarPercentuais(sociosValidados) as any[];
+            
+            // Converter para formato esperado pelo modelo
+            const sociosComParticipacao = sociosValidados.map((s: any) => ({
+              nome: s.nome,
+              cpf: s.cpf,
+              qual: s.qualificacao,
+              participacao_percentual: s.participacao_percentual,
+            }));
+
+            console.log('[Sitf Data Extractor] Atualizando sócios com participação:', {
+              cnpj: cnpjLimpo,
+              clienteId: cliente.id,
+              sociosCount: sociosComParticipacao.length,
+              capitalSocial,
+              socios: sociosComParticipacao,
+            });
+
+            // Atualizar sócios
+            const updateResult = await clienteModel.atualizarSociosComParticipacao(
+              cliente.id!,
+              sociosComParticipacao,
+              capitalSocial
+            );
+            
+            if (updateResult.success) {
+              console.log('[Sitf Data Extractor] ✅ Sócios atualizados com sucesso:', updateResult.data);
+            } else {
+              console.error('[Sitf Data Extractor] ❌ Erro ao atualizar sócios:', updateResult.error);
+            }
+          } else {
+            console.warn('[Sitf Data Extractor] ⚠️ Cliente não encontrado para CNPJ:', cnpjLimpo);
+          }
+        }
+      } catch (sociosError: any) {
+        console.error('[Sitf Data Extractor] ❌ Erro ao atualizar sócios (não crítico):', sociosError);
+        // Não falhar a extração se houver erro ao atualizar sócios
+      }
+    }
   } catch (error: any) {
     console.error('[Sitf Data Extractor] ❌ Erro ao salvar dados estruturados:', error);
     throw error;
@@ -502,18 +799,34 @@ export async function getLatestExtractedSitfDataByCnpj(
     if (results && results.length > 0) {
       const data: any = results[0];
       
-      // Parsear campos JSON
-      if (data.empresa_natureza_juridica) {
-        data.empresa_natureza_juridica = JSON.parse(data.empresa_natureza_juridica);
+      // Parsear campos JSON (apenas se forem strings)
+      if (data.empresa_natureza_juridica && typeof data.empresa_natureza_juridica === 'string') {
+        try {
+          data.empresa_natureza_juridica = JSON.parse(data.empresa_natureza_juridica);
+        } catch (e) {
+          console.warn('[Sitf Data Extractor] Erro ao parsear natureza_juridica:', e);
+        }
       }
-      if (data.empresa_cnae_principal) {
-        data.empresa_cnae_principal = JSON.parse(data.empresa_cnae_principal);
+      if (data.empresa_cnae_principal && typeof data.empresa_cnae_principal === 'string') {
+        try {
+          data.empresa_cnae_principal = JSON.parse(data.empresa_cnae_principal);
+        } catch (e) {
+          console.warn('[Sitf Data Extractor] Erro ao parsear cnae_principal:', e);
+        }
       }
-      if (data.socios) {
-        data.socios = JSON.parse(data.socios);
+      if (data.socios && typeof data.socios === 'string') {
+        try {
+          data.socios = JSON.parse(data.socios);
+        } catch (e) {
+          console.warn('[Sitf Data Extractor] Erro ao parsear socios:', e);
+        }
       }
-      if (data.dados_completos) {
-        data.dados_completos = JSON.parse(data.dados_completos);
+      if (data.dados_completos && typeof data.dados_completos === 'string') {
+        try {
+          data.dados_completos = JSON.parse(data.dados_completos);
+        } catch (e) {
+          console.warn('[Sitf Data Extractor] Erro ao parsear dados_completos:', e);
+        }
       }
       
       return data;
@@ -525,4 +838,5 @@ export async function getLatestExtractedSitfDataByCnpj(
     throw error;
   }
 }
+
 
