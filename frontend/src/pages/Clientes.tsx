@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useClientes } from '../hooks/useClientes';
 import type { Cliente } from '../types';
@@ -74,6 +74,10 @@ const Clientes: React.FC = () => {
   const [atualizandoSocios, setAtualizandoSocios] = useState<string | null>(null); // ID do cliente sendo atualizado
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Refs para evitar múltiplas execuções simultâneas
+  const carregandoParticipacaoRef = useRef(false);
+  const toastInfoRef = useRef<string | null>(null);
 
   const limparForm = () => {
     setShowForm(false);
@@ -83,17 +87,24 @@ const Clientes: React.FC = () => {
     // setUltimaImportacaoMeta(null); // Não utilizado no momento
   };
 
-  // Detectar tab na query string
+  // Detectar tab na query string (ou localStorage) ao entrar/alterar URL
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const tab = params.get('tab');
-    if (tab === 'pagamentos') {
-      setActiveTab('pagamentos');
-    } else if (tab === 'lancamentos') {
-      setActiveTab('lancamentos');
-    } else if (tab === 'e-processos') {
-      setActiveTab('e-processos');
-    }
+    const tabFromQuery = params.get('tab');
+    const tabFromStorage = window.localStorage.getItem('clientes_active_tab') as
+      | 'clientes'
+      | 'participacao'
+      | 'lancamentos'
+      | 'pagamentos'
+      | 'e-processos'
+      | null;
+
+    const tab = (tabFromQuery as any) || tabFromStorage || 'clientes';
+    if (tab === 'pagamentos') setActiveTab('pagamentos');
+    else if (tab === 'lancamentos') setActiveTab('lancamentos');
+    else if (tab === 'e-processos') setActiveTab('e-processos');
+    else if (tab === 'participacao') setActiveTab('participacao');
+    else setActiveTab('clientes');
     
     // Detectar CNPJ na query string para pagamentos, e-processos e lançamentos
     const cnpjFromQuery = params.get('cnpj');
@@ -114,6 +125,18 @@ const Clientes: React.FC = () => {
       }
     }
   }, [location.search]);
+
+  // Persistir tab ativa na URL e no localStorage para manter após atualizações/navegação
+  useEffect(() => {
+    // Atualizar query string sem recarregar a página
+    const params = new URLSearchParams(location.search);
+    if (params.get('tab') !== activeTab) {
+      params.set('tab', activeTab);
+      navigate({ search: params.toString() }, { replace: true });
+    }
+    // Salvar preferência
+    window.localStorage.setItem('clientes_active_tab', activeTab);
+  }, [activeTab, location.search, navigate]);
 
   // Detectar clienteId na query string para visualizar cliente (separado para garantir execução)
   useEffect(() => {
@@ -203,11 +226,23 @@ const Clientes: React.FC = () => {
   // Carregar todos os clientes para a aba Participação
   useEffect(() => {
     if (activeTab === 'participacao') {
+      // Evitar múltiplas execuções simultâneas
+      if (carregandoParticipacaoRef.current) {
+        console.log('[Clientes] Já está carregando clientes para Participação. Ignorando nova execução.');
+        return;
+      }
+      
+      carregandoParticipacaoRef.current = true;
       setLoadingParticipacao(true);
+      
       // Carregar todos os clientes fazendo múltiplas requisições (backend limita a 100 por página)
       const carregarTodosClientes = async () => {
         try {
-          toast.info('Carregando empresas... Isso pode levar alguns segundos.', 3000);
+          // Mostrar toast apenas uma vez
+          if (!toastInfoRef.current) {
+            toastInfoRef.current = 'loading';
+            toast.info('Carregando empresas... Isso pode levar alguns segundos.', 5000);
+          }
           const todosClientes: Cliente[] = [];
           let pagina = 1;
           let temMais = true;
@@ -284,6 +319,8 @@ const Clientes: React.FC = () => {
           
           setClientesParticipacao(apenasMatrizes);
           setLoadingParticipacao(false);
+          carregandoParticipacaoRef.current = false;
+          toastInfoRef.current = null;
         } catch (error: any) {
           console.error('[Clientes] Erro ao carregar todos os clientes para Participação:', error);
           if (error?.response?.status === 429) {
@@ -292,6 +329,8 @@ const Clientes: React.FC = () => {
             toast.error(`Erro ao carregar clientes: ${error?.message || 'Erro desconhecido'}`);
           }
           setLoadingParticipacao(false);
+          carregandoParticipacaoRef.current = false;
+          toastInfoRef.current = null;
         }
       };
       
@@ -300,20 +339,10 @@ const Clientes: React.FC = () => {
       // Limpar clientes da participação quando sair da aba
       setClientesParticipacao([]);
       setSearchParticipacao(''); // Limpar busca ao sair da aba
+      carregandoParticipacaoRef.current = false;
+      toastInfoRef.current = null;
     }
   }, [activeTab]); // Removido loadClientes das dependências para evitar loop infinito
-
-  // Debug: Log quando searchParticipacao mudar
-  useEffect(() => {
-    if (activeTab === 'participacao' && searchParticipacao) {
-      console.log('[Clientes] Busca Participação:', searchParticipacao);
-      const clientesFiltrados = clientesParticipacao.filter(c => {
-        const razaoSocial = (c.razao_social || c.nome || '').toLowerCase();
-        return razaoSocial.includes(searchParticipacao.toLowerCase());
-      });
-      console.log('[Clientes] Clientes encontrados:', clientesFiltrados.length);
-    }
-  }, [searchParticipacao, activeTab, clientesParticipacao]);
 
   // Fechar dropdown de sócios ao clicar fora
   useEffect(() => {
