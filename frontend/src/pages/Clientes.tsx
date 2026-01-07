@@ -45,6 +45,7 @@ const Clientes: React.FC = () => {
   const [clientesParticipacao, setClientesParticipacao] = useState<Cliente[]>([]);
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
+  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'faltantes' | 'sem-registro'>('a-z');
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
   // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
   const [successMessage, setSuccessMessage] = useState<string>('');
@@ -1364,6 +1365,22 @@ const Clientes: React.FC = () => {
               />
             </div>
           </div>
+          {activeTab === 'participacao' && (
+            <div className="w-full md:w-64">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Ordenar / Filtrar</label>
+              <select
+                value={ordenacaoParticipacao}
+                onChange={(e) => setOrdenacaoParticipacao(e.target.value as any)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md"
+              >
+                <option value="a-z">A → Z</option>
+                <option value="z-a">Z → A</option>
+                <option value="cnpj">CNPJ ↑</option>
+                <option value="faltantes">Informações Faltantes</option>
+                <option value="sem-registro">Sem Registro</option>
+              </select>
+            </div>
+          )}
           {activeTab === 'clientes' && (
             <div className="w-full md:w-72 socio-filter-container">
               <label className="block text-sm font-medium text-gray-700 mb-2">Sócio (filtro)</label>
@@ -2211,16 +2228,48 @@ const Clientes: React.FC = () => {
                 </svg>
                 <span className="ml-3 text-gray-600">Carregando empresas...</span>
               </div>
-            ) : clientesParticipacao.filter(c => {
-              if (!searchParticipacao) return true;
-              const search = searchParticipacao.toLowerCase();
-              return (
-                c.razao_social?.toLowerCase().includes(search) ||
-                c.nome?.toLowerCase().includes(search) ||
-                c.cnpj?.includes(search) ||
-                c.cnpj_limpo?.includes(search.replace(/\D/g, ''))
-              );
-            }).map((cliente) => (
+            ) : clientesParticipacao
+              // 1. Aplicar busca por texto
+              .filter(c => {
+                if (!searchParticipacao) return true;
+                const search = searchParticipacao.toLowerCase();
+                return (
+                  c.razao_social?.toLowerCase().includes(search) ||
+                  c.nome?.toLowerCase().includes(search) ||
+                  c.cnpj?.includes(search) ||
+                  c.cnpj_limpo?.includes(search.replace(/\D/g, ''))
+                );
+              })
+              // 2. Aplicar filtros especiais
+              .filter(c => {
+                if (ordenacaoParticipacao === 'faltantes') {
+                  // Tem sócio mas falta valores ou percentual
+                  return c.socios && c.socios.length > 0 && c.socios.some(s => 
+                    !s.participacao_percentual || !s.participacao_valor
+                  );
+                } else if (ordenacaoParticipacao === 'sem-registro') {
+                  // Sem sócios cadastrados
+                  return !c.socios || c.socios.length === 0;
+                }
+                return true; // Outros casos: sem filtro especial
+              })
+              // 3. Aplicar ordenação
+              .sort((a, b) => {
+                const nomeA = (a.razao_social || a.nome || '').toLowerCase();
+                const nomeB = (b.razao_social || b.nome || '').toLowerCase();
+                const cnpjA = a.cnpj_limpo || a.cnpj || '';
+                const cnpjB = b.cnpj_limpo || b.cnpj || '';
+                
+                if (ordenacaoParticipacao === 'a-z') {
+                  return nomeA.localeCompare(nomeB);
+                } else if (ordenacaoParticipacao === 'z-a') {
+                  return nomeB.localeCompare(nomeA);
+                } else if (ordenacaoParticipacao === 'cnpj') {
+                  return cnpjA.localeCompare(cnpjB);
+                }
+                return 0; // Filtros especiais mantêm ordem original
+              })
+              .map((cliente) => (
               <div key={cliente.id} className="border border-gray-200 rounded-lg overflow-hidden shadow-md mb-4">
                 {/* Header da Empresa */}
                 <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100">
