@@ -94,6 +94,7 @@ const Clientes: React.FC = () => {
   const cancelarCarregamentoRef = useRef(false);
   const jaTentouCarregarRef = useRef(false); // Rastrear se já tentou carregar nesta sessão
   const activeTabAnteriorRef = useRef<string>(''); // Rastrear aba anterior
+  const atualizandoSociosIdRef = useRef<string | null>(null); // Ref para rastrear qual cliente está sendo atualizado
 
   // Função para mudar de aba e atualizar URL
   const handleTabChange = (tab: 'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos') => {
@@ -2560,266 +2561,168 @@ const Clientes: React.FC = () => {
                       </div>
                       <button
                         onClick={async (e) => {
+                          console.log('[Clientes] Botão "Atualizar Sócios" clicado', { clienteId: cliente.id, cnpj: cliente.cnpj });
                           e.stopPropagation();
+                          
                           if (!cliente.id) {
+                            console.error('[Clientes] ID do cliente não disponível', cliente);
                             toast.error('ID do cliente não disponível');
                             return;
                           }
                           
-                          setAtualizandoSocios(cliente.id);
+                          const clienteIdLocal = cliente.id; // Guardar o ID localmente para evitar problemas com estado assíncrono
+                          console.log('[Clientes] Iniciando atualização de sócios para cliente:', clienteIdLocal);
+                          setAtualizandoSocios(clienteIdLocal);
+                          atualizandoSociosIdRef.current = clienteIdLocal; // Usar ref para verificação imediata
+                          
                           try {
                             const cnpjLimpo = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
-                                    if (!cnpjLimpo || cnpjLimpo.length !== 14) {
-                                      toast.error('CNPJ inválido para consulta');
-                                      setAtualizandoSocios(null);
-                                      return;
-                                    }
-                                    
-                                    // Primeiro, verificar se já existe situação fiscal com dados extraídos
-                                    toast.info('Verificando situação fiscal existente...', 2000);
-                                    let temSituacaoFiscal = false;
-                                    let registroEncontrado = null;
-                                    
-                                    try {
-                                      const checkResp = await api.get(`/situacao-fiscal/history?limit=10&search=${cnpjLimpo}`);
-                                      if (checkResp.data?.data && checkResp.data.data.length > 0) {
-                                        // Procurar o registro mais recente com extracted_data
-                                        registroEncontrado = checkResp.data.data.find((r: any) => r.extracted_data);
-                                        if (registroEncontrado) {
-                                          temSituacaoFiscal = true;
-                                        }
-                                      }
-                                    } catch (checkError) {
-                                      // Continuar mesmo se houver erro na verificação
-                                    }
-                                    
-                                    // Se não tem situação fiscal, fazer a consulta
-                                    if (!temSituacaoFiscal) {
-                                      toast.info('Nenhuma situação fiscal encontrada. Iniciando consulta...', 3000);
-                                      
-                                      try {
-                                        const situacaoFiscalResp = await api.post(`/situacao-fiscal/${cnpjLimpo}/download`);
-                                        
-                                        if (!situacaoFiscalResp.data?.success) {
-                                          const errorMsg = situacaoFiscalResp.data?.error || 'Erro ao iniciar consulta de Situação Fiscal';
-                                          toast.error(errorMsg);
-                                          setAtualizandoSocios(null);
-                                          return;
-                                        }
-                                        
-                                      // Aguardar a conclusão completa da consulta (3 etapas: token, protocolo, PDF)
-                                      toast.info('Aguardando conclusão da consulta (pode levar alguns minutos)...', 5000);
-                                      let tentativas = 0;
-                                      const maxTentativas = 60; // 60 tentativas = ~2 minutos (tempo suficiente para buscar PDF)
-                                      temSituacaoFiscal = false;
-                                      
-                                      while (tentativas < maxTentativas && !temSituacaoFiscal) {
-                                        // Verificar se o usuário ainda está na mesma aba e empresa
-                                        if (atualizandoSocios !== cliente.id) {
-                                          // Usuário cancelou ou mudou de empresa
-                                          return;
-                                        }
-                                        
-                                        await new Promise(resolve => setTimeout(resolve, 2000)); // Aguardar 2s entre verificações
-                                        
-                                        try {
-                                          // Tentar continuar o download primeiro (força o backend a buscar o PDF se houver protocolo)
-                                          try {
-                                            await api.post(`/situacao-fiscal/${cnpjLimpo}/download`);
-                                          } catch (downloadContinueError: any) {
-                                            // Ignorar erros 202 (ainda processando) ou 429 (rate limit)
-                                            if (downloadContinueError?.response?.status !== 202 && downloadContinueError?.response?.status !== 429) {
-                                              console.warn('[Clientes] Erro ao continuar download:', downloadContinueError);
-                                            }
-                                          }
-                                          
-                                          // Depois verificar se já temos o PDF no history
-                                          const checkResp = await api.get(`/situacao-fiscal/history?limit=10&search=${cnpjLimpo}`);
-                                          if (checkResp.data?.data && checkResp.data.data.length > 0) {
-                                            registroEncontrado = checkResp.data.data.find((r: any) => r.extracted_data || r.pdf_base64);
-                                            if (registroEncontrado) {
-                                              temSituacaoFiscal = true;
-                                              break;
-                                            }
-                                          }
-                                        } catch (checkError: any) {
-                                          // Continuar tentando mesmo se houver erro na verificação
-                                          console.warn('[Clientes] Erro ao verificar situação fiscal:', checkError);
-                                        }
-                                        
-                                        tentativas++;
-                                        
-                                        // Feedback a cada 5 tentativas
-                                        if (tentativas % 5 === 0) {
-                                          toast.info(`Aguardando conclusão... (${tentativas * 2}s)`, 2000);
-                                        }
-                                      }
-                                      
-                                      if (!temSituacaoFiscal) {
-                                        // Se chegou aqui, a consulta ainda não foi concluída
-                                        // Não é um erro, apenas informar o usuário
-                                        toast.warning('A consulta de Situação Fiscal foi iniciada, mas ainda está em processamento. Você pode: 1) Aguardar alguns minutos e clicar novamente em "Atualizar Sócios", ou 2) Fazer a consulta manualmente na aba "Situação Fiscal" e aguardar a conclusão antes de atualizar os sócios.', 8000);
-                                        setAtualizandoSocios(null);
-                                        return;
-                                      }
-                                      } catch (downloadError: any) {
-                                        console.error('[Clientes] Erro ao fazer download da situação fiscal:', downloadError);
-                                        const errorMsg = downloadError?.response?.data?.error || downloadError?.message || 'Erro ao iniciar consulta de Situação Fiscal';
-                                        toast.error(errorMsg);
-                                        setAtualizandoSocios(null);
-                                        return;
-                                      }
-                                    }
-                                    
-                                    // Agora que temos situação fiscal, atualizar os sócios
-                                    try {
-                                      toast.info('Atualizando dados dos sócios...', 2000);
-                                      const result = await clientesService.atualizarSociosPorSituacaoFiscal(cliente.id);
-                                      
-                                      if (result.success) {
-                                        toast.success(result.data?.message || 'Sócios atualizados com sucesso!');
-                                        
-                                        // Aguardar o backend salvar completamente os dados
-                                        toast.info('Atualizando interface...', 1500);
-                                        await new Promise(resolve => setTimeout(resolve, 1500));
-                                        
-                                        // Atualizar apenas o cliente específico na lista
-                                        try {
-                                          // Buscar o cliente atualizado com sócios
-                                          const clienteAtualizado = await clientesService.obterCliente(cliente.id!);
-                                          
-                                          console.log('[Clientes] Dados recebidos do backend:', clienteAtualizado);
-                                          
-                                          if (clienteAtualizado && typeof clienteAtualizado === 'object') {
-                                            let clienteComSocios: Cliente;
-                                            
-                                            if ((clienteAtualizado as any).success && (clienteAtualizado as any).data) {
-                                              clienteComSocios = (clienteAtualizado as any).data as Cliente;
-                                            } else if ((clienteAtualizado as any).id) {
-                                              clienteComSocios = clienteAtualizado as Cliente;
-                                            } else {
-                                              throw new Error('Formato de resposta inválido');
-                                            }
-                                            
-                                            console.log('[Clientes] Cliente processado - Total de sócios:', clienteComSocios.socios?.length || 0);
-                                            console.log('[Clientes] Dados dos sócios:', JSON.stringify(clienteComSocios.socios, null, 2));
-                                            
-                                            // Verificar se os sócios têm os dados de participação
-                                            const temDadosCompletos = clienteComSocios.socios?.some(s => 
-                                              s.cpf || s.participacao_percentual || s.participacao_valor
-                                            );
-                                            console.log('[Clientes] Sócios têm dados completos?', temDadosCompletos);
-                                            
-                                            // Atualizar o cliente na lista
-                                            setClientesParticipacao(prevClientes => 
-                                              prevClientes.map(c => c.id === cliente.id ? clienteComSocios : c)
-                                            );
-                                            console.log('[Clientes] Cliente atualizado na lista:', clienteComSocios.socios?.length || 'sócios');
-                                            
-                                            // Aguardar o React processar a atualização do estado e renderizar
-                                            await new Promise(resolve => setTimeout(resolve, 500));
-                                            
-                                            toast.success('Interface atualizada com sucesso!', 2000);
-                                          } else {
-                                            // Se não conseguiu buscar individualmente, recarregar todos
-                                            console.log('[Clientes] Recarregando todos os clientes...');
-                                            const todosClientes: Cliente[] = [];
-                                            let pagina = 1;
-                                            let temMais = true;
-                                            
-                                            while (temMais) {
-                                              const { items, pagination } = await loadClientes({ 
-                                                page: pagina, 
-                                                limit: 100,
-                                                search: '', 
-                                                socio: undefined 
-                                              });
-                                              
-                                              todosClientes.push(...items);
-                                              
-                                              if (pagination && pagination.totalPages) {
-                                                temMais = pagina < pagination.totalPages;
-                                              } else {
-                                                temMais = items.length === 100;
-                                              }
-                                              
-                                              pagina++;
-                                            }
-                                            
-                                            setClientesParticipacao(todosClientes);
-                                          }
-                                        } catch (reloadError) {
-                                          console.error('[Clientes] Erro ao atualizar cliente na lista:', reloadError);
-                                          // Tentar recarregar todos como fallback
-                                          try {
-                                            const todosClientes: Cliente[] = [];
-                                            let pagina = 1;
-                                            let temMais = true;
-                                            
-                                            while (temMais) {
-                                              const { items, pagination } = await loadClientes({ 
-                                                page: pagina, 
-                                                limit: 100,
-                                                search: '', 
-                                                socio: undefined 
-                                              });
-                                              
-                                              todosClientes.push(...items);
-                                              
-                                              if (pagination && pagination.totalPages) {
-                                                temMais = pagina < pagination.totalPages;
-                                              } else {
-                                                temMais = items.length === 100;
-                                              }
-                                              
-                                              pagina++;
-                                            }
-                                            
-                                            setClientesParticipacao(todosClientes);
-                                          } catch (fallbackError) {
-                                            console.error('[Clientes] Erro no fallback de recarregamento:', fallbackError);
-                                          }
-                                        }
-                                      } else {
-                                        const errorMsg = (result as any).error || 'Erro ao atualizar sócios';
-                                        if (errorMsg.includes('Nenhuma situação fiscal encontrada') || errorMsg.includes('404')) {
-                                          toast.error('Nenhuma situação fiscal encontrada. Por favor, faça a consulta manualmente na aba "Situação Fiscal" primeiro.');
-                                        } else {
-                                          toast.error(errorMsg);
-                                        }
-                                      }
-                                    } catch (updateError: any) {
-                                      console.error('[Clientes] Erro ao atualizar sócios:', updateError);
-                                      const errorMsg = updateError?.response?.data?.error || updateError?.message || 'Erro ao atualizar sócios';
-                                      toast.error(errorMsg);
-                                    }
-                                  } catch (error: any) {
-                                    console.error('[Clientes] Erro ao atualizar sócios:', error);
-                                    
-                                    // Tratamento mais detalhado de erros
-                                    let errorMsg = 'Erro ao atualizar sócios';
-                                    
-                                    if (error?.response) {
-                                      // Erro da API
-                                      errorMsg = error.response.data?.error || error.response.data?.message || `Erro ${error.response.status}: ${error.response.statusText}`;
-                                    } else if (error?.message) {
-                                      errorMsg = error.message;
-                                    } else if (typeof error === 'string') {
-                                      errorMsg = error;
-                                    }
-                                    
-                                    // Se o erro for sobre não encontrar situação fiscal, dar instruções mais claras
-                                    if (errorMsg.includes('Nenhuma situação fiscal encontrada') || errorMsg.includes('404')) {
-                                      errorMsg = 'Nenhuma situação fiscal encontrada. Por favor, faça a consulta manualmente na aba "Situação Fiscal" primeiro e aguarde a conclusão antes de atualizar os sócios.';
-                                    }
-                                    
-                                    toast.error(errorMsg);
-                                  } finally {
-                                    // Sempre limpar o estado, mesmo em caso de erro
-                                    console.log('[Clientes] Desbloqueando botão "Atualizar Sócios"');
-                                    setAtualizandoSocios(null);
+                            console.log('[Clientes] CNPJ limpo:', cnpjLimpo);
+                            
+                            if (!cnpjLimpo || cnpjLimpo.length !== 14) {
+                              console.error('[Clientes] CNPJ inválido:', cnpjLimpo);
+                              toast.error('CNPJ inválido para consulta');
+                              setAtualizandoSocios(null);
+                              atualizandoSociosIdRef.current = null;
+                              return;
+                            }
+                            
+                            // Usar a estrutura já pronta de Situação Fiscal (3 passos: token, protocolo, base64)
+                            // Chamar o endpoint que já faz todo o processo
+                            console.log('[Clientes] Iniciando consulta de Situação Fiscal para CNPJ:', cnpjLimpo);
+                            toast.info('Iniciando consulta de Situação Fiscal...');
+                            
+                            let consultaConcluida = false;
+                            let tentativas = 0;
+                            const maxTentativas = 120; // ~4 minutos (120 * 2s) - tempo suficiente para os 3 passos
+                            
+                            console.log('[Clientes] Entrando no loop de consulta, maxTentativas:', maxTentativas);
+                            
+                            // Aguardar até que o endpoint retorne 200 (concluído) ou timeout
+                            while (tentativas < maxTentativas && !consultaConcluida) {
+                              console.log(`[Clientes] Loop iteração ${tentativas + 1}, consultaConcluida:`, consultaConcluida);
+                              
+                              // Verificar se o usuário ainda está na mesma empresa (usando ref para verificação imediata)
+                              if (atualizandoSociosIdRef.current !== clienteIdLocal) {
+                                console.log('[Clientes] Usuário mudou de empresa ou cancelou. atualizandoSociosIdRef.current:', atualizandoSociosIdRef.current, 'clienteIdLocal:', clienteIdLocal);
+                                return; // Usuário cancelou ou mudou de empresa
+                              }
+                              
+                              try {
+                                // Chamar o endpoint que já faz todo o processo (token → protocolo → base64)
+                                console.log(`[Clientes] Tentativa ${tentativas + 1}/${maxTentativas} - Chamando /situacao-fiscal/${cnpjLimpo}/download`);
+                                const response = await api.post(`/situacao-fiscal/${cnpjLimpo}/download`);
+                                console.log('[Clientes] Resposta recebida:', { status: response.status, data: response.data });
+                                
+                                // Se retornou 200, a consulta está concluída (PDF base64 já foi extraído e salvo)
+                                if (response.status === 200 && response.data?.success && response.data?.step === 'concluido') {
+                                  console.log('[Clientes] Consulta concluída!');
+                                  consultaConcluida = true;
+                                  toast.success('Consulta de Situação Fiscal concluída!', 2000);
+                                  break;
+                                }
+                                
+                                // Se retornou 202, ainda está processando (aguardar e tentar novamente)
+                                if (response.status === 202) {
+                                  const retryAfter = response.data?.retryAfter || 5;
+                                  const step = response.data?.step || 'processando';
+                                  const stepMsg = step === 'protocolo' 
+                                    ? 'Solicitando protocolo...' 
+                                    : step === 'emitir'
+                                    ? 'Buscando PDF...'
+                                    : 'Processando...';
+                                  
+                                  // Aguardar o tempo indicado pelo backend
+                                  await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                                  
+                                  // Feedback a cada 10 tentativas
+                                  if (tentativas % 10 === 0) {
+                                    toast.info(`${stepMsg} (${tentativas * 2}s)`);
                                   }
-                                }}
+                                } else {
+                                  // Outro status - aguardar 2s antes de tentar novamente
+                                  await new Promise(resolve => setTimeout(resolve, 2000));
+                                }
+                              } catch (error: any) {
+                                // Se for 202 ou 429, continuar tentando (ainda processando)
+                                if (error?.response?.status === 202 || error?.response?.status === 429) {
+                                  const retryAfter = error.response.data?.retryAfter || 5;
+                                  await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                                } else if (error?.response?.status === 200) {
+                                  // Às vezes o axios trata 200 como erro em certas condições
+                                  consultaConcluida = true;
+                                  break;
+                                } else {
+                                  // Outro erro - aguardar 2s e continuar
+                                  console.warn('[Clientes] Erro ao consultar situação fiscal:', error);
+                                  await new Promise(resolve => setTimeout(resolve, 2000));
+                                }
+                              }
+                              
+                              tentativas++;
+                            }
+                            
+                            console.log('[Clientes] Loop terminou. consultaConcluida:', consultaConcluida, 'tentativas:', tentativas);
+                            
+                            // Se a consulta foi concluída, os sócios já foram atualizados automaticamente durante a extração
+                            // Apenas aguardar um pouco para garantir que o backend salvou e buscar o cliente atualizado
+                            if (consultaConcluida) {
+                              console.log('[Clientes] Consulta concluída! Os sócios foram atualizados automaticamente durante a extração.');
+                              toast.info('Buscando dados atualizados dos sócios...');
+                              
+                              // Aguardar o backend salvar completamente (a extração já atualizou os sócios)
+                              await new Promise(resolve => setTimeout(resolve, 2000));
+                              
+                              try {
+                                // Buscar cliente atualizado (os sócios já foram atualizados pela extração)
+                                console.log('[Clientes] Buscando cliente atualizado...');
+                                const clienteAtualizado = await clientesService.obterCliente(cliente.id!);
+                                
+                                if (clienteAtualizado && typeof clienteAtualizado === 'object') {
+                                  let clienteComSocios: Cliente;
+                                  
+                                  if ((clienteAtualizado as any).success && (clienteAtualizado as any).data) {
+                                    clienteComSocios = (clienteAtualizado as any).data as Cliente;
+                                  } else if ((clienteAtualizado as any).id) {
+                                    clienteComSocios = clienteAtualizado as Cliente;
+                                  } else {
+                                    throw new Error('Formato de resposta inválido');
+                                  }
+                                  
+                                  console.log('[Clientes] Cliente atualizado recebido. Total de sócios:', clienteComSocios.socios?.length || 0);
+                                  
+                                  // Atualizar apenas o cliente específico na lista (não recarregar toda a página)
+                                  setClientesParticipacao(prevClientes => 
+                                    prevClientes.map(c => c.id === cliente.id ? clienteComSocios : c)
+                                  );
+                                  
+                                  toast.success('Sócios atualizados com sucesso!');
+                                } else {
+                                  console.error('[Clientes] Formato de resposta inválido:', clienteAtualizado);
+                                  toast.error('Erro ao obter dados atualizados do cliente');
+                                }
+                              } catch (updateError: any) {
+                                console.error('[Clientes] Erro ao buscar cliente atualizado:', updateError);
+                                const errorMsg = updateError?.response?.data?.error || updateError?.message || 'Erro ao buscar dados atualizados';
+                                toast.error(errorMsg);
+                              }
+                            } else {
+                              // Timeout - consulta ainda não concluída
+                              console.log('[Clientes] Timeout - consulta não concluída após', tentativas, 'tentativas');
+                              toast.warning('A consulta ainda está em processamento. Aguarde alguns minutos e tente novamente.');
+                            }
+                          } catch (error: any) {
+                            console.error('[Clientes] Erro ao atualizar sócios:', error);
+                            console.error('[Clientes] Stack do erro:', error?.stack);
+                            console.error('[Clientes] Response do erro:', error?.response);
+                            const errorMsg = error?.response?.data?.error || error?.message || 'Erro ao atualizar sócios';
+                            toast.error(errorMsg);
+                          } finally {
+                            console.log('[Clientes] Finalizando atualização de sócios');
+                            setAtualizandoSocios(null);
+                            atualizandoSociosIdRef.current = null; // Limpar ref também
+                          }
+                        }}
                                 disabled={atualizandoSocios === cliente.id}
                                 className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 disabled:cursor-not-allowed rounded-lg transition-all duration-300 flex items-center gap-1.5 shadow-sm hover:shadow-md"
                                 title="Atualizar sócios via Situação Fiscal"
