@@ -2244,16 +2244,31 @@ const Clientes: React.FC = () => {
                 <span className="ml-3 text-gray-600">Carregando empresas...</span>
               </div>
             ) : clientesParticipacao
-              // 1. Aplicar busca por texto
+              // 1. Aplicar busca por texto (CNPJ ou Razão Social)
               .filter(c => {
                 if (!searchParticipacao) return true;
-                const search = searchParticipacao.toLowerCase();
-                return (
-                  c.razao_social?.toLowerCase().includes(search) ||
-                  c.nome?.toLowerCase().includes(search) ||
+                const search = searchParticipacao.toLowerCase().trim();
+                if (!search) return true;
+                
+                // Buscar por CNPJ (com ou sem formatação)
+                const cnpjLimpo = search.replace(/\D/g, '');
+                const cnpjMatch = (
                   c.cnpj?.includes(search) ||
-                  c.cnpj_limpo?.includes(search.replace(/\D/g, ''))
+                  c.cnpj_limpo?.includes(cnpjLimpo) ||
+                  c.cnpj?.replace(/\D/g, '').includes(cnpjLimpo)
                 );
+                
+                // Buscar por Razão Social (busca em todas as palavras)
+                const razaoSocial = (c.razao_social || c.nome || '').toLowerCase();
+                const nomeMatch = razaoSocial.includes(search);
+                
+                // Buscar por palavras individuais da razão social (mais flexível)
+                const palavrasBusca = search.split(/\s+/).filter(p => p.length > 0);
+                const palavrasMatch = palavrasBusca.length > 0 && palavrasBusca.every(palavra => 
+                  razaoSocial.includes(palavra)
+                );
+                
+                return cnpjMatch || nomeMatch || palavrasMatch;
               })
               // 2. Aplicar filtros especiais
               .filter(c => {
