@@ -262,8 +262,21 @@ const Clientes: React.FC = () => {
     } else {
       // Limpar clientes da participação quando sair da aba
       setClientesParticipacao([]);
+      setSearchParticipacao(''); // Limpar busca ao sair da aba
     }
   }, [activeTab]); // Removido loadClientes das dependências para evitar loop infinito
+
+  // Debug: Log quando searchParticipacao mudar
+  useEffect(() => {
+    if (activeTab === 'participacao' && searchParticipacao) {
+      console.log('[Clientes] Busca Participação:', searchParticipacao);
+      const clientesFiltrados = clientesParticipacao.filter(c => {
+        const razaoSocial = (c.razao_social || c.nome || '').toLowerCase();
+        return razaoSocial.includes(searchParticipacao.toLowerCase());
+      });
+      console.log('[Clientes] Clientes encontrados:', clientesFiltrados.length);
+    }
+  }, [searchParticipacao, activeTab, clientesParticipacao]);
 
   // Fechar dropdown de sócios ao clicar fora
   useEffect(() => {
@@ -2244,31 +2257,49 @@ const Clientes: React.FC = () => {
                 <span className="ml-3 text-gray-600">Carregando empresas...</span>
               </div>
             ) : clientesParticipacao
-              // 1. Aplicar busca por texto (CNPJ ou Razão Social)
+              // 1. Aplicar busca por texto (CNPJ ou Razão Social) - busca em tempo real
               .filter(c => {
-                if (!searchParticipacao) return true;
+                if (!searchParticipacao || !searchParticipacao.trim()) return true;
+                
                 const search = searchParticipacao.toLowerCase().trim();
                 if (!search) return true;
                 
+                // Normalizar texto removendo acentos para busca mais flexível
+                const normalize = (str: string) => str
+                  .normalize('NFD')
+                  .replace(/[\u0300-\u036f]/g, '')
+                  .toLowerCase();
+                
                 // Buscar por CNPJ (com ou sem formatação)
                 const cnpjLimpo = search.replace(/\D/g, '');
-                const cnpjMatch = (
+                const cnpjMatch = cnpjLimpo.length > 0 && (
                   c.cnpj?.includes(search) ||
                   c.cnpj_limpo?.includes(cnpjLimpo) ||
                   c.cnpj?.replace(/\D/g, '').includes(cnpjLimpo)
                 );
                 
-                // Buscar por Razão Social (busca em todas as palavras)
-                const razaoSocial = (c.razao_social || c.nome || '').toLowerCase();
-                const nomeMatch = razaoSocial.includes(search);
+                // Buscar por Razão Social ou Nome (tenta ambos os campos)
+                const razaoSocial = c.razao_social || c.nome || '';
+                const razaoSocialNormalizada = normalize(razaoSocial);
+                const searchNormalizada = normalize(search);
                 
-                // Buscar por palavras individuais da razão social (mais flexível)
-                const palavrasBusca = search.split(/\s+/).filter(p => p.length > 0);
+                // Busca simples (contém o texto)
+                const nomeMatch = razaoSocialNormalizada.includes(searchNormalizada);
+                
+                // Busca por palavras individuais (todas as palavras devem estar presentes)
+                const palavrasBusca = searchNormalizada.split(/\s+/).filter(p => p.length > 0);
                 const palavrasMatch = palavrasBusca.length > 0 && palavrasBusca.every(palavra => 
-                  razaoSocial.includes(palavra)
+                  razaoSocialNormalizada.includes(palavra)
                 );
                 
-                return cnpjMatch || nomeMatch || palavrasMatch;
+                // Busca por início da palavra (mais flexível)
+                const inicioPalavraMatch = palavrasBusca.some(palavra => 
+                  razaoSocialNormalizada.split(/\s+/).some(palavraRazao => 
+                    palavraRazao.startsWith(palavra)
+                  )
+                );
+                
+                return cnpjMatch || nomeMatch || palavrasMatch || inicioPalavraMatch;
               })
               // 2. Aplicar filtros especiais
               .filter(c => {
