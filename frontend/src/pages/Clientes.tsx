@@ -57,7 +57,19 @@ const Clientes: React.FC = () => {
   const [copiedCnpj, setCopiedCnpj] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos'>('clientes');
+  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos'>(() => {
+    // Inicializar pela URL/localStorage para evitar 1º render na aba errada (que dispara várias requisições/toasts)
+    const params = new URLSearchParams(window.location.search);
+    const tabFromQuery = params.get('tab');
+    const tabFromStorage = window.localStorage.getItem('clientes_active_tab');
+    const tab = (tabFromQuery as any) || tabFromStorage || 'clientes';
+
+    if (tab === 'pagamentos') return 'pagamentos';
+    if (tab === 'lancamentos') return 'lancamentos';
+    if (tab === 'e-processos') return 'e-processos';
+    if (tab === 'participacao') return 'participacao';
+    return 'clientes';
+  });
   const [cnpjParaPagamentos, setCnpjParaPagamentos] = useState<string | undefined>(undefined);
   const [hostLancamentos, setHostLancamentos] = useState<any[]>([]);
   const [hostLoading, setHostLoading] = useState(false);
@@ -78,6 +90,7 @@ const Clientes: React.FC = () => {
   // Refs para evitar múltiplas execuções simultâneas
   const carregandoParticipacaoRef = useRef(false);
   const toastInfoRef = useRef<string | null>(null);
+  const toastRateLimitParticipacaoRef = useRef(false);
   const cancelarCarregamentoRef = useRef(false);
   const jaTentouCarregarRef = useRef(false); // Rastrear se já tentou carregar nesta sessão
   const activeTabAnteriorRef = useRef<string>(''); // Rastrear aba anterior
@@ -143,18 +156,6 @@ const Clientes: React.FC = () => {
       }
     }
   }, [location.search]);
-
-  // Persistir tab ativa na URL e no localStorage para manter após atualizações/navegação
-  useEffect(() => {
-    // Atualizar query string sem recarregar a página
-    const params = new URLSearchParams(location.search);
-    if (params.get('tab') !== activeTab) {
-      params.set('tab', activeTab);
-      navigate({ search: params.toString() }, { replace: true });
-    }
-    // Salvar preferência
-    window.localStorage.setItem('clientes_active_tab', activeTab);
-  }, [activeTab, location.search, navigate]);
 
   // Detectar clienteId na query string para visualizar cliente (separado para garantir execução)
   useEffect(() => {
@@ -279,6 +280,14 @@ const Clientes: React.FC = () => {
       // Carregar todos os clientes fazendo múltiplas requisições (backend limita a 100 por página)
       const carregarTodosClientes = async () => {
         try {
+          const aguardarComCancelamento = async (ms: number) => {
+            const inicio = Date.now();
+            while (!cancelarCarregamentoRef.current && Date.now() - inicio < ms) {
+              // checar a cada 1s para permitir cancelamento ao trocar de aba
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+          };
+
           // Mostrar toast apenas uma vez por sessão de carregamento
           if (!toastInfoRef.current) {
             toastInfoRef.current = 'loading';
@@ -295,7 +304,7 @@ const Clientes: React.FC = () => {
             let pagination: any = null;
             
             // Retry com backoff exponencial em caso de 429
-            while (!sucesso && tentativas < 3) {
+            while (!sucesso && tentativas < 5 && !cancelarCarregamentoRef.current) {
               try {
                 const resultado = await loadClientes({ 
                   page: pagina, 
@@ -307,13 +316,25 @@ const Clientes: React.FC = () => {
                 items = resultado.items;
                 pagination = resultado.pagination;
                 sucesso = true;
+                toastRateLimitParticipacaoRef.current = false; // resetar ao voltar a funcionar
               } catch (error: any) {
                 tentativas++;
-                if (error?.response?.status === 429 && tentativas < 3) {
-                  // Backoff exponencial: 2s, 4s, 8s
-                  const delay = Math.min(2000 * Math.pow(2, tentativas - 1), 8000);
-                  console.warn(`[Clientes] Rate limit (429) na página ${pagina}. Aguardando ${delay}ms antes de tentar novamente... (tentativa ${tentativas}/3)`);
-                  await new Promise(resolve => setTimeout(resolve, delay));
+                if (cancelarCarregamentoRef.current) {
+                  break;
+                }
+                const status = (error as any)?.status
+                  ?? error?.response?.status
+                  ?? (String(error?.message || '').includes('429') ? 429 : undefined);
+                if (status === 429 && tentativas < 5) {
+                  // Para evitar "spam" e respeitar o rate limit do backend, aguardar ~30s entre tentativas (com jitter)
+                  const jitter = Math.floor(Math.random() * 5000); // 0-5s
+                  const delay = 30000 + jitter;
+                  console.warn(`[Clientes] Rate limit (429) na página ${pagina}. Aguardando ${delay}ms antes de tentar novamente... (tentativa ${tentativas}/5)`);
+                  if (!toastRateLimitParticipacaoRef.current) {
+                    toastRateLimitParticipacaoRef.current = true;
+                    toast.warning(`Muitas requisições ao servidor. Aguardando ~${Math.round(delay / 1000)}s e tentando novamente...`, 8000);
+                  }
+                  await aguardarComCancelamento(delay);
                 } else {
                   throw error; // Re-lançar se não for 429 ou se esgotou tentativas
                 }
@@ -362,9 +383,13 @@ const Clientes: React.FC = () => {
           setLoadingParticipacao(false);
           carregandoParticipacaoRef.current = false;
           toastInfoRef.current = null;
+          toastRateLimitParticipacaoRef.current = false;
         } catch (error: any) {
           console.error('[Clientes] Erro ao carregar todos os clientes para Participação:', error);
-          if (error?.response?.status === 429) {
+          const status = (error as any)?.status
+            ?? error?.response?.status
+            ?? (String(error?.message || '').includes('429') ? 429 : undefined);
+          if (status === 429) {
             toast.error('Muitas requisições ao servidor. Aguarde 30 segundos e recarregue a página (F5).', 5000);
           } else {
             toast.error(`Erro ao carregar clientes: ${error?.message || 'Erro desconhecido'}`);
@@ -372,6 +397,7 @@ const Clientes: React.FC = () => {
           setLoadingParticipacao(false);
           carregandoParticipacaoRef.current = false;
           toastInfoRef.current = null;
+          toastRateLimitParticipacaoRef.current = false;
         }
       };
       
@@ -387,6 +413,7 @@ const Clientes: React.FC = () => {
         cancelarCarregamentoRef.current = true;
         carregandoParticipacaoRef.current = false;
         toastInfoRef.current = null;
+        toastRateLimitParticipacaoRef.current = false;
       };
     } else {
       // Atualizar ref da aba anterior
@@ -398,6 +425,7 @@ const Clientes: React.FC = () => {
       setSearchParticipacao(''); // Limpar busca ao sair da aba
       carregandoParticipacaoRef.current = false;
       toastInfoRef.current = null;
+      toastRateLimitParticipacaoRef.current = false;
       jaTentouCarregarRef.current = false; // Resetar para permitir recarregar quando voltar
     }
   }, [activeTab]); // Apenas activeTab como dependência

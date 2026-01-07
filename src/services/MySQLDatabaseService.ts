@@ -6,6 +6,7 @@
 import { mysqlPool, executeQuery, executeTransaction } from '../config/mysql';
 import { ApiResponse } from '../types';
 import { PoolConnection } from 'mysql2/promise';
+import { v4 as uuidv4 } from 'uuid';
 
 export abstract class MySQLDatabaseService<T> {
   protected tableName: string;
@@ -66,20 +67,32 @@ export abstract class MySQLDatabaseService<T> {
    */
   async create(record: Partial<T>): Promise<ApiResponse<T>> {
     try {
-      const fields = Object.keys(record).join(', ');
-      const placeholders = Object.keys(record).map(() => '?').join(', ');
-      const values = Object.values(record);
+      // Para este projeto, a grande maioria das tabelas usa UUID string em `id`.
+      // Se `id` não vier no record, geramos automaticamente.
+      const mutable: any = { ...(record as any) };
+      if (mutable.id === undefined || mutable.id === null || String(mutable.id).trim() === '') {
+        mutable.id = uuidv4();
+      }
 
-      const query = `INSERT INTO ${this.tableName} (${fields}) VALUES (${placeholders})`;
+      const keys = Object.keys(mutable);
+      if (keys.length === 0) {
+        return { success: false, error: 'Registro vazio: nenhum campo para inserir' };
+      }
+
+      const fields = keys.map((k) => `\`${k}\``).join(', ');
+      const placeholders = keys.map(() => '?').join(', ');
+      const values = keys.map((k) => mutable[k]);
+
+      const query = `INSERT INTO \`${this.tableName}\` (${fields}) VALUES (${placeholders})`;
       
       const connection = await mysqlPool.getConnection();
       try {
-        const [result] = await connection.execute(query, values);
-        const insertId = (result as any).insertId;
-        
-        // Buscar o registro criado
-        const selectQuery = `SELECT * FROM ${this.tableName} WHERE id = ?`;
-        const [rows] = await connection.execute(selectQuery, [insertId]);
+        await connection.execute(query, values);
+
+        // Buscar o registro criado pelo ID (UUID) ou fallback para insertId se aplicável
+        const createdId = mutable.id;
+        const selectQuery = `SELECT * FROM \`${this.tableName}\` WHERE id = ? LIMIT 1`;
+        const [rows] = await connection.execute(selectQuery, [createdId]);
         const data = (rows as any[])[0] as T;
 
         return {

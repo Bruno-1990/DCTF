@@ -66,20 +66,24 @@ export class HostDadosObrigacaoService {
     try {
       const competencia = `${String(mes).padStart(2, '0')}/${ano}`;
       
-      // IMPORTANTE: A competência analisada é o mês SUBSEQUENTE ao movimento
-      // Se estamos analisando 09/2025, verificamos movimento em 08/2025
+      // IMPORTANTE: A movimentação verificada é SEMPRE 1 mês ANTES da competência da DCTF
+      // Lógica: Movimento no mês X → Obrigação de DCTF no mês X+1
+      // Exemplo: Se competência DCTF é 11/2025, verificamos movimento APENAS em 10/2025
+      // Isso evita falsos positivos com movimentações antigas de outros meses
       const mesMovimento = mes === 1 ? 12 : mes - 1;
       const anoMovimento = mes === 1 ? ano - 1 : ano;
       const competenciaMovimento = `${String(mesMovimento).padStart(2, '0')}/${anoMovimento}`;
       const periodoSqlMovimento = `${anoMovimento}-${String(mesMovimento).padStart(2, '0')}`;
       
-      // Para verificar DCTF, usamos a competência subsequente (mês analisado)
+      // Para verificar DCTF, usamos a competência informada (mês analisado)
       const periodoSql = `${ano}-${String(mes).padStart(2, '0')}`;
 
-      console.log(`[HostDadosObrigacaoService] Verificando obrigações para competência ${competencia}`);
-      console.log(`[HostDadosObrigacaoService] Movimento verificado em: ${competenciaMovimento} (${mesMovimento}/${anoMovimento})`);
+      console.log(`[HostDadosObrigacaoService] 🔍 Verificando obrigações para competência DCTF: ${competencia}`);
+      console.log(`[HostDadosObrigacaoService] ✅ Movimento verificado APENAS em: ${competenciaMovimento} (${mesMovimento}/${anoMovimento})`);
 
-      // Query melhorada: busca movimento no mês anterior e verifica DCTF no mês subsequente
+      // Query melhorada: busca movimento APENAS no mês específico (1 mês antes da competência)
+      // e verifica DCTF na competência informada
+      // FILTRO ESTRITO por ano e mês para evitar falsos positivos com movimentações antigas
       // Também verifica se há "Original sem movimento" que dispensa
       const rows = await executeQuery<RawObrigacaoRow>(
       `
@@ -183,6 +187,9 @@ export class HostDadosObrigacaoService {
           REPLACE(REPLACE(REPLACE(h.cnpj, '.', ''), '/', ''), '-', '') = c.cnpj_limpo
           OR h.cod_emp = c.cod_emp
         )
+        -- IMPORTANTE: Considerar apenas clientes "Matriz", excluir "Filial"
+        -- Filiais não têm obrigatoriedade de enviar DCTF
+        AND (c.tipo_empresa = 'Matriz' OR c.tipo_empresa IS NULL)
       LEFT JOIN dctf_declaracoes d
         ON (
           (
@@ -193,6 +200,8 @@ export class HostDadosObrigacaoService {
           -- Considerar tanto Original quanto Retificadora para verificar se TEM DCTF
           -- Se tem retificadora, significa que já enviou original antes
         )
+      -- FILTRO ESTRITO: Verificar movimento APENAS no mês específico (1 mês antes da competência vigente)
+      -- Isso evita falsos positivos com movimentações antigas de meses anteriores
       WHERE h.ano = ? AND h.mes = ?
       GROUP BY
         h.cnpj,
@@ -305,34 +314,39 @@ export class HostDadosObrigacaoService {
       const mesAtual = hoje.getMonth() + 1; // getMonth() retorna 0-11, então +1 para 1-12
       const anoAtual = hoje.getFullYear();
 
-      // Competência vigente é SEMPRE o mês anterior à data atual
+      // Competência vigente da DCTF é SEMPRE o mês anterior à data atual
+      // Exemplo: Se hoje é 15/12/2025, competência vigente é 11/2025
       const competenciaMes = mes || (mesAtual === 1 ? 12 : mesAtual - 1); // Mês anterior
       const competenciaAno = ano || (mesAtual === 1 ? anoAtual - 1 : anoAtual); // Se janeiro, ano anterior
       
       console.log(`[HostDadosObrigacaoService] 📅 Data atual: ${hoje.toISOString().split('T')[0]}`);
       console.log(`[HostDadosObrigacaoService] 📅 Mês atual: ${mesAtual}/${anoAtual}`);
-      console.log(`[HostDadosObrigacaoService] 🔍 Competência vigente (mês anterior): ${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`);
+      console.log(`[HostDadosObrigacaoService] 🔍 Competência vigente DCTF: ${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`);
       
-      // O movimento que gera obrigação é no mês ANTERIOR à competência
-      // Se a competência é 10/2025, o movimento foi em 09/2025
+      // IMPORTANTE: O movimento que gera obrigação é SEMPRE 1 mês ANTES da competência vigente
+      // Lógica: Movimento no mês X → Obrigação de DCTF no mês X+1
+      // Exemplo: Se competência DCTF é 11/2025, verificamos movimento em 10/2025
+      // Isso evita falsos positivos com movimentações antigas
       const mesMovimento = competenciaMes === 1 ? 12 : competenciaMes - 1;
       const anoMovimento = competenciaMes === 1 ? competenciaAno - 1 : competenciaAno;
       
       const competenciaObrigacao = `${String(competenciaMes).padStart(2, '0')}/${competenciaAno}`;
       const competenciaMovimento = `${String(mesMovimento).padStart(2, '0')}/${anoMovimento}`;
       
-      console.log(`[HostDadosObrigacaoService] Buscando clientes sem DCTF em ${competenciaObrigacao} mas com movimento em ${competenciaMovimento}`);
-      console.log(`[HostDadosObrigacaoService] Parâmetros da query: anoMovimento=${anoMovimento}, mesMovimento=${mesMovimento}, competenciaObrigacao=${competenciaObrigacao}`);
+      console.log(`[HostDadosObrigacaoService] 🔍 Buscando clientes sem DCTF em ${competenciaObrigacao} mas com movimento em ${competenciaMovimento}`);
+      console.log(`[HostDadosObrigacaoService] 📊 Parâmetros da query: anoMovimento=${anoMovimento}, mesMovimento=${mesMovimento}, competenciaObrigacao=${competenciaObrigacao}`);
 
       // Query que cruza:
-      // 1. Clientes cadastrados
-      // 2. Movimento em host_dados no mês anterior
+      // 1. Clientes cadastrados (apenas "Matriz")
+      // 2. Movimento em host_dados APENAS no mês específico (1 mês antes da competência vigente)
+      //    IMPORTANTE: Filtramos estritamente por ano e mês para evitar falsos positivos com movimentações antigas
       // 3. Ausência de DCTF na competência vigente
       // IMPORTANTE: Verificar ambos os formatos de período_apuracao (YYYY-MM e MM/YYYY)
       // IMPORTANTE: Considerar QUALQUER DCTF existente, independente de situação ou data_transmissao
       const periodoSql = `${competenciaAno}-${String(competenciaMes).padStart(2, '0')}`;
       
-      console.log(`[HostDadosObrigacaoService] Verificando DCTFs com período: ${periodoSql} ou ${competenciaObrigacao}`);
+      console.log(`[HostDadosObrigacaoService] ✅ Verificando DCTFs com período: ${periodoSql} ou ${competenciaObrigacao}`);
+      console.log(`[HostDadosObrigacaoService] ✅ Verificando movimentação APENAS em: ${anoMovimento}-${String(mesMovimento).padStart(2, '0')} (${competenciaMovimento})`);
 
       // Usar LEFT JOIN com verificação explícita de NULL para garantir que não há DCTF
       // Adicionar verificação de "Original sem movimento" que pode dispensar
@@ -413,9 +427,15 @@ export class HostDadosObrigacaoService {
             OR (h.cod_emp = c.cod_emp AND h.cod_emp IS NOT NULL)
           )
         WHERE 
+          -- FILTRO ESTRITO: Verificar movimento APENAS no mês específico (1 mês antes da competência vigente)
+          -- Isso evita falsos positivos com movimentações antigas de meses anteriores
+          -- Exemplo: Para DCTF 11/2025, verificamos movimento APENAS em 10/2025
           h.ano = ?
           AND h.mes = ?
           AND h.movimentacao > 0
+          -- IMPORTANTE: Considerar apenas clientes "Matriz", excluir "Filial"
+          -- Filiais não têm obrigatoriedade de enviar DCTF
+          AND (c.tipo_empresa = 'Matriz' OR c.tipo_empresa IS NULL)
           -- Verificar que NÃO existe DCTF para a competência vigente
           -- Usar NOT EXISTS para garantir que não há DCTF (mais confiável que LEFT JOIN)
           -- IMPORTANTE: Considerar tanto Original quanto Retificadora

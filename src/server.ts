@@ -74,14 +74,24 @@ class Server {
     }));
 
     // Rate limiting
-    const limiter = rateLimit({
+    // Observação: um limit global muito baixo causa 429 até em navegação normal (ex: aba Clientes/Participação).
+    // Estratégia: um limit "geral" mais permissivo + limits específicos para rotas mais sensíveis (ex: Situação Fiscal / Receita).
+    const generalLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 100, // limit each IP to 100 requests per windowMs
+      max: config.nodeEnv === 'development' ? 5000 : 1500,
       message: 'Too many requests from this IP, please try again later.',
       standardHeaders: true,
       legacyHeaders: false,
+      skip: (req) => {
+        const p = req.path || '';
+        // Rotas com limiter dedicado
+        if (p.startsWith('/api/situacao-fiscal')) return true;
+        if (p.startsWith('/api/receita')) return true;
+        if (p.startsWith('/api/receita-pagamentos')) return true;
+        return false;
+      },
     });
-    this.app.use(limiter);
+    this.app.use(generalLimiter);
 
     // Compression
     this.app.use(compression());
@@ -130,11 +140,28 @@ class Server {
     this.app.use('/api/dashboard/admin', adminDashboardRoutes);
     this.app.use('/api/dashboard/admin/conferences', adminDashboardConferenceRoutes);
     this.app.use('/api/pagamentos', pagamentosRoutes);
-    this.app.use('/api/receita-pagamentos', receitaPagamentosRoutes);
-    this.app.use('/api/receita', receitaRoutes);
+    // Limiters dedicados para rotas sensíveis (evita que o limiter global derrube o app inteiro)
+    const receitaLimiter = rateLimit({
+      windowMs: 60 * 1000, // 1 minute
+      max: config.nodeEnv === 'development' ? 120 : 60,
+      message: 'Too many requests for Receita routes, please try again later.',
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
+    const sitfLimiter = rateLimit({
+      windowMs: 60 * 1000, // 1 minute
+      max: config.nodeEnv === 'development' ? 60 : 30,
+      message: 'Too many requests for Situação Fiscal routes, please try again later.',
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
+    this.app.use('/api/receita-pagamentos', receitaLimiter, receitaPagamentosRoutes);
+    this.app.use('/api/receita', receitaLimiter, receitaRoutes);
     this.app.use('/api/conferencias', conferenciasRoutes);
     this.app.use('/api/conferences', conferencesRoutes);
-    this.app.use('/api/situacao-fiscal', situacaoFiscalRoutes);
+    this.app.use('/api/situacao-fiscal', sitfLimiter, situacaoFiscalRoutes);
     this.app.use('/api/host-dados', hostDadosRoutes);
     this.app.use('/api/sci', sciRoutes);
     // Rotas de correções automáticas (DEVEM vir ANTES de /api/sped para evitar conflito)

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { dctfService } from '../services/dctf';
 import { relatoriosService } from '../services/relatorios';
-import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { clientesService } from '../services/clientes';
+import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentMagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 
 const ADMIN_CREDENTIALS = {
@@ -51,6 +52,18 @@ const Administracao: React.FC = () => {
   const [deleteSupabaseSuccess, setDeleteSupabaseSuccess] = useState<string | null>(null);
   const [deleteSupabaseError, setDeleteSupabaseError] = useState<string | null>(null);
   
+  // Estados para atualização de clientes na ReceitaWS
+  const [atualizandoClientes, setAtualizandoClientes] = useState(false);
+  const [atualizacaoProgresso, setAtualizacaoProgresso] = useState<{
+    total: number;
+    processados: number;
+    sucessos: number;
+    erros: number;
+    atual: string;
+  } | null>(null);
+  const [atualizacaoResultado, setAtualizacaoResultado] = useState<any>(null);
+  const [atualizacaoError, setAtualizacaoError] = useState<string | null>(null);
+  
   // Estados para consulta em lote na Receita
   const [dataInicialConsulta, setDataInicialConsulta] = useState('');
   const [dataFinalConsulta, setDataFinalConsulta] = useState('');
@@ -77,6 +90,55 @@ const Administracao: React.FC = () => {
     status: 'em_andamento' | 'concluida' | 'cancelada' | 'erro';
   } | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Estados para consulta em lote de Situação Fiscal
+  const [consultandoSITF, setConsultandoSITF] = useState(false);
+  const [progressIdSITF, setProgressIdSITF] = useState<string | null>(null);
+  const [apenasFaltantesSITF, setApenasFaltantesSITF] = useState(true); // Por padrão, processar apenas faltantes
+  const [progressoSITF, setProgressoSITF] = useState<{
+    total: number;
+    processados: number;
+    sucessos: number;
+    erros: number;
+    porcentagem: number;
+    cnpjAtual?: string;
+    status: 'em_andamento' | 'concluida' | 'erro' | 'cancelada';
+    erros_detalhados?: Array<{ cnpj: string; razao_social: string; erro: string }>;
+  } | null>(null);
+  const [resultadoSITF, setResultadoSITF] = useState<any>(null);
+  const [erroSITF, setErroSITF] = useState<string | null>(null);
+  const pollingIntervalSITFRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Função para verificar progresso SITF
+  const verificarProgressoSITF = async (progressId: string) => {
+    try {
+      const progressRes = await axios.get(`/api/situacao-fiscal/lote/progresso/${progressId}`);
+      const data = progressRes.data.data;
+      
+      setProgressoSITF(data);
+      
+      if (data.status === 'concluida' || data.status === 'erro' || data.status === 'cancelada') {
+        if (pollingIntervalSITFRef.current) {
+          clearInterval(pollingIntervalSITFRef.current);
+          pollingIntervalSITFRef.current = null;
+        }
+        setConsultandoSITF(false);
+        setResultadoSITF(data);
+        setProgressIdSITF(null);
+      }
+    } catch (error: any) {
+      console.error('[Administracao] Erro ao consultar progresso SITF:', error);
+      // Se o progresso não for encontrado, parar o polling
+      if (error.response?.status === 404) {
+        if (pollingIntervalSITFRef.current) {
+          clearInterval(pollingIntervalSITFRef.current);
+          pollingIntervalSITFRef.current = null;
+        }
+        setConsultandoSITF(false);
+        setProgressIdSITF(null);
+      }
+    }
+  };
 
   // Verificar autenticação ao carregar
   // Não expira automaticamente - logout apenas manual para não atrapalhar consultas em lote
@@ -109,6 +171,32 @@ const Administracao: React.FC = () => {
       // Primeira verificação imediata
       verificarProgresso(savedProgressId);
     }
+    
+    // Verificar se há processamento SITF em andamento no banco de dados
+    const verificarProcessamentoSITF = async () => {
+      try {
+        const response = await axios.get('/api/situacao-fiscal/lote/em-andamento');
+        if (response.data.success && response.data.emAndamento) {
+          console.log('[Administracao] Processamento SITF em andamento encontrado:', response.data.progressId);
+          setConsultandoSITF(true);
+          setProgressIdSITF(response.data.progressId);
+          // Iniciar polling
+          if (!pollingIntervalSITFRef.current) {
+            const interval = setInterval(() => {
+              verificarProgressoSITF(response.data.progressId);
+            }, 2000);
+            pollingIntervalSITFRef.current = interval;
+          }
+          // Primeira verificação imediata
+          verificarProgressoSITF(response.data.progressId);
+        }
+      } catch (error: any) {
+        console.warn('[Administracao] Erro ao verificar processamento SITF em andamento:', error);
+        // Não mostrar erro ao usuário, apenas log
+      }
+    };
+    
+    verificarProcessamentoSITF();
   }, []);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -134,6 +222,131 @@ const Administracao: React.FC = () => {
     sessionStorage.removeItem(STORAGE_KEY);
     setUsername('');
     setPassword('');
+  };
+
+  const handleAtualizarTodosClientes = async () => {
+    setAtualizandoClientes(true);
+    setAtualizacaoError(null);
+    setAtualizacaoResultado(null);
+    
+    try {
+      // Buscar todos os clientes (fazendo requisições paginadas)
+      let clientes: any[] = [];
+      let page = 1;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const response = await clientesService.getAll({ page, limit: 100 });
+        if (response.items && response.items.length > 0) {
+          clientes = [...clientes, ...response.items];
+          // Verificar se há mais páginas
+          if (response.pagination) {
+            hasMore = page < response.pagination.totalPages;
+            page++;
+          } else {
+            hasMore = response.items.length === 100; // Se retornou 100, pode haver mais
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+      
+      // Filtrar apenas clientes com CNPJ válido
+      const clientesComCNPJ = clientes.filter((c: any) => {
+        const cnpj = c.cnpj_limpo || c.cnpj;
+        return cnpj && String(cnpj).replace(/\D/g, '').length === 14;
+      });
+
+      setAtualizacaoProgresso({
+        total: clientesComCNPJ.length,
+        processados: 0,
+        sucessos: 0,
+        erros: 0,
+        atual: '',
+      });
+
+      const resultados: Array<{
+        cnpj: string;
+        razao_social: string;
+        sucesso: boolean;
+        erro?: string;
+      }> = [];
+
+      // Processar cada cliente com intervalo de 20 segundos
+      for (let i = 0; i < clientesComCNPJ.length; i++) {
+        const cliente = clientesComCNPJ[i];
+        const cnpj = String(cliente.cnpj_limpo || cliente.cnpj).replace(/\D/g, '');
+        const razaoSocial = cliente.razao_social || cliente.nome || 'N/A';
+
+        setAtualizacaoProgresso(prev => prev ? {
+          ...prev,
+          atual: `${razaoSocial} (${cnpj})`,
+        } : null);
+
+        try {
+          // Importar dados da ReceitaWS com overwrite
+          const importResult = await clientesService.importarReceitaWS(cnpj, true);
+          
+          if (importResult.success) {
+            resultados.push({
+              cnpj,
+              razao_social: razaoSocial,
+              sucesso: true,
+            });
+            setAtualizacaoProgresso(prev => prev ? {
+              ...prev,
+              processados: prev.processados + 1,
+              sucessos: prev.sucessos + 1,
+            } : null);
+          } else {
+            resultados.push({
+              cnpj,
+              razao_social: razaoSocial,
+              sucesso: false,
+              erro: importResult.error || 'Erro desconhecido',
+            });
+            setAtualizacaoProgresso(prev => prev ? {
+              ...prev,
+              processados: prev.processados + 1,
+              erros: prev.erros + 1,
+            } : null);
+          }
+        } catch (error: any) {
+          resultados.push({
+            cnpj,
+            razao_social: razaoSocial,
+            sucesso: false,
+            erro: error.message || 'Erro ao processar',
+          });
+          setAtualizacaoProgresso(prev => prev ? {
+            ...prev,
+            processados: prev.processados + 1,
+            erros: prev.erros + 1,
+          } : null);
+        }
+
+        // Aguardar 20 segundos antes do próximo (exceto no último)
+        if (i < clientesComCNPJ.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 20000));
+        }
+      }
+
+      setAtualizacaoResultado({
+        total: clientesComCNPJ.length,
+        sucessos: resultados.filter(r => r.sucesso).length,
+        erros: resultados.filter(r => !r.sucesso).length,
+        resultados,
+      });
+
+      setAtualizacaoProgresso(null);
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.error || error?.message || (typeof error === 'string' ? error : 'Erro ao atualizar clientes');
+      setAtualizacaoError(errorMessage);
+      setAtualizacaoProgresso(null);
+    } finally {
+      setAtualizandoClientes(false);
+    }
   };
 
   const handleExportBackup = async () => {
@@ -367,6 +580,30 @@ const Administracao: React.FC = () => {
     } catch (err: any) {
       const errorMessage = err.response?.data?.error || err.message || 'Erro ao cancelar consulta';
       setConsultaError(errorMessage);
+    }
+  };
+
+  // Função para cancelar consulta de Situação Fiscal
+  const handleCancelarConsultaSITF = async () => {
+    if (!progressIdSITF) return;
+
+    try {
+      const response = await axios.post(`/api/situacao-fiscal/lote/${progressIdSITF}/cancelar`);
+      
+      if (response.data.success) {
+        // Parar polling
+        if (pollingIntervalSITFRef.current) {
+          clearInterval(pollingIntervalSITFRef.current);
+          pollingIntervalSITFRef.current = null;
+        }
+        
+        setConsultandoSITF(false);
+        setErroSITF('Consulta cancelada pelo usuário.');
+        setProgressIdSITF(null);
+      }
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.error || err.message || 'Erro ao cancelar consulta';
+      setErroSITF(errorMessage);
     }
   };
 
@@ -858,6 +1095,136 @@ const Administracao: React.FC = () => {
         </div>
       )}
 
+      {/* Seção de Atualização de Clientes na ReceitaWS */}
+      <div className="bg-blue-50 border-2 border-blue-200 shadow-lg rounded-lg p-6 mb-6">
+        <div className="flex items-start mb-4">
+          <ArrowPathIcon className="h-6 w-6 text-blue-600 mr-3 mt-1" />
+          <div className="flex-1">
+            <h2 className="text-xl font-semibold text-blue-900 mb-2">Atualização de Clientes na ReceitaWS</h2>
+            <p className="text-sm text-blue-700 mb-4">
+              Esta operação irá <strong>atualizar todos os clientes</strong> na base de dados consultando a API da ReceitaWS.
+              Cada cliente será atualizado com um intervalo de <strong>20 segundos</strong> entre cada atualização para respeitar os limites da API.
+            </p>
+            
+            <div className="bg-white rounded-lg p-4 border border-blue-300 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Como funciona:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
+                <li>O sistema busca todos os clientes com CNPJ válido</li>
+                <li>Para cada cliente, consulta a ReceitaWS e atualiza os dados</li>
+                <li>Aguarda 20 segundos entre cada atualização</li>
+                <li>Mostra progresso em tempo real com barra de progresso</li>
+                <li>Exibe relatório final com sucessos e erros</li>
+              </ul>
+              
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Execute esta operação quando precisar atualizar a base de clientes</li>
+                <li>O processo pode levar bastante tempo dependendo da quantidade de clientes</li>
+                <li>Não feche a página durante a atualização</li>
+              </ul>
+            </div>
+
+            {atualizacaoError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4 text-sm">
+                {typeof atualizacaoError === 'string' ? atualizacaoError : JSON.stringify(atualizacaoError)}
+              </div>
+            )}
+
+            {atualizacaoResultado && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                <h3 className="text-lg font-semibold text-green-900 mb-2">Atualização Concluída!</h3>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-700">{atualizacaoResultado.total}</div>
+                    <div className="text-sm text-green-600">Total</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-700">{atualizacaoResultado.sucessos}</div>
+                    <div className="text-sm text-green-600">Sucessos</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-700">{atualizacaoResultado.erros}</div>
+                    <div className="text-sm text-red-600">Erros</div>
+                  </div>
+                </div>
+                {atualizacaoResultado.erros > 0 && (
+                  <details className="mt-4">
+                    <summary className="cursor-pointer text-sm font-semibold text-red-700 hover:text-red-800">
+                      Ver erros ({atualizacaoResultado.erros})
+                    </summary>
+                    <div className="mt-2 max-h-60 overflow-y-auto">
+                      {atualizacaoResultado.resultados
+                        .filter((r: any) => !r.sucesso)
+                        .map((r: any, idx: number) => (
+                          <div key={idx} className="text-xs text-red-700 p-2 border-b border-red-200">
+                            <strong>{r.razao_social}</strong> ({r.cnpj}): {r.erro}
+                          </div>
+                        ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {/* Barra de Progresso */}
+            {atualizacaoProgresso && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium text-blue-900">
+                    Atualizando clientes na ReceitaWS...
+                  </div>
+                  <div className="text-sm font-semibold text-blue-700">
+                    {atualizacaoProgresso.processados} de {atualizacaoProgresso.total} ({Math.round((atualizacaoProgresso.processados / atualizacaoProgresso.total) * 100)}%)
+                  </div>
+                </div>
+                
+                {/* Barra de progresso visual */}
+                <div className="w-full bg-blue-200 rounded-full h-4 mb-2 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${Math.round((atualizacaoProgresso.processados / atualizacaoProgresso.total) * 100)}%` }}
+                  />
+                </div>
+                
+                {/* Métricas em tempo real */}
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700">
+                    Sucessos: <strong>{atualizacaoProgresso.sucessos}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 text-red-700">
+                    Erros: <strong>{atualizacaoProgresso.erros}</strong>
+                  </span>
+                </div>
+                
+                {atualizacaoProgresso.atual && (
+                  <div className="text-xs text-blue-600 mt-2">
+                    Processando: <span className="font-mono font-semibold">{atualizacaoProgresso.atual}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={handleAtualizarTodosClientes}
+              disabled={atualizandoClientes}
+              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            >
+              {atualizandoClientes ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  <span>Atualizando...</span>
+                </>
+              ) : (
+                <>
+                  <ArrowPathIcon className="h-5 w-5" />
+                  <span>Iniciar Atualização de Todos os Clientes</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Seção de Sincronização do Supabase */}
       <div className="bg-green-50 border-2 border-green-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
@@ -1319,6 +1686,244 @@ const Administracao: React.FC = () => {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Seção de Consulta em Lote de Situação Fiscal */}
+      <div className="bg-emerald-50 border-2 border-emerald-200 shadow-lg rounded-lg p-6 mb-6">
+        <div className="flex items-start mb-4">
+          <DocumentMagnifyingGlassIcon className="h-6 w-6 text-emerald-600 mr-3 mt-1" />
+          <div className="flex-1">
+            <h2 className="text-xl font-semibold text-emerald-900 mb-2">Consulta em Lote - Situação Fiscal (SITF)</h2>
+            <p className="text-sm text-emerald-700 mb-4">
+              Consulta a Situação Fiscal (SITF) de todos os CNPJs cadastrados no sistema.
+              O sistema irá iterar sobre cada CNPJ, fazer requisições na Receita Federal
+              e salvar os PDFs e dados extraídos na tabela <code className="bg-emerald-100 px-1 rounded">sitf_downloads</code>.
+            </p>
+
+            <div className="bg-white rounded-lg p-4 border border-emerald-300 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Informações Importantes:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>A consulta é feita de forma sequencial (um CNPJ por vez)</li>
+                <li>Aguarda 3 segundos entre cada requisição para não sobrecarregar a API</li>
+                <li>Os PDFs são baixados e os dados são extraídos automaticamente</li>
+                <li>Sócios, débitos e pendências são atualizados no sistema</li>
+                <li>A operação pode levar vários minutos dependendo da quantidade de clientes</li>
+              </ul>
+            </div>
+
+            {erroSITF && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4 text-sm">
+                <strong>Erro:</strong> {erroSITF}
+              </div>
+            )}
+
+            {resultadoSITF && (
+              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4 text-sm">
+                <strong>Consulta Concluída!</strong>
+                <ul className="mt-2 list-disc list-inside">
+                  <li>Total processado: {resultadoSITF.total || 0} CNPJs</li>
+                  {resultadoSITF.totalOriginal && resultadoSITF.totalOriginal > (resultadoSITF.total || 0) && (
+                    <li className="text-blue-700">
+                      CNPJs já processados ignorados: {resultadoSITF.totalOriginal - (resultadoSITF.total || 0)}
+                    </li>
+                  )}
+                  <li>Sucessos: {resultadoSITF.sucessos || 0}</li>
+                  <li>Erros: {resultadoSITF.erros || 0}</li>
+                </ul>
+                {resultadoSITF.erros_detalhados && resultadoSITF.erros_detalhados.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-green-300">
+                    <details className="cursor-pointer">
+                      <summary className="font-semibold text-red-700 hover:text-red-800">
+                        Ver erros detalhados ({resultadoSITF.erros_detalhados.length})
+                      </summary>
+                      <div className="mt-2 max-h-64 overflow-y-auto">
+                        <table className="min-w-full divide-y divide-red-200 text-xs">
+                          <thead className="bg-red-100 sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold text-red-900">CNPJ</th>
+                              <th className="px-3 py-2 text-left font-semibold text-red-900">Razão Social</th>
+                              <th className="px-3 py-2 text-left font-semibold text-red-900">Erro</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-red-100">
+                            {resultadoSITF.erros_detalhados.map((erro: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-red-50">
+                                <td className="px-3 py-2 font-mono text-red-800">{erro.cnpj}</td>
+                                <td className="px-3 py-2 text-red-700">{erro.razao_social}</td>
+                                <td className="px-3 py-2 text-red-600">{erro.erro}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Log de Erros Detalhados */}
+            {progressoSITF && progressoSITF.erros_detalhados && progressoSITF.erros_detalhados.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <h4 className="text-sm font-semibold text-red-900 mb-3 flex items-center gap-2">
+                  <ExclamationTriangleIcon className="h-5 w-5" />
+                  Log de Erros ({progressoSITF.erros_detalhados.length} erro{progressoSITF.erros_detalhados.length !== 1 ? 's' : ''})
+                </h4>
+                <div className="max-h-64 overflow-y-auto">
+                  <table className="min-w-full divide-y divide-red-200 text-xs">
+                    <thead className="bg-red-100 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold text-red-900">CNPJ</th>
+                        <th className="px-3 py-2 text-left font-semibold text-red-900">Razão Social</th>
+                        <th className="px-3 py-2 text-left font-semibold text-red-900">Erro</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-red-100">
+                      {progressoSITF.erros_detalhados.map((erro, idx) => (
+                        <tr key={idx} className="hover:bg-red-50">
+                          <td className="px-3 py-2 font-mono text-red-800">{erro.cnpj}</td>
+                          <td className="px-3 py-2 text-red-700">{erro.razao_social}</td>
+                          <td className="px-3 py-2 text-red-600">{erro.erro}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {progressoSITF && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium text-emerald-900">
+                    Processando consulta em lote de Situação Fiscal...
+                  </div>
+                  <div className="text-sm font-semibold text-emerald-700">
+                    {progressoSITF.processados} de {progressoSITF.total} CNPJs ({progressoSITF.porcentagem}%)
+                  </div>
+                </div>
+                
+                {/* Barra de progresso visual */}
+                <div className="w-full bg-emerald-200 rounded-full h-4 mb-2 overflow-hidden">
+                  <div
+                    className="bg-emerald-600 h-full rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${progressoSITF.porcentagem}%` }}
+                  />
+                </div>
+
+                {/* Métricas em tempo real */}
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700">
+                    Sucessos: <strong>{progressoSITF.sucessos}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 text-red-700">
+                    Erros: <strong>{progressoSITF.erros}</strong>
+                  </span>
+                </div>
+                
+                {progressoSITF.cnpjAtual && (
+                  <div className="text-xs text-emerald-600 mt-2">
+                    Processando CNPJ: <span className="font-mono font-semibold">{progressoSITF.cnpjAtual}</span>
+                  </div>
+                )}
+
+                {(progressoSITF.status === 'em_andamento') && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={handleCancelarConsultaSITF}
+                      className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-medium text-sm"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Parar Consulta
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Opção para escolher processar todos ou apenas faltantes */}
+            <div className="bg-white rounded-lg p-4 border border-emerald-300 mb-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={apenasFaltantesSITF}
+                  onChange={(e) => setApenasFaltantesSITF(e.target.checked)}
+                  disabled={consultandoSITF}
+                  className="w-5 h-5 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-gray-900">
+                    Processar apenas CNPJs faltantes
+                  </div>
+                  <div className="text-xs text-gray-600 mt-1">
+                    Se marcado, processa apenas CNPJs que ainda não têm registros de Situação Fiscal. 
+                    Isso evita reprocessar CNPJs já consultados.
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <button
+              onClick={async () => {
+                setConsultandoSITF(true);
+                setErroSITF(null);
+                setResultadoSITF(null);
+                
+                try {
+                  const response = await axios.post('/api/situacao-fiscal/lote/iniciar', {
+                    apenasFaltantes: apenasFaltantesSITF
+                  }, {
+                    params: {
+                      apenasFaltantes: apenasFaltantesSITF
+                    }
+                  });
+                  const { progressId, total, totalOriginal, jaProcessados, message } = response.data;
+                  
+                  // Mostrar mensagem informativa se houver CNPJs já processados
+                  if (jaProcessados > 0) {
+                    console.log(`[SITF] ${jaProcessados} CNPJs já processados foram ignorados`);
+                  }
+                  
+                  setProgressIdSITF(progressId);
+                  
+                  // Iniciar polling do progresso
+                  if (pollingIntervalSITFRef.current) {
+                    clearInterval(pollingIntervalSITFRef.current);
+                  }
+                  
+                  const interval = setInterval(() => {
+                    verificarProgressoSITF(progressId);
+                  }, 2000);
+                  
+                  pollingIntervalSITFRef.current = interval;
+                  
+                  // Primeira verificação imediata
+                  verificarProgressoSITF(progressId);
+                  
+                } catch (error: any) {
+                  setErroSITF(error.response?.data?.error || error.message || 'Erro ao iniciar consulta');
+                  setConsultandoSITF(false);
+                }
+              }}
+              disabled={consultandoSITF}
+              className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            >
+              {consultandoSITF ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  <span>Consultando...</span>
+                </>
+              ) : (
+                <>
+                  <DocumentMagnifyingGlassIcon className="h-5 w-5" />
+                  <span>Iniciar Consulta de Situação Fiscal</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

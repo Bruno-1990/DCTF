@@ -244,10 +244,13 @@ export class ClientesSemDCTFService {
       }
 
       // Buscar todos os clientes
+      // IMPORTANTE: Considerar apenas clientes "Matriz", excluir "Filial"
+      // Filiais não têm obrigatoriedade de enviar DCTF
       const { data: todosClientes, error: errorClientes } = await supabaseAdmin
         .from('clientes')
-        .select('id, cnpj_limpo, razao_social, email, telefone, endereco')
-        .not('cnpj_limpo', 'is', null);
+        .select('id, cnpj_limpo, razao_social, email, telefone, endereco, tipo_empresa')
+        .not('cnpj_limpo', 'is', null)
+        .or('tipo_empresa.eq.Matriz,tipo_empresa.is.null');
 
       if (errorClientes) {
         return {
@@ -307,8 +310,15 @@ export class ClientesSemDCTFService {
       }
 
       // Filtrar clientes que NÃO têm DCTF
+      // IMPORTANTE: Considerar apenas clientes "Matriz", excluir "Filial"
       // Normalizar CNPJ do cliente para comparação (14 dígitos)
       const clientesSemDCTF = todosClientes.filter(cliente => {
+        // Excluir clientes "Filial" - apenas "Matriz" tem obrigatoriedade
+        const tipoEmpresa = (cliente as any).tipo_empresa;
+        if (tipoEmpresa === 'Filial') {
+          return false;
+        }
+        
         const cnpjLimpo = cliente.cnpj_limpo?.replace(/\D/g, '');
         return cnpjLimpo && cnpjLimpo.length === 14 && !cnpjsComDCTF.has(cnpjLimpo);
       });
@@ -416,10 +426,12 @@ export class ClientesSemDCTFService {
       }
 
       // Contar total de clientes
+      // IMPORTANTE: Considerar apenas clientes "Matriz" para estatísticas
       const { count: totalClientes, error: errorTotal } = await supabaseAdmin
         .from('clientes')
         .select('*', { count: 'exact', head: true })
-        .not('cnpj_limpo', 'is', null);
+        .not('cnpj_limpo', 'is', null)
+        .or('tipo_empresa.eq.Matriz,tipo_empresa.is.null');
 
       // Contar clientes com DCTF na competência
       // O período pode estar em formato YYYY-MM ou MM/YYYY
@@ -432,10 +444,12 @@ export class ClientesSemDCTFService {
         .in('status', ['concluido', 'processando']);
 
       // Buscar todos os clientes para mapear cliente_id -> cnpj_limpo
+      // IMPORTANTE: Considerar apenas clientes "Matriz"
       const { data: todosClientes, error: errorClientes } = await supabaseAdmin
         .from('clientes')
         .select('id, cnpj_limpo')
-        .not('cnpj_limpo', 'is', null);
+        .not('cnpj_limpo', 'is', null)
+        .or('tipo_empresa.eq.Matriz,tipo_empresa.is.null');
 
       const clientesMap = new Map<string, string>();
       if (todosClientes) {

@@ -134,12 +134,19 @@ export async function listarClientesSemDCTFVigente(): Promise<ClienteSemDCTFVige
     console.log(`[Conferência Módulo 1] ✅ Clientes COM DCTF: ${cnpjsComDCTF.size}`);
     
     // 3. Filtrar clientes SEM DCTF
+    // IMPORTANTE: Considerar apenas clientes "Matriz", excluir "Filial"
     const vencimento = calcularVencimento(ano, mes);
     const hoje = new Date();
     const diasAteVencimento = Math.floor((vencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
     
     const clientesSemDCTF: ClienteSemDCTFVigente[] = todosClientes
       .filter((cliente: ICliente) => {
+        // Excluir clientes "Filial" - apenas "Matriz" tem obrigatoriedade
+        const tipoEmpresa = (cliente as any).tipo_empresa || (cliente as any).tipoEmpresa;
+        if (tipoEmpresa === 'Filial') {
+          return false;
+        }
+        
         const cnpjNormalizado = normalizarCNPJ(cliente.cnpj_limpo);
         if (!cnpjNormalizado) return false;
         return !cnpjsComDCTF.has(cnpjNormalizado);

@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../hooks/useToast';
 import Alert from '../components/UI/Alert';
+import { clientesService } from '../services/clientes';
+import type { Cliente } from '../types';
 import {
   DocumentMagnifyingGlassIcon,
   MagnifyingGlassIcon,
@@ -14,6 +17,8 @@ import {
   ChevronRightIcon,
   DocumentTextIcon,
   TrashIcon,
+  ArrowLeftIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import RegistroDetalhado from '../components/SituacaoFiscal/RegistroDetalhado';
 
@@ -27,6 +32,8 @@ function formatCNPJ(value: string) {
 }
 
 export default function SituacaoFiscal() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [cnpj, setCnpj] = useState('');
   const [loading, setLoading] = useState(false);
   const [retryAfter, setRetryAfter] = useState<number | null>(null);
@@ -36,8 +43,12 @@ export default function SituacaoFiscal() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
   const toast = useToast();
+  
   const [history, setHistory] = useState<Array<{ id: string; cnpj: string; file_url?: string | null; has_pdf_base64?: boolean; created_at: string; cliente?: { razao_social: string } | null }>>([]);
+  const [historyTotal, setHistoryTotal] = useState<number>(0);
   const [historyFilter, setHistoryFilter] = useState('');
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const historyLimit = 10; // Paginação de 10 em 10
   const countdownRef = useRef<number | null>(null);
   const isConsultingRef = useRef<boolean>(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string | null; cnpj: string; countdown: number }>({ id: null, cnpj: '', countdown: 0 });
@@ -101,6 +112,40 @@ export default function SituacaoFiscal() {
   const [loadingCompanies, setLoadingCompanies] = useState(false);
   const [filteredCnpj, setFilteredCnpj] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Ler CNPJ da query string ao montar o componente
+  useEffect(() => {
+    const cnpjParam = searchParams.get('cnpj');
+    if (cnpjParam) {
+      // Formatar o CNPJ se vier da URL
+      const cnpjLimpo = cnpjParam.replace(/\D/g, '');
+      if (cnpjLimpo.length === 14) {
+        setCnpj(formatCNPJ(cnpjLimpo));
+      } else {
+        setCnpj(cnpjParam);
+      }
+      // Scroll para o topo quando CNPJ vier da query string
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [searchParams]);
+
+  // Função para visualizar cliente por CNPJ - redireciona para aba Clientes
+  const handleViewClientePorCNPJ = async (cnpj: string) => {
+    try {
+      const resp = await clientesService.buscarPorCNPJ(cnpj);
+      if (resp?.success && resp.data && resp.data.id) {
+        // Redirecionar para aba Clientes com o cliente selecionado
+        navigate(`/clientes?clienteId=${resp.data.id}`);
+        // Scroll para o topo após navegação
+        setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+      } else {
+        toast.error('Cliente não encontrado para este CNPJ');
+      }
+    } catch (error: any) {
+      console.error('Erro ao buscar cliente:', error);
+      toast.error(error.response?.data?.error || 'Erro ao buscar cliente');
+    }
+  };
 
   const handleConsultarRetry = useCallback(async () => {
     // Proteção contra múltiplas chamadas simultâneas
@@ -328,16 +373,42 @@ export default function SituacaoFiscal() {
     }
   };
 
-  const fetchHistory = async (cnpjParam?: string) => {
-    const clean = cnpjParam ? cnpjParam.replace(/\D/g, '') : '';
-    const qs = new URLSearchParams();
-    if (clean && clean.length === 14) qs.set('cnpj', clean);
-    qs.set('limit', '20');
-    const res = await fetch(`/api/situacao-fiscal/history?${qs.toString()}`);
-    if (res.ok) {
+  const fetchHistory = async (cnpjParam?: string, page: number = historyPage) => {
+    try {
+      const clean = cnpjParam ? cnpjParam.replace(/\D/g, '') : '';
+      const offset = (page - 1) * historyLimit;
+      const qs = new URLSearchParams();
+      if (clean && clean.length === 14) qs.set('cnpj', clean);
+      qs.set('limit', String(historyLimit));
+      qs.set('offset', String(offset));
+      
+      const url = `/api/situacao-fiscal/history?${qs.toString()}`;
+      console.log(`[SituacaoFiscal] Buscando histórico: ${url} (página ${page}, offset ${offset})`);
+      
+      const res = await fetch(url);
+      
+      if (!res.ok) {
+        console.error('[SituacaoFiscal] Erro ao buscar histórico:', res.status, res.statusText);
+        const errorBody = await res.json().catch(() => ({}));
+        console.error('[SituacaoFiscal] Detalhes do erro:', errorBody);
+        setHistory([]);
+        setHistoryTotal(0);
+        return;
+      }
+      
       const body = await res.json();
       const items = body?.items ?? [];
+      const total = body?.total ?? 0;
+      console.log(`[SituacaoFiscal] Histórico carregado: ${items.length} registros de ${total} total (página ${page}, offset ${offset})`);
+      console.log(`[SituacaoFiscal] Dados recebidos:`, body);
+      
       setHistory(items);
+      setHistoryTotal(total);
+      setHistoryPage(page);
+    } catch (error) {
+      console.error('[SituacaoFiscal] Erro ao buscar histórico:', error);
+      setHistory([]);
+      setHistoryTotal(0);
     }
   };
 
@@ -695,7 +766,8 @@ export default function SituacaoFiscal() {
   }, [toast, fetchArchivedProtocols, fetchHistory, fetchCompanies]);
 
   useEffect(() => {
-    void fetchHistory();
+    setHistoryPage(1);
+    void fetchHistory(undefined, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -889,6 +961,11 @@ export default function SituacaoFiscal() {
             <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
               <DocumentArrowDownIcon className="h-5 w-5 text-gray-600" />
               Downloads Recentes
+              {historyTotal > 0 && (
+                <span className="text-sm font-normal text-gray-500 ml-2">
+                  ({history.length} de {historyTotal} {historyTotal === 1 ? 'registro' : 'registros'})
+                </span>
+              )}
             </h2>
             <div className="flex items-center gap-2">
               <div className="relative">
@@ -897,12 +974,21 @@ export default function SituacaoFiscal() {
                   type="text"
                   value={historyFilter}
                   onChange={(e) => setHistoryFilter(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setHistoryPage(1);
+                      fetchHistory(historyFilter, 1);
+                    }
+                  }}
                   placeholder="Filtrar por CNPJ..."
                   className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
                 />
               </div>
               <button
-                onClick={() => fetchHistory(historyFilter)}
+                onClick={() => {
+                  setHistoryPage(1);
+                  fetchHistory(historyFilter, 1);
+                }}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
               >
                 <MagnifyingGlassIcon className="h-4 w-4" />
@@ -1005,6 +1091,81 @@ export default function SituacaoFiscal() {
             </tbody>
           </table>
         </div>
+        
+        {/* Controles de Paginação */}
+        {historyTotal > historyLimit && (
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col items-center gap-4">
+            <div className="text-sm text-gray-600">
+              Mostrando {history.length > 0 ? ((historyPage - 1) * historyLimit) + 1 : 0} a {Math.min(historyPage * historyLimit, historyTotal)} de {historyTotal} registros
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const newPage = historyPage - 1;
+                  if (newPage >= 1) {
+                    setHistoryPage(newPage);
+                    fetchHistory(historyFilter || undefined, newPage);
+                  }
+                }}
+                disabled={historyPage === 1}
+                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              >
+                <ArrowLeftIcon className="h-4 w-4" />
+                Anterior
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, Math.ceil(historyTotal / historyLimit)) }, (_, i) => {
+                  const totalPages = Math.ceil(historyTotal / historyLimit);
+                  let pageNum: number;
+                  
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (historyPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (historyPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = historyPage - 2 + i;
+                  }
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => {
+                        setHistoryPage(pageNum);
+                        fetchHistory(historyFilter || undefined, pageNum);
+                      }}
+                      className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                        historyPage === pageNum
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+              
+              <button
+                onClick={() => {
+                  const totalPages = Math.ceil(historyTotal / historyLimit);
+                  const newPage = historyPage + 1;
+                  if (newPage <= totalPages) {
+                    setHistoryPage(newPage);
+                    fetchHistory(historyFilter || undefined, newPage);
+                  }
+                }}
+                disabled={historyPage >= Math.ceil(historyTotal / historyLimit)}
+                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              >
+                Próxima
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
         </>
       )}
@@ -1170,9 +1331,16 @@ export default function SituacaoFiscal() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <BuildingOfficeIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                              <span className="text-sm font-semibold text-gray-900 truncate">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewClientePorCNPJ(company.cnpj);
+                                }}
+                                className="text-sm font-semibold text-gray-900 hover:text-blue-600 truncate text-left underline hover:no-underline transition-colors"
+                                title="Clique para ver detalhes do cliente"
+                              >
                                 {company.razao_social || 'Empresa não cadastrada'}
-                              </span>
+                              </button>
                             </div>
                             <div className="flex items-center gap-4 text-xs text-gray-500">
                               <span className="font-mono">{formatCNPJ(company.cnpj)}</span>

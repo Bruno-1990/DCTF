@@ -23,6 +23,16 @@ router.get('/stats', (req, res) => {
   clienteController.obterEstatisticas(req, res);
 });
 
+// GET /api/clientes/socios - Listar sócios distintos (para select box)
+router.get('/socios', (req, res) => {
+  clienteController.listarSociosDistinct(req, res);
+});
+
+// PUT /api/clientes/:id/atualizar-socios-situacao-fiscal - Atualizar sócios a partir da situação fiscal
+router.put('/:id/atualizar-socios-situacao-fiscal', validateParams(clienteSchemas.params), (req, res) => {
+  clienteController.atualizarSociosPorSituacaoFiscal(req, res);
+});
+
 // GET /api/clientes/sem-dctf - Identificar clientes sem DCTF no mês vigente
 // Conforme IN RFB 2.237/2024, 2.267/2025 e 2.248/2025
 router.get('/sem-dctf', (req, res) => {
@@ -32,6 +42,11 @@ router.get('/sem-dctf', (req, res) => {
 // GET /api/clientes/modelo - Download do modelo de planilha (DEVE vir antes de /:id)
 router.get('/modelo', (req, res) => {
   clienteController.downloadModelo(req, res);
+});
+
+// GET /api/clientes/receita-ws/cnpj/:cnpj - Consultar ReceitaWS (sem salvar)
+router.get('/receita-ws/cnpj/:cnpj', (req, res) => {
+  clienteController.consultarReceitaWS(req, res);
 });
 
 // GET /api/clientes/cnpj/:cnpj - Buscar por CNPJ (DEVE vir antes de /:id)
@@ -49,14 +64,19 @@ router.post('/', validate(clienteSchemas.create), (req, res) => {
   clienteController.criarCliente(req, res);
 });
 
+// POST /api/clientes/import-receita-ws - Importar dados do cliente via ReceitaWS (salva/atualiza)
+router.post('/import-receita-ws', (req, res) => {
+  clienteController.importarReceitaWS(req, res);
+});
+
+// POST /api/clientes/atualizar-todos-receita-ws - Atualizar todos os clientes na ReceitaWS (execução única)
+router.post('/atualizar-todos-receita-ws', (req, res) => {
+  clienteController.atualizarTodosReceitaWS(req, res);
+});
+
 // POST /api/clientes/import-json - Importar clientes em lote via JSON
 router.post('/import-json', (req, res) => {
   clienteController.importarClientesJson(req, res);
-});
-
-// POST /api/clientes/upload - Upload e processamento de planilha de clientes
-router.post('/upload', ClienteController.uploadMiddleware, (req, res) => {
-  clienteController.uploadPlanilhaClientes(req, res);
 });
 
 // PUT /api/clientes/:id - Atualizar cliente

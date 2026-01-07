@@ -11,11 +11,70 @@ export interface Cliente {
   cidade?: string;
   estado?: string;
   cep?: string;
+  // Campos ampliados (ReceitaWS)
+  fantasia?: string;
+  tipo_estabelecimento?: string;
+  situacao_cadastral?: string;
+  porte?: string;
+  natureza_juridica?: string;
+  abertura?: string | Date | null;
+  data_situacao?: string | Date | null;
+  motivo_situacao?: string | null;
+  situacao_especial?: string | null;
+  data_situacao_especial?: string | Date | null;
+  efr?: string | null;
+
+  atividade_principal_code?: string | null;
+  atividade_principal_text?: string | null;
+  atividades_secundarias?: any;
+
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  municipio?: string | null;
+  uf?: string | null;
+  // `cep` já existe acima como campo genérico; manter compatibilidade
+
+  receita_email?: string | null;
+  receita_telefone?: string | null;
+
+  tipo_empresa?: string | null; // Matriz ou Filial
+  capital_social?: number | string | null;
+  regime_tributario?: string | null; // Simples Nacional, Lucro Presumido, Lucro Real, A Definir
+  simples_optante?: boolean | null;
+  simples_data_opcao?: string | Date | null;
+  simples_data_exclusao?: string | Date | null;
+  simei_optante?: boolean | null;
+  simei_data_opcao?: string | Date | null;
+  simei_data_exclusao?: string | Date | null;
+
+  receita_ws_status?: string | null;
+  receita_ws_message?: string | null;
+  receita_ws_consulta_em?: string | Date | null;
+  receita_ws_ultima_atualizacao?: string | Date | null;
+  receita_ws_payload?: any;
+
+  socios?: ClienteSocio[];
   createdAt?: Date;
   updatedAt?: Date;
   // Indicadores de pagamento (enviados pelo backend em /api/clientes)
   hasPayments?: boolean;
   paymentsCount?: number;
+  // Porcentagem de participação do sócio filtrado (enviado pelo backend quando há filtro por sócio)
+  socio_participacao_percentual?: number | null;
+}
+
+export interface ClienteSocio {
+  id: string;
+  cliente_id: string;
+  nome: string;
+  cpf?: string | null;
+  qual?: string | null;
+  participacao_percentual?: number | null; // Porcentagem de participação no capital social
+  participacao_valor?: number | null; // Valor da participação calculado
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface DCTF {

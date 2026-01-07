@@ -19,6 +19,61 @@ export interface Cliente extends BaseEntity {
   email?: string;
   telefone?: string;
   endereco?: string;
+
+  // Campos ampliados (ReceitaWS / cadastro robusto)
+  fantasia?: string;
+  tipo_estabelecimento?: string;
+  situacao_cadastral?: string;
+  porte?: string;
+  natureza_juridica?: string;
+  abertura?: string | Date | null;
+  data_situacao?: string | Date | null;
+  motivo_situacao?: string | null;
+  situacao_especial?: string | null;
+  data_situacao_especial?: string | Date | null;
+  efr?: string | null;
+
+  atividade_principal_code?: string | null;
+  atividade_principal_text?: string | null;
+  atividades_secundarias?: any;
+
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  municipio?: string | null;
+  uf?: string | null;
+  cep?: string | null;
+
+  receita_email?: string | null;
+  receita_telefone?: string | null;
+
+  tipo_empresa?: string | null; // Matriz ou Filial
+  capital_social?: number | string | null;
+  regime_tributario?: string | null; // Simples Nacional, Lucro Presumido, Lucro Real, A Definir
+  simples_optante?: boolean | null;
+  simples_data_opcao?: string | Date | null;
+  simples_data_exclusao?: string | Date | null;
+  simei_optante?: boolean | null;
+  simei_data_opcao?: string | Date | null;
+  simei_data_exclusao?: string | Date | null;
+
+  receita_ws_status?: string | null;
+  receita_ws_message?: string | null;
+  receita_ws_consulta_em?: string | Date | null;
+  receita_ws_ultima_atualizacao?: string | Date | null;
+  receita_ws_payload?: any;
+
+  socios?: ClienteSocio[];
+}
+
+export interface ClienteSocio extends BaseEntity {
+  cliente_id: string;
+  nome: string;
+  cpf?: string | null;
+  qual?: string | null;
+  participacao_percentual?: number | null; // Porcentagem de participação no capital social
+  participacao_valor?: number | null; // Valor da participação calculado
 }
 
 // Tipos para DCTF

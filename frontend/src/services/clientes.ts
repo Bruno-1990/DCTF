@@ -7,7 +7,7 @@ export type ClientesListResponse = {
 };
 
 export const clientesService = {
-  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string; payments?: 'all' | 'with' | 'without' }): Promise<ClientesListResponse> {
+  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string; socio?: string; payments?: 'all' | 'with' | 'without' }): Promise<ClientesListResponse> {
     const response = await api.get<any>('/clientes', { params });
     const body = response.data;
     if (Array.isArray(body)) {
@@ -36,6 +36,45 @@ export const clientesService = {
 
   async delete(id: string): Promise<void> {
     await api.delete(`/clientes/${id}`);
+  },
+
+  async consultarReceitaWS(cnpj: string) {
+    const cnpjLimpo = String(cnpj || '').replace(/\D/g, '');
+    const response = await api.get(`/clientes/receita-ws/cnpj/${cnpjLimpo}`);
+    return response.data; // { success, data }
+  },
+
+  async importarReceitaWS(cnpj: string, overwrite?: boolean) {
+    const cnpjLimpo = String(cnpj || '').replace(/\D/g, '');
+    const response = await api.post(`/clientes/import-receita-ws`, { cnpj: cnpjLimpo, overwrite: overwrite === true });
+    return response.data; // { success, data: Cliente }
+  },
+
+  async listarSociosDistinct() {
+    const response = await api.get('/clientes/socios');
+    return response.data; // { success, data: [{nome}] }
+  },
+
+  async obterCliente(id: string) {
+    const response = await api.get(`/clientes/${id}`);
+    // O backend retorna { success, data: Cliente } ou diretamente Cliente
+    return response.data; // { success, data: Cliente } ou Cliente
+  },
+
+  async atualizarSociosPorSituacaoFiscal(id: string) {
+    const response = await api.put(`/clientes/${id}/atualizar-socios-situacao-fiscal`);
+    return response.data; // { success, data: { clienteId, sociosAtualizados, message } }
+  },
+
+  async buscarPorCNPJ(cnpj: string) {
+    const cnpjLimpo = String(cnpj || '').replace(/\D/g, '');
+    const response = await api.get(`/clientes/cnpj/${cnpjLimpo}`);
+    return response.data; // { success, data: Cliente }
+  },
+
+  async atualizarTodosReceitaWS() {
+    const response = await api.post('/clientes/atualizar-todos-receita-ws');
+    return response.data; // { success, data: { total, sucessos, erros, resultados } }
   },
 
 };

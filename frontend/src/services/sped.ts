@@ -327,45 +327,63 @@ class SpedService {
   /**
    * Aplica uma correção automática específica
    */
-  async aplicarCorrecao(validationId: string, correcao: CorrecaoAutomatica): Promise<ResultadoCorrecao> {
+  async aplicarCorrecao(validationId: string, correcao: CorrecaoAutomatica | CorrecaoAutomatica[]): Promise<ResultadoCorrecao> {
+    // 🔥 NOVO: Suporte para lote de correções (array)
+    const isLote = Array.isArray(correcao);
+    const correcoes = isLote ? correcao : [correcao];
+    
     // Validação prévia no cliente
-    if (!correcao.registro_corrigir || !correcao.campo || correcao.valor_correto === undefined) {
-      return {
-        success: false,
-        message: 'Dados de correção incompletos. Verifique registro, campo e valor correto.'
-      };
+    for (const c of correcoes) {
+      if (!c.registro_corrigir || !c.campo || c.valor_correto === undefined) {
+        return {
+          success: false,
+          message: 'Dados de correção incompletos. Verifique registro, campo e valor correto.'
+        };
+      }
+      
+      // Validação específica para C190 sem CFOP/CST
+      if (c.registro_corrigir === 'C190' && !c.cfop && !c.cst && !c.chave) {
+        return {
+          success: false,
+          message: 'Para correções em C190, é necessário fornecer CFOP/CST ou chave NF para localizar o registro.'
+        };
+      }
     }
     
-    // Validação específica para C190 sem CFOP/CST
-    if (correcao.registro_corrigir === 'C190' && !correcao.cfop && !correcao.cst && !correcao.chave) {
-      return {
-        success: false,
-        message: 'Para correções em C190, é necessário fornecer CFOP/CST ou chave NF para localizar o registro.'
-      };
-    }
     try {
       const response = await axios.post<ResultadoCorrecao>(
         `${API_BASE_URL}/api/sped/correcoes/aplicar`,
-        { validationId, correcao }
+        { validationId, correcao: isLote ? correcoes : correcao } // Enviar array se for lote
       );
       return response.data;
     } catch (error: any) {
       console.error('Erro ao aplicar correção:', error);
       
-      // Melhorar tratamento de erro HTTP
+      // Melhorar tratamento de erro HTTP - retornar objeto com success: false
       if (error.response?.data) {
         const errorData = error.response.data;
         const errorMessage = errorData.error || errorData.message || 'Erro ao aplicar correção';
-        const detalhes = errorData.detalhes ? `\n\nDetalhes: ${errorData.detalhes}` : '';
-        const sugestao = errorData.sugestao ? `\n\nSugestão: ${errorData.sugestao}` : '';
+        const detalhes = errorData.detalhes || '';
+        const sugestao = errorData.sugestao || '';
         
-        // Criar objeto de erro melhorado
-        const improvedError = new Error(errorMessage + detalhes + sugestao);
-        (improvedError as any).response = error.response;
-        throw improvedError;
+        // Montar mensagem completa
+        let mensagemCompleta = errorMessage;
+        if (detalhes) mensagemCompleta += `\n\nDetalhes: ${detalhes}`;
+        if (sugestao) mensagemCompleta += `\n\nSugestão: ${sugestao}`;
+        
+        // Retornar objeto com success: false para que o componente trate
+        return {
+          success: false,
+          message: mensagemCompleta,
+          resumo: errorData.resumo
+        };
       }
       
-      throw error;
+      // Erro genérico
+      return {
+        success: false,
+        message: error.message || 'Erro desconhecido ao aplicar correção'
+      };
     }
   }
 

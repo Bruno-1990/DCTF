@@ -6,7 +6,6 @@ import DCTF from '../pages/DCTF';
 import Relatorios from '../pages/Relatorios';
 import ErrorPage from '../pages/ErrorPage';
 import UploadDCTF from '../pages/UploadDCTF';
-import UploadClientes from '../pages/UploadClientes';
 import DCTFList from '../pages/DCTFList';
 import DCTFDadosPage from '../pages/DCTFDadosPage';
 import AdminDashboard from '../pages/AdminDashboard';
@@ -38,10 +37,6 @@ const router = createBrowserRouter([
       {
         path: 'clientes',
         element: <Clientes />,
-      },
-      {
-        path: 'clientes/upload',
-        element: <UploadClientes />,
       },
       {
         path: 'dctf',

@@ -15,6 +15,9 @@ const router = Router();
 const execAsync = promisify(exec);
 const spedValidationService = getSpedValidationService();
 
+// Mutex para evitar race condition em correções simultâneas
+const correcaoLocks = new Map<string, Promise<any>>();
+
 // Middleware de debug para todas as rotas
 router.use((req, res, next) => {
   console.log(`[sped_correcoes] ${req.method} ${req.path}`);
@@ -26,89 +29,130 @@ router.use((req, res, next) => {
  * Aplica correção automática em uma divergência específica
  */
 router.post('/aplicar', async (req: Request, res: Response) => {
-  try {
-    const { validationId, correcao } = req.body;
+  const { validationId, correcao } = req.body;
 
-    if (!validationId || !correcao) {
-      return res.status(400).json({
-        error: 'validationId e correcao são obrigatórios'
-      });
-    }
+  if (!validationId || !correcao) {
+    return res.status(400).json({
+      error: 'validationId e correcao são obrigatórios'
+    });
+  }
 
-    // Validar estrutura da correção
-    const { registro_corrigir, campo, valor_correto, chave, cfop, cst, linha_sped } = correcao;
-    
-    // Validação 1: Campos obrigatórios
-    if (!registro_corrigir || !campo || valor_correto === undefined) {
-      return res.status(400).json({
-        error: 'correcao deve conter: registro_corrigir, campo, valor_correto'
-      });
+  // 🔥 NOVO: Detectar se é lote (array) ou única correção (objeto)
+  const isLote = Array.isArray(correcao);
+  const correcoes = isLote ? correcao : [correcao];
+  
+  console.log(`[sped_correcoes] ${isLote ? '🔥 MODO LOTE' : 'MODO ÚNICO'}: ${correcoes.length} correção(ões)`);
+
+  // MUTEX: Aguardar correções anteriores para o mesmo validationId
+  const lockKey = validationId;
+  if (correcaoLocks.has(lockKey)) {
+    console.log(`[sped_correcoes] ⏳ Aguardando correção anterior para ${validationId}...`);
+    try {
+      await correcaoLocks.get(lockKey);
+    } catch (e) {
+      // Ignorar erro da correção anterior
     }
+  }
+
+  // Criar promise para esta correção
+  const correcaoPromise = (async () => {
+    try {
+
+    // Extrair valores comuns da primeira correção (para validações posteriores)
+    const { registro_corrigir: registro_corrigir_ref, campo: campo_ref, valor_correto: valor_correto_ref, 
+            chave: chave_ref, cfop: cfop_ref, cst: cst_ref, linha_sped: linha_sped_ref } = correcoes[0];
     
-    // Validação 2: Tipo de valor_correto
-    if (typeof valor_correto !== 'number' || isNaN(valor_correto)) {
-      return res.status(400).json({
-        error: 'valor_correto deve ser um número válido',
-        recebido: typeof valor_correto,
-        valor: valor_correto
-      });
-    }
-    
-    // Validação 3: Registro válido
-    const registros_validos = ['C100', 'C170', 'C190', 'DESCONHECIDO'];
-    if (!registros_validos.includes(registro_corrigir)) {
-      return res.status(400).json({
-        error: `registro_corrigir inválido: ${registro_corrigir}`,
-        sugestao: `Deve ser um dos: ${registros_validos.join(', ')}`
-      });
-    }
-    
-    // Validação 4: Campo não vazio
-    if (!campo || String(campo).trim().length === 0) {
-      return res.status(400).json({
-        error: 'campo não pode estar vazio'
-      });
-    }
-    
-    // Validação 5: Chave NF quando necessário para C100
-    if (registro_corrigir === 'C100' && (!chave || String(chave).trim().length === 0)) {
-      return res.status(400).json({
-        error: 'chave NF é obrigatória para correção em C100'
-      });
-    }
-    
-    // Validação 6: CFOP/CST ou chave quando necessário para C190
-    if (registro_corrigir === 'C190' && !cfop && !cst && !chave) {
-      return res.status(400).json({
-        error: 'Para C190, é necessário fornecer CFOP/CST ou chave NF para localizar o registro',
-        sugestao: 'Forneça pelo menos um dos seguintes: cfop, cst, ou chave'
-      });
-    }
-    
-    // Validação 7: Valor não negativo para campos monetários
-    const campos_monetarios = ['VL_BC_ICMS', 'VL_ICMS', 'VL_BC_ICMS_ST', 'VL_ICMS_ST', 'VL_IPI', 'VL_DESC', 
-                               'BC ST', 'ST', 'ICMS', 'BC ICMS', 'IPI', 'Desconto'];
-    if (campos_monetarios.some(c => campo.includes(c)) && valor_correto < 0) {
-      return res.status(400).json({
-        error: `Valor não pode ser negativo para campo ${campo}`,
-        valor_recebido: valor_correto
-      });
-    }
-    
-    // Validação 8: linha_sped válida (se fornecida)
-    if (linha_sped !== undefined) {
-      const linhaNum = parseInt(String(linha_sped));
-      if (isNaN(linhaNum) || linhaNum < 1) {
+    // Validar estrutura de todas as correções
+    for (const c of correcoes) {
+      const { registro_corrigir, campo, valor_correto, chave, cfop, cst, linha_sped } = c;
+      
+      // Validação 1: Campos obrigatórios
+      if (!registro_corrigir || !campo || valor_correto === undefined) {
         return res.status(400).json({
-          error: `linha_sped deve ser um número inteiro maior que 0`,
-          recebido: linha_sped
+          error: 'correcao deve conter: registro_corrigir, campo, valor_correto'
         });
       }
+      
+      // Validação 2: Tipo de valor_correto
+      if (typeof valor_correto !== 'number' || isNaN(valor_correto)) {
+        return res.status(400).json({
+          error: 'valor_correto deve ser um número válido',
+          recebido: typeof valor_correto,
+          valor: valor_correto
+        });
+      }
+      
+      // Validação 3: Registro válido
+      const registros_validos = ['C100', 'C170', 'C190', 'DESCONHECIDO'];
+      if (!registros_validos.includes(registro_corrigir)) {
+        return res.status(400).json({
+          error: `registro_corrigir inválido: ${registro_corrigir}`,
+          sugestao: `Deve ser um dos: ${registros_validos.join(', ')}`
+        });
+      }
+      
+      // Validação 4: Campo não vazio
+      if (!campo || String(campo).trim().length === 0) {
+        return res.status(400).json({
+          error: 'campo não pode estar vazio'
+        });
+      }
+      
+      // Validação 5: Chave NF quando necessário para C100
+      if (registro_corrigir === 'C100' && (!chave || String(chave).trim().length === 0)) {
+        return res.status(400).json({
+          error: 'chave NF é obrigatória para correção em C100'
+        });
+      }
+      
+      // Validação 6: CFOP/CST ou chave quando necessário para C190
+      if (registro_corrigir === 'C190' && !cfop && !cst && !chave) {
+        return res.status(400).json({
+          error: 'Para C190, é necessário fornecer CFOP/CST ou chave NF para localizar o registro',
+          sugestao: 'Forneça pelo menos um dos seguintes: cfop, cst, ou chave'
+        });
+      }
+      
+      // Validação 7: Valor não negativo para campos monetários
+      const campos_monetarios = ['VL_BC_ICMS', 'VL_ICMS', 'VL_BC_ICMS_ST', 'VL_ICMS_ST', 'VL_IPI', 'VL_DESC', 
+                                 'BC ST', 'ST', 'ICMS', 'BC ICMS', 'IPI', 'Desconto'];
+      if (campos_monetarios.some(c => campo.includes(c)) && valor_correto < 0) {
+        return res.status(400).json({
+          error: `Valor não pode ser negativo para campo ${campo}`,
+          valor_recebido: valor_correto
+        });
+      }
+      
+      // Validação 8: linha_sped válida (se fornecida)
+      if (linha_sped !== undefined) {
+        const linhaNum = parseInt(String(linha_sped));
+        if (isNaN(linhaNum) || linhaNum < 1) {
+          return res.status(400).json({
+            error: `linha_sped deve ser um número inteiro maior que 0`,
+            recebido: linha_sped
+          });
+        }
+      }
     }
+    
+    // Todas as validações passaram! Agora vamos processar
+    // Para lote, usar a primeira correção para obter dados comuns (validationId, tmpDir, etc.)
+    const primeiraCorrecao = correcoes[0];
 
-    // Obter caminho do arquivo SPED original
+    // Obter caminho do arquivo SPED
     const tmpDir = path.join(os.tmpdir(), 'sped_validations', validationId);
-    const spedPath = path.join(tmpDir, 'sped.txt');
+    const spedOriginalPath = path.join(tmpDir, 'sped.txt');
+    const spedCorrigidoPath = path.join(tmpDir, 'sped_corrigido.txt');
+    
+    // CRÍTICO: Se já existe sped_corrigido.txt, usar ele como base (correções acumulativas)
+    // Isso permite aplicar múltiplas correções para a mesma chave sem sobrescrever
+    let spedPath = spedOriginalPath;
+    if (fs.existsSync(spedCorrigidoPath)) {
+      console.log('[sped_correcoes] ✅ Usando sped_corrigido.txt como base (correções acumulativas)');
+      spedPath = spedCorrigidoPath;
+    } else {
+      console.log('[sped_correcoes] Usando sped.txt original como base');
+    }
 
     // Validação 9: Arquivo SPED existe
     if (!fs.existsSync(spedPath)) {
@@ -145,15 +189,15 @@ router.post('/aplicar', async (req: Request, res: Response) => {
 
     // Validação 12: Verificar se arquivo SPED contém registros C100 (necessário para correções C190 sem CFOP/CST)
     // CORREÇÃO: Verificar se cfop e cst são strings vazias ou undefined/null
-    const cfopVazio = !cfop || String(cfop).trim() === '';
-    const cstVazio = !cst || String(cst).trim() === '';
-    const precisaC100 = registro_corrigir === 'C190' && cfopVazio && cstVazio && chave;
+    const cfopVazio = !cfop_ref || String(cfop_ref).trim() === '';
+    const cstVazio = !cst_ref || String(cst_ref).trim() === '';
+    const precisaC100 = registro_corrigir_ref === 'C190' && cfopVazio && cstVazio && chave_ref;
     
     console.log('[sped_correcoes] Validação C100:', {
-      registro_corrigir,
-      cfop: cfop || '(vazio)',
-      cst: cst || '(vazio)',
-      chave: chave ? `${chave.substring(0, 20)}...` : '(sem chave)',
+      registro_corrigir: registro_corrigir_ref,
+      cfop: cfop_ref || '(vazio)',
+      cst: cst_ref || '(vazio)',
+      chave: chave_ref ? `${chave_ref.substring(0, 20)}...` : '(sem chave)',
       cfopVazio,
       cstVazio,
       precisaC100
@@ -203,14 +247,23 @@ router.post('/aplicar', async (req: Request, res: Response) => {
 
     // Executar script Python para aplicar correção
     const pythonScript = path.join(__dirname, '../../python/sped/aplicar_correcao.py');
-    const outputPath = path.join(tmpDir, 'sped_corrigido.txt');
-
-    // Salvar correção em arquivo temporário para evitar problemas com aspas e caracteres especiais
-    const correcaoJsonPath = path.join(tmpDir, 'correcao.json');
-    fs.writeFileSync(correcaoJsonPath, JSON.stringify(correcao, null, 2), 'utf-8');
     
-    // Usar arquivo JSON ao invés de passar como argumento
-    const command = `python "${pythonScript}" "${spedPath}" "${outputPath}" "${correcaoJsonPath}"`;
+    // IMPORTANTE: Sempre salvar no mesmo arquivo (sped_corrigido.txt) para acumular correções
+    const outputPath = spedCorrigidoPath;
+
+    // Salvar correção(ões) em arquivo temporário
+    // 🔥 IMPORTANTE: Se for lote, salvar array; se for única, salvar objeto
+    const correcaoJsonPath = path.join(tmpDir, 'correcao.json');
+    const correcaoParaSalvar = isLote ? correcoes : correcoes[0];
+    fs.writeFileSync(correcaoJsonPath, JSON.stringify(correcaoParaSalvar, null, 2), 'utf-8');
+    
+    console.log(`[sped_correcoes] Correção salva: ${isLote ? `array com ${correcoes.length} itens` : 'objeto único'}`);
+    
+    // Diretório de XMLs (mesma pasta que o SPED)
+    const xmlsDir = tmpDir; // XMLs estão no mesmo diretório temporário
+    
+    // Passar diretório de XMLs como argumento adicional
+    const command = `python "${pythonScript}" "${spedPath}" "${outputPath}" "${correcaoJsonPath}" "${xmlsDir}"`;
 
     try {
       const { stdout, stderr } = await execAsync(command, {
@@ -240,6 +293,19 @@ router.post('/aplicar', async (req: Request, res: Response) => {
         }
       }
 
+      // ✅ Garantir que realmente houve alteração no arquivo
+      // O Python pode retornar "sucesso" mesmo que o valor já estivesse igual,
+      // ou se a correção não gerou diff no conteúdo.
+      const totalAlteracoes = Number((resumo as any)?.total_alteracoes ?? 0);
+      if (!Number.isFinite(totalAlteracoes) || totalAlteracoes <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Nenhuma alteração foi aplicada no SPED corrigido (arquivo permanece igual ao original).',
+          arquivo_corrigido: outputPath,
+          resumo,
+        });
+      }
+
       res.json({
         success: true,
         message: 'Correção aplicada com sucesso',
@@ -257,10 +323,20 @@ router.post('/aplicar', async (req: Request, res: Response) => {
 
   } catch (error: any) {
     console.error('Erro ao processar requisição de correção:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: error.message || 'Erro interno ao processar correção'
     });
+  } finally {
+    // Limpar lock após 100ms (dar tempo para próxima correção pegar o lock)
+    setTimeout(() => correcaoLocks.delete(lockKey), 100);
   }
+  })();
+
+  // Registrar lock
+  correcaoLocks.set(lockKey, correcaoPromise);
+  
+  // Aguardar resultado
+  return await correcaoPromise;
 });
 
 /**

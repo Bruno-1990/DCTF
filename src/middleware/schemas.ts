@@ -27,17 +27,26 @@ export const clienteSchemas = {
     email: commonSchemas.email.optional().allow('').messages({
       'string.email': 'Email deve ter um formato válido',
     }),
-    telefone: Joi.string()
-      .pattern(/^\(\d{2}\)\s\d{4,5}-\d{4}$/)
-      .optional()
-      .allow('')
-      .messages({
-        'string.pattern.base': 'Telefone deve estar no formato (00) 0000-0000',
-      }),
+    // Telefone pode vir em múltiplos formatos (inclusive múltiplos números)
+    telefone: Joi.string().max(255).optional().allow(''),
     endereco: Joi.string().max(500).optional().allow('').messages({
       'string.max': 'Endereço deve ter no máximo 500 caracteres',
     }),
-  }),
+    tipo_empresa: Joi.string()
+      .valid('Matriz', 'Filial')
+      .optional()
+      .allow('', null)
+      .messages({
+        'any.only': 'Tipo de empresa deve ser: Matriz ou Filial',
+      }),
+    regime_tributario: Joi.string()
+      .valid('Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'A Definir')
+      .optional()
+      .allow('', null)
+      .messages({
+        'any.only': 'Regime tributário deve ser: Simples Nacional, Lucro Presumido, Lucro Real ou A Definir',
+      }),
+  }).unknown(true),
 
   update: Joi.object({
     razao_social: Joi.string().min(2).max(255).optional().messages({
@@ -51,12 +60,23 @@ export const clienteSchemas = {
       'string.pattern.base': 'CNPJ deve estar no formato 00.000.000/0000-00',
     }),
     email: commonSchemas.email.optional().allow(''),
-    telefone: Joi.string()
-      .pattern(/^\(\d{2}\)\s\d{4,5}-\d{4}$/)
-      .optional()
-      .allow(''),
+    telefone: Joi.string().max(255).optional().allow(''),
     endereco: Joi.string().max(500).optional().allow(''),
-  }),
+    tipo_empresa: Joi.string()
+      .valid('Matriz', 'Filial')
+      .optional()
+      .allow('', null)
+      .messages({
+        'any.only': 'Tipo de empresa deve ser: Matriz ou Filial',
+      }),
+    regime_tributario: Joi.string()
+      .valid('Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'A Definir')
+      .optional()
+      .allow('', null)
+      .messages({
+        'any.only': 'Regime tributário deve ser: Simples Nacional, Lucro Presumido, Lucro Real ou A Definir',
+      }),
+  }).unknown(true),
 
   params: Joi.object({
     id: commonSchemas.uuid
@@ -71,6 +91,8 @@ export const clienteSchemas = {
       commonSchemas.cnpj,
       Joi.string().allow('')
     ).optional()
+    ,
+    socio: Joi.string().allow('').optional()
   })
 };
 

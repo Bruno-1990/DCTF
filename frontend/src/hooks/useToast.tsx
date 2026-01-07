@@ -7,12 +7,13 @@ export type ToastItem = {
   type: ToastType;
   message: string;
   duration?: number; // ms
+  closing?: boolean;
 };
 
 type ToastContextType = {
   items: ToastItem[];
   push: (item: Omit<ToastItem, 'id'>) => void;
-  remove: (id: string) => void;
+  remove: (id: string) => void; // remove com animação (fade-out)
 };
 
 const ToastContext = createContext<ToastContextType | null>(null);
@@ -21,12 +22,18 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [items, setItems] = useState<ToastItem[]>([]);
 
   const remove = useCallback((id: string) => {
-    setItems((prev) => prev.filter((t) => t.id !== id));
+    // Remove com animação: marca como "closing" e só remove do DOM após o fade-out
+    setItems((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, closing: true } : t)),
+    );
+    window.setTimeout(() => {
+      setItems((prev) => prev.filter((t) => t.id !== id));
+    }, 220);
   }, []);
 
   const push = useCallback((item: Omit<ToastItem, 'id'>) => {
     const id = Math.random().toString(36).slice(2);
-    const toast: ToastItem = { id, ...item };
+    const toast: ToastItem = { id, ...item, closing: false };
     setItems((prev) => [...prev, toast]);
     const duration = toast.duration ?? 4500;
     window.setTimeout(() => remove(id), duration);

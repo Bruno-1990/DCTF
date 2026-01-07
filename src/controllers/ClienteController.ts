@@ -6,30 +6,7 @@
 import { Request, Response } from 'express';
 import { Cliente } from '../models/Cliente';
 import { ApiResponse } from '../types';
-import * as XLSX from 'xlsx';
-import multer from 'multer';
-import path from 'path';
 import ExcelJS from 'exceljs';
-
-// Configuração do multer para upload de arquivos de clientes
-const storage = multer.memoryStorage();
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
-    files: 1
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.xls', '.xlsx', '.csv'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    
-    if (allowedTypes.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Tipo de arquivo não permitido. Use: ${allowedTypes.join(', ')}`));
-    }
-  }
-});
 
 export class ClienteController {
   private clienteModel: Cliente;
@@ -38,9 +15,112 @@ export class ClienteController {
     this.clienteModel = new Cliente();
   }
 
-  // Middleware de upload para exportar
-  static get uploadMiddleware() {
-    return upload.single('arquivo');
+
+  /**
+   * Atualizar todos os clientes na ReceitaWS (execução única)
+   * Atualiza cada CNPJ com intervalo de 20 segundos entre cada atualização
+   */
+  async atualizarTodosReceitaWS(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('[Atualizar Todos ReceitaWS] Iniciando atualização em massa...');
+      
+      // Buscar todos os clientes com CNPJ
+      const result = await this.clienteModel.findAll();
+      
+      if (!result.success || !result.data) {
+        res.status(400).json({
+          success: false,
+          error: 'Erro ao buscar clientes',
+          data: null,
+        });
+        return;
+      }
+
+      const clientes = result.data as any[];
+      
+      // Filtrar apenas clientes com CNPJ válido
+      const clientesComCNPJ = clientes.filter((c: any) => {
+        const cnpj = c.cnpj_limpo || c.cnpj;
+        return cnpj && String(cnpj).replace(/\D/g, '').length === 14;
+      });
+
+      console.log(`[Atualizar Todos ReceitaWS] Encontrados ${clientesComCNPJ.length} clientes com CNPJ válido`);
+
+      const resultados: Array<{
+        cnpj: string;
+        razao_social: string;
+        sucesso: boolean;
+        erro?: string;
+      }> = [];
+
+      // Processar cada cliente com intervalo de 20 segundos
+      for (let i = 0; i < clientesComCNPJ.length; i++) {
+        const cliente = clientesComCNPJ[i];
+        const cnpj = String(cliente.cnpj_limpo || cliente.cnpj).replace(/\D/g, '');
+        const razaoSocial = cliente.razao_social || cliente.nome || 'N/A';
+
+        console.log(`[Atualizar Todos ReceitaWS] Processando ${i + 1}/${clientesComCNPJ.length}: ${razaoSocial} (${cnpj})`);
+
+        try {
+          // Importar dados da ReceitaWS com overwrite
+          const importResult = await this.clienteModel.importarReceitaWS(cnpj, { overwrite: true });
+          
+          if (importResult.success) {
+            resultados.push({
+              cnpj,
+              razao_social: razaoSocial,
+              sucesso: true,
+            });
+            console.log(`[Atualizar Todos ReceitaWS] ✓ Sucesso para ${razaoSocial}`);
+          } else {
+            resultados.push({
+              cnpj,
+              razao_social: razaoSocial,
+              sucesso: false,
+              erro: importResult.error || 'Erro desconhecido',
+            });
+            console.log(`[Atualizar Todos ReceitaWS] ✗ Erro para ${razaoSocial}: ${importResult.error}`);
+          }
+        } catch (error: any) {
+          resultados.push({
+            cnpj,
+            razao_social: razaoSocial,
+            sucesso: false,
+            erro: error.message || 'Erro ao processar',
+          });
+          console.error(`[Atualizar Todos ReceitaWS] ✗ Exceção para ${razaoSocial}:`, error);
+        }
+
+        // Aguardar 20 segundos antes do próximo (exceto no último)
+        if (i < clientesComCNPJ.length - 1) {
+          console.log(`[Atualizar Todos ReceitaWS] Aguardando 20 segundos antes do próximo...`);
+          await new Promise(resolve => setTimeout(resolve, 20000));
+        }
+      }
+
+      const sucessos = resultados.filter(r => r.sucesso).length;
+      const erros = resultados.filter(r => !r.sucesso).length;
+
+      console.log(`[Atualizar Todos ReceitaWS] Concluído: ${sucessos} sucessos, ${erros} erros`);
+
+      res.json({
+        success: true,
+        data: {
+          total: clientesComCNPJ.length,
+          sucessos,
+          erros,
+          resultados,
+        },
+        message: `Atualização concluída: ${sucessos} sucessos, ${erros} erros`,
+      });
+    } catch (error: any) {
+      console.error('[Atualizar Todos ReceitaWS] Erro geral:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Erro ao atualizar clientes na ReceitaWS',
+        data: null,
+      });
+    }
   }
 
   /**
@@ -48,7 +128,7 @@ export class ClienteController {
    */
   async listarClientes(req: Request, res: Response): Promise<void> {
     try {
-      const { page = 1, limit = 10, search, nome, cnpj } = req.query;
+      const { page = 1, limit = 10, search, nome, cnpj, socio } = req.query;
 
       let result: ApiResponse<any> = await this.clienteModel.findAll();
 
@@ -92,6 +172,27 @@ export class ClienteController {
           data = data.filter((c: any) => 
             String(c.cnpj_limpo || '').replace(/\D/g, '').includes(cnpjStr)
           );
+        }
+      }
+
+      // Filtro por sócio (nome exato vindo do select box)
+      let participacoesSocio: Record<string, number | null> = {};
+      if (socio && typeof socio === 'string' && socio.trim()) {
+        const socioNome = socio.trim();
+        const idsResp = await this.clienteModel.buscarClienteIdsPorSocioNome(socioNome);
+        if (idsResp.success) {
+          const ids = new Set(idsResp.data || []);
+          data = data.filter((c: any) => ids.has(String(c.id)));
+          
+          // Buscar porcentagem de participação do sócio em cada cliente
+          const participacoesResp = await this.clienteModel.buscarParticipacaoSocioPorNome(socioNome);
+          if (participacoesResp.success) {
+            participacoesSocio = participacoesResp.data || {};
+          }
+        } else {
+          // Se falhar, não quebrar a listagem; apenas retornar vazio para evitar resultados incorretos
+          console.warn('[ClienteController] Falha ao filtrar por sócio:', idsResp.error);
+          data = [];
         }
       }
 
@@ -147,6 +248,31 @@ export class ClienteController {
         console.warn('[ClienteController] Enriquecimento leve (hasPayments) falhou:', enrichErr);
       }
 
+      // Enriquecer cada cliente com participacao_percentual se houver filtro por sócio
+      if (Object.keys(participacoesSocio).length > 0) {
+        paginatedData = paginatedData.map((c: any) => {
+          const participacao = participacoesSocio[String(c.id)];
+          if (participacao !== undefined) {
+            (c as any).socio_participacao_percentual = participacao;
+          }
+          return c;
+        });
+      }
+
+      // Carregar sócios para cada cliente da página (para aba Participação)
+      try {
+        for (const cliente of paginatedData) {
+          if (cliente?.id) {
+            const sociosResult = await this.clienteModel.listarSocios(cliente.id);
+            if (sociosResult.success) {
+              (cliente as any).socios = sociosResult.data || [];
+            }
+          }
+        }
+      } catch (sociosErr) {
+        console.warn('[ClienteController] Erro ao carregar sócios (não crítico):', sociosErr);
+      }
+
       res.json({
         success: true,
         data: paginatedData,
@@ -157,6 +283,27 @@ export class ClienteController {
           totalPages: Math.ceil(data.length / limitNum),
         },
       });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Listar sócios distintos (para select box)
+   * GET /api/clientes/socios
+   */
+  async listarSociosDistinct(_req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.clienteModel.listarSociosDistinct();
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
     } catch (error) {
       res.status(500).json({
         success: false,
@@ -187,6 +334,17 @@ export class ClienteController {
         res.status(404).json(result);
         return;
       }
+
+      // Incluir sócios (QSA), quando disponível
+      try {
+        const cliente = result.data as any;
+        if (cliente?.id) {
+          const socios = await this.clienteModel.listarSocios(cliente.id);
+          if (socios.success) {
+            (cliente as any).socios = socios.data || [];
+          }
+        }
+      } catch {}
 
       res.json(result);
     } catch (error) {
@@ -382,214 +540,6 @@ export class ClienteController {
    * Upload e processamento de planilha de clientes
    * Verifica duplicatas por CNPJ e processa apenas os registros que ainda não existem
    */
-  async uploadPlanilhaClientes(req: Request, res: Response): Promise<void> {
-    try {
-      if (!req.file) {
-        res.status(400).json({ success: false, error: 'Arquivo é obrigatório' });
-        return;
-      }
-
-      const { buffer, originalname } = req.file;
-      const ext = originalname.split('.').pop()?.toLowerCase();
-
-      if (!ext || !['xlsx', 'xls', 'csv'].includes(ext)) {
-        res.status(400).json({ 
-          success: false, 
-          error: `Formato de arquivo não suportado: ${ext || 'desconhecido'}. Use .xlsx, .xls ou .csv` 
-        });
-        return;
-      }
-
-      let dados: any[] = [];
-
-      try {
-        // Processar arquivo Excel ou CSV
-        if (ext === 'xlsx' || ext === 'xls') {
-          const workbook = XLSX.read(buffer, { type: 'buffer' });
-          
-          if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-            res.status(400).json({ success: false, error: 'Arquivo Excel não contém planilhas válidas' });
-            return;
-          }
-          
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          
-          if (!worksheet) {
-            res.status(400).json({ success: false, error: 'Não foi possível ler a planilha do arquivo' });
-            return;
-          }
-          
-          dados = XLSX.utils.sheet_to_json(worksheet, { 
-            defval: '', // Valor padrão para células vazias
-            raw: false // Retornar valores como strings
-          });
-        } else if (ext === 'csv') {
-          const csvString = buffer.toString('utf-8');
-          
-          if (!csvString || csvString.trim().length === 0) {
-            res.status(400).json({ success: false, error: 'Arquivo CSV está vazio' });
-            return;
-          }
-          
-          const workbook = XLSX.read(csvString, { type: 'string' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          dados = XLSX.utils.sheet_to_json(worksheet, { 
-            defval: '',
-            raw: false 
-          });
-        }
-      } catch (parseError: any) {
-        console.error('Erro ao processar arquivo:', parseError);
-        res.status(400).json({ 
-          success: false, 
-          error: `Erro ao processar arquivo: ${parseError?.message || 'Formato de arquivo inválido'}` 
-        });
-        return;
-      }
-
-      if (!dados || dados.length === 0) {
-        res.status(400).json({ 
-          success: false, 
-          error: 'Planilha vazia ou sem dados válidos. Verifique se a planilha contém dados além do cabeçalho.' 
-        });
-        return;
-      }
-
-      // Debug: Log das primeiras linhas para diagnóstico
-      console.log('Total de linhas lidas da planilha:', dados.length);
-      if (dados.length > 0) {
-        console.log('Primeira linha (exemplo):', JSON.stringify(dados[0], null, 2));
-        console.log('Chaves disponíveis na primeira linha:', Object.keys(dados[0]));
-      }
-
-      // Normalizar dados da planilha
-      const clientesNormalizados = dados.map((item: any, index: number) => {
-        // Tentar encontrar CNPJ em diferentes colunas possíveis
-        const cnpj = item.cnpj || item.CNPJ || item.cnpj_limpo || item.CNPJ_LIMPO || item['CNPJ'] || '';
-        // SEMPRE limpar caracteres especiais do CNPJ
-        const cnpjLimpo = String(cnpj).replace(/\D/g, '');
-        
-        // Tentar encontrar razão social em diferentes colunas
-        const razaoSocial = (item.razao_social || item.RAZAO_SOCIAL || item.nome || item.NOME || item['Razão Social'] || item['Nome'] || '').trim();
-        
-        // Validar campos obrigatórios: CNPJ (14 dígitos) e Razão Social
-        if (!cnpjLimpo || cnpjLimpo.length !== 14) {
-          console.log(`Linha ${index + 1}: CNPJ inválido - valor: "${cnpj}", limpo: "${cnpjLimpo}", tamanho: ${cnpjLimpo.length}`);
-          return null; // CNPJ inválido
-        }
-        
-        if (!razaoSocial || razaoSocial.length === 0) {
-          console.log(`Linha ${index + 1}: Razão Social vazia`);
-          return null; // Razão Social obrigatória
-        }
-        
-        return {
-          cnpj_limpo: cnpjLimpo, // Sempre salvar limpo no banco
-          razao_social: razaoSocial,
-          // Não salvar cnpj formatado, apenas gerar na exibição
-          email: (item.email || item.EMAIL || item['Email'] || '').trim() || undefined,
-          telefone: (item.telefone || item.TELEFONE || item['Telefone'] || '').trim() || undefined,
-          endereco: (item.endereco || item.ENDERECO || item['Endereço'] || item['Endereco'] || '').trim() || undefined,
-        };
-      }).filter((item: any) => item !== null); // Filtrar apenas registros válidos
-
-      console.log('Clientes normalizados válidos:', clientesNormalizados.length, 'de', dados.length);
-
-      if (clientesNormalizados.length === 0) {
-        res.status(400).json({ 
-          success: false, 
-          error: `Nenhum cliente válido encontrado na planilha. Total de linhas processadas: ${dados.length}. Campos obrigatórios: CNPJ (14 dígitos, com ou sem formatação) e Razão Social. Email, Telefone e Endereço são opcionais. Verifique se a planilha contém dados além do cabeçalho e se os campos estão nomeados corretamente.` 
-        });
-        return;
-      }
-
-      // Buscar todos os CNPJs existentes
-      const cnpjsParaVerificar = [...new Set(clientesNormalizados.map((c: any) => c.cnpj_limpo))];
-      const clientesExistentes = new Set<string>();
-      
-      // Verificar quais CNPJs já existem
-      for (const cnpj of cnpjsParaVerificar) {
-        const result = await this.clienteModel.findByCNPJ(cnpj);
-        if (result.success && result.data) {
-          clientesExistentes.add(cnpj);
-        }
-      }
-
-      // Filtrar apenas os clientes que não existem
-      const clientesNovos = clientesNormalizados.filter((c: any) => !clientesExistentes.has(c.cnpj_limpo));
-      const totalExistentes = clientesExistentes.size;
-      const totalNovos = clientesNovos.length;
-
-      const resultados: { 
-        ok: number; 
-        fail: number; 
-        erros: string[];
-        totalProcessados: number;
-        jaExistentes: number;
-        criados: number;
-      } = { 
-        ok: 0, 
-        fail: 0, 
-        erros: [],
-        totalProcessados: clientesNormalizados.length,
-        jaExistentes: totalExistentes,
-        criados: 0,
-      };
-
-      // Criar apenas os clientes novos
-      for (const item of clientesNovos) {
-        try {
-          console.log(`[Upload] Tentando criar: CNPJ=${item.cnpj_limpo}, Razão Social="${item.razao_social}"`);
-          const resp = await this.clienteModel.createCliente(item);
-          if (resp.success) {
-            resultados.ok += 1;
-            resultados.criados += 1;
-            console.log(`[Upload] ✅ Sucesso: CNPJ=${item.cnpj_limpo}`);
-          } else {
-            resultados.fail += 1;
-            const errorMsg = resp.error || 'Erro desconhecido';
-            resultados.erros.push(`CNPJ ${item.cnpj_limpo}: ${errorMsg}`);
-            console.error(`[Upload] ❌ Falha: CNPJ=${item.cnpj_limpo}, Erro="${errorMsg}"`);
-          }
-        } catch (e: any) {
-          resultados.fail += 1;
-          const errorMsg = e?.message || 'Erro desconhecido';
-          resultados.erros.push(`CNPJ ${item.cnpj_limpo || 'desconhecido'}: ${errorMsg}`);
-          console.error(`[Upload] ❌ Exceção: CNPJ=${item.cnpj_limpo}, Erro="${errorMsg}"`, e);
-        }
-      }
-      
-      console.log('[Upload] Resumo final:', {
-        totalProcessados: resultados.totalProcessados,
-        jaExistentes: resultados.jaExistentes,
-        criados: resultados.criados,
-        falhas: resultados.fail,
-        primeirosErros: resultados.erros.slice(0, 5)
-      });
-      
-      // Limitar número de erros retornados
-      if (resultados.erros.length > 20) {
-        const errosLimitados = resultados.erros.slice(0, 20);
-        errosLimitados.push(`... e mais ${resultados.fail - 20} erros (total: ${resultados.fail} falhas)`);
-        resultados.erros = errosLimitados;
-      }
-
-      res.json({ 
-        success: resultados.fail === 0, 
-        data: resultados,
-        message: `Processados: ${resultados.totalProcessados} | Já existentes: ${resultados.jaExistentes} | Criados: ${resultados.criados} | Falhas: ${resultados.fail}`
-      });
-    } catch (error) {
-      console.error('Erro no upload de planilha:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Erro desconhecido',
-        message: error instanceof Error ? error.message : 'Erro ao processar upload da planilha'
-      });
-    }
-  }
 
   /**
    * Formatar CNPJ para exibição
@@ -706,6 +656,59 @@ export class ClienteController {
   }
 
   /**
+   * Consultar dados cadastrais via ReceitaWS (sem salvar)
+   * GET /api/clientes/receita-ws/cnpj/:cnpj
+   */
+  async consultarReceitaWS(req: Request, res: Response): Promise<void> {
+    try {
+      const { cnpj } = req.params;
+      if (!cnpj) {
+        res.status(400).json({ success: false, error: 'CNPJ é obrigatório' });
+        return;
+      }
+      const result = await this.clienteModel.consultarReceitaWS(cnpj);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Importar dados cadastrais via ReceitaWS (salva/atualiza + sócios)
+   * POST /api/clientes/import-receita-ws
+   * Body: { cnpj: string, overwrite?: boolean }
+   */
+  async importarReceitaWS(req: Request, res: Response): Promise<void> {
+    try {
+      const { cnpj, overwrite } = req.body || {};
+      if (!cnpj) {
+        res.status(400).json({ success: false, error: 'Campo "cnpj" é obrigatório' });
+        return;
+      }
+      const result = await this.clienteModel.importarReceitaWS(String(cnpj), { overwrite: overwrite === true });
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
    * Obter estatísticas dos clientes
    */
   async obterEstatisticas(_req: Request, res: Response): Promise<void> {
@@ -719,6 +722,265 @@ export class ClienteController {
 
       res.json(result);
     } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Atualizar sócios do cliente a partir da situação fiscal mais recente
+   */
+  async atualizarSociosPorSituacaoFiscal(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'ID do cliente é obrigatório',
+        });
+        return;
+      }
+
+      // Buscar cliente pelo ID
+      const clienteResult = await this.clienteModel.findById(id);
+      if (!clienteResult.success || !clienteResult.data) {
+        res.status(404).json({
+          success: false,
+          error: 'Cliente não encontrado',
+        });
+        return;
+      }
+
+      const cliente = clienteResult.data;
+      let cnpjLimpo = (cliente as any).cnpj_limpo;
+      
+      // Garantir que o CNPJ está no formato correto (apenas números, 14 dígitos)
+      if (cnpjLimpo) {
+        cnpjLimpo = String(cnpjLimpo).replace(/\D/g, '');
+      }
+      
+      if (!cnpjLimpo || cnpjLimpo.length !== 14) {
+        res.status(400).json({
+          success: false,
+          error: 'CNPJ do cliente inválido',
+        });
+        return;
+      }
+
+      // Buscar download mais recente da situação fiscal para este CNPJ
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey) {
+        res.status(500).json({
+          success: false,
+          error: 'Configuração do Supabase não encontrada',
+        });
+        return;
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      
+      console.log('[Atualizar Sócios] Buscando situação fiscal para CNPJ:', cnpjLimpo);
+      console.log('[Atualizar Sócios] Tipo do CNPJ:', typeof cnpjLimpo, 'Tamanho:', cnpjLimpo.length);
+      
+      // Buscar o download mais recente para este CNPJ
+      // Tentar buscar com o CNPJ limpo (apenas números)
+      let { data: downloads, error: downloadError } = await supabase
+        .from('sitf_downloads')
+        .select('id, cnpj, created_at')
+        .eq('cnpj', cnpjLimpo)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      console.log('[Atualizar Sócios] Resultado da busca (CNPJ limpo):', {
+        downloadsCount: downloads?.length || 0,
+        error: downloadError?.message,
+        downloadId: downloads?.[0]?.id,
+        cnpjEncontrado: downloads?.[0]?.cnpj,
+      });
+
+      // Se não encontrou, tentar buscar todos os registros e filtrar manualmente (fallback)
+      if ((!downloads || downloads.length === 0) && !downloadError) {
+        console.log('[Atualizar Sócios] Tentando busca alternativa (buscar todos e filtrar)...');
+        const { data: allDownloads, error: allError } = await supabase
+          .from('sitf_downloads')
+          .select('id, cnpj, created_at')
+          .order('created_at', { ascending: false })
+          .limit(100); // Limitar a 100 registros mais recentes
+        
+        if (!allError && allDownloads) {
+          // Filtrar manualmente comparando CNPJs sem formatação
+          downloads = allDownloads.filter((d: any) => {
+            const cnpjStored = String(d.cnpj || '').replace(/\D/g, '');
+            return cnpjStored === cnpjLimpo;
+          }).slice(0, 1); // Pegar apenas o primeiro
+        
+          console.log('[Atualizar Sócios] Resultado da busca alternativa:', {
+            downloadsCount: downloads?.length || 0,
+            downloadId: downloads?.[0]?.id,
+            cnpjEncontrado: downloads?.[0]?.cnpj,
+          });
+        }
+      }
+
+      if (downloadError) {
+        console.error('[Atualizar Sócios] Erro ao buscar download:', downloadError);
+        res.status(500).json({
+          success: false,
+          error: 'Erro ao buscar situação fiscal',
+          message: downloadError.message,
+        });
+        return;
+      }
+
+      if (!downloads || downloads.length === 0) {
+        console.warn('[Atualizar Sócios] Nenhuma situação fiscal encontrada para CNPJ:', cnpjLimpo);
+        res.status(404).json({
+          success: false,
+          error: 'Nenhuma situação fiscal encontrada para este CNPJ. Por favor, consulte a Situação Fiscal primeiro.',
+          details: 'É necessário consultar a Situação Fiscal antes de poder atualizar os sócios.',
+        });
+        return;
+      }
+
+      const downloadId = downloads[0].id;
+      console.log('[Atualizar Sócios] Download ID encontrado:', downloadId);
+
+      // Buscar dados extraídos no MySQL
+      const { executeQuery } = await import('../config/mysql');
+      
+      // Primeiro, tentar buscar pelo sitf_download_id
+      let extractedDataQuery = `
+        SELECT socios, empresa_razao_social
+        FROM sitf_extracted_data
+        WHERE sitf_download_id = ?
+        LIMIT 1
+      `;
+      
+      let extractedDataResults = await executeQuery<any[]>(extractedDataQuery, [downloadId]);
+      console.log('[Atualizar Sócios] Busca por sitf_download_id:', {
+        downloadId,
+        resultsCount: extractedDataResults?.length || 0,
+      });
+      
+      // Se não encontrou, tentar buscar pelo CNPJ (pode ter sido inserido de outra forma)
+      if (!extractedDataResults || extractedDataResults.length === 0) {
+        console.log('[Atualizar Sócios] Não encontrado por download_id, tentando buscar por CNPJ...');
+        extractedDataQuery = `
+          SELECT socios, empresa_razao_social
+          FROM sitf_extracted_data
+          WHERE cnpj = ?
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
+        extractedDataResults = await executeQuery<any[]>(extractedDataQuery, [cnpjLimpo]);
+        console.log('[Atualizar Sócios] Busca por CNPJ:', {
+          cnpj: cnpjLimpo,
+          resultsCount: extractedDataResults?.length || 0,
+        });
+      }
+      
+      if (!extractedDataResults || extractedDataResults.length === 0) {
+        console.error('[Atualizar Sócios] Nenhum dado extraído encontrado no MySQL');
+        res.status(404).json({
+          success: false,
+          error: 'Dados extraídos da situação fiscal não encontrados. A situação fiscal pode não ter sido processada ainda.',
+        });
+        return;
+      }
+
+      const extractedData = extractedDataResults[0];
+      console.log('[Atualizar Sócios] Dados extraídos encontrados:', {
+        hasSocios: !!extractedData.socios,
+        sociosType: typeof extractedData.socios,
+      });
+      
+      // Parsear sócios do JSON
+      let socios: any[] = [];
+      if (extractedData.socios) {
+        try {
+          socios = typeof extractedData.socios === 'string'
+            ? JSON.parse(extractedData.socios)
+            : extractedData.socios;
+          
+          console.log('[Atualizar Sócios] Sócios parseados:', {
+            count: Array.isArray(socios) ? socios.length : 0,
+            isArray: Array.isArray(socios),
+            firstSocio: Array.isArray(socios) && socios.length > 0 ? socios[0] : null,
+          });
+        } catch (e) {
+          console.error('[Atualizar Sócios] Erro ao parsear sócios:', e);
+          console.error('[Atualizar Sócios] Valor de socios:', extractedData.socios);
+          res.status(500).json({
+            success: false,
+            error: 'Erro ao processar dados dos sócios',
+            details: e instanceof Error ? e.message : 'Erro desconhecido',
+          });
+          return;
+        }
+      }
+
+      if (!Array.isArray(socios) || socios.length === 0) {
+        console.warn('[Atualizar Sócios] Nenhum sócio encontrado nos dados extraídos');
+        res.status(404).json({
+          success: false,
+          error: 'Nenhum sócio encontrado na situação fiscal',
+        });
+        return;
+      }
+
+      // Buscar capital social do cliente
+      const capitalSocial = (cliente as any).capital_social;
+
+      // Preparar sócios com participação
+      const sociosComParticipacao = socios.map((s: any) => ({
+        nome: s.nome || '',
+        qual: s.qualificacao || s.qual || null,
+        participacao_percentual: s.participacao_percentual !== null && s.participacao_percentual !== undefined
+          ? parseFloat(String(s.participacao_percentual))
+          : null,
+      }));
+
+      console.log('[Atualizar Sócios] Sócios preparados para atualização:', {
+        count: sociosComParticipacao.length,
+        socios: sociosComParticipacao,
+        capitalSocial,
+      });
+
+      // Atualizar sócios
+      const updateResult = await this.clienteModel.atualizarSociosComParticipacao(
+        cliente.id!,
+        sociosComParticipacao,
+        capitalSocial
+      );
+
+      if (!updateResult.success) {
+        console.error('[Atualizar Sócios] Erro ao atualizar sócios:', updateResult.error);
+        res.status(400).json(updateResult);
+        return;
+      }
+
+      console.log('[Atualizar Sócios] Sócios atualizados com sucesso');
+
+      // Buscar sócios atualizados
+      const sociosAtualizados = await this.clienteModel.listarSocios(cliente.id!);
+      
+      res.json({
+        success: true,
+        data: {
+          clienteId: cliente.id,
+          sociosAtualizados: sociosAtualizados.success ? sociosAtualizados.data : [],
+          message: `${sociosComParticipacao.length} sócio(s) atualizado(s) com sucesso`,
+        },
+      });
+    } catch (error) {
+      console.error('[ClienteController] Erro ao atualizar sócios por situação fiscal:', error);
       res.status(500).json({
         success: false,
         error: 'Erro interno do servidor',
@@ -760,3 +1022,4 @@ export class ClienteController {
   }
 
 }
+

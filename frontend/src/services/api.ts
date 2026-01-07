@@ -36,8 +36,17 @@ api.interceptors.response.use(
     
     // Erro do servidor (4xx, 5xx)
     const message = error.response?.data?.error || error.response?.data?.message || error.message || 'Erro ao processar requisição';
-    const friendlyError = new Error(message);
-    friendlyError.name = error.response?.status >= 500 ? 'ServerError' : 'ClientError';
+    const status = error.response?.status;
+    const friendlyError = new Error(message) as Error & {
+      status?: number;
+      data?: any;
+      headers?: any;
+    };
+    friendlyError.name = (status && status >= 500) ? 'ServerError' : 'ClientError';
+    // Preservar metadados úteis (ex: status 429) para permitir retry/backoff no frontend
+    friendlyError.status = status;
+    friendlyError.data = error.response?.data;
+    friendlyError.headers = error.response?.headers;
     return Promise.reject(friendlyError);
   }
 );
