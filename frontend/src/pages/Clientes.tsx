@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useClientes } from '../hooks/useClientes';
 import type { Cliente } from '../types';
 import { Pagination } from '../components/Pagination';
@@ -14,33 +14,47 @@ import {
   PencilIcon,
   TrashIcon,
   XMarkIcon,
-  DocumentArrowUpIcon,
+  ArrowLeftIcon,
+  ArrowPathIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import type { AxiosError } from 'axios';
 import PagamentosTab from '../components/Clientes/PagamentosTab';
 import EProcessosTab from '../components/Clientes/EProcessosTab';
+import { clientesService } from '../services';
+import { useToast } from '../hooks/useToast';
 
 const Clientes: React.FC = () => {
   const { clientes, loadClientes, createCliente, updateClienteById, deleteClienteById, loading, error, clearError } = useClientes();
+  const toast = useToast();
   const [showForm, setShowForm] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
   const [formData, setFormData] = useState<Partial<Cliente>>({});
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [socioFiltro, setSocioFiltro] = useState<string>('');
+  const [sociosOptions, setSociosOptions] = useState<string[]>([]);
+  const [socioSearchInput, setSocioSearchInput] = useState<string>('');
+  const [showSocioDropdown, setShowSocioDropdown] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-  const [lastPageCount, setLastPageCount] = useState<number>(0);
   const [total, setTotal] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
-  const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // mantido para compat, mas sem uso
+  // Aba Participação
+  const [clientesParticipacao, setClientesParticipacao] = useState<Cliente[]>([]);
+  const [loadingParticipacao, setLoadingParticipacao] = useState(false);
+  const [searchParticipacao, setSearchParticipacao] = useState('');
+  // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
+  // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [customErrorMessage, setCustomErrorMessage] = useState<string>('');
   const [copiedCnpj, setCopiedCnpj] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
-  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
-  const [activeTab, setActiveTab] = useState<'clientes' | 'lancamentos' | 'pagamentos' | 'e-processos'>('clientes');
+  const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos'>('clientes');
   const [cnpjParaPagamentos, setCnpjParaPagamentos] = useState<string | undefined>(undefined);
   const [hostLancamentos, setHostLancamentos] = useState<any[]>([]);
   const [hostLoading, setHostLoading] = useState(false);
@@ -48,8 +62,23 @@ const Clientes: React.FC = () => {
   const [showManualFilters, setShowManualFilters] = useState(false);
   const [manualDataIni, setManualDataIni] = useState<string>('');
   const [manualDataFim, setManualDataFim] = useState<string>('');
+  const [importandoReceita, setImportandoReceita] = useState(false);
+  const [mostrarCadastroCompleto, setMostrarCadastroCompleto] = useState(false);
+  const [mostrarAtividadesSecundarias, setMostrarAtividadesSecundarias] = useState(false);
+  // const [ultimaImportacaoMeta, setUltimaImportacaoMeta] = useState<any>(null); // Não utilizado no momento
+  const [visualizandoCliente, setVisualizandoCliente] = useState<Cliente | null>(null);
+  const [atualizandoCliente, setAtualizandoCliente] = useState(false);
+  const [atualizandoSocios, setAtualizandoSocios] = useState<string | null>(null); // ID do cliente sendo atualizado
   const navigate = useNavigate();
   const location = useLocation();
+
+  const limparForm = () => {
+    setShowForm(false);
+    setEditingCliente(null);
+    setFormData({});
+    setMostrarCadastroCompleto(false);
+    // setUltimaImportacaoMeta(null); // Não utilizado no momento
+  };
 
   // Detectar tab na query string
   useEffect(() => {
@@ -83,6 +112,50 @@ const Clientes: React.FC = () => {
     }
   }, [location.search]);
 
+  // Detectar clienteId na query string para visualizar cliente (separado para garantir execução)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const clienteIdFromQuery = params.get('clienteId');
+    
+    if (clienteIdFromQuery) {
+      // Verificar se já está visualizando este cliente para evitar chamadas desnecessárias
+      const clienteIdAtual = visualizandoCliente?.id ? String(visualizandoCliente.id) : null;
+      if (clienteIdAtual === clienteIdFromQuery) {
+        return; // Já está visualizando este cliente
+      }
+      
+      // Buscar e visualizar o cliente
+      const buscarEVisualizarCliente = async () => {
+        try {
+          console.log('[Clientes] Buscando cliente por ID:', clienteIdFromQuery);
+          const resp = await clientesService.obterCliente(clienteIdFromQuery);
+          console.log('[Clientes] Resposta do obterCliente:', resp);
+          
+          // O backend retorna { success, data: Cliente }
+          if (resp && typeof resp === 'object') {
+            if ((resp as any).success && (resp as any).data) {
+              setVisualizandoCliente((resp as any).data);
+              // Scroll para o topo
+              setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+            } else if ((resp as any).id) {
+              // Se retornar diretamente o Cliente (sem wrapper)
+              setVisualizandoCliente(resp as Cliente);
+              setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+            }
+          }
+        } catch (error) {
+          console.error('[Clientes] Erro ao buscar cliente:', error);
+        }
+      };
+      void buscarEVisualizarCliente();
+    } else {
+      // Se não há clienteId na URL e está visualizando um cliente, limpar a visualização
+      if (visualizandoCliente) {
+        setVisualizandoCliente(null);
+      }
+    }
+  }, [location.search]);
+
   // Debounce do search
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -92,18 +165,96 @@ const Clientes: React.FC = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
+  // Carregar lista de sócios (para select box) ao entrar na aba Clientes
+  useEffect(() => {
+    if (activeTab !== 'clientes') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await clientesService.listarSociosDistinct();
+        if (cancelled) return;
+        const nomes = Array.isArray(resp?.data) ? resp.data.map((x: any) => String(x?.nome || '').trim()).filter(Boolean) : [];
+        setSociosOptions(nomes);
+      } catch {
+        // silencioso
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
+
   // Load clientes when filters/pagination change (server-side for payments filter)
   useEffect(() => {
-    loadClientes({ page, limit, search: debouncedSearch }).then(({ items, pagination }) => {
-      setLastPageCount(items.length);
+    loadClientes({ page, limit, search: debouncedSearch, socio: socioFiltro || undefined }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
-  }, [page, limit, debouncedSearch]);
+  }, [page, limit, debouncedSearch, socioFiltro]);
+
+  // Carregar todos os clientes para a aba Participação
+  useEffect(() => {
+    if (activeTab === 'participacao') {
+      setLoadingParticipacao(true);
+      // Carregar todos os clientes fazendo múltiplas requisições (backend limita a 100 por página)
+      const carregarTodosClientes = async () => {
+        try {
+          const todosClientes: Cliente[] = [];
+          let pagina = 1;
+          let temMais = true;
+          
+          while (temMais) {
+            const { items, pagination } = await loadClientes({ 
+              page: pagina, 
+              limit: 100, // Máximo permitido pelo backend
+              search: '', 
+              socio: undefined 
+            });
+            
+            todosClientes.push(...items);
+            
+            // Verificar se há mais páginas
+            if (pagination && pagination.totalPages) {
+              temMais = pagina < pagination.totalPages;
+            } else {
+              // Se não retornou paginação, verificar se retornou menos que o limite
+              temMais = items.length === 100;
+            }
+            
+            pagina++;
+          }
+          
+          setClientesParticipacao(todosClientes);
+          setLoadingParticipacao(false);
+        } catch (error) {
+          console.error('[Clientes] Erro ao carregar todos os clientes para Participação:', error);
+          setLoadingParticipacao(false);
+        }
+      };
+      
+      void carregarTodosClientes();
+    } else {
+      // Limpar clientes da participação quando sair da aba
+      setClientesParticipacao([]);
+    }
+  }, [activeTab]); // Removido loadClientes das dependências para evitar loop infinito
+
+  // Fechar dropdown de sócios ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.socio-filter-container')) {
+        setShowSocioDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Show error toast when error occurs
   useEffect(() => {
     if (error) {
+      setCustomErrorMessage('');
       setShowSuccess(false); // Close success toast if error occurs
       setShowError(true);
       setTimeout(() => {
@@ -118,10 +269,21 @@ const Clientes: React.FC = () => {
     // Sempre garantir que cnpj_limpo seja fornecido (sem formatação)
     const cnpjLimpo = formData.cnpj_limpo || (formData.cnpj ? formData.cnpj.replace(/\D/g, '') : '');
     const razaoSocial = formData.razao_social || formData.nome;
+    if (!editingCliente && (!razaoSocial || String(razaoSocial).trim().length === 0)) {
+      setCustomErrorMessage('Para criar um novo cliente, importe os dados da Receita (Razão Social é obrigatória).');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 5000);
+      return;
+    }
+    // Enviar também campos adicionais do cadastro quando existirem
+    // (sem enviar `cnpj` formatado e nem `socios`, que são gerenciados no backend).
     const payload = { 
+      ...formData,
       razao_social: razaoSocial, 
-      cnpj_limpo: cnpjLimpo 
-    } as Partial<Cliente>;
+      cnpj_limpo: cnpjLimpo,
+    } as any as Partial<Cliente>;
+    delete (payload as any).cnpj;
+    delete (payload as any).socios;
     try {
       if (editingCliente) {
         await updateClienteById(editingCliente.id!, payload);
@@ -130,9 +292,7 @@ const Clientes: React.FC = () => {
         await createCliente(payload);
         setSuccessMessage('Cliente cadastrado com sucesso!');
       }
-      setShowForm(false);
-      setEditingCliente(null);
-      setFormData({});
+      limparForm();
       setShowSuccess(true);
       setTimeout(() => {
         setShowSuccess(false);
@@ -142,15 +302,103 @@ const Clientes: React.FC = () => {
     }
   };
 
-  const handleEdit = (cliente: Cliente) => {
+  const handleViewCliente = async (cliente: Cliente) => {
+    try {
+      // Buscar dados completos do cliente com sócios
+      const resp = await clientesService.obterCliente(cliente.id!);
+      // O backend retorna { success, data: Cliente } ou diretamente Cliente
+      if (resp && typeof resp === 'object') {
+        if ((resp as any).success && (resp as any).data) {
+          setVisualizandoCliente((resp as any).data);
+        } else if ((resp as any).id) {
+          // Se retornar diretamente o Cliente (sem wrapper)
+          setVisualizandoCliente(resp as Cliente);
+        } else {
+          // Fallback: usar os dados já carregados
+          setVisualizandoCliente(cliente);
+        }
+      } else {
+        // Fallback: usar os dados já carregados
+        setVisualizandoCliente(cliente);
+      }
+    } catch {
+      // Fallback: usar os dados já carregados
+      setVisualizandoCliente(cliente);
+    }
+  };
+
+  const handleEdit = async (cliente: Cliente) => {
+    try {
+      const full = await clientesService.getById(cliente.id);
+      setEditingCliente(full);
+      const cnpjLimpo = full.cnpj_limpo || (full.cnpj ? full.cnpj.replace(/\D/g, '') : '');
+      setFormData({
+        ...full,
+        razao_social: full.razao_social || full.nome,
+        cnpj_limpo: cnpjLimpo,
+        cnpj: formatCNPJ(cnpjLimpo),
+      });
+      setMostrarCadastroCompleto(true);
+      setShowForm(true);
+    } catch {
+      // Fallback: usar os dados já carregados na listagem
     setEditingCliente(cliente);
     const cnpjLimpo = cliente.cnpj_limpo || (cliente.cnpj ? cliente.cnpj.replace(/\D/g, '') : '');
     setFormData({ 
       razao_social: cliente.razao_social || cliente.nome, 
       cnpj_limpo: cnpjLimpo,
-      cnpj: formatCNPJ(cnpjLimpo)
+        cnpj: formatCNPJ(cnpjLimpo),
+        ...cliente, // Incluir todos os dados do cliente (incluindo dados ReceitaWS)
     });
+      // Exibir dados cadastrais automaticamente se o cliente tiver dados da ReceitaWS
+      const hasReceitaWSData = !!(cliente as any).fantasia || !!(cliente as any).situacao_cadastral || !!(cliente as any).receita_ws_status;
+      setMostrarCadastroCompleto(hasReceitaWSData);
     setShowForm(true);
+    }
+  };
+
+  const handleImportarReceitaWS = async () => {
+    const cnpjLimpo = (formData.cnpj_limpo || (formData.cnpj ? formData.cnpj.replace(/\D/g, '') : '') || '').replace(/\D/g, '');
+    if (cnpjLimpo.length !== 14) {
+      setCustomErrorMessage('CNPJ inválido. Deve conter 14 dígitos.');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 5000);
+      return;
+    }
+    try {
+      setImportandoReceita(true);
+      setCustomErrorMessage('');
+      const resp = await clientesService.importarReceitaWS(cnpjLimpo, true);
+      if (!resp?.success) {
+        throw new Error(resp?.error || 'Falha ao importar dados da ReceitaWS');
+      }
+      const imported: Cliente = resp.data;
+      // setUltimaImportacaoMeta(resp?.meta || null); // Não utilizado no momento
+      setEditingCliente(imported);
+      setFormData({
+        ...imported,
+        cnpj: formatCNPJ(imported.cnpj_limpo || cnpjLimpo),
+      });
+      // Exibir automaticamente os dados cadastrais quando houver dados importados
+      setMostrarCadastroCompleto(true);
+      setShowForm(true);
+
+      // Atualizar listagem visível (mantendo pagina/filtro)
+      await loadClientes({ page, limit, search: debouncedSearch }).catch(() => {});
+
+      setSuccessMessage(resp?.message || '✅ Import concluído.');
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 4000);
+    } catch (e: any) {
+      console.error('[Clientes] Erro ao importar ReceitaWS:', e);
+      setShowSuccess(false);
+      setCustomErrorMessage(e?.message || 'Erro ao importar dados da ReceitaWS');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 5000);
+      // mensagem detalhada vai no console; manter toast simples para UX
+    } finally {
+      setImportandoReceita(false);
+    }
   };
 
   const handleDeleteClick = (cliente: Cliente) => {
@@ -262,12 +510,35 @@ const Clientes: React.FC = () => {
       .replace(/(\d{4})(\d)/, '$1-$2');
   };
 
+  const formatDateABNT = (value: any) => {
+    if (!value) return '';
+    try {
+      const d = value instanceof Date ? value : new Date(String(value));
+      if (Number.isNaN(d.getTime())) return String(value);
+      return d.toLocaleDateString('pt-BR');
+    } catch {
+      return String(value);
+    }
+  };
+
+  const formatDateTimeABNT = (value: any) => {
+    if (!value) return '';
+    try {
+      const d = value instanceof Date ? value : new Date(String(value));
+      if (Number.isNaN(d.getTime())) return String(value);
+      // dd/mm/aaaa HH:mm
+      return d.toLocaleString('pt-BR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return String(value);
+    }
+  };
+
   const displayCNPJ = (cnpj: string | undefined) => {
     if (!cnpj) return '-';
     return formatCNPJ(cnpj);
   };
 
-  const canGoNext = totalPages != null ? page < totalPages : lastPageCount === limit;
+  // const canGoNext = totalPages != null ? page < totalPages : lastPageCount === limit; // Não utilizado no momento
 
   const [syncing, setSyncing] = useState(false);
   const [syncingAuto, setSyncingAuto] = useState(false);
@@ -386,54 +657,55 @@ const Clientes: React.FC = () => {
     }
   };
 
-  const sincronizarPeriodo = async (ano: number, mes: number): Promise<boolean> => {
-    try {
-      setSyncing(true);
-      setHostError(null);
-      
-      // Não enviar body, apenas query params
-      const response = await api.post('/host-dados/sincronizar', {}, {
-        params: { ano, mes },
-      });
-      
-      if (response.data?.success) {
-        const data = response.data.data;
-        console.log(`[Clientes] Sincronização concluída: ${data.total || 0} registros processados`);
-        return true;
-      }
-      
-      // Se não teve sucesso, extrair mensagem de erro
-      const errorMsg = response.data?.error || 'Erro desconhecido ao sincronizar período.';
-      setHostError(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
-      return false;
-    } catch (err) {
-      const error = err as AxiosError<any>;
-      console.error('[Clientes] Erro ao sincronizar período:', error);
-      
-      let errorMessage = 'Erro ao sincronizar período do Firebird para MySQL.';
-      
-      // Extrair mensagem de erro do response
-      if (error.response?.data?.error) {
-        const errorData = error.response.data.error;
-        if (typeof errorData === 'string') {
-          errorMessage = errorData;
-        } else if (typeof errorData === 'object') {
-          errorMessage = errorData.message || JSON.stringify(errorData);
-        }
-      } else if (error.message) {
-        errorMessage = `${errorMessage} Detalhes: ${error.message}`;
-      }
-      
-      if (error.code === 'ECONNREFUSED' || error.message?.includes('ERR_CONNECTION_REFUSED')) {
-        errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 3000.';
-      }
-      
-      setHostError(errorMessage);
-      return false;
-    } finally {
-      setSyncing(false);
-    }
-  };
+  // Função não utilizada no momento - mantida para referência futura
+  // const sincronizarPeriodo = async (ano: number, mes: number): Promise<boolean> => {
+  //   try {
+  //     setSyncing(true);
+  //     setHostError(null);
+  //     
+  //     // Não enviar body, apenas query params
+  //     const response = await api.post('/host-dados/sincronizar', {}, {
+  //       params: { ano, mes },
+  //     });
+  //     
+  //     if (response.data?.success) {
+  //       const data = response.data.data;
+  //       console.log(`[Clientes] Sincronização concluída: ${data.total || 0} registros processados`);
+  //       return true;
+  //     }
+  //     
+  //     // Se não teve sucesso, extrair mensagem de erro
+  //     const errorMsg = response.data?.error || 'Erro desconhecido ao sincronizar período.';
+  //     setHostError(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+  //     return false;
+  //   } catch (err) {
+  //     const error = err as AxiosError<any>;
+  //     console.error('[Clientes] Erro ao sincronizar período:', error);
+  //     
+  //     let errorMessage = 'Erro ao sincronizar período do Firebird para MySQL.';
+  //     
+  //     // Extrair mensagem de erro do response
+  //     if (error.response?.data?.error) {
+  //       const errorData = error.response.data.error;
+  //       if (typeof errorData === 'string') {
+  //         errorMessage = errorData;
+  //       } else if (typeof errorData === 'object') {
+  //         errorMessage = errorData.message || JSON.stringify(errorData);
+  //       }
+  //     } else if (error.message) {
+  //       errorMessage = `${errorMessage} Detalhes: ${error.message}`;
+  //     }
+  //     
+  //     if (error.code === 'ECONNREFUSED' || error.message?.includes('ERR_CONNECTION_REFUSED')) {
+  //       errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 3000.';
+  //     }
+  //     
+  //     setHostError(errorMessage);
+  //     return false;
+  //   } finally {
+  //     setSyncing(false);
+  //   }
+  // };
 
   const handleAplicarPeriodo = async () => {
     if (!manualDataIni || !manualDataFim) {
@@ -504,6 +776,7 @@ const Clientes: React.FC = () => {
     }
   };
 
+
   // Recarregar lançamentos quando aba "Lançamentos" estiver ativa e search mudar
   useEffect(() => {
     if (activeTab === 'lancamentos') {
@@ -515,100 +788,666 @@ const Clientes: React.FC = () => {
     <div className="container mx-auto px-4 py-6 max-w-7xl">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-3 flex items-center gap-3">
-          <UserGroupIcon className="h-7 w-7 text-blue-600" />
-          Clientes
-        </h1>
-        <p className="text-base text-gray-600">Gerencie o cadastro de clientes e suas informações</p>
+        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-lg p-8 text-white relative overflow-hidden">
+          <div className="absolute inset-0 bg-black opacity-10"></div>
+          <div className="relative z-10">
+            <h1 className="text-3xl font-bold mb-3">Clientes</h1>
+            <p className="text-blue-100 text-lg">Gerencie o cadastro de clientes e suas informações de forma eficiente</p>
+          </div>
+          <div className="absolute top-0 right-0 -mt-4 -mr-4 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 -mb-4 -ml-4 w-48 h-48 bg-white opacity-5 rounded-full blur-3xl"></div>
+        </div>
       </div>
 
       {/* Tabs de categoria */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-4">
-        <div className="px-4 pt-4">
-          <div className="flex space-x-2">
+      <div className="bg-white rounded-2xl shadow-md border border-gray-100 mb-6 overflow-hidden">
+        <div className="px-6 pt-4 pb-2">
+          <div className="flex space-x-1">
             <button
               type="button"
               onClick={() => setActiveTab('clientes')}
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 ${
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'clientes'
-                  ? 'border-blue-600 text-blue-600 bg-blue-50'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
               }`}
             >
               Cadastro
+              {activeTab === 'clientes' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('participacao')}
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+                activeTab === 'participacao'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+              }`}
+            >
+              Participação
+              {activeTab === 'participacao' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('lancamentos')}
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 ${
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'lancamentos'
-                  ? 'border-emerald-600 text-emerald-600 bg-emerald-50'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
               }`}
             >
               Lançamentos (SCI)
+              {activeTab === 'lancamentos' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('pagamentos')}
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 ${
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'pagamentos'
-                  ? 'border-purple-600 text-purple-600 bg-purple-50'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
               }`}
             >
               Pagamentos
+              {activeTab === 'pagamentos' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('e-processos')}
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 ${
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'e-processos'
-                  ? 'border-indigo-600 text-indigo-600 bg-indigo-50'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg shadow-indigo-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
               }`}
             >
               E-Processos
+              {activeTab === 'e-processos' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Barra de Busca e Ações - Não exibir nas abas de Pagamentos e E-Processos */}
-      {activeTab !== 'pagamentos' && activeTab !== 'e-processos' && (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      {/* Visualização Detalhada do Cliente */}
+      {visualizandoCliente && (
+        <>
+          {/* Overlay transparente para detectar cliques fora do card */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => {
+              setVisualizandoCliente(null);
+              // Limpar clienteId da URL
+              const params = new URLSearchParams(location.search);
+              params.delete('clienteId');
+              navigate({ search: params.toString() }, { replace: true });
+            }}
+          />
+          {/* Card do cliente */}
+          <div 
+            className="relative z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden mb-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+          <div className="px-8 py-5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">
+                {visualizandoCliente.razao_social || visualizandoCliente.nome || 'Cliente'}
+              </h2>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={async () => {
+                    if (!visualizandoCliente?.cnpj_limpo && !visualizandoCliente?.cnpj) {
+                      toast.error('CNPJ não disponível para atualização');
+                      return;
+                    }
+                    const cnpj = visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj?.replace(/\D/g, '') || '';
+                    if (!cnpj || cnpj.length !== 14) {
+                      toast.error('CNPJ inválido');
+                      return;
+                    }
+                    
+                    // Mostrar aviso informativo (sem confirmação)
+                    toast.info('Atualizando dados do cliente com informações da Receita Federal...', 3000);
+                    
+                    try {
+                      setAtualizandoCliente(true);
+                      
+                      // Importar dados da ReceitaWS
+                      const resp = await clientesService.importarReceitaWS(cnpj, true);
+                      
+                      if (resp.success && resp.data) {
+                        // Recarregar os dados do cliente atualizado
+                        const clienteResp = await clientesService.obterCliente(visualizandoCliente.id!);
+                        const clienteAtualizado = (clienteResp as any)?.data || clienteResp;
+                        setVisualizandoCliente(clienteAtualizado as Cliente);
+                        toast.success('Dados atualizados com sucesso!');
+                      } else {
+                        toast.error(resp.error || 'Erro ao atualizar dados da Receita');
+                      }
+                    } catch (error: any) {
+                      console.error('Erro ao atualizar cliente:', error);
+                      toast.error(error?.response?.data?.error || error?.message || 'Erro ao atualizar dados');
+                    } finally {
+                      setAtualizandoCliente(false);
+                    }
+                  }}
+                  disabled={atualizandoCliente}
+                  className="px-5 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-green-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-all duration-300 flex items-center gap-2 shadow-md hover:shadow-lg border-2 border-green-400 hover:border-green-500"
+                >
+                  <ArrowPathIcon className={`h-5 w-5 ${atualizandoCliente ? 'animate-spin' : ''}`} />
+                  {atualizandoCliente ? 'Atualizando...' : 'Atualizar'}
+                </button>
+                <button
+                  onClick={() => {
+                    setVisualizandoCliente(null);
+                    // Limpar clienteId da URL
+                    const params = new URLSearchParams(location.search);
+                    params.delete('clienteId');
+                    navigate({ search: params.toString() }, { replace: true });
+                  }}
+                  className="px-6 py-2.5 bg-white text-blue-600 hover:bg-blue-50 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2 shadow-md hover:shadow-lg border-2 border-white hover:border-blue-200"
+                >
+                  <ArrowLeftIcon className="h-5 w-5" />
+                  Voltar
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="p-8 bg-gradient-to-br from-gray-50 to-white">
+            {/* Informações Básicas */}
+            <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
+              <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Informações Básicas</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">Razão Social</label>
+                  <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                    {visualizandoCliente.razao_social || visualizandoCliente.nome || '—'}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">CNPJ</label>
+                  <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900 font-mono">
+                    {displayCNPJ(visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj || '')}
+                  </div>
+                </div>
+                {(visualizandoCliente as any).fantasia && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Fantasia</label>
+                    <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                      {(visualizandoCliente as any).fantasia}
+                    </div>
+                  </div>
+                )}
+                {(visualizandoCliente as any).tipo_empresa && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Tipo de Empresa</label>
+                    <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                      {(visualizandoCliente as any).tipo_empresa}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Dados Cadastrais */}
+            {((visualizandoCliente as any).situacao_cadastral || (visualizandoCliente as any).porte || (visualizandoCliente as any).natureza_juridica) && (
+              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
+                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Dados Cadastrais</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(visualizandoCliente as any).situacao_cadastral && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Situação</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).situacao_cadastral}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).porte && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Porte</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).porte}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).natureza_juridica && (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Natureza Jurídica</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).natureza_juridica}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).atividade_principal_text && (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Atividade Principal</label>
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                          {(visualizandoCliente as any).atividade_principal_text}
+                        </div>
+                        {(visualizandoCliente as any).atividade_principal_code && (
+                          <span className="px-3 py-2.5 text-xs font-mono text-gray-600 bg-gray-100 rounded-lg border-2 border-gray-200 whitespace-nowrap">
+                            {(visualizandoCliente as any).atividade_principal_code}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Datas e Situação */}
+            {((visualizandoCliente as any).abertura || (visualizandoCliente as any).data_situacao || (visualizandoCliente as any).receita_ws_consulta_em) && (
+              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
+                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Datas e Situação</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(visualizandoCliente as any).abertura && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Abertura</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {formatDateABNT((visualizandoCliente as any).abertura)}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).data_situacao && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Data Situação</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {formatDateABNT((visualizandoCliente as any).data_situacao)}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).receita_ws_consulta_em && (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Última consulta (Receita)</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {formatDateTimeABNT((visualizandoCliente as any).receita_ws_consulta_em)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Endereço */}
+            {((visualizandoCliente as any).logradouro || (visualizandoCliente as any).municipio || (visualizandoCliente as any).cep) && (
+              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
+                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Endereço</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(visualizandoCliente as any).logradouro && (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Logradouro</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).logradouro}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).numero && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Número</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).numero}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).complemento && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Complemento</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).complemento}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).bairro && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Bairro</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).bairro}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).municipio && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Município</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).municipio}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).uf && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">UF</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).uf}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).cep && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">CEP</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).cep}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Contato */}
+            {((visualizandoCliente as any).receita_email || (visualizandoCliente as any).receita_telefone) && (
+              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
+                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Contato</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(visualizandoCliente as any).receita_email && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">E-mail (Receita)</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).receita_email}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).receita_telefone && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Telefone (Receita)</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).receita_telefone}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Informações Financeiras e Tributárias */}
+            {((visualizandoCliente as any).capital_social || (visualizandoCliente as any).regime_tributario) && (
+              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
+                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Informações Financeiras e Tributárias</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(visualizandoCliente as any).capital_social && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Capital Social</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).capital_social}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).regime_tributario && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Regime Tributário</label>
+                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                        {(visualizandoCliente as any).regime_tributario}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Sócios / QSA */}
+            <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
+              <div className="flex items-center justify-between mb-4 pb-2 border-b-2 border-blue-300">
+                <h3 className="text-sm font-bold text-gray-800">Participação</h3>
+                <button
+                  onClick={async () => {
+                    if (!visualizandoCliente?.id) return;
+                    setAtualizandoCliente(true);
+                    try {
+                      const result = await clientesService.atualizarSociosPorSituacaoFiscal(visualizandoCliente.id);
+                      if (result.success) {
+                        toast.success(result.data?.message || 'Sócios atualizados com sucesso');
+                        // Recarregar dados do cliente
+                        const clienteAtualizado = await clientesService.obterCliente(visualizandoCliente.id);
+                        if (clienteAtualizado && (clienteAtualizado as any).success && (clienteAtualizado as any).data) {
+                          setVisualizandoCliente((clienteAtualizado as any).data as Cliente);
+                        } else if (clienteAtualizado && (clienteAtualizado as any).id) {
+                          // Fallback: se vier direto como Cliente
+                          setVisualizandoCliente(clienteAtualizado as Cliente);
+                        }
+                      } else {
+                        const errorMsg = (result as any).error || 'Erro ao atualizar sócios';
+                        // Se não houver situação fiscal, redirecionar para página de Situação Fiscal
+                        if (errorMsg.includes('Nenhuma situação fiscal encontrada') || errorMsg.includes('404')) {
+                          const cnpjCliente = visualizandoCliente?.cnpj_limpo || visualizandoCliente?.cnpj?.replace(/\D/g, '') || '';
+                          if (cnpjCliente && cnpjCliente.length === 14) {
+                            toast.info('Redirecionando para consultar a Situação Fiscal...');
+                            navigate(`/situacao-fiscal?cnpj=${cnpjCliente}`);
+                            // Scroll para o topo após navegação
+                            setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+                            // Scroll para o topo após navegação
+                            setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+                          } else {
+                            toast.error('Nenhuma situação fiscal encontrada para este CNPJ. Por favor, consulte a Situação Fiscal primeiro.');
+                          }
+                        } else {
+                          toast.error(errorMsg);
+                        }
+                      }
+                    } catch (error: any) {
+                      console.error('Erro ao atualizar sócios:', error);
+                      const errorMsg = error.response?.data?.error || error.message || 'Erro ao atualizar sócios';
+                      // Se não houver situação fiscal, redirecionar para página de Situação Fiscal
+                      if (error.response?.status === 404 || errorMsg.includes('Nenhuma situação fiscal encontrada')) {
+                        const cnpjCliente = visualizandoCliente?.cnpj_limpo || visualizandoCliente?.cnpj?.replace(/\D/g, '') || '';
+                        if (cnpjCliente && cnpjCliente.length === 14) {
+                          toast.info('Redirecionando para consultar a Situação Fiscal...');
+                          navigate(`/situacao-fiscal?cnpj=${cnpjCliente}`);
+                          // Scroll para o topo após navegação
+                          setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+                        } else {
+                          toast.error('Nenhuma situação fiscal encontrada para este CNPJ. Por favor, consulte a Situação Fiscal primeiro.');
+                        }
+                      } else {
+                        toast.error(errorMsg);
+                      }
+                    } finally {
+                      setAtualizandoCliente(false);
+                    }
+                  }}
+                  disabled={atualizandoCliente || !visualizandoCliente?.id}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {atualizandoCliente ? (
+                    <>
+                      <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                      <span>Atualizando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowPathIcon className="w-4 h-4" />
+                      <span>Atualizar Sócios</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              {Array.isArray((visualizandoCliente as any).socios) && (visualizandoCliente as any).socios.length > 0 ? (
+                <div className="border-2 border-blue-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gradient-to-r from-blue-100 to-indigo-100">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nome</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Porcentagem (%)</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {((visualizandoCliente as any).socios || []).map((s: any, idx: number) => {
+                        const participacaoPercentual = s.participacao_percentual !== null && s.participacao_percentual !== undefined 
+                          ? parseFloat(String(s.participacao_percentual)) 
+                          : null;
+                        const participacaoValor = s.participacao_valor !== null && s.participacao_valor !== undefined 
+                          ? parseFloat(String(s.participacao_valor)) 
+                          : null;
+                        
+                        const formatCurrency = (value: number | null) => {
+                          if (value === null || isNaN(value)) return '—';
+                          return new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }).format(value);
+                        };
+
+                        const formatPercent = (value: number | null) => {
+                          if (value === null || isNaN(value)) return '—';
+                          return `${value.toFixed(2).replace('.', ',')}%`;
+                        };
+
+                        return (
+                          <tr key={s.id || idx} className="hover:bg-blue-50 transition-colors">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{s.nome || s.Nome || s.name || '—'}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{formatPercent(participacaoPercentual)}</td>
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatCurrency(participacaoValor)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="px-4 py-3 text-sm text-gray-500 text-center bg-white border-2 border-blue-200 rounded-lg">
+                  Nenhum sócio cadastrado
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        </>
+      )}
+
+      {/* Barra de Busca e Ações - Não exibir nas abas de Pagamentos e E-Processos, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
+      {activeTab !== 'pagamentos' && activeTab !== 'e-processos' && !showForm && !visualizandoCliente && (
+      <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div className="flex-1 max-w-md w-full">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Buscar Cliente</label>
-            <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Buscar Cliente</label>
+            <div className="relative group">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
               <input
                 type="text"
-                placeholder={activeTab === 'clientes' ? 'Buscar por Razão Social ou CNPJ' : 'Digite o CNPJ (14 dígitos)'}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                placeholder={
+                  activeTab === 'clientes' 
+                    ? 'Buscar por Razão Social ou CNPJ' 
+                    : activeTab === 'participacao'
+                    ? 'Digite o CNPJ ou Razão Social para filtrar...'
+                    : 'Digite o CNPJ (14 dígitos)'
+                }
+                value={activeTab === 'participacao' ? searchParticipacao : search}
+                onChange={(e) => {
+                  if (activeTab === 'participacao') {
+                    setSearchParticipacao(e.target.value);
+                  } else {
+                    setSearch(e.target.value);
+                  }
+                }}
+                className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
               />
             </div>
           </div>
-          {activeTab === 'clientes' ? (
+          {activeTab === 'clientes' && (
+            <div className="w-full md:w-72 socio-filter-container">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sócio (filtro)</label>
+              <div className="relative">
+                <div className="relative">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={socioSearchInput}
+                    onChange={(e) => {
+                      setSocioSearchInput(e.target.value);
+                      setShowSocioDropdown(true);
+                    }}
+                    onFocus={() => setShowSocioDropdown(true)}
+                    placeholder="Buscar sócio..."
+                    className="w-full pl-10 pr-10 py-2.5 border-2 border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  />
+                  {socioFiltro && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSocioFiltro('');
+                        setSocioSearchInput('');
+                        setShowSocioDropdown(false);
+                        setPage(1);
+                      }}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                      title="Limpar filtro"
+                    >
+                      <XMarkIcon className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                {showSocioDropdown && sociosOptions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSocioFiltro('');
+                        setSocioSearchInput('');
+                        setShowSocioDropdown(false);
+                        setPage(1);
+                      }}
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
+                        !socioFiltro ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700'
+                      }`}
+                    >
+                      Todos
+                    </button>
+                    {sociosOptions
+                      .filter((nome) =>
+                        nome.toLowerCase().includes(socioSearchInput.toLowerCase())
+                      )
+                      .map((nome) => (
+                        <button
+                          key={nome}
+                          type="button"
+                          onClick={() => {
+                            setSocioFiltro(nome);
+                            setSocioSearchInput(nome);
+                            setShowSocioDropdown(false);
+                            setPage(1);
+                          }}
+                          className={`w-full px-4 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
+                            socioFiltro === nome ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700'
+                          }`}
+                        >
+                          {nome}
+                        </button>
+                      ))}
+                    {sociosOptions.filter((nome) =>
+                      nome.toLowerCase().includes(socioSearchInput.toLowerCase())
+                    ).length === 0 && (
+                      <div className="px-4 py-2 text-sm text-gray-500 text-center">
+                        Nenhum sócio encontrado
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {activeTab === 'clientes' && (
             <div className="flex gap-3 items-end">
               <button
                 onClick={() => setShowForm(true)}
-                className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors flex items-center gap-2 shadow-sm hover:shadow"
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 transform"
               >
                 <PlusIcon className="h-5 w-5" />
                 Novo Cliente
               </button>
-              <Link
-                to="/clientes/upload"
-                className="px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors flex items-center gap-2 shadow-sm hover:shadow"
-              >
-                <DocumentArrowUpIcon className="h-5 w-5" />
-                Upload em Lote
-              </Link>
             </div>
-          ) : (
+          )}
+          {activeTab === 'lancamentos' && (
             <div className="flex gap-3 items-end">
               <button
                 type="button"
@@ -730,15 +1569,15 @@ const Clientes: React.FC = () => {
 
 
       {activeTab === 'clientes' && showForm && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-          <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
-            <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
-              <BuildingOfficeIcon className="h-5 w-5 text-blue-600" />
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="px-8 py-5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 border-b border-gray-200">
+            <h2 className="text-xl font-bold text-white">
               {editingCliente ? 'Editar Cliente' : 'Novo Cliente'}
             </h2>
           </div>
-          <form onSubmit={handleSubmit} className="p-6">
+          <form onSubmit={handleSubmit} className="p-8 bg-gradient-to-br from-gray-50 to-white">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {editingCliente ? (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Razão Social</label>
                 <div className="relative">
@@ -747,13 +1586,27 @@ const Clientes: React.FC = () => {
                     type="text"
                     value={formData.razao_social || formData.nome || ''}
                     onChange={(e) => setFormData({ ...formData, razao_social: e.target.value, nome: e.target.value })}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                      className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
                     required
                   />
                 </div>
               </div>
+              ) : (
+                <div className="md:col-span-2">
+                  <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-lg px-4 py-3 text-sm">
+                    Para criar um novo cliente, informe o CNPJ e clique em <span className="font-semibold">Importar Receita</span> para preencher automaticamente os dados (incluindo Razão Social).
+                  </div>
+                  {(formData.razao_social || formData.nome) && (
+                    <div className="mt-3 text-sm text-gray-700">
+                      <span className="font-semibold">Razão Social (importada):</span>{' '}
+                      <span>{String(formData.razao_social || formData.nome)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">CNPJ</label>
+                <div className="flex gap-2">
                 <input
                   type="text"
                   placeholder="00.000.000/0000-00"
@@ -762,16 +1615,341 @@ const Clientes: React.FC = () => {
                     const formatted = formatCNPJ(e.target.value);
                     setFormData({ ...formData, cnpj_limpo: formatted.replace(/\D/g, ''), cnpj: formatted });
                   }}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                    className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
                   required
                 />
+                  <button
+                    type="button"
+                    onClick={() => void handleImportarReceitaWS()}
+                    disabled={importandoReceita || (formData.cnpj || '').replace(/\D/g, '').length !== 14}
+                    className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 font-semibold transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 hover:scale-105 transform disabled:hover:scale-100"
+                    title="Buscar dados cadastrais na ReceitaWS e salvar no banco"
+                  >
+                    {importandoReceita ? 'Importando...' : 'Importar Receita'}
+                  </button>
+              </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setMostrarCadastroCompleto((v) => !v)}
+                    className="text-xs text-gray-600 hover:underline"
+                  >
+                    {mostrarCadastroCompleto ? 'Ocultar cadastro completo' : 'Mostrar cadastro completo'}
+                  </button>
+            </div>
               </div>
             </div>
-            <div className="flex gap-3">
+            {mostrarCadastroCompleto && (
+              <div className="space-y-6 mt-6">
+                {!((formData as any).receita_ws_status || (formData as any).razao_social || (formData as any).nome) && (
+                  <div className="bg-yellow-50 border border-yellow-200 text-yellow-900 rounded-lg px-4 py-3 text-sm">
+                    Clique em <span className="font-semibold">Importar Receita</span> para preencher automaticamente estes campos.
+                  </div>
+                )}
+
+                {/* Seção: Dados Cadastrais */}
+                <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Dados Cadastrais</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Fantasia</label>
+                      <input
+                        type="text"
+                        value={(formData as any).fantasia || ''}
+                        onChange={(e) => setFormData({ ...formData, fantasia: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Situação</label>
+                      <input
+                        type="text"
+                        value={(formData as any).situacao_cadastral || ''}
+                        onChange={(e) => setFormData({ ...formData, situacao_cadastral: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Porte</label>
+                      <input
+                        type="text"
+                        value={(formData as any).porte || ''}
+                        onChange={(e) => setFormData({ ...formData, porte: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Tipo de Empresa</label>
+                      <select
+                        value={(formData as any).tipo_empresa || ''}
+                        onChange={(e) => setFormData({ ...formData, tipo_empresa: e.target.value || null } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="Matriz">Matriz</option>
+                        <option value="Filial">Filial</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Natureza Jurídica</label>
+                      <input
+                        type="text"
+                        value={(formData as any).natureza_juridica || ''}
+                        onChange={(e) => setFormData({ ...formData, natureza_juridica: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Atividade Principal</label>
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="text"
+                          value={(formData as any).atividade_principal_text || ''}
+                          readOnly
+                          className="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white"
+                          placeholder="Nenhuma atividade principal cadastrada"
+                        />
+                        {(formData as any).atividade_principal_code && (
+                          <span className="px-3 py-2.5 text-xs font-mono text-gray-600 bg-gray-100 rounded-lg border-2 border-gray-200 whitespace-nowrap">
+                            {(formData as any).atividade_principal_code}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {(formData as any).atividades_secundarias && Array.isArray((formData as any).atividades_secundarias) && (formData as any).atividades_secundarias.length > 1 && (
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Atividades Secundárias</label>
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => setMostrarAtividadesSecundarias(!mostrarAtividadesSecundarias)}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 hover:underline transition-colors"
+                          >
+                            {mostrarAtividadesSecundarias ? 'Ocultar' : 'Ver mais'} ({((formData as any).atividades_secundarias || []).length} atividades)
+                            <svg
+                              className={`w-4 h-4 transition-transform duration-200 ${mostrarAtividadesSecundarias ? 'rotate-180' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {mostrarAtividadesSecundarias && (
+                            <textarea
+                              readOnly
+                              value={((formData as any).atividades_secundarias || [])
+                                .map((atv: any) => {
+                                  if (typeof atv === 'object' && atv !== null) {
+                                    return `${atv.code || '—'} - ${atv.text || '—'}`;
+                                  }
+                                  return String(atv);
+                                })
+                                .join('\n')}
+                              rows={Math.min(((formData as any).atividades_secundarias || []).length + 2, 10)}
+                              className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white font-mono text-xs resize-none"
+                              placeholder="Nenhuma atividade secundária cadastrada"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Seção: Datas e Situação */}
+                <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Datas e Situação</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Abertura</label>
+                      <input
+                        type="text"
+                        value={(formData as any).abertura ? formatDateABNT((formData as any).abertura) : ''}
+                        readOnly
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white"
+                        placeholder="dd/mm/aaaa"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Data Situação</label>
+                      <input
+                        type="text"
+                        value={(formData as any).data_situacao ? formatDateABNT((formData as any).data_situacao) : ''}
+                        readOnly
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white"
+                        placeholder="dd/mm/aaaa"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Última consulta (Receita)</label>
+                      <input
+                        type="text"
+                        value={(formData as any).receita_ws_consulta_em ? formatDateTimeABNT((formData as any).receita_ws_consulta_em) : ''}
+                        readOnly
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white"
+                        placeholder="dd/mm/aaaa HH:mm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Endereço */}
+                <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Endereço</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Logradouro</label>
+                      <input
+                        type="text"
+                        value={(formData as any).logradouro || ''}
+                        onChange={(e) => setFormData({ ...formData, logradouro: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Número</label>
+                      <input
+                        type="text"
+                        value={(formData as any).numero || ''}
+                        onChange={(e) => setFormData({ ...formData, numero: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Complemento</label>
+                      <input
+                        type="text"
+                        value={(formData as any).complemento || ''}
+                        onChange={(e) => setFormData({ ...formData, complemento: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Bairro</label>
+                      <input
+                        type="text"
+                        value={(formData as any).bairro || ''}
+                        onChange={(e) => setFormData({ ...formData, bairro: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Município</label>
+                      <input
+                        type="text"
+                        value={(formData as any).municipio || ''}
+                        onChange={(e) => setFormData({ ...formData, municipio: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">UF</label>
+                      <input
+                        type="text"
+                        value={(formData as any).uf || ''}
+                        onChange={(e) => setFormData({ ...formData, uf: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        maxLength={2}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">CEP</label>
+                      <input
+                        type="text"
+                        value={(formData as any).cep || ''}
+                        onChange={(e) => setFormData({ ...formData, cep: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Contato */}
+                <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Contato</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">E-mail (Receita)</label>
+                      <input
+                        type="text"
+                        value={(formData as any).receita_email || ''}
+                        onChange={(e) => setFormData({ ...formData, receita_email: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Telefone (Receita)</label>
+                      <input
+                        type="text"
+                        value={(formData as any).receita_telefone || ''}
+                        onChange={(e) => setFormData({ ...formData, receita_telefone: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Informações Financeiras e Tributárias */}
+                <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Informações Financeiras e Tributárias</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Capital Social</label>
+                      <input
+                        type="text"
+                        value={(formData as any).capital_social ?? ''}
+                        onChange={(e) => setFormData({ ...formData, capital_social: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Regime Tributário</label>
+                      <select
+                        value={(formData as any).regime_tributario || ((formData as any).simples_optante === true || (formData as any).simples_optante === 1 ? 'Simples Nacional' : 'A Definir')}
+                        onChange={(e) => setFormData({ ...formData, regime_tributario: e.target.value } as any)}
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      >
+                        <option value="A Definir">A Definir</option>
+                        <option value="Simples Nacional">Simples Nacional</option>
+                        <option value="Lucro Presumido">Lucro Presumido</option>
+                        <option value="Lucro Real">Lucro Real</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Sócios / QSA */}
+                {Array.isArray((formData as any).socios) && (formData as any).socios.length > 0 && (
+                  <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
+                    <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Sócios / QSA</h3>
+                    <div className="border-2 border-blue-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gradient-to-r from-blue-100 to-indigo-100">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nome</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Qualificação</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 bg-white">
+                          {(formData as any).socios.map((s: any, idx: number) => (
+                            <tr key={s.id || idx} className="hover:bg-blue-50 transition-colors">
+                              <td className="px-4 py-3 text-sm font-medium text-gray-900">{s.nome}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{s.qual || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex gap-3 mt-8">
               <button
                 type="submit"
-                disabled={loading}
-                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                disabled={loading || (!editingCliente && !(formData.razao_social || formData.nome))}
+                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold transition-all duration-300 flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 transform disabled:hover:scale-100"
               >
                 {loading ? (
                   <>
@@ -791,11 +1969,9 @@ const Clientes: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setShowForm(false);
-                  setEditingCliente(null);
-                  setFormData({});
+                  limparForm();
                 }}
-                className="px-6 py-2.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-medium transition-colors flex items-center gap-2"
+                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-semibold transition-all duration-300 flex items-center gap-2 shadow-sm hover:shadow-md border border-gray-200 hover:scale-105 transform"
               >
                 <XMarkIcon className="h-5 w-5" />
                 Cancelar
@@ -805,20 +1981,22 @@ const Clientes: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'clientes' && (
+      {activeTab === 'clientes' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
-            <UserGroupIcon className="h-5 w-5 text-gray-600" />
+        <div className="px-6 py-4 bg-white border-b border-gray-200">
+          <h2 className="text-base font-semibold text-gray-800">
             Lista de Clientes
           </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-white">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Razão Social</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-1/4">Razão Social</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
+                {socioFiltro && (
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Participação</th>
+                )}
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Inf. Financeiras</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
               </tr>
@@ -826,7 +2004,7 @@ const Clientes: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {clientes.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center">
+                  <td colSpan={socioFiltro ? 5 : 4} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <UserGroupIcon className="h-12 w-12 text-gray-400" />
                       <p className="text-gray-500 font-medium">Nenhum cliente encontrado</p>
@@ -842,13 +2020,17 @@ const Clientes: React.FC = () => {
                   const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
                   const cnpjKey = `${cliente.id}-${cnpjValue}`;
                   return (
-                    <tr key={cliente.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <BuildingOfficeIcon className="h-4 w-4 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-900">
+                    <tr key={cliente.id} className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 border-b border-gray-100">
+                      <td className="px-6 py-4 max-w-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <BuildingOfficeIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          <button
+                            onClick={() => handleViewCliente(cliente)}
+                            className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline transition-colors cursor-pointer text-left truncate min-w-0 flex-1"
+                            title={cliente.razao_social || cliente.nome || '-'}
+                          >
                             {cliente.razao_social || cliente.nome || '-'}
-                          </span>
+                          </button>
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -867,41 +2049,67 @@ const Clientes: React.FC = () => {
                           </button>
                         </div>
                       </td>
+                      {socioFiltro && (
                       <td className="px-6 py-4">
-                        {cliente.hasPayments === true ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 gap-1.5">
-                            <CheckIcon className="w-3.5 h-3.5" />
-                            Pagamentos
+                          <div className="flex items-center gap-2">
+                            {(cliente as any).socio_participacao_percentual !== null && (cliente as any).socio_participacao_percentual !== undefined ? (
+                              <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-semibold">
+                                {parseFloat(String((cliente as any).socio_participacao_percentual)).toFixed(2).replace('.', ',')}%
                           </span>
                         ) : (
+                              <span className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg text-sm font-medium">
+                                —
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={() => {
-                              setCnpjParaPagamentos(cnpjValue);
-                              setActiveTab('pagamentos');
+                              navigate(`/situacao-fiscal?cnpj=${cnpjValue}`);
                             }}
-                            className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors gap-1.5"
-                            title="Adicionar pagamentos para este CNPJ"
+                            className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 border border-blue-200 hover:border-blue-600"
+                            title="Consultar Situação Fiscal"
                           >
-                            <PlusIcon className="w-4 h-4" />
-                            Adicionar
+                            Sit. Fis
                           </button>
-                        )}
+                          <button
+                            onClick={() => {
+                              navigate(`/clientes?tab=pagamentos&cnpj=${cnpjValue}`);
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold text-purple-600 hover:text-white hover:bg-purple-600 rounded-lg transition-all duration-300 border border-purple-200 hover:border-purple-600"
+                            title="Ver Pagamentos"
+                          >
+                            Pag
+                          </button>
+                          <button
+                            onClick={() => {
+                              navigate(`/dctf?search=${cnpjValue}`);
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:text-white hover:bg-indigo-600 rounded-lg transition-all duration-300 border border-indigo-200 hover:border-indigo-600"
+                            title="Ver DCTF"
+                          >
+                            DCTF
+                          </button>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => handleEdit(cliente)}
-                            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1.5"
+                            className="px-3 py-1.5 text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 border border-blue-200 hover:border-blue-600 flex items-center justify-center"
+                            title="Editar cliente"
                           >
                             <PencilIcon className="h-4 w-4" />
-                            Editar
                           </button>
                           <button
                             onClick={() => handleDeleteClick(cliente)}
-                            className="px-3 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1.5"
+                            className="px-3 py-1.5 text-red-600 hover:text-white hover:bg-red-600 rounded-lg transition-all duration-300 border border-red-200 hover:border-red-600 flex items-center justify-center"
+                            title="Excluir cliente"
                           >
                             <TrashIcon className="h-4 w-4" />
-                            Excluir
                           </button>
                         </div>
                       </td>
@@ -915,9 +2123,9 @@ const Clientes: React.FC = () => {
       </div>
       )}
 
-      {activeTab === 'clientes' && clientes.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {activeTab === 'clientes' && !showForm && !visualizandoCliente && clientes.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
             <div className="text-sm text-gray-600">
               {loading ? (
                 <span className="flex items-center gap-2">
@@ -946,7 +2154,7 @@ const Clientes: React.FC = () => {
             </div>
           </div>
           {totalPages != null && total != null && (
-            <div className="mt-4">
+            <div className="pt-4 border-t border-gray-200">
               <Pagination
                 currentPage={page}
                 totalPages={totalPages}
@@ -968,6 +2176,436 @@ const Clientes: React.FC = () => {
       {/* Aba de E-Processos */}
       {activeTab === 'e-processos' && (
         <EProcessosTab cnpjPreenchido={cnpjParaPagamentos} />
+      )}
+
+      {/* Aba de Participação */}
+      {activeTab === 'participacao' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-amber-50 to-orange-50">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <UserGroupIcon className="h-5 w-5 text-amber-600" />
+              Participação Societária
+            </h2>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Busque por CNPJ ou Razão Social para visualizar os sócios
+            </p>
+          </div>
+
+          <div className="p-6">
+            {/* Lista de Empresas */}
+            {loadingParticipacao ? (
+              <div className="flex items-center justify-center py-12">
+                <svg className="animate-spin h-8 w-8 text-amber-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span className="ml-3 text-gray-600">Carregando empresas...</span>
+              </div>
+            ) : clientesParticipacao.filter(c => {
+              if (!searchParticipacao) return true;
+              const search = searchParticipacao.toLowerCase();
+              return (
+                c.razao_social?.toLowerCase().includes(search) ||
+                c.nome?.toLowerCase().includes(search) ||
+                c.cnpj?.includes(search) ||
+                c.cnpj_limpo?.includes(search.replace(/\D/g, ''))
+              );
+            }).map((cliente) => (
+              <div key={cliente.id} className="border border-gray-200 rounded-lg overflow-hidden shadow-md mb-4">
+                {/* Header da Empresa */}
+                <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="w-10 h-10 bg-amber-600 rounded-full flex items-center justify-center flex-shrink-0">
+                        <BuildingOfficeIcon className="h-5 w-5 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-base text-gray-900 truncate">
+                          {cliente.razao_social || cliente.nome || 'Sem nome'}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          CNPJ: {cliente.cnpj || cliente.cnpj_limpo || 'Não informado'}
+                        </p>
+                      </div>
+                    </div>
+                    {cliente.socios && cliente.socios.length > 0 && (
+                      <span className="px-3 py-1 bg-amber-600 text-white text-sm font-semibold rounded-full">
+                        {cliente.socios.length} sócio{cliente.socios.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Conteúdo */}
+                <div className="border-t border-gray-200 bg-gray-50">
+                  {/* Informações Básicas da Empresa - Horizontal e Compacta */}
+                  <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
+                    <div className="flex items-center gap-6 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <InformationCircleIcon className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium text-gray-700">Informações da Empresa</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-600">CNPJ:</span>
+                        <span className="font-semibold text-gray-900">{cliente.cnpj || cliente.cnpj_limpo || 'N/A'}</span>
+                      </div>
+                      <div className="hidden md:flex items-center gap-1">
+                        <span className="text-gray-600">Razão Social:</span>
+                        <span className="font-semibold text-gray-900">{cliente.razao_social || cliente.nome || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-1 ml-auto">
+                        <span className="text-gray-600">Capital Social:</span>
+                        <span className="font-bold text-blue-700">
+                          {cliente.capital_social 
+                            ? typeof cliente.capital_social === 'number'
+                              ? cliente.capital_social.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                              : cliente.capital_social
+                            : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Lista de Sócios - Tabela Compacta */}
+                  <div className="px-4 py-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <UserGroupIcon className="h-4 w-4 text-amber-600" />
+                        <h4 className="text-sm font-semibold text-gray-900">
+                          Sócios ({cliente.socios?.length || 0})
+                        </h4>
+                      </div>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!cliente.id) {
+                            toast.error('ID do cliente não disponível');
+                            return;
+                          }
+                          
+                          setAtualizandoSocios(cliente.id);
+                          try {
+                            const cnpjLimpo = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
+                                    if (!cnpjLimpo || cnpjLimpo.length !== 14) {
+                                      toast.error('CNPJ inválido para consulta');
+                                      setAtualizandoSocios(null);
+                                      return;
+                                    }
+                                    
+                                    // Primeiro, verificar se já existe situação fiscal com dados extraídos
+                                    toast.info('Verificando situação fiscal existente...', 2000);
+                                    let temSituacaoFiscal = false;
+                                    let registroEncontrado = null;
+                                    
+                                    try {
+                                      const checkResp = await api.get(`/situacao-fiscal/history?limit=10&search=${cnpjLimpo}`);
+                                      if (checkResp.data?.data && checkResp.data.data.length > 0) {
+                                        // Procurar o registro mais recente com extracted_data
+                                        registroEncontrado = checkResp.data.data.find((r: any) => r.extracted_data);
+                                        if (registroEncontrado) {
+                                          temSituacaoFiscal = true;
+                                        }
+                                      }
+                                    } catch (checkError) {
+                                      // Continuar mesmo se houver erro na verificação
+                                    }
+                                    
+                                    // Se não tem situação fiscal, fazer a consulta
+                                    if (!temSituacaoFiscal) {
+                                      toast.info('Nenhuma situação fiscal encontrada. Iniciando consulta...', 3000);
+                                      
+                                      try {
+                                        const situacaoFiscalResp = await api.post(`/situacao-fiscal/${cnpjLimpo}/download`);
+                                        
+                                        if (!situacaoFiscalResp.data?.success) {
+                                          const errorMsg = situacaoFiscalResp.data?.error || 'Erro ao iniciar consulta de Situação Fiscal';
+                                          toast.error(errorMsg);
+                                          setAtualizandoSocios(null);
+                                          return;
+                                        }
+                                        
+                                      // Aguardar a conclusão completa da consulta (3 etapas: token, protocolo, PDF)
+                                      toast.info('Aguardando conclusão da consulta (pode levar alguns minutos)...', 5000);
+                                      let tentativas = 0;
+                                      const maxTentativas = 60; // 60 tentativas = ~2 minutos (tempo suficiente para buscar PDF)
+                                      temSituacaoFiscal = false;
+                                      
+                                      while (tentativas < maxTentativas && !temSituacaoFiscal) {
+                                        // Verificar se o usuário ainda está na mesma aba e empresa
+                                        if (atualizandoSocios !== cliente.id) {
+                                          // Usuário cancelou ou mudou de empresa
+                                          return;
+                                        }
+                                        
+                                        await new Promise(resolve => setTimeout(resolve, 2000)); // Aguardar 2s entre verificações
+                                        
+                                        try {
+                                          // Tentar continuar o download primeiro (força o backend a buscar o PDF se houver protocolo)
+                                          try {
+                                            await api.post(`/situacao-fiscal/${cnpjLimpo}/download`);
+                                          } catch (downloadContinueError: any) {
+                                            // Ignorar erros 202 (ainda processando) ou 429 (rate limit)
+                                            if (downloadContinueError?.response?.status !== 202 && downloadContinueError?.response?.status !== 429) {
+                                              console.warn('[Clientes] Erro ao continuar download:', downloadContinueError);
+                                            }
+                                          }
+                                          
+                                          // Depois verificar se já temos o PDF no history
+                                          const checkResp = await api.get(`/situacao-fiscal/history?limit=10&search=${cnpjLimpo}`);
+                                          if (checkResp.data?.data && checkResp.data.data.length > 0) {
+                                            registroEncontrado = checkResp.data.data.find((r: any) => r.extracted_data || r.pdf_base64);
+                                            if (registroEncontrado) {
+                                              temSituacaoFiscal = true;
+                                              break;
+                                            }
+                                          }
+                                        } catch (checkError: any) {
+                                          // Continuar tentando mesmo se houver erro na verificação
+                                          console.warn('[Clientes] Erro ao verificar situação fiscal:', checkError);
+                                        }
+                                        
+                                        tentativas++;
+                                        
+                                        // Feedback a cada 5 tentativas
+                                        if (tentativas % 5 === 0) {
+                                          toast.info(`Aguardando conclusão... (${tentativas * 2}s)`, 2000);
+                                        }
+                                      }
+                                      
+                                      if (!temSituacaoFiscal) {
+                                        // Se chegou aqui, a consulta ainda não foi concluída
+                                        // Não é um erro, apenas informar o usuário
+                                        toast.warning('A consulta de Situação Fiscal foi iniciada, mas ainda está em processamento. Você pode: 1) Aguardar alguns minutos e clicar novamente em "Atualizar Sócios", ou 2) Fazer a consulta manualmente na aba "Situação Fiscal" e aguardar a conclusão antes de atualizar os sócios.', 8000);
+                                        setAtualizandoSocios(null);
+                                        return;
+                                      }
+                                      } catch (downloadError: any) {
+                                        console.error('[Clientes] Erro ao fazer download da situação fiscal:', downloadError);
+                                        const errorMsg = downloadError?.response?.data?.error || downloadError?.message || 'Erro ao iniciar consulta de Situação Fiscal';
+                                        toast.error(errorMsg);
+                                        setAtualizandoSocios(null);
+                                        return;
+                                      }
+                                    }
+                                    
+                                    // Agora que temos situação fiscal, atualizar os sócios
+                                    try {
+                                      toast.info('Atualizando dados dos sócios...', 2000);
+                                      const result = await clientesService.atualizarSociosPorSituacaoFiscal(cliente.id);
+                                      
+                                      if (result.success) {
+                                        toast.success(result.data?.message || 'Sócios atualizados com sucesso!');
+                                        
+                                        // Aguardar o backend salvar completamente os dados
+                                        toast.info('Atualizando interface...', 1500);
+                                        await new Promise(resolve => setTimeout(resolve, 1500));
+                                        
+                                        // Atualizar apenas o cliente específico na lista
+                                        try {
+                                          // Buscar o cliente atualizado com sócios
+                                          const clienteAtualizado = await clientesService.obterCliente(cliente.id!);
+                                          
+                                          console.log('[Clientes] Dados recebidos do backend:', clienteAtualizado);
+                                          
+                                          if (clienteAtualizado && typeof clienteAtualizado === 'object') {
+                                            let clienteComSocios: Cliente;
+                                            
+                                            if ((clienteAtualizado as any).success && (clienteAtualizado as any).data) {
+                                              clienteComSocios = (clienteAtualizado as any).data as Cliente;
+                                            } else if ((clienteAtualizado as any).id) {
+                                              clienteComSocios = clienteAtualizado as Cliente;
+                                            } else {
+                                              throw new Error('Formato de resposta inválido');
+                                            }
+                                            
+                                            console.log('[Clientes] Cliente processado - Total de sócios:', clienteComSocios.socios?.length || 0);
+                                            console.log('[Clientes] Dados dos sócios:', JSON.stringify(clienteComSocios.socios, null, 2));
+                                            
+                                            // Verificar se os sócios têm os dados de participação
+                                            const temDadosCompletos = clienteComSocios.socios?.some(s => 
+                                              s.cpf || s.participacao_percentual || s.participacao_valor
+                                            );
+                                            console.log('[Clientes] Sócios têm dados completos?', temDadosCompletos);
+                                            
+                                            // Atualizar o cliente na lista
+                                            setClientesParticipacao(prevClientes => 
+                                              prevClientes.map(c => c.id === cliente.id ? clienteComSocios : c)
+                                            );
+                                            console.log('[Clientes] Cliente atualizado na lista:', clienteComSocios.socios?.length || 'sócios');
+                                            
+                                            // Aguardar o React processar a atualização do estado e renderizar
+                                            await new Promise(resolve => setTimeout(resolve, 500));
+                                            
+                                            toast.success('Interface atualizada com sucesso!', 2000);
+                                          } else {
+                                            // Se não conseguiu buscar individualmente, recarregar todos
+                                            console.log('[Clientes] Recarregando todos os clientes...');
+                                            const todosClientes: Cliente[] = [];
+                                            let pagina = 1;
+                                            let temMais = true;
+                                            
+                                            while (temMais) {
+                                              const { items, pagination } = await loadClientes({ 
+                                                page: pagina, 
+                                                limit: 100,
+                                                search: '', 
+                                                socio: undefined 
+                                              });
+                                              
+                                              todosClientes.push(...items);
+                                              
+                                              if (pagination && pagination.totalPages) {
+                                                temMais = pagina < pagination.totalPages;
+                                              } else {
+                                                temMais = items.length === 100;
+                                              }
+                                              
+                                              pagina++;
+                                            }
+                                            
+                                            setClientesParticipacao(todosClientes);
+                                          }
+                                        } catch (reloadError) {
+                                          console.error('[Clientes] Erro ao atualizar cliente na lista:', reloadError);
+                                          // Tentar recarregar todos como fallback
+                                          try {
+                                            const todosClientes: Cliente[] = [];
+                                            let pagina = 1;
+                                            let temMais = true;
+                                            
+                                            while (temMais) {
+                                              const { items, pagination } = await loadClientes({ 
+                                                page: pagina, 
+                                                limit: 100,
+                                                search: '', 
+                                                socio: undefined 
+                                              });
+                                              
+                                              todosClientes.push(...items);
+                                              
+                                              if (pagination && pagination.totalPages) {
+                                                temMais = pagina < pagination.totalPages;
+                                              } else {
+                                                temMais = items.length === 100;
+                                              }
+                                              
+                                              pagina++;
+                                            }
+                                            
+                                            setClientesParticipacao(todosClientes);
+                                          } catch (fallbackError) {
+                                            console.error('[Clientes] Erro no fallback de recarregamento:', fallbackError);
+                                          }
+                                        }
+                                      } else {
+                                        const errorMsg = (result as any).error || 'Erro ao atualizar sócios';
+                                        if (errorMsg.includes('Nenhuma situação fiscal encontrada') || errorMsg.includes('404')) {
+                                          toast.error('Nenhuma situação fiscal encontrada. Por favor, faça a consulta manualmente na aba "Situação Fiscal" primeiro.');
+                                        } else {
+                                          toast.error(errorMsg);
+                                        }
+                                      }
+                                    } catch (updateError: any) {
+                                      console.error('[Clientes] Erro ao atualizar sócios:', updateError);
+                                      const errorMsg = updateError?.response?.data?.error || updateError?.message || 'Erro ao atualizar sócios';
+                                      toast.error(errorMsg);
+                                    }
+                                  } catch (error: any) {
+                                    console.error('[Clientes] Erro ao atualizar sócios:', error);
+                                    
+                                    // Tratamento mais detalhado de erros
+                                    let errorMsg = 'Erro ao atualizar sócios';
+                                    
+                                    if (error?.response) {
+                                      // Erro da API
+                                      errorMsg = error.response.data?.error || error.response.data?.message || `Erro ${error.response.status}: ${error.response.statusText}`;
+                                    } else if (error?.message) {
+                                      errorMsg = error.message;
+                                    } else if (typeof error === 'string') {
+                                      errorMsg = error;
+                                    }
+                                    
+                                    // Se o erro for sobre não encontrar situação fiscal, dar instruções mais claras
+                                    if (errorMsg.includes('Nenhuma situação fiscal encontrada') || errorMsg.includes('404')) {
+                                      errorMsg = 'Nenhuma situação fiscal encontrada. Por favor, faça a consulta manualmente na aba "Situação Fiscal" primeiro e aguarde a conclusão antes de atualizar os sócios.';
+                                    }
+                                    
+                                    toast.error(errorMsg);
+                                  } finally {
+                                    // Sempre limpar o estado, mesmo em caso de erro
+                                    console.log('[Clientes] Desbloqueando botão "Atualizar Sócios"');
+                                    setAtualizandoSocios(null);
+                                  }
+                                }}
+                                disabled={atualizandoSocios === cliente.id}
+                                className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 disabled:cursor-not-allowed rounded-lg transition-all duration-300 flex items-center gap-1.5 shadow-sm hover:shadow-md"
+                                title="Atualizar sócios via Situação Fiscal"
+                              >
+                                <ArrowPathIcon className={`h-3.5 w-3.5 ${atualizandoSocios === cliente.id ? 'animate-spin' : ''}`} />
+                                {atualizandoSocios === cliente.id ? 'Atualizando...' : 'Atualizar Sócios'}
+                              </button>
+                            </div>
+
+                            {!cliente.socios || cliente.socios.length === 0 ? (
+                              <div className="text-center py-6 bg-white rounded border border-dashed border-gray-200">
+                                <UserGroupIcon className="h-8 w-8 text-gray-300 mx-auto mb-1" />
+                                <p className="text-gray-500 text-xs">Nenhum sócio cadastrado</p>
+                              </div>
+                            ) : (
+                              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                  <thead className="bg-gray-50">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPF</th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qualificação</th>
+                                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Participação</th>
+                                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="bg-white divide-y divide-gray-200">
+                                    {cliente.socios!.map((socio, idx) => (
+                                      <tr key={socio.id || idx} className="hover:bg-amber-50 transition-colors">
+                                        <td className="px-3 py-2.5 whitespace-nowrap">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-7 h-7 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                              <span className="text-amber-700 font-semibold text-xs">
+                                                {socio.nome?.charAt(0).toUpperCase() || '?'}
+                                              </span>
+                                            </div>
+                                            <span className="text-sm font-medium text-gray-900">{socio.nome || 'Sem nome'}</span>
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-600">
+                                          {socio.cpf ? socio.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '-'}
+                                        </td>
+                                        <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-600">
+                                          {socio.qual || '-'}
+                                        </td>
+                                        <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold text-amber-700 bg-amber-100">
+                                            {socio.participacao_percentual !== null && socio.participacao_percentual !== undefined
+                                              ? `${socio.participacao_percentual.toFixed(2)}%`
+                                              : '-'}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2.5 whitespace-nowrap text-right text-sm font-semibold text-green-700">
+                                          {socio.participacao_valor
+                                            ? socio.participacao_valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                            : '-'}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                  </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Aba de Lançamentos (Banco SCI) */}
@@ -1000,7 +2638,7 @@ const Clientes: React.FC = () => {
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-white">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Competência
@@ -1111,7 +2749,7 @@ const Clientes: React.FC = () => {
       )}
       
       {/* Toast de erro */}
-      {showError && error && (
+      {showError && (error || customErrorMessage) && (
         <div className="fixed top-4 right-4 z-50 animate-toast-slide-in">
           <div className="bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg shadow-2xl px-6 py-4 flex items-center gap-3 min-w-[320px] animate-toast-fade-in">
             <div className="flex-shrink-0 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
@@ -1120,11 +2758,12 @@ const Clientes: React.FC = () => {
               </svg>
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-white">{error}</p>
+              <p className="font-semibold text-white">{error || customErrorMessage}</p>
             </div>
             <button
               onClick={() => {
                 setShowError(false);
+                setCustomErrorMessage('');
                 clearError();
               }}
               className="text-white hover:text-gray-200 transition-colors"
@@ -1198,3 +2837,12 @@ const Clientes: React.FC = () => {
 };
 
 export default Clientes;
+// Force recompile
+// Trigger recompile
+
+// Recompile after structure fix
+
+// Recompile with list view
+
+// Move search to top
+// Clean layout
