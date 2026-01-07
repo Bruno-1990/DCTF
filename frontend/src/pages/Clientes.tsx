@@ -230,7 +230,22 @@ const Clientes: React.FC = () => {
             }
           }
           
-          setClientesParticipacao(todosClientes);
+          // Filtrar apenas matrizes (CNPJ termina em 0001)
+          // Filiais não têm sócios, então não devem aparecer na aba Participação
+          const apenasMatrizes = todosClientes.filter(cliente => {
+            const cnpj = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
+            // Matriz tem os últimos 4 dígitos antes do verificador sendo "0001"
+            // Exemplo: 12.345.678/0001-90 (matriz) vs 12.345.678/0002-07 (filial)
+            if (cnpj.length === 14) {
+              const sufixo = cnpj.substring(8, 12); // Dígitos 9-12 (posições 8-11)
+              return sufixo === '0001';
+            }
+            return false; // Se não tem CNPJ válido, não é matriz
+          });
+          
+          console.log(`[Clientes] Total de clientes: ${todosClientes.length}, Matrizes: ${apenasMatrizes.length}`);
+          
+          setClientesParticipacao(apenasMatrizes);
           setLoadingParticipacao(false);
         } catch (error: any) {
           console.error('[Clientes] Erro ao carregar todos os clientes para Participação:', error);
