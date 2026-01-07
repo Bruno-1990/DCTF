@@ -79,6 +79,8 @@ const Clientes: React.FC = () => {
   const carregandoParticipacaoRef = useRef(false);
   const toastInfoRef = useRef<string | null>(null);
   const cancelarCarregamentoRef = useRef(false);
+  const jaTentouCarregarRef = useRef(false); // Rastrear se já tentou carregar nesta sessão
+  const activeTabAnteriorRef = useRef<string>(''); // Rastrear aba anterior
 
   // Função para mudar de aba e atualizar URL
   const handleTabChange = (tab: 'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos') => {
@@ -241,19 +243,35 @@ const Clientes: React.FC = () => {
 
   // Carregar todos os clientes para a aba Participação
   useEffect(() => {
+    // Só executar se a aba mudou para 'participacao' (não se já estava nela)
+    const abaMudouParaParticipacao = activeTab === 'participacao' && activeTabAnteriorRef.current !== 'participacao';
+    
     if (activeTab === 'participacao') {
+      // Atualizar ref da aba anterior
+      activeTabAnteriorRef.current = activeTab;
+      
+      // Se não mudou para participacao agora, não fazer nada (já estava nela)
+      if (!abaMudouParaParticipacao) {
+        // Se já está carregando ou já tem dados, não fazer nada
+        if (carregandoParticipacaoRef.current || clientesParticipacao.length > 0) {
+          return;
+        }
+        // Se não está carregando e não tem dados, pode ser que houve erro - permitir nova tentativa
+        if (!jaTentouCarregarRef.current) {
+          // Primeira vez nesta sessão, permitir carregar
+        } else {
+          // Já tentou antes, não tentar novamente automaticamente
+          return;
+        }
+      }
+      
       // Evitar múltiplas execuções simultâneas
       if (carregandoParticipacaoRef.current) {
         console.log('[Clientes] Já está carregando clientes para Participação. Ignorando nova execução.');
         return;
       }
       
-      // Se já tem clientes carregados, não recarregar
-      if (clientesParticipacao.length > 0) {
-        console.log('[Clientes] Clientes já carregados para Participação. Não recarregando.');
-        return;
-      }
-      
+      jaTentouCarregarRef.current = true;
       carregandoParticipacaoRef.current = true;
       cancelarCarregamentoRef.current = false;
       setLoadingParticipacao(true);
@@ -371,14 +389,18 @@ const Clientes: React.FC = () => {
         toastInfoRef.current = null;
       };
     } else {
+      // Atualizar ref da aba anterior
+      activeTabAnteriorRef.current = activeTab;
+      
       // Limpar clientes da participação quando sair da aba
       cancelarCarregamentoRef.current = true;
       setClientesParticipacao([]);
       setSearchParticipacao(''); // Limpar busca ao sair da aba
       carregandoParticipacaoRef.current = false;
       toastInfoRef.current = null;
+      jaTentouCarregarRef.current = false; // Resetar para permitir recarregar quando voltar
     }
-  }, [activeTab]); // Removido loadClientes das dependências para evitar loop infinito
+  }, [activeTab]); // Apenas activeTab como dependência
 
   // Fechar dropdown de sócios ao clicar fora
   useEffect(() => {
