@@ -17,6 +17,8 @@ import {
   ArrowLeftIcon,
   ArrowPathIcon,
   InformationCircleIcon,
+  FunnelIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import type { AxiosError } from 'axios';
@@ -1395,18 +1397,29 @@ const Clientes: React.FC = () => {
           </div>
           {activeTab === 'participacao' && (
             <div className="w-full md:w-64">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Ordenar / Filtrar</label>
-              <select
-                value={ordenacaoParticipacao}
-                onChange={(e) => setOrdenacaoParticipacao(e.target.value as any)}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md"
-              >
-                <option value="a-z">A → Z</option>
-                <option value="z-a">Z → A</option>
-                <option value="cnpj">CNPJ ↑</option>
-                <option value="faltantes">Informações Faltantes</option>
-                <option value="sem-registro">Sem Registro</option>
-              </select>
+              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <FunnelIcon className="h-4 w-4 text-amber-600" />
+                Ordenar / Filtrar
+              </label>
+              <div className="relative">
+                <select
+                  value={ordenacaoParticipacao}
+                  onChange={(e) => setOrdenacaoParticipacao(e.target.value as any)}
+                  className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-amber-300"
+                >
+                  <option value="a-z">A → Z</option>
+                  <option value="z-a">Z → A</option>
+                  <option value="cnpj">CNPJ ↑</option>
+                  <option value="faltantes">Informações Faltantes</option>
+                  <option value="sem-registro">Sem Registro</option>
+                </select>
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <FunnelIcon className="h-5 w-5 text-amber-500" />
+                </div>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                </div>
+              </div>
             </div>
           )}
           {activeTab === 'clientes' && (
