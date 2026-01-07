@@ -222,12 +222,22 @@ const Clientes: React.FC = () => {
             }
             
             pagina++;
+            
+            // Aguardar 300ms entre cada requisição para evitar rate limit
+            if (temMais) {
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
           }
           
           setClientesParticipacao(todosClientes);
           setLoadingParticipacao(false);
-        } catch (error) {
+        } catch (error: any) {
           console.error('[Clientes] Erro ao carregar todos os clientes para Participação:', error);
+          if (error?.response?.status === 429) {
+            toast.error('Muitas requisições. Por favor, aguarde um momento e recarregue a página.');
+          } else {
+            toast.error('Erro ao carregar clientes');
+          }
           setLoadingParticipacao(false);
         }
       };
