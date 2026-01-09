@@ -1,13 +1,30 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { SituacaoFiscalOrchestrator, base64ToBuffer, fetchAccessToken, extractDataFromPdfBase64, SerproError, AuthorizationError, NetworkError } from '../services/SituacaoFiscalOrchestrator';
 import { createSupabaseAdapter } from '../services/SupabaseAdapter';
 import { executeQuery } from '../config/mysql';
 import { Cliente } from '../models/Cliente';
+import { extrairSociosComPython, converterSociosPythonParaNode } from '../utils/pythonExtractor';
 
 const supabase = createSupabaseAdapter() as any;
 const supabaseAdmin = createSupabaseAdapter() as any;
 
 const router = Router();
+
+// Configurar multer para upload de PDF
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB máximo
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas arquivos PDF são permitidos'));
+    }
+  },
+});
 
 // GET /api/situacao-fiscal/token -> valida acesso ao token (sem expor o token)
 router.get('/token', async (_req, res, next) => {
@@ -370,29 +387,29 @@ router.get('/history', async (req, res, next) => {
       
       // Buscar clientes correspondentes do MySQL
       const cnpjs = [...new Set(downloadsArray.map((d: any) => d.cnpj))];
-      let clientesMap = new Map();
-      
-      // Só buscar clientes se houver CNPJs
-      if (cnpjs.length > 0) {
-        try {
+    let clientesMap = new Map();
+    
+    // Só buscar clientes se houver CNPJs
+    if (cnpjs.length > 0) {
+      try {
           const placeholders = cnpjs.map(() => '?').join(',');
           const clientesQuery = `SELECT cnpj_limpo, razao_social FROM clientes WHERE cnpj_limpo IN (${placeholders})`;
           const clientesResult = await executeQuery(clientesQuery, cnpjs);
           
           if (Array.isArray(clientesResult)) {
-            // Criar mapa de CNPJ -> cliente
+          // Criar mapa de CNPJ -> cliente
             clientesMap = new Map(clientesResult.map((c: any) => [c.cnpj_limpo, c]));
             console.log(`[Sitf History] Clientes encontrados: ${clientesMap.size} de ${cnpjs.length} CNPJs`);
-          }
-        } catch (clientesErr: any) {
-          console.error('[Sitf History] Erro ao buscar clientes:', clientesErr);
-          // Continuar mesmo com erro ao buscar clientes
         }
+      } catch (clientesErr: any) {
+        console.error('[Sitf History] Erro ao buscar clientes:', clientesErr);
+        // Continuar mesmo com erro ao buscar clientes
       }
-      
-      // Combinar dados (NÃO retornar pdf_base64 por segurança - muito grande)
+    }
+    
+    // Combinar dados (NÃO retornar pdf_base64 por segurança - muito grande)
       const items = downloadsArray.map((item: any) => {
-        const { pdf_base64, ...itemWithoutBase64 } = item; // Remover base64 da resposta
+      const { pdf_base64, ...itemWithoutBase64 } = item; // Remover base64 da resposta
         
         // Parsear extracted_data se for string JSON (MySQL retorna JSON como string)
         let extractedData = item.extracted_data;
@@ -405,21 +422,21 @@ router.get('/history', async (req, res, next) => {
           }
         }
         
-        return {
-          ...itemWithoutBase64,
-          cliente: clientesMap.get(item.cnpj) ? { razao_social: (clientesMap.get(item.cnpj) as any)?.razao_social } : null,
+      return {
+        ...itemWithoutBase64,
+        cliente: clientesMap.get(item.cnpj) ? { razao_social: (clientesMap.get(item.cnpj) as any)?.razao_social } : null,
           // Garantir que extracted_data seja incluído se existir (já parseado)
           extracted_data: extractedData || null,
-          // Flag indicando se tem base64 disponível para extração
-          has_pdf_base64: !!item.pdf_base64,
-        };
-      });
-      
-      // Log para debug
-      const itemsComDados = items.filter((item: any) => item.extracted_data);
-      const itemsComBase64 = items.filter((item: any) => item.has_pdf_base64);
-      console.log(`[Sitf History] Total: ${items.length}, Com dados extraídos: ${itemsComDados.length}, Com base64: ${itemsComBase64.length}`);
-      
+        // Flag indicando se tem base64 disponível para extração
+        has_pdf_base64: !!item.pdf_base64,
+      };
+    });
+    
+    // Log para debug
+    const itemsComDados = items.filter((item: any) => item.extracted_data);
+    const itemsComBase64 = items.filter((item: any) => item.has_pdf_base64);
+    console.log(`[Sitf History] Total: ${items.length}, Com dados extraídos: ${itemsComDados.length}, Com base64: ${itemsComBase64.length}`);
+    
       // Garantir que sempre retornamos um array, mesmo que vazio
       const totalPages = Math.ceil((totalCount || 0) / limit);
       const currentPage = Math.floor(offset / limit) + 1;
@@ -572,8 +589,11 @@ router.post('/extract/:id', async (req, res, next) => {
     console.log('[Sitf Extract] Dados extraídos com sucesso:', {
       hasDebitos: extractedData.debitos && extractedData.debitos.length > 0,
       hasPendencias: extractedData.pendencias && extractedData.pendencias.length > 0,
+      hasSociosPython: extractedData.socios && extractedData.socios.length > 0,
+      cnpjExtraidoPython: extractedData.cnpj || 'não extraído',
       debitosCount: extractedData.debitos?.length || 0,
       pendenciasCount: extractedData.pendencias?.length || 0,
+      sociosPythonCount: extractedData.socios?.length || 0,
     });
     
     // Salvar dados extraídos no MySQL
@@ -611,44 +631,56 @@ router.post('/extract/:id', async (req, res, next) => {
           
           if (clienteResult.success && clienteResult.data) {
             const cliente = clienteResult.data;
-            // Buscar capital social do cliente
+            
+            // ✅ Usar Capital Social do cadastro do cliente (vem da API da Receita)
+            // A Situação Fiscal fornece apenas a porcentagem de cada sócio
+            // Cálculo: valor = Capital Social (cliente) × porcentagem (SITF) / 100
             const capitalSocial = (cliente as any).capital_social;
             
-            console.log('[Sitf Extract] Capital social do cliente:', capitalSocial);
+            console.log('[Sitf Extract] Capital Social do cliente (Receita):', capitalSocial);
             
             // Preparar sócios com participação e CPF
-            let sociosComParticipacao = extractedData.socios.map((s: any) => ({
+            // ✅ IMPORTANTE: Usar exatamente os percentuais da Situação Fiscal, sem ajustes
+            // Apenas calcular os valores usando: Capital Social × Porcentagem (SITF) / 100
+            // ✅ Suporte para formato Python (qual) ou formato Node.js (qualificacao)
+            // ✅ NOVO: Filtrar sócios que contenham "Qualif. Resp." ou "CONTRATANTE" antes de processar
+            const sociosFiltrados = extractedData.socios.filter((s: any) => {
+              const nome = ((s.nome || '') + '').toUpperCase();
+              const qual = ((s.qual || s.qualificacao || '') + '').toUpperCase();
+              const temQualifResp = nome.includes('QUALIF. RESP') || nome.includes('QUALIF RESP') || 
+                                    qual.includes('QUALIF. RESP') || qual.includes('QUALIF RESP');
+              const temContratante = nome.includes('CONTRATANTE: 32.401.481') || nome.includes('CONTRATANTE: 32401481') ||
+                                     qual.includes('CONTRATANTE: 32.401.481') || qual.includes('CONTRATANTE: 32401481');
+              
+              if (temQualifResp) {
+                console.log(`[Sitf Extract] ⚠️ Sócio ignorado (contém Qualif. Resp.): ${s.nome}`);
+              }
+              
+              if (temContratante) {
+                console.log(`[Sitf Extract] ⚠️ Sócio ignorado (contém CONTRATANTE): ${s.nome}`);
+              }
+              
+              return !temQualifResp && !temContratante;
+            });
+            
+            console.log(`[Sitf Extract] ✅ Filtrados ${extractedData.socios.length - sociosFiltrados.length} sócios com "Qualif. Resp." ou "CONTRATANTE" (de ${extractedData.socios.length} total)`);
+            
+            const sociosComParticipacao = sociosFiltrados.map((s: any) => ({
               nome: s.nome || '',
-              cpf: s.cpf || null, // CPF extraído da SITF
-              qual: s.qualificacao || null,
-              participacao_percentual: s.participacao_percentual || null,
+              cpf: s.cpf || null, // CPF/CNPJ extraído da SITF (Python ou Node.js)
+              qual: s.qual || s.qualificacao || null, // Suporte para ambos os formatos
+              participacao_percentual: s.participacao_percentual || null, // Usar exatamente o que vem da SITF
             }));
             
-            // Ajustar percentuais para totalizar 100%
+            // Log para verificação (sem ajustar)
             const totalPercentual = sociosComParticipacao.reduce((sum, s) => {
               const percent = s.participacao_percentual || 0;
               return sum + percent;
             }, 0);
             
-            if (totalPercentual > 0 && Math.abs(totalPercentual - 100) > 0.01) {
-              console.warn(`[Sitf Extract] ⚠️ Soma dos percentuais (${totalPercentual.toFixed(2)}%) não é 100%. Ajustando proporcionalmente...`);
-              
-              const fator = 100 / totalPercentual;
-              sociosComParticipacao = sociosComParticipacao.map(s => {
-                if (s.participacao_percentual !== undefined && s.participacao_percentual !== null) {
-                  return {
-                    ...s,
-                    participacao_percentual: parseFloat((s.participacao_percentual * fator).toFixed(2))
-                  };
-                }
-                return s;
-              });
-              
-              const novoTotal = sociosComParticipacao.reduce((sum, s) => sum + (s.participacao_percentual || 0), 0);
-              console.log(`[Sitf Extract] ✅ Percentuais ajustados. Novo total: ${novoTotal.toFixed(2)}%`);
-            }
-
-            console.log('[Sitf Extract] Sócios preparados para atualização:', sociosComParticipacao);
+            console.log(`[Sitf Extract] Total de sócios: ${sociosComParticipacao.length}`);
+            console.log(`[Sitf Extract] Soma dos percentuais (da SITF): ${totalPercentual.toFixed(2)}%`);
+            console.log('[Sitf Extract] Sócios preparados para atualização (sem ajuste de percentuais):', sociosComParticipacao);
 
             // Atualizar sócios
             const updateResult = await clienteModel.atualizarSociosComParticipacao(
@@ -680,6 +712,8 @@ router.post('/extract/:id', async (req, res, next) => {
         textLength: extractedData.text.length,
         debitos: extractedData.debitos,
         pendencias: extractedData.pendencias,
+        socios: extractedData.socios, // ✅ NOVO: Incluir sócios extraídos via Python
+        cnpj: extractedData.cnpj, // ✅ NOVO: Incluir CNPJ extraído via Python
         info: extractedData.info,
         metadata: extractedData.metadata,
       },
@@ -718,6 +752,8 @@ router.post('/test-extract', async (req, res, next) => {
         text: extractedData.text, // Texto completo extraído
         debitos: extractedData.debitos,
         pendencias: extractedData.pendencias,
+        socios: extractedData.socios, // ✅ NOVO: Incluir sócios extraídos via Python
+        cnpj: extractedData.cnpj, // ✅ NOVO: Incluir CNPJ extraído via Python
         info: extractedData.info,
         metadata: extractedData.metadata,
       }
@@ -1946,30 +1982,555 @@ router.post('/lote/:progressId/cancelar', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/situacao-fiscal/upload-pdf
+ * Upload de PDF manual da Situação Fiscal para extração via Python (pdfplumber)
+ * Mais robusto que extração via base64
+ */
+/**
+ * POST /api/situacao-fiscal/lote/popular-pendentes
+ * Popula a tabela temporária com CNPJs de empresas que têm divergências na aba Participação
+ * Filtra apenas matrizes (tipo_empresa = 'Matriz') que têm divergências em percentuais ou valores
+ */
+router.post('/lote/popular-pendentes', async (req, res, next) => {
+  try {
+    const { Cliente } = await import('../models/Cliente');
+    const clienteModel = new Cliente();
+    
+    console.log('[SITF Lote Pendentes] Iniciando população da tabela de CNPJs pendentes...');
+    
+    // Buscar todas as matrizes
+    const result = await clienteModel.findAll();
+    if (!result.success || !result.data) {
+      return res.status(400).json({
+        success: false,
+        error: 'Erro ao buscar clientes',
+      });
+    }
+
+    const todasMatrizes = result.data.filter(cliente => cliente.tipo_empresa === 'Matriz');
+    console.log(`[SITF Lote Pendentes] Total de matrizes encontradas: ${todasMatrizes.length}`);
+    
+    // Buscar sócios para cada matriz
+    const cnpjsComDivergencias: Array<{
+      cnpj: string;
+      razao_social: string;
+      cliente_id: string;
+      motivo: string;
+    }> = [];
+    
+    for (const cliente of todasMatrizes) {
+      const cnpjLimpo = String(cliente.cnpj_limpo || '').replace(/\D/g, '');
+      if (cnpjLimpo.length !== 14) continue;
+      
+      // Buscar sócios do cliente
+      const sociosResult = await clienteModel.listarSocios(cliente.id!);
+      const socios = sociosResult.success && sociosResult.data ? sociosResult.data : [];
+      
+      // Filtrar apenas sócios com qualificação
+      const sociosComQualificacao = socios.filter(s => s.qual && s.qual.trim() !== '');
+      
+      if (sociosComQualificacao.length === 0) continue;
+      
+      // Calcular soma de percentuais
+      const somaPercentuais = sociosComQualificacao.reduce((acc, s) => {
+        const percentual = s.participacao_percentual !== null && s.participacao_percentual !== undefined
+          ? parseFloat(String(s.participacao_percentual))
+          : 0;
+        return acc + (isNaN(percentual) ? 0 : percentual);
+      }, 0);
+      
+      // Calcular soma de valores
+      const somaValores = sociosComQualificacao.reduce((acc, s) => {
+        const valor = s.participacao_valor !== null && s.participacao_valor !== undefined
+          ? parseFloat(String(s.participacao_valor))
+          : 0;
+        return acc + (isNaN(valor) ? 0 : valor);
+      }, 0);
+      
+      // Normalizar capital social
+      const capitalSocial = cliente.capital_social;
+      let capitalSocialNum = 0;
+      if (capitalSocial !== null && capitalSocial !== undefined && capitalSocial !== '') {
+        if (typeof capitalSocial === 'number') {
+          capitalSocialNum = capitalSocial;
+        } else {
+          const capitalStr = String(capitalSocial).replace(/[^\d,.-]/g, '').replace(',', '.');
+          capitalSocialNum = parseFloat(capitalStr) || 0;
+        }
+      }
+      
+      // Verificar divergências
+      const percentuaisOk = Math.abs(somaPercentuais - 100) < 0.01; // Tolerância de 0.01%
+      const valoresOk = Math.abs(somaValores - capitalSocialNum) < 0.01; // Tolerância de R$ 0.01
+      
+      if (!percentuaisOk || !valoresOk) {
+        const motivos: string[] = [];
+        if (!percentuaisOk) {
+          motivos.push(`Percentual: ${somaPercentuais.toFixed(2)}% (esperado: 100%)`);
+        }
+        if (!valoresOk) {
+          motivos.push(`Soma de valores ≠ Capital Social`);
+        }
+        
+        cnpjsComDivergencias.push({
+          cnpj: cnpjLimpo,
+          razao_social: cliente.razao_social || cliente.nome || 'Sem nome',
+          cliente_id: cliente.id!,
+          motivo: motivos.join(', '),
+        });
+      }
+    }
+    
+    console.log(`[SITF Lote Pendentes] CNPJs com divergências encontrados: ${cnpjsComDivergencias.length}`);
+    
+    // Limpar tabela antes de popular (opcional - pode comentar se quiser manter histórico)
+    await executeQuery('DELETE FROM sitf_lote_cnpjs_pendentes WHERE status = "pendente"', []);
+    console.log('[SITF Lote Pendentes] Tabela limpa (apenas registros pendentes removidos)');
+    
+    // Inserir CNPJs na tabela temporária
+    if (cnpjsComDivergencias.length > 0) {
+      const values = cnpjsComDivergencias.map(c => [
+        c.cnpj,
+        c.razao_social,
+        c.cliente_id,
+        c.motivo,
+        'pendente',
+        0,
+        null,
+        null,
+        null,
+        null,
+      ]);
+      
+      const placeholders = values.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const query = `
+        INSERT INTO sitf_lote_cnpjs_pendentes 
+        (cnpj, razao_social, cliente_id, motivo, status, tentativas, ultimo_erro, criado_em, processado_em, progress_id)
+        VALUES ${placeholders}
+        ON DUPLICATE KEY UPDATE
+          razao_social = VALUES(razao_social),
+          cliente_id = VALUES(cliente_id),
+          motivo = VALUES(motivo),
+          status = 'pendente',
+          tentativas = 0,
+          ultimo_erro = NULL,
+          processado_em = NULL,
+          progress_id = NULL
+      `;
+      
+      const flatValues = values.flat();
+      await executeQuery(query, flatValues);
+      
+      console.log(`[SITF Lote Pendentes] ${cnpjsComDivergencias.length} CNPJs inseridos na tabela temporária`);
+    }
+    
+    return res.json({
+      success: true,
+      total: cnpjsComDivergencias.length,
+      message: `${cnpjsComDivergencias.length} CNPJs com divergências adicionados à fila de processamento`,
+    });
+  } catch (error: any) {
+    console.error('[SITF Lote Pendentes] Erro ao popular tabela:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Erro ao popular tabela de CNPJs pendentes',
+    });
+  }
+});
+
+/**
+ * GET /api/situacao-fiscal/lote/pendentes
+ * Retorna a lista de CNPJs pendentes na tabela temporária
+ */
+router.get('/lote/pendentes', async (req, res, next) => {
+  try {
+    const status = req.query.status as string || 'pendente';
+    const query = `
+      SELECT 
+        id,
+        cnpj,
+        razao_social,
+        cliente_id,
+        motivo,
+        status,
+        tentativas,
+        ultimo_erro,
+        criado_em,
+        processado_em,
+        progress_id
+      FROM sitf_lote_cnpjs_pendentes
+      WHERE status = ?
+      ORDER BY criado_em ASC
+    `;
+    
+    const result = await executeQuery(query, [status]);
+    
+    return res.json({
+      success: true,
+      data: result || [],
+      total: result?.length || 0,
+    });
+  } catch (error: any) {
+    console.error('[SITF Lote Pendentes] Erro ao buscar pendentes:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Erro ao buscar CNPJs pendentes',
+    });
+  }
+});
+
+/**
+ * POST /api/situacao-fiscal/lote/iniciar-pendentes
+ * Inicia consulta em lote usando apenas os CNPJs da tabela temporária
+ * Processa um CNPJ por vez e remove da tabela após sucesso
+ */
+router.post('/lote/iniciar-pendentes', async (req, res, next) => {
+  try {
+    // Buscar CNPJs pendentes da tabela
+    const pendentesQuery = `
+      SELECT 
+        id,
+        cnpj,
+        razao_social,
+        cliente_id,
+        motivo
+      FROM sitf_lote_cnpjs_pendentes
+      WHERE status = 'pendente'
+      ORDER BY criado_em ASC
+    `;
+    
+    const pendentes = await executeQuery(pendentesQuery, []);
+    
+    if (!pendentes || pendentes.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nenhum CNPJ pendente encontrado. Use /lote/popular-pendentes primeiro.',
+      });
+    }
+    
+    const totalPendentes = pendentes.length;
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    
+    // Inicializar progresso
+    const progressId = `sitf-lote-pendentes-${Date.now()}`;
+    const progressData = {
+      total: totalPendentes,
+      processados: 0,
+      sucessos: 0,
+      erros: 0,
+      porcentagem: 0,
+      status: 'em_andamento',
+      iniciado_em: new Date().toISOString(),
+      erros_detalhados: [] as Array<{ cnpj: string; razao_social: string; erro: string }>,
+      ultimo_erro_rate_limit: false,
+      apenasFaltantes: false,
+      totalOriginal: totalPendentes,
+      jaProcessados: 0,
+      cnpjAtual: null as string | null,
+    };
+
+    // Armazenar progresso em memória e no banco
+    global.sitfLoteProgress = global.sitfLoteProgress || {};
+    global.sitfLoteProgress[progressId] = progressData;
+    await salvarProgressoNoBanco(progressId, progressData);
+
+    // Responder imediatamente
+    res.json({
+      success: true,
+      progressId,
+      total: totalPendentes,
+      message: `Consulta em lote iniciada: ${totalPendentes} CNPJs pendentes para processar`,
+    });
+
+    // Processar em background
+    (async () => {
+      console.log('\n' + '='.repeat(80));
+      console.log(`[SITF Lote Pendentes] 🚀 INICIANDO PROCESSAMENTO EM LOTE`);
+      console.log(`[SITF Lote Pendentes] Progress ID: ${progressId}`);
+      console.log(`[SITF Lote Pendentes] Total de CNPJs pendentes: ${totalPendentes}`);
+      console.log('='.repeat(80) + '\n');
+      
+      for (let i = 0; i < pendentes.length; i++) {
+        // Verificar se foi cancelado
+        if (global.sitfLoteProgress[progressId]?.status === 'cancelada') {
+          global.sitfLoteProgress[progressId].finalizado_em = new Date().toISOString();
+          global.sitfLoteProgress[progressId].cnpjAtual = null;
+          await salvarProgressoNoBanco(progressId, global.sitfLoteProgress[progressId]);
+          console.log('\n[SITF Lote Pendentes] ⛔ Consulta cancelada pelo usuário');
+          break;
+        }
+
+        const pendente = pendentes[i];
+        const cnpjLimpo = pendente.cnpj;
+        const razaoSocial = pendente.razao_social || 'Sem nome';
+        const pendenteId = pendente.id;
+        
+        const numeroAtual = i + 1;
+        console.log(`\n[SITF Lote Pendentes] 📋 Processando CNPJ ${numeroAtual}/${totalPendentes}: ${cnpjLimpo} - ${razaoSocial}`);
+        console.log(`[SITF Lote Pendentes] Motivo: ${pendente.motivo || 'N/A'}`);
+        
+        // Marcar como processando na tabela
+        await executeQuery(
+          'UPDATE sitf_lote_cnpjs_pendentes SET status = ?, progress_id = ? WHERE id = ?',
+          ['processando', progressId, pendenteId]
+        );
+
+        try {
+          global.sitfLoteProgress[progressId].cnpjAtual = `${cnpjLimpo} - ${razaoSocial}`;
+          await salvarProgressoNoBanco(progressId, global.sitfLoteProgress[progressId]);
+          
+          console.log(`[SITF Lote Pendentes] 🔄 Iniciando requisição para ${cnpjLimpo}...`);
+          
+          // Usar a função auxiliar que aguarda conclusão completa
+          const resultado = await aguardarConclusaoConsulta(cnpjLimpo, baseUrl, progressId);
+
+          if (resultado.sucesso) {
+            global.sitfLoteProgress[progressId].sucessos++;
+            console.log(`[SITF Lote Pendentes] ✅ ${cnpjLimpo} - ${razaoSocial}: Consulta concluída com sucesso`);
+            
+            // Remover da tabela temporária após sucesso
+            await executeQuery(
+              'DELETE FROM sitf_lote_cnpjs_pendentes WHERE id = ?',
+              [pendenteId]
+            );
+            console.log(`[SITF Lote Pendentes] 🗑️  CNPJ ${cnpjLimpo} removido da tabela temporária`);
+          } else {
+            const erroMsg = resultado.erro || 'Erro desconhecido';
+            const isRateLimit = erroMsg.includes('429') || erroMsg.toLowerCase().includes('rate limit');
+            
+            global.sitfLoteProgress[progressId].erros++;
+            global.sitfLoteProgress[progressId].erros_detalhados.push({
+              cnpj: cnpjLimpo,
+              razao_social: razaoSocial,
+              erro: erroMsg
+            });
+            
+            // Atualizar status na tabela para 'erro' e incrementar tentativas
+            await executeQuery(
+              'UPDATE sitf_lote_cnpjs_pendentes SET status = ?, tentativas = tentativas + 1, ultimo_erro = ? WHERE id = ?',
+              ['erro', erroMsg.substring(0, 1000), pendenteId]
+            );
+            
+            if (isRateLimit) {
+              console.error(`[SITF Lote Pendentes] ⚠️  ${cnpjLimpo} - ${razaoSocial}: Rate limit detectado - ${erroMsg}`);
+            } else {
+              console.error(`[SITF Lote Pendentes] ❌ ${cnpjLimpo} - ${razaoSocial}: ${erroMsg}`);
+            }
+            
+            if (isRateLimit) {
+              global.sitfLoteProgress[progressId].ultimo_erro_rate_limit = true;
+            }
+          }
+        } catch (error: any) {
+          global.sitfLoteProgress[progressId].erros++;
+          const erroMsg = error.message || 'Erro desconhecido';
+          global.sitfLoteProgress[progressId].erros_detalhados.push({
+            cnpj: cnpjLimpo,
+            razao_social: razaoSocial,
+            erro: erroMsg
+          });
+          
+          // Atualizar status na tabela para 'erro'
+          await executeQuery(
+            'UPDATE sitf_lote_cnpjs_pendentes SET status = ?, tentativas = tentativas + 1, ultimo_erro = ? WHERE id = ?',
+            ['erro', erroMsg.substring(0, 1000), pendenteId]
+          );
+          
+          console.error(`[SITF Lote Pendentes] ❌ ${cnpjLimpo} - ${razaoSocial}: Erro inesperado - ${erroMsg}`);
+        }
+
+        global.sitfLoteProgress[progressId].processados++;
+        global.sitfLoteProgress[progressId].porcentagem = Math.round(
+          (global.sitfLoteProgress[progressId].processados / totalPendentes) * 100
+        );
+        
+        await salvarProgressoNoBanco(progressId, global.sitfLoteProgress[progressId]);
+        
+        // Aguardar 30 segundos entre requisições (com variação aleatória)
+        if (i < pendentes.length - 1) {
+          const delay = 30000 + Math.floor(Math.random() * 10000); // 30-40 segundos
+          console.log(`[SITF Lote Pendentes] ⏳ Aguardando ${Math.round(delay / 1000)}s antes do próximo CNPJ...`);
+          await aguardarComCancelamento(progressId, delay);
+        }
+      }
+      
+      // Finalizar
+      global.sitfLoteProgress[progressId].status = 'concluida';
+      global.sitfLoteProgress[progressId].finalizado_em = new Date().toISOString();
+      global.sitfLoteProgress[progressId].cnpjAtual = null;
+      await salvarProgressoNoBanco(progressId, global.sitfLoteProgress[progressId]);
+      
+      console.log('\n' + '='.repeat(80));
+      console.log(`[SITF Lote Pendentes] ✅ PROCESSAMENTO CONCLUÍDO`);
+      console.log(`[SITF Lote Pendentes] Total processado: ${global.sitfLoteProgress[progressId].processados}`);
+      console.log(`[SITF Lote Pendentes] Sucessos: ${global.sitfLoteProgress[progressId].sucessos}`);
+      console.log(`[SITF Lote Pendentes] Erros: ${global.sitfLoteProgress[progressId].erros}`);
+      console.log('='.repeat(80) + '\n');
+    })();
+  } catch (error: any) {
+    console.error('[SITF Lote Pendentes] Erro ao iniciar consulta em lote:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Erro ao iniciar consulta em lote',
+    });
+  }
+});
+
+router.post('/upload-pdf', upload.single('pdf'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nenhum PDF enviado. Por favor, selecione um arquivo PDF.',
+      });
+    }
+
+    // Tentar extrair CNPJ do PDF primeiro, se não vier no body
+    let cnpjLimpo = req.body.cnpj ? String(req.body.cnpj).replace(/\D/g, '') : '';
+    
+    // Se CNPJ não foi fornecido, será extraído do PDF pelo Python
+    // Validaremos após a extração
+
+    console.log('[Upload PDF] Iniciando processamento...', {
+      cnpj: cnpjLimpo,
+      tamanho: req.file.size,
+      mimetype: req.file.mimetype,
+    });
+
+    // Usar script Python para extração (mais robusto para tabelas)
+    console.log('[Upload PDF] Usando script Python (pdfplumber) para extração...');
+    const pythonResult = await extrairSociosComPython(req.file.buffer);
+    
+    if (!pythonResult.success || !pythonResult.socios) {
+      return res.status(500).json({
+        success: false,
+        error: pythonResult.error || 'Erro ao extrair sócios com Python. Verifique se Python e pdfplumber estão instalados.',
+      });
+    }
+
+    console.log(`[Upload PDF] ✅ ${pythonResult.total || 0} sócios extraídos com Python`);
+
+    // Usar CNPJ extraído do PDF se não foi fornecido no body
+    if (!cnpjLimpo || cnpjLimpo.length !== 14) {
+      if (pythonResult.cnpj && pythonResult.cnpj.length === 14) {
+        cnpjLimpo = pythonResult.cnpj;
+        console.log(`[Upload PDF] CNPJ extraído do PDF: ${cnpjLimpo}`);
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: 'Não foi possível extrair o CNPJ do PDF. Por favor, forneça o CNPJ manualmente ou verifique se o PDF é válido.',
+        });
+      }
+    } else {
+      // Validar CNPJ fornecido
+      if (cnpjLimpo.length !== 14) {
+        return res.status(400).json({
+          success: false,
+          error: 'CNPJ inválido. O CNPJ deve conter 14 dígitos.',
+        });
+      }
+      console.log(`[Upload PDF] CNPJ fornecido manualmente: ${cnpjLimpo}`);
+    }
+
+    // Converter formato Python → Node.js
+    const sociosConvertidos = converterSociosPythonParaNode(pythonResult.socios);
+    
+    console.log('[Upload PDF] Sócios convertidos para formato Node.js:', sociosConvertidos.length);
+
+    // Buscar cliente pelo CNPJ
+    const clienteModel = new Cliente();
+    const clienteResult = await clienteModel.findByCNPJ(cnpjLimpo);
+    
+    if (!clienteResult.success || !clienteResult.data) {
+      return res.status(404).json({
+        success: false,
+        error: 'Cliente não encontrado. Por favor, cadastre o cliente primeiro.',
+      });
+    }
+
+    const cliente = clienteResult.data;
+    const capitalSocial = (cliente as any).capital_social;
+
+    console.log('[Upload PDF] Cliente encontrado:', {
+      id: cliente.id,
+      razao_social: (cliente as any).razao_social,
+      capital_social: capitalSocial,
+    });
+
+    // Atualizar sócios do cliente com participação
+    const updateResult = await clienteModel.atualizarSociosComParticipacao(
+      cliente.id!,
+      sociosConvertidos,
+      capitalSocial
+    );
+
+    if (!updateResult.success) {
+      console.error('[Upload PDF] Erro ao atualizar sócios:', updateResult.error);
+      return res.status(500).json({
+        success: false,
+        error: updateResult.error || 'Erro ao atualizar sócios no banco de dados',
+      });
+    }
+
+    console.log('[Upload PDF] ✅ Sócios atualizados com sucesso:', {
+      atualizados: updateResult.data?.atualizados || 0,
+    });
+
+    // Salvar PDF no histórico (simular como se fosse da API)
+    const protocolo = `UPLOAD_${Date.now()}`;
+    const now = new Date();
+    const dataFormatada = now.toISOString().slice(0, 19).replace('T', ' ');
+
+    // Converter buffer para base64 para salvar no banco
+    const pdfBase64 = req.file.buffer.toString('base64');
+
+    // Preparar dados extraídos para salvar no histórico
+    const extractedData = {
+      socios: sociosConvertidos,
+      metadata: {
+        source: 'upload_manual',
+        extracted_via: 'python_pdfplumber',
+        extracted_at: now.toISOString(),
+      },
+    };
+
+    try {
+      await executeQuery(
+        `INSERT INTO sitf_downloads (cnpj, protocolo, pdf_base64, extracted_data, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          cnpjLimpo,
+          protocolo,
+          pdfBase64,
+          JSON.stringify(extractedData),
+          dataFormatada,
+        ]
+      );
+      console.log('[Upload PDF] ✅ PDF salvo no histórico com protocolo:', protocolo);
+    } catch (historyError: any) {
+      console.warn('[Upload PDF] Erro ao salvar no histórico (continuando mesmo assim):', historyError);
+      // Continuar mesmo se houver erro ao salvar no histórico
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        protocolo,
+        sociosExtraidos: pythonResult.total || 0,
+        sociosAtualizados: updateResult.data?.atualizados || 0,
+        socios: sociosConvertidos,
+      },
+      message: `PDF processado com sucesso. ${pythonResult.total || 0} sócio(s) extraído(s) e atualizado(s).`,
+    });
+  } catch (error: any) {
+    console.error('[Upload PDF] Erro:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Erro ao processar PDF',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    });
+  }
+});
+
 export default router;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1236,9 +1236,11 @@ export class Cliente extends DatabaseService<ICliente> {
             }
           }
 
+          // ✅ Incluir campo CPF (será NULL inicialmente, pois ReceitaWS não fornece CPF no QSA)
+          // O CPF será preenchido posteriormente quando a Situação Fiscal for consultada
           await connection.execute(
-            'INSERT INTO `clientes_socios` (`id`,`cliente_id`,`nome`,`qual`,`participacao_percentual`,`participacao_valor`) VALUES (?,?,?,?,?,?)',
-            [socioId, clienteId, nome, ((s as any)?.qual ? String((s as any).qual).trim() : null), participacaoPercentual, participacaoValor]
+            'INSERT INTO `clientes_socios` (`id`,`cliente_id`,`nome`,`cpf`,`qual`,`participacao_percentual`,`participacao_valor`) VALUES (?,?,?,?,?,?,?)',
+            [socioId, clienteId, nome, null, ((s as any)?.qual ? String((s as any).qual).trim() : null), participacaoPercentual, participacaoValor]
           );
           }
         } catch (e: any) {
@@ -1305,46 +1307,355 @@ export class Cliente extends DatabaseService<ICliente> {
       try {
         // Buscar capital social do cliente se não foi fornecido
         let capitalSocialNum: number | null = null;
+        let capitalSocialOriginal: any = capitalSocial;
+        
+        // Função auxiliar para normalizar Capital Social (formato brasileiro: "1.000,00" → 1000.00)
+        const normalizarCapitalSocial = (valor: any): number | null => {
+          if (valor === null || valor === undefined) return null;
+          
+          if (typeof valor === 'number') {
+            return isNaN(valor) ? null : valor;
+          }
+          
+          // Converter para string e limpar
+          let str = String(valor).trim();
+          
+          // Remover símbolos de moeda (R$, $, etc.)
+          str = str.replace(/R\$\s*/gi, '').replace(/\$\s*/g, '').trim();
+          
+          // Detectar formato brasileiro: tem vírgula como separador decimal
+          // Exemplo: "1.000,00" ou "1000,00" ou "1.000,50"
+          const temVirgulaDecimal = /,\d{1,2}$/.test(str);
+          
+          if (temVirgulaDecimal) {
+            // Formato brasileiro: remover pontos (milhares) e substituir vírgula por ponto
+            // "1.000,00" → "1000,00" → "1000.00"
+            str = str.replace(/\./g, '').replace(',', '.');
+          } else {
+            // Formato americano ou sem formatação: apenas remover pontos se houver
+            // "1000.00" ou "1000" ou "1.000" (sem vírgula)
+            // Se tem ponto mas não vírgula, pode ser formato americano ou milhares
+            // Vamos assumir que se tem ponto e não vírgula, é formato americano (decimal)
+            str = str.replace(/[^\d.-]/g, '');
+          }
+          
+          const num = parseFloat(str);
+          return isNaN(num) ? null : num;
+        };
+        
         if (capitalSocial) {
-          capitalSocialNum = typeof capitalSocial === 'string' ? parseFloat(capitalSocial.replace(/[^\d,.-]/g, '').replace(',', '.')) : capitalSocial;
+          capitalSocialNum = normalizarCapitalSocial(capitalSocial);
         } else {
           const [clienteRows] = await connection.execute('SELECT `capital_social` FROM `clientes` WHERE `id` = ? LIMIT 1', [clienteId]);
           const clienteRow = (clienteRows as any[])[0];
           if (clienteRow?.capital_social) {
-            capitalSocialNum = typeof clienteRow.capital_social === 'string' 
-              ? parseFloat(clienteRow.capital_social.replace(/[^\d,.-]/g, '').replace(',', '.'))
-              : parseFloat(String(clienteRow.capital_social));
+            capitalSocialOriginal = clienteRow.capital_social;
+            capitalSocialNum = normalizarCapitalSocial(clienteRow.capital_social);
           }
         }
+        
+        console.log(`[Cliente Model] 💰 Capital Social normalizado:`, {
+          original: capitalSocialOriginal,
+          normalizado: capitalSocialNum,
+        });
 
-        // Remover sócios existentes
-        await connection.execute('DELETE FROM `clientes_socios` WHERE `cliente_id` = ?', [clienteId]);
+        // ✅ NOVA LÓGICA: Fazer match por CPF/CNPJ ou nome e apenas atualizar porcentagens
+        // Não deletar sócios existentes - eles vêm do QSA da ReceitaWS
+        // Buscar sócios existentes
+        const [sociosExistentesRows] = await connection.execute(
+          'SELECT `id`, `nome`, `cpf`, `qual`, `participacao_percentual`, `participacao_valor` FROM `clientes_socios` WHERE `cliente_id` = ?',
+          [clienteId]
+        );
+        const sociosExistentes = sociosExistentesRows as Array<{
+          id: string;
+          nome: string;
+          cpf: string | null;
+          qual: string | null;
+          participacao_percentual: number | null;
+          participacao_valor: number | null;
+        }>;
+
+        console.log(`[Cliente Model] 📋 Sócios existentes (do QSA): ${sociosExistentes.length}`);
+        console.log(`[Cliente Model] 📋 Sócios da Situação Fiscal: ${socios.length}`);
 
         let criados = 0;
         let atualizados = 0;
 
-        // Inserir novos sócios com participação
-        for (const s of socios) {
+        // Função auxiliar para normalizar nome (remover acentos, espaços extras, etc.)
+        // ✅ MELHORADO: Remove também sufixos de tipo societário para melhor matching
+        const normalizarNome = (nome: string): string => {
+          let normalized = nome
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          // ✅ NOVO: Remover sufixos de tipo societário para matching mais flexível
+          // Ex: "ASL PARTICIPACOES EMPRESARIAIS S/A" vs "ASL PARTICIPACOES EMPRESARIAIS LTDA"
+          const sufixosSocietarios = [
+            /\s+(s\/a|s\.a\.|sa)$/i,
+            /\s+(ltda|ltda\.)$/i,
+            /\s+(eireli)$/i,
+            /\s+(me)$/i,
+            /\s+(epp)$/i,
+            /\s+(holding)$/i,
+            /\s+(participacoes|participações)$/i,
+            /\s+(empresariais|empresariais)$/i,
+          ];
+          
+          for (const sufixo of sufixosSocietarios) {
+            normalized = normalized.replace(sufixo, '').trim();
+          }
+          
+          return normalized;
+        };
+
+        // Função auxiliar para limpar CPF/CNPJ (apenas números)
+        const limparCpfCnpj = (doc: string | null | undefined): string | null => {
+          if (!doc) return null;
+          return String(doc).replace(/\D/g, '') || null;
+        };
+
+        // ✅ NOVO: Se alguns sócios não foram encontrados, tentar buscar dados faltantes por matching reverso
+        // Isso ajuda quando o Python não extraiu todos os dados, mas temos os nomes dos sócios existentes
+        // Primeiro, processar os sócios que temos dados completos da Situação Fiscal
+        // Depois, fazer matching reverso: para cada sócio existente sem dados, buscar na lista da SITF
+        
+        // ✅ NOVO: Filtrar sócios que contenham "Qualif. Resp." ou "CONTRATANTE" antes de processar
+        const sociosFiltrados = socios.filter(s => {
+          const nome = String(s.nome || '').trim();
+          const qual = s.qual ? String(s.qual).trim() : '';
+          const nomeUpper = nome.toUpperCase();
+          const qualUpper = qual.toUpperCase();
+          const temQualifResp = nomeUpper.includes('QUALIF. RESP') || nomeUpper.includes('QUALIF RESP') || 
+                                qualUpper.includes('QUALIF. RESP') || qualUpper.includes('QUALIF RESP');
+          const temContratante = nomeUpper.includes('CONTRATANTE: 32.401.481') || nomeUpper.includes('CONTRATANTE: 32401481') ||
+                                 qualUpper.includes('CONTRATANTE: 32.401.481') || qualUpper.includes('CONTRATANTE: 32401481');
+          
+          if (temQualifResp) {
+            console.log(`[Cliente Model] ⚠️ Sócio ignorado (contém Qualif. Resp.): ${nome}`);
+          }
+          
+          if (temContratante) {
+            console.log(`[Cliente Model] ⚠️ Sócio ignorado (contém CONTRATANTE): ${nome}`);
+          }
+          
+          return !temQualifResp && !temContratante;
+        });
+        
+        console.log(`[Cliente Model] ✅ Filtrados ${socios.length - sociosFiltrados.length} sócios com "Qualif. Resp." ou "CONTRATANTE" (de ${socios.length} total)`);
+        
+        // Processar cada sócio da Situação Fiscal (com dados completos ou parciais)
+        for (const s of sociosFiltrados) {
           const nome = String(s.nome || '').trim();
           if (!nome) continue;
 
-          const socioId = uuidv4();
-          const cpf = s.cpf ? String(s.cpf).replace(/\D/g, '') : null; // Limpar CPF (apenas números)
+          const cpfLimpo = limparCpfCnpj(s.cpf);
           const qual = s.qual ? String(s.qual).trim() : null;
           const participacaoPercentual = s.participacao_percentual ? parseFloat(String(s.participacao_percentual)) : null;
           
+          // Log detalhado do sócio sendo processado
+          console.log(`[Cliente Model] 🔍 Processando sócio da SITF:`, {
+            nome,
+            cpf: cpfLimpo || 'não informado',
+            qual: qual || 'não informado',
+            participacao_percentual: participacaoPercentual !== null ? `${participacaoPercentual}%` : 'não informado',
+          });
+          
           // Calcular valor da participação se temos porcentagem e capital social
+          // Fórmula: valor = Capital Social (cliente) × porcentagem (SITF) / 100
           let participacaoValor: number | null = null;
           if (participacaoPercentual !== null && capitalSocialNum !== null && !isNaN(capitalSocialNum)) {
             participacaoValor = (capitalSocialNum * participacaoPercentual) / 100;
+            console.log(`[Cliente Model] 💰 Cálculo participação: ${capitalSocialNum} × ${participacaoPercentual}% / 100 = ${participacaoValor}`);
           }
 
-          await connection.execute(
-            'INSERT INTO `clientes_socios` (`id`,`cliente_id`,`nome`,`cpf`,`qual`,`participacao_percentual`,`participacao_valor`) VALUES (?,?,?,?,?,?,?)',
-            [socioId, clienteId, nome, cpf, qual, participacaoPercentual, participacaoValor]
-          );
-          criados++;
+          // Tentar fazer match por CPF/CNPJ primeiro (mais confiável)
+          let socioEncontrado = null;
+          if (cpfLimpo) {
+            socioEncontrado = sociosExistentes.find(existente => {
+              const cpfExistenteLimpo = limparCpfCnpj(existente.cpf);
+              return cpfExistenteLimpo && cpfExistenteLimpo === cpfLimpo;
+            });
+          }
+
+          // Se não encontrou por CPF/CNPJ, tentar por nome (normalizado)
+          // ✅ MELHORADO: Matching mais flexível - aceita match parcial (fuzzy matching)
+          if (!socioEncontrado) {
+            const nomeNormalizado = normalizarNome(nome);
+            const palavrasNome = nomeNormalizado.split(/\s+/).filter(p => p.length > 2); // Palavras com mais de 2 caracteres
+            
+            console.log(`[Cliente Model] 🔍 Tentando match por nome para: "${nome}" (normalizado: "${nomeNormalizado}")`);
+            
+            // Tentar match exato primeiro
+            socioEncontrado = sociosExistentes.find(existente => {
+              const nomeExistenteNormalizado = normalizarNome(existente.nome);
+              const matchExato = nomeExistenteNormalizado === nomeNormalizado;
+              if (matchExato) {
+                console.log(`[Cliente Model] ✅ Match exato encontrado: "${nome}" → "${existente.nome}"`);
+              }
+              return matchExato;
+            });
+            
+            // Se não encontrou match exato, tentar match parcial (fuzzy)
+            // Um nome contém o outro ou vice-versa
+            if (!socioEncontrado && palavrasNome.length >= 2) {
+              socioEncontrado = sociosExistentes.find(existente => {
+                const nomeExistenteNormalizado = normalizarNome(existente.nome);
+                const palavrasExistente = nomeExistenteNormalizado.split(/\s+/).filter(p => p.length > 2);
+                
+                // ✅ MELHORADO: Calcular similaridade considerando palavras importantes
+                // Filtrar palavras muito comuns (artigos, preposições) que não são relevantes para matching
+                const palavrasComunsIrrelevantes = ['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'na', 'no', 'nas', 'nos'];
+                const palavrasNomeFiltradas = palavrasNome.filter(p => !palavrasComunsIrrelevantes.includes(p));
+                const palavrasExistenteFiltradas = palavrasExistente.filter(p => !palavrasComunsIrrelevantes.includes(p));
+                
+                // Calcular similaridade: quantas palavras importantes do nome atual estão no nome existente
+                const palavrasComuns = palavrasNomeFiltradas.filter(p => palavrasExistenteFiltradas.includes(p));
+                const totalPalavrasImportantes = Math.max(palavrasNomeFiltradas.length, palavrasExistenteFiltradas.length);
+                const similaridade = totalPalavrasImportantes > 0 
+                  ? palavrasComuns.length / totalPalavrasImportantes 
+                  : 0;
+                
+                // Se pelo menos 70% das palavras importantes coincidem, é um match
+                // OU se um nome contém o outro (ex: "FRANCIANE DE FATIMA SOUZA LOPES DE" vs "FRANCIANE DE FATIMA SOUZA LOPES DE PONTES")
+                // OU se os nomes normalizados (sem sufixos societários) são iguais
+                const umContemOutro = nomeNormalizado.includes(nomeExistenteNormalizado) || nomeExistenteNormalizado.includes(nomeNormalizado);
+                const palavrasSemelhantes = similaridade >= 0.7;
+                const nomesNormalizadosIguais = nomeNormalizado === nomeExistenteNormalizado; // Já normalizados (sem sufixos)
+                
+                const match = umContemOutro || palavrasSemelhantes || nomesNormalizadosIguais;
+                
+                if (match) {
+                  console.log(`[Cliente Model] ✅ Match parcial encontrado: "${nome}" → "${existente.nome}"`, {
+                    nomeNormalizado,
+                    nomeExistenteNormalizado,
+                    similaridade: similaridade.toFixed(2),
+                    umContemOutro,
+                    palavrasSemelhantes,
+                    nomesNormalizadosIguais,
+                  });
+                }
+                
+                return match;
+              });
+              
+              if (socioEncontrado) {
+                console.log(`[Cliente Model] ✅ Match parcial por nome encontrado: "${nome}" → "${socioEncontrado.nome}"`);
+              }
+            }
+          }
+
+          if (socioEncontrado) {
+            // ✅ Atualizar sócio existente: apenas porcentagem, valor e CPF (se disponível)
+            // A Situação Fiscal deve apenas atualizar os dados já cadastrados do QSA, não criar novos sócios
+            console.log(`[Cliente Model] ✅ Match encontrado: ${socioEncontrado.nome} → Atualizando porcentagem e CPF`);
+            
+            await connection.execute(
+              'UPDATE `clientes_socios` SET `cpf` = ?, `qual` = COALESCE(?, `qual`), `participacao_percentual` = ?, `participacao_valor` = ? WHERE `id` = ?',
+              [cpfLimpo, qual, participacaoPercentual, participacaoValor, socioEncontrado.id]
+            );
+            atualizados++;
+          } else {
+            // ⚠️ Sócio não encontrado no QSA - ignorar (não criar novo)
+            // A Situação Fiscal deve apenas atualizar os dados já cadastrados, não criar novos sócios
+            console.log(`[Cliente Model] ⚠️ Sócio da SITF não encontrado no QSA: ${nome} - Ignorando (não será criado)`);
+            // Não criar novo sócio - apenas atualizar os existentes
+          }
         }
+        
+        // ✅ NOVO: Matching reverso - para cada sócio existente sem dados completos,
+        // tentar encontrar dados na lista da Situação Fiscal usando matching por nome
+        console.log(`[Cliente Model] 🔄 Iniciando matching reverso: buscando dados faltantes nos sócios existentes...`);
+        const sociosSemDadosCompletos = sociosExistentes.filter(existente => {
+          // Considerar "sem dados completos" se faltar CPF OU percentual
+          const temCpf = !!limparCpfCnpj(existente.cpf);
+          const temPercentual = existente.participacao_percentual !== null && existente.participacao_percentual !== undefined;
+          return !temCpf || !temPercentual;
+        });
+        
+        console.log(`[Cliente Model] 📋 Sócios existentes sem dados completos: ${sociosSemDadosCompletos.length}`);
+        
+        for (const existente of sociosSemDadosCompletos) {
+          const nomeExistenteNormalizado = normalizarNome(existente.nome);
+          const palavrasExistente = nomeExistenteNormalizado.split(/\s+/).filter(p => p.length > 2);
+          
+          // Buscar na lista de sócios da Situação Fiscal (já filtrados, sem "Qualif. Resp.")
+          let socioSitfEncontrado = sociosFiltrados.find(s => {
+            const nomeSitf = String(s.nome || '').trim();
+            if (!nomeSitf) return false;
+            
+            const nomeSitfNormalizado = normalizarNome(nomeSitf);
+            
+            // Match exato
+            if (nomeSitfNormalizado === nomeExistenteNormalizado) return true;
+            
+            // Match parcial (fuzzy)
+            if (palavrasExistente.length >= 2) {
+              const palavrasSitf = nomeSitfNormalizado.split(/\s+/).filter(p => p.length > 2);
+              
+              // ✅ MELHORADO: Filtrar palavras comuns irrelevantes
+              const palavrasComunsIrrelevantes = ['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'na', 'no', 'nas', 'nos'];
+              const palavrasExistenteFiltradas = palavrasExistente.filter(p => !palavrasComunsIrrelevantes.includes(p));
+              const palavrasSitfFiltradas = palavrasSitf.filter(p => !palavrasComunsIrrelevantes.includes(p));
+              
+              const palavrasComuns = palavrasExistenteFiltradas.filter(p => palavrasSitfFiltradas.includes(p));
+              const totalPalavrasImportantes = Math.max(palavrasExistenteFiltradas.length, palavrasSitfFiltradas.length);
+              const similaridade = totalPalavrasImportantes > 0 
+                ? palavrasComuns.length / totalPalavrasImportantes 
+                : 0;
+              
+              const umContemOutro = nomeExistenteNormalizado.includes(nomeSitfNormalizado) || nomeSitfNormalizado.includes(nomeExistenteNormalizado);
+              const palavrasSemelhantes = similaridade >= 0.7;
+              const nomesNormalizadosIguais = nomeExistenteNormalizado === nomeSitfNormalizado; // Já normalizados (sem sufixos)
+              
+              return umContemOutro || palavrasSemelhantes || nomesNormalizadosIguais;
+            }
+            
+            return false;
+          });
+          
+          if (socioSitfEncontrado) {
+            // ✅ Encontrou match! Atualizar dados faltantes
+            console.log(`[Cliente Model] ✅ Matching reverso encontrado: "${existente.nome}" → dados da SITF:`, {
+              nomeSitf: socioSitfEncontrado.nome,
+              cpfSitf: socioSitfEncontrado.cpf || 'não informado',
+              qualSitf: socioSitfEncontrado.qual || 'não informado',
+              participacao_percentualSitf: socioSitfEncontrado.participacao_percentual !== null ? `${socioSitfEncontrado.participacao_percentual}%` : 'não informado',
+            });
+            
+            const cpfFaltante = !limparCpfCnpj(existente.cpf) ? limparCpfCnpj(socioSitfEncontrado.cpf) : limparCpfCnpj(existente.cpf);
+            const qualFaltante = !existente.qual ? (socioSitfEncontrado.qual ? String(socioSitfEncontrado.qual).trim() : null) : existente.qual;
+            const percentualFaltante = existente.participacao_percentual === null || existente.participacao_percentual === undefined
+              ? (socioSitfEncontrado.participacao_percentual ? parseFloat(String(socioSitfEncontrado.participacao_percentual)) : null)
+              : existente.participacao_percentual;
+            
+            // Calcular valor se temos percentual e capital social
+            let participacaoValor: number | null = null;
+            if (percentualFaltante !== null && capitalSocialNum !== null && !isNaN(capitalSocialNum)) {
+              participacaoValor = (capitalSocialNum * percentualFaltante) / 100;
+            }
+            
+            console.log(`[Cliente Model] ✅ Matching reverso encontrado: "${existente.nome}" → dados da SITF:`, {
+              cpf: cpfFaltante || 'não informado',
+              qual: qualFaltante || 'não informado',
+              participacao_percentual: percentualFaltante !== null ? `${percentualFaltante}%` : 'não informado',
+              participacao_valor: participacaoValor !== null ? participacaoValor : 'não calculado',
+            });
+            
+            // Atualizar sócio existente com dados faltantes
+            await connection.execute(
+              'UPDATE `clientes_socios` SET `cpf` = COALESCE(?, `cpf`), `qual` = COALESCE(?, `qual`), `participacao_percentual` = COALESCE(?, `participacao_percentual`), `participacao_valor` = COALESCE(?, `participacao_valor`) WHERE `id` = ?',
+              [cpfFaltante, qualFaltante, percentualFaltante, participacaoValor, existente.id]
+            );
+            atualizados++;
+          } else {
+            console.log(`[Cliente Model] ⚠️ Matching reverso não encontrou dados para: "${existente.nome}"`);
+          }
+        }
+
+        console.log(`[Cliente Model] ✅ Atualização concluída: ${atualizados} atualizados, ${criados} criados`);
 
         await connection.commit();
         return { success: true, data: { atualizados, criados } };
@@ -1360,6 +1671,190 @@ export class Cliente extends DatabaseService<ICliente> {
         return { success: true, data: { atualizados: 0, criados: 0 } };
       }
       return { success: false, error: e?.message || 'Erro ao atualizar sócios' };
+    }
+  }
+
+  /**
+   * Recalcula os valores de participação dos sócios baseado no Capital Social do cliente
+   * Não busca na Situação Fiscal, apenas recalcula usando as porcentagens já salvas
+   */
+  async recalcularValoresParticipacao(clienteId: string): Promise<ApiResponse<{ atualizados: number }>> {
+    try {
+      const { getConnection } = await import('../config/mysql');
+      const connection = await getConnection();
+      await connection.beginTransaction();
+
+      try {
+        // Buscar Capital Social do cliente
+        const [clienteRows] = await connection.execute('SELECT `capital_social` FROM `clientes` WHERE `id` = ? LIMIT 1', [clienteId]);
+        const clienteRow = (clienteRows as any[])[0];
+        
+        if (!clienteRow) {
+          await connection.rollback();
+          return { success: false, error: 'Cliente não encontrado' };
+        }
+
+        // Função auxiliar para normalizar Capital Social (formato brasileiro: "1.000,00" → 1000.00)
+        const normalizarCapitalSocial = (valor: any): number | null => {
+          if (valor === null || valor === undefined) return 0; // Retornar 0 em vez de null para valores nulos
+          
+          if (typeof valor === 'number') {
+            return isNaN(valor) ? 0 : valor;
+          }
+          
+          let str = String(valor).trim();
+          if (str === '' || str === '0' || str === '0,00' || str === '0.00' || str === 'R$ 0,00' || str === 'R$ 0.00') {
+            return 0;
+          }
+          
+          str = str.replace(/R\$\s*/gi, '').replace(/\$\s*/g, '').trim();
+          
+          const temVirgulaDecimal = /,\d{1,2}$/.test(str);
+          
+          if (temVirgulaDecimal) {
+            str = str.replace(/\./g, '').replace(',', '.');
+          } else {
+            str = str.replace(/[^\d.-]/g, '');
+          }
+          
+          const num = parseFloat(str);
+          return isNaN(num) ? 0 : num; // Retornar 0 em vez de null para valores inválidos
+        };
+
+        const capitalSocialNum = normalizarCapitalSocial(clienteRow.capital_social);
+        
+        console.log(`[Cliente Model] 🔍 Capital Social original: ${clienteRow.capital_social}, normalizado: ${capitalSocialNum}`);
+        
+        // Se Capital Social for zero, atribuir 0,00 a todos os sócios
+        if (capitalSocialNum === 0 || capitalSocialNum === null) {
+          console.log(`[Cliente Model] 💰 Capital Social é zero ou nulo. Atribuindo R$ 0,00 a todos os sócios.`);
+          
+          const [todosSociosRows] = await connection.execute(
+            'SELECT `id`, `nome` FROM `clientes_socios` WHERE `cliente_id` = ?',
+            [clienteId]
+          );
+          
+          const todosSocios = todosSociosRows as any[];
+          let atualizados = 0;
+          
+          if (todosSocios.length === 0) {
+            await connection.commit();
+            return { success: true, data: { atualizados: 0 } };
+          }
+          
+          for (const socio of todosSocios) {
+            await connection.execute(
+              'UPDATE `clientes_socios` SET `participacao_valor` = 0 WHERE `id` = ?',
+              [socio.id]
+            );
+            console.log(`[Cliente Model] ✅ Atribuído R$ 0,00 a ${socio.nome} (ID: ${socio.id})`);
+            atualizados++;
+          }
+          
+          await connection.commit();
+          console.log(`[Cliente Model] ✅ Total de sócios atualizados: ${atualizados}`);
+          return { success: true, data: { atualizados } };
+        }
+
+        // Buscar TODOS os sócios deste cliente (com e sem porcentagem)
+        const [sociosRows] = await connection.execute(
+          'SELECT `id`, `nome`, `participacao_percentual`, `participacao_valor` FROM `clientes_socios` WHERE `cliente_id` = ?',
+          [clienteId]
+        );
+        
+        const socios = sociosRows as any[];
+        
+        if (socios.length === 0) {
+          await connection.commit();
+          return { success: true, data: { atualizados: 0 } };
+        }
+
+        // Calcular soma dos percentuais existentes
+        let somaPercentuais = 0;
+        const sociosComPercentual: any[] = [];
+        const sociosSemPercentual: any[] = [];
+        
+        for (const socio of socios) {
+          if (socio.participacao_percentual !== null && socio.participacao_percentual !== undefined) {
+            const percentual = parseFloat(socio.participacao_percentual);
+            if (!isNaN(percentual)) {
+              somaPercentuais += percentual;
+              sociosComPercentual.push(socio);
+            } else {
+              sociosSemPercentual.push(socio);
+            }
+          } else {
+            sociosSemPercentual.push(socio);
+          }
+        }
+
+        let atualizados = 0;
+        const sociosAtualizadosComZero = new Set<string>(); // Rastrear sócios que receberam 0%
+
+        // Se a soma já é 100% (ou muito próxima, com tolerância de 0.01%), atribuir 0% aos sócios sem percentual
+        if (Math.abs(somaPercentuais - 100) < 0.01 && sociosSemPercentual.length > 0) {
+          console.log(`[Cliente Model] 📊 Soma de percentuais: ${somaPercentuais.toFixed(2)}% (100%). Atribuindo 0% a ${sociosSemPercentual.length} sócio(s) sem percentual.`);
+          
+          for (const socio of sociosSemPercentual) {
+            await connection.execute(
+              'UPDATE `clientes_socios` SET `participacao_percentual` = 0, `participacao_valor` = 0 WHERE `id` = ?',
+              [socio.id]
+            );
+            console.log(`[Cliente Model] ✅ Atribuído 0% a ${socio.nome}`);
+            sociosAtualizadosComZero.add(socio.id);
+            atualizados++; // Contar os que receberam 0%
+          }
+        }
+
+        // Recalcular valores de todos os sócios com percentual (incluindo os que acabaram de receber 0%)
+        const todosSociosParaRecalcular = [...sociosComPercentual, ...(Math.abs(somaPercentuais - 100) < 0.01 ? sociosSemPercentual : [])];
+        
+        for (const socio of todosSociosParaRecalcular) {
+          // Se já foi atualizado com 0% acima, pular (já foi contado)
+          if (sociosAtualizadosComZero.has(socio.id)) {
+            continue;
+          }
+          
+          // Buscar percentual atualizado (pode ter sido atualizado acima)
+          const [socioAtualizado] = await connection.execute(
+            'SELECT `participacao_percentual` FROM `clientes_socios` WHERE `id` = ?',
+            [socio.id]
+          );
+          const participacaoPercentual = parseFloat((socioAtualizado as any[])[0]?.participacao_percentual || socio.participacao_percentual || '0');
+          
+          if (isNaN(participacaoPercentual)) {
+            continue;
+          }
+          
+          // Calcular novo valor: Capital Social × Porcentagem / 100
+          const novoValor = (capitalSocialNum * participacaoPercentual) / 100;
+          const valorAntigo = socio.participacao_valor ? parseFloat(socio.participacao_valor) : null;
+          
+          // Atualizar apenas se o valor mudou (com tolerância de 0.01 para arredondamentos)
+          if (valorAntigo === null || Math.abs(novoValor - valorAntigo) > 0.01) {
+            await connection.execute(
+              'UPDATE `clientes_socios` SET `participacao_valor` = ? WHERE `id` = ?',
+              [novoValor, socio.id]
+            );
+            
+            console.log(`[Cliente Model] 💰 Recalculado ${socio.nome}: ${participacaoPercentual}% = ${valorAntigo !== null ? valorAntigo : 'NULL'} → ${novoValor}`);
+            atualizados++; // Contar os que tiveram valor atualizado
+          }
+        }
+
+        await connection.commit();
+        return { success: true, data: { atualizados } };
+      } catch (e: any) {
+        await connection.rollback();
+        throw e;
+      } finally {
+        connection.release();
+      }
+    } catch (e: any) {
+      if (this.isNoSuchTableError(e)) {
+        return { success: true, data: { atualizados: 0 } };
+      }
+      return { success: false, error: e?.message || 'Erro ao recalcular valores de participação' };
     }
   }
 

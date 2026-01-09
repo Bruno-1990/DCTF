@@ -52,6 +52,32 @@ const Layout: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [sidebarOpen]);
 
+  // Esconder menu lateral quando o botão "voltar ao topo" aparecer
+  useEffect(() => {
+    const handleShowScrollToTop = () => {
+      // Verificar se estamos na página de Clientes (onde está a aba Participação)
+      if (window.location.pathname === '/clientes') {
+        setSidebarOpen(false);
+      }
+    };
+
+    const handleHideScrollToTop = () => {
+      // Verificar se estamos na página de Clientes
+      if (window.location.pathname === '/clientes') {
+        // Reabrir o menu lateral quando o scroll voltar ao topo
+        setSidebarOpen(true);
+      }
+    };
+
+    window.addEventListener('showScrollToTopButton', handleShowScrollToTop);
+    window.addEventListener('hideScrollToTopButton', handleHideScrollToTop);
+    
+    return () => {
+      window.removeEventListener('showScrollToTopButton', handleShowScrollToTop);
+      window.removeEventListener('hideScrollToTopButton', handleHideScrollToTop);
+    };
+  }, []);
+
   return (
     <ToastProvider>
       <div className="min-h-screen flex flex-col">
@@ -81,7 +107,7 @@ const Layout: React.FC = () => {
 
           {/* Sidebar */}
           <div
-            className="fixed lg:fixed z-[95] lg:z-30 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            className="fixed lg:fixed z-[95] lg:z-30"
             style={{
               left: sidebarOpen ? '0' : '-256px',
               width: '256px',
@@ -90,6 +116,8 @@ const Layout: React.FC = () => {
               opacity: sidebarOpen ? 1 : 0,
               boxShadow: '4px 0 20px rgba(0, 0, 0, 0.15), 2px 0 10px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05)',
               borderRadius: '0 20px 20px 0', // Quinas arredondadas estilo iOS/macOS (direita superior e inferior)
+              transition: 'transform 700ms cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              willChange: 'transform, opacity',
             }}
           >
             <div 
@@ -129,7 +157,7 @@ const Layout: React.FC = () => {
             </button>
           )}
 
-          <main className={`flex-1 bg-gray-50 p-6 overflow-x-hidden w-full max-w-full transition-all duration-300 ${
+          <main className={`flex-1 bg-gray-50 p-6 overflow-x-hidden w-full max-w-full transition-all duration-600 ease-[cubic-bezier(0.4,0,0.2,1)] ${
             sidebarOpen ? 'lg:ml-64' : 'lg:ml-0'
           }`}>
             <Outlet />

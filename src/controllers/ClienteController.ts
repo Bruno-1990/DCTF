@@ -733,6 +733,43 @@ export class ClienteController {
   /**
    * Atualizar sócios do cliente a partir da situação fiscal mais recente
    */
+  /**
+   * Recalcula os valores de participação dos sócios baseado no Capital Social do cliente
+   * Não busca na Situação Fiscal, apenas recalcula usando as porcentagens já salvas
+   */
+  async recalcularValoresParticipacao(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'ID do cliente é obrigatório',
+        });
+        return;
+      }
+
+      const result = await this.clienteModel.recalcularValoresParticipacao(id);
+
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: result.data,
+        message: `${result.data?.atualizados || 0} valor(es) de participação recalculado(s) com sucesso`,
+      });
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao recalcular valores de participação:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Erro ao recalcular valores de participação',
+      });
+    }
+  }
+
   async atualizarSociosPorSituacaoFiscal(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;

@@ -108,6 +108,12 @@ const Administracao: React.FC = () => {
   const [resultadoSITF, setResultadoSITF] = useState<any>(null);
   const [erroSITF, setErroSITF] = useState<string | null>(null);
   const pollingIntervalSITFRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Estados para consulta em lote de CNPJs pendentes (com divergências)
+  const [populandoPendentes, setPopulandoPendentes] = useState(false);
+  const [totalPendentes, setTotalPendentes] = useState<number | null>(null);
+  const [consultandoPendentes, setConsultandoPendentes] = useState(false);
+  const [progressIdPendentes, setProgressIdPendentes] = useState<string | null>(null);
 
   // Função para verificar progresso SITF
   const verificarProgressoSITF = async (progressId: string) => {
@@ -123,8 +129,12 @@ const Administracao: React.FC = () => {
           pollingIntervalSITFRef.current = null;
         }
         setConsultandoSITF(false);
+        setConsultandoPendentes(false);
         setResultadoSITF(data);
         setProgressIdSITF(null);
+        setProgressIdPendentes(null);
+        // Atualizar total de pendentes após conclusão
+        buscarTotalPendentes();
       }
     } catch (error: any) {
       console.error('[Administracao] Erro ao consultar progresso SITF:', error);
@@ -606,6 +616,76 @@ const Administracao: React.FC = () => {
       setErroSITF(errorMessage);
     }
   };
+
+  // Função para popular tabela de CNPJs pendentes
+  const handlePopularPendentes = async () => {
+    setPopulandoPendentes(true);
+    setTotalPendentes(null);
+    
+    try {
+      const response = await axios.post('/api/situacao-fiscal/lote/popular-pendentes');
+      
+      if (response.data.success) {
+        setTotalPendentes(response.data.total);
+        alert(`✅ ${response.data.total} CNPJs com divergências adicionados à fila de processamento!`);
+      } else {
+        alert(`❌ Erro: ${response.data.error || 'Erro ao popular tabela'}`);
+      }
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.error || err.message || 'Erro ao popular tabela';
+      alert(`❌ Erro: ${errorMessage}`);
+    } finally {
+      setPopulandoPendentes(false);
+    }
+  };
+
+  // Função para iniciar consulta em lote de pendentes
+  const handleIniciarConsultaPendentes = async () => {
+    setConsultandoPendentes(true);
+    setErroSITF(null);
+    setProgressoSITF(null);
+    
+    try {
+      const response = await axios.post('/api/situacao-fiscal/lote/iniciar-pendentes');
+      
+      if (response.data.success) {
+        setProgressIdPendentes(response.data.progressId);
+        // Usar o mesmo polling do SITF normal
+        setProgressIdSITF(response.data.progressId);
+        if (!pollingIntervalSITFRef.current) {
+          const interval = setInterval(() => {
+            verificarProgressoSITF(response.data.progressId);
+          }, 2000);
+          pollingIntervalSITFRef.current = interval;
+        }
+        verificarProgressoSITF(response.data.progressId);
+      } else {
+        setErroSITF(response.data.error || 'Erro ao iniciar consulta');
+        setConsultandoPendentes(false);
+      }
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.error || err.message || 'Erro ao iniciar consulta';
+      setErroSITF(errorMessage);
+      setConsultandoPendentes(false);
+    }
+  };
+
+  // Função para buscar total de pendentes
+  const buscarTotalPendentes = async () => {
+    try {
+      const response = await axios.get('/api/situacao-fiscal/lote/pendentes?status=pendente');
+      if (response.data.success) {
+        setTotalPendentes(response.data.total || 0);
+      }
+    } catch (err) {
+      // Ignorar erro silenciosamente
+    }
+  };
+
+  // Buscar total de pendentes ao carregar
+  useEffect(() => {
+    buscarTotalPendentes();
+  }, []);
 
   // Limpar polling quando componente desmontar
   useEffect(() => {
@@ -1685,6 +1765,75 @@ const Administracao: React.FC = () => {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Seção de Consulta em Lote de CNPJs com Divergências */}
+      <div className="bg-amber-50 border-2 border-amber-200 shadow-lg rounded-lg p-6 mb-6">
+        <div className="flex items-start mb-4">
+          <ExclamationTriangleIcon className="h-6 w-6 text-amber-600 mr-3 mt-1" />
+          <div className="flex-1">
+            <h2 className="text-xl font-semibold text-amber-900 mb-2">Consulta em Lote - CNPJs com Divergências</h2>
+            <p className="text-sm text-amber-700 mb-4">
+              Consulta apenas os CNPJs de empresas na aba Participação que têm divergências
+              (percentuais não somam 100% ou valores não batem com Capital Social).
+              Os CNPJs são armazenados em uma tabela temporária e removidos após processamento bem-sucedido.
+            </p>
+
+            <div className="bg-white rounded-lg p-4 border border-amber-300 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Como funciona:</h3>
+              <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
+                <li>Clique em "Popular Tabela" para identificar CNPJs com divergências</li>
+                <li>Clique em "Iniciar Consulta" para processar os CNPJs da tabela temporária</li>
+                <li>Cada CNPJ é removido da tabela após ser processado com sucesso</li>
+                <li>CNPJs com erro permanecem na tabela para nova tentativa</li>
+              </ol>
+            </div>
+
+            <div className="flex items-center gap-3 mb-4">
+              <button
+                onClick={handlePopularPendentes}
+                disabled={populandoPendentes || consultandoPendentes}
+                className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {populandoPendentes ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    Populando...
+                  </>
+                ) : (
+                  <>
+                    <ArrowPathIcon className="h-4 w-4" />
+                    Popular Tabela
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={handleIniciarConsultaPendentes}
+                disabled={consultandoPendentes || consultandoSITF || !totalPendentes || totalPendentes === 0}
+                className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {consultandoPendentes ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    Processando...
+                  </>
+                ) : (
+                  <>
+                    <DocumentMagnifyingGlassIcon className="h-4 w-4" />
+                    Iniciar Consulta
+                  </>
+                )}
+              </button>
+
+              {totalPendentes !== null && (
+                <span className="text-sm font-semibold text-amber-700 bg-amber-100 px-3 py-2 rounded">
+                  {totalPendentes} CNPJ{totalPendentes !== 1 ? 's' : ''} pendente{totalPendentes !== 1 ? 's' : ''}
+                </span>
+              )}
             </div>
           </div>
         </div>

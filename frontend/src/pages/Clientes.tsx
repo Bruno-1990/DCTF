@@ -16,9 +16,10 @@ import {
   XMarkIcon,
   ArrowLeftIcon,
   ArrowPathIcon,
-  InformationCircleIcon,
+  ArrowUpIcon,
   FunnelIcon,
   ChevronDownIcon,
+  ShareIcon,
 } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import type { AxiosError } from 'axios';
@@ -47,7 +48,8 @@ const Clientes: React.FC = () => {
   const [clientesParticipacao, setClientesParticipacao] = useState<Cliente[]>([]);
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
-  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'faltantes' | 'sem-registro'>('a-z');
+  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente'>('a-z');
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
   // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
   const [successMessage, setSuccessMessage] = useState<string>('');
@@ -55,6 +57,7 @@ const Clientes: React.FC = () => {
   const [showError, setShowError] = useState(false);
   const [customErrorMessage, setCustomErrorMessage] = useState<string>('');
   const [copiedCnpj, setCopiedCnpj] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos'>(() => {
@@ -84,6 +87,8 @@ const Clientes: React.FC = () => {
   const [visualizandoCliente, setVisualizandoCliente] = useState<Cliente | null>(null);
   const [atualizandoCliente, setAtualizandoCliente] = useState(false);
   const [atualizandoSocios, setAtualizandoSocios] = useState<string | null>(null); // ID do cliente sendo atualizado
+  const [recalculandoValores, setRecalculandoValores] = useState<string | null>(null); // ID do cliente sendo recalculado
+  const [uploadingPdf, setUploadingPdf] = useState(false); // Estado para upload de PDF
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -95,6 +100,28 @@ const Clientes: React.FC = () => {
   const jaTentouCarregarRef = useRef(false); // Rastrear se já tentou carregar nesta sessão
   const activeTabAnteriorRef = useRef<string>(''); // Rastrear aba anterior
   const atualizandoSociosIdRef = useRef<string | null>(null); // Ref para rastrear qual cliente está sendo atualizado
+  const fileInputRef = useRef<HTMLInputElement>(null); // Ref para input de arquivo
+
+  // Função para formatar CPF ou CNPJ
+  const formatarCpfCnpj = (valor: string | null | undefined): string => {
+    if (!valor) return '-';
+    
+    // Remover formatação existente (pontos, traços, barras)
+    const limpo = valor.replace(/\D/g, '');
+    
+    // CPF: 11 dígitos → 000.000.000-00
+    if (limpo.length === 11) {
+      return limpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    }
+    
+    // CNPJ: 14 dígitos → 00.000.000/0000-00
+    if (limpo.length === 14) {
+      return limpo.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    }
+    
+    // Se não for CPF nem CNPJ, retornar o valor original
+    return valor;
+  };
 
   // Função para mudar de aba e atualizar URL
   const handleTabChange = (tab: 'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos') => {
@@ -119,6 +146,71 @@ const Clientes: React.FC = () => {
     // setUltimaImportacaoMeta(null); // Não utilizado no momento
   };
 
+  // Funções para upload de PDF da Situação Fiscal
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar tipo de arquivo
+    if (file.type !== 'application/pdf') {
+      toast.error('Apenas arquivos PDF são permitidos');
+      return;
+    }
+
+    // Validar tamanho (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('O arquivo deve ter no máximo 10MB');
+      return;
+    }
+
+    setUploadingPdf(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('pdf', file);
+      // CNPJ será extraído automaticamente do PDF
+
+      toast.info('Enviando PDF e processando com Python...', 5000);
+
+      const res = await fetch('/api/situacao-fiscal/upload-pdf', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const body = await res.json();
+
+      if (!res.ok) {
+        throw new Error(body.error || `Erro HTTP ${res.status}`);
+      }
+
+      toast.success(body.message || `PDF processado com sucesso. ${body.data?.sociosExtraidos || 0} sócio(s) extraído(s).`, 5000);
+
+      // Recarregar lista de clientes para Participação após sucesso
+      if (activeTab === 'participacao') {
+        setTimeout(() => {
+          loadClientes();
+        }, 1000);
+      }
+
+      // Limpar campos
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error: any) {
+      console.error('[Upload PDF] Erro:', error);
+      toast.error(error.message || 'Erro ao processar PDF. Verifique se Python e pdfplumber estão instalados.');
+    } finally {
+      setUploadingPdf(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   // Detectar tab na query string (ou localStorage) ao entrar/alterar URL
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -138,14 +230,14 @@ const Clientes: React.FC = () => {
     else if (tab === 'participacao') setActiveTab('participacao');
     else setActiveTab('clientes');
     
-    // Detectar CNPJ na query string para pagamentos, e-processos e lançamentos
+    // Detectar CNPJ na query string para pagamentos, e-processos, lançamentos e clientes
     const cnpjFromQuery = params.get('cnpj');
     if (cnpjFromQuery) {
       const cnpjLimpo = cnpjFromQuery.replace(/\D/g, '');
       if (cnpjLimpo.length === 14) {
         if (tab === 'pagamentos' || tab === 'e-processos') {
           setCnpjParaPagamentos(cnpjLimpo);
-        } else if (tab === 'lancamentos') {
+        } else if (tab === 'lancamentos' || tab === 'clientes') {
           // Preencher o campo de busca com o CNPJ formatado
           const cnpjFormatado = cnpjLimpo
             .replace(/(\d{2})(\d)/, '$1.$2')
@@ -157,6 +249,176 @@ const Clientes: React.FC = () => {
       }
     }
   }, [location.search]);
+
+  // Detectar scroll para mostrar botão "voltar ao topo" na aba Participação
+  useEffect(() => {
+    if (activeTab !== 'participacao') {
+      setShowScrollToTop(false);
+      // Notificar Layout para mostrar o menu novamente
+      window.dispatchEvent(new CustomEvent('hideScrollToTopButton'));
+      return;
+    }
+
+    const handleScroll = () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      const shouldShow = scrollY > 300;
+      setShowScrollToTop(shouldShow);
+      
+      // Notificar Layout para esconder/mostrar o menu lateral
+      if (shouldShow) {
+        window.dispatchEvent(new CustomEvent('showScrollToTopButton'));
+      } else {
+        window.dispatchEvent(new CustomEvent('hideScrollToTopButton'));
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [activeTab]);
+
+  // Função para voltar ao topo
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
+
+  // Função para compartilhar link com âncora
+  const compartilharCliente = async (clienteId: string) => {
+    try {
+      const baseUrl = window.location.origin;
+      const linkCompleto = `${baseUrl}/clientes?tab=participacao&anchor=${clienteId}`;
+      
+      // Copiar para área de transferência
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(linkCompleto);
+      } else {
+        // Fallback para contextos não-seguros
+        const textArea = document.createElement('textarea');
+        textArea.value = linkCompleto;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      
+      setCopiedLink(clienteId);
+      toast.success('Link copiado para a área de transferência!', 3000);
+      
+      setTimeout(() => {
+        setCopiedLink(null);
+      }, 3000);
+    } catch (err) {
+      console.error('Erro ao copiar link:', err);
+      toast.error('Erro ao copiar link');
+    }
+  };
+
+  // Calcular total de registros filtrados na aba Participação
+  const totalRegistrosFiltrados = React.useMemo(() => {
+    if (activeTab !== 'participacao' || loadingParticipacao || clientesParticipacao.length === 0) {
+      return 0;
+    }
+    
+    return clientesParticipacao
+      // 1. Aplicar busca por texto
+      .filter(c => {
+        if (!searchParticipacao || !searchParticipacao.trim()) return true;
+        
+        const search = searchParticipacao.toLowerCase().trim();
+        if (!search) return true;
+        
+        const normalize = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const cnpjLimpo = search.replace(/\D/g, '');
+        const cnpjMatch = cnpjLimpo.length > 0 && (
+          c.cnpj?.includes(searchParticipacao) ||
+          c.cnpj_limpo?.includes(cnpjLimpo) ||
+          c.cnpj?.replace(/\D/g, '').includes(cnpjLimpo)
+        );
+        const razaoSocial = c.razao_social || c.nome || '';
+        const razaoSocialNormalizada = normalize(razaoSocial);
+        const searchNormalizada = normalize(search);
+        const palavrasBusca = searchNormalizada.split(/\s+/).filter(p => p.length > 0);
+        const nomeMatch = razaoSocialNormalizada.includes(searchNormalizada);
+        const palavrasMatch = palavrasBusca.length > 0 && palavrasBusca.every(palavra => 
+          razaoSocialNormalizada.includes(palavra)
+        );
+        const inicioPalavraMatch = palavrasBusca.some(palavra => 
+          razaoSocialNormalizada.split(/\s+/).some(palavraRazao => palavraRazao.startsWith(palavra))
+        );
+        return cnpjMatch || nomeMatch || palavrasMatch || inicioPalavraMatch;
+      })
+      // 2. Aplicar filtros especiais
+      .filter(c => {
+        if (ordenacaoParticipacao === 'faltantes') {
+          return c.socios && c.socios.length > 0 && c.socios.some(s => 
+            !s.participacao_percentual || !s.participacao_valor
+          );
+        } else if (ordenacaoParticipacao === 'sem-registro') {
+          return !c.socios || c.socios.length === 0;
+        } else if (ordenacaoParticipacao === 'capital-zerado') {
+          const capital = c.capital_social;
+          if (capital === null || capital === undefined || capital === '') return true;
+          const capitalNum = typeof capital === 'number'
+            ? capital
+            : parseFloat(String(capital).replace(/[^\d,.-]/g, '').replace(',', '.'));
+          return isNaN(capitalNum) || capitalNum === 0;
+        } else if (ordenacaoParticipacao === 'divergente') {
+          const sociosComQualificacao = c.socios?.filter(s => s.qual && s.qual.trim() !== '') || [];
+          if (sociosComQualificacao.length === 0) return false;
+          const somaPercentuais = sociosComQualificacao.reduce((acc, s) => {
+            const percentual = s.participacao_percentual !== null && s.participacao_percentual !== undefined
+              ? parseFloat(String(s.participacao_percentual))
+              : 0;
+            return acc + (isNaN(percentual) ? 0 : percentual);
+          }, 0);
+          const somaValores = sociosComQualificacao.reduce((acc, s) => {
+            const valor = s.participacao_valor !== null && s.participacao_valor !== undefined
+              ? parseFloat(String(s.participacao_valor))
+              : 0;
+            return acc + (isNaN(valor) ? 0 : valor);
+          }, 0);
+          const capitalSocial = c.capital_social 
+            ? (typeof c.capital_social === 'number' 
+                ? c.capital_social 
+                : parseFloat(String(c.capital_social).replace(/[^\d,.-]/g, '').replace(',', '.')))
+            : 0;
+          const capitalSocialNum = isNaN(capitalSocial) ? 0 : capitalSocial;
+          const percentuaisOk = Math.abs(somaPercentuais - 100) < 0.01;
+          const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.01;
+          return !percentuaisOk || !valoresOk;
+        }
+        return true;
+      }).length;
+  }, [activeTab, loadingParticipacao, clientesParticipacao, searchParticipacao, ordenacaoParticipacao]);
+
+  // Scroll até a âncora quando a página carregar
+  useEffect(() => {
+    if (activeTab === 'participacao') {
+      const params = new URLSearchParams(location.search);
+      const anchor = params.get('anchor');
+      
+      if (anchor) {
+        // Aguardar um pouco para garantir que os elementos foram renderizados
+        setTimeout(() => {
+          const element = document.getElementById(`cliente-${anchor}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Destacar o elemento brevemente
+            element.classList.add('ring-4', 'ring-amber-400', 'ring-opacity-75', 'rounded-lg');
+            setTimeout(() => {
+              element.classList.remove('ring-4', 'ring-amber-400', 'ring-opacity-75');
+            }, 2000);
+          }
+        }, 500);
+      }
+    }
+  }, [activeTab, location.search, clientesParticipacao.length]);
 
   // Detectar clienteId na query string para visualizar cliente (separado para garantir execução)
   useEffect(() => {
@@ -254,8 +516,13 @@ const Clientes: React.FC = () => {
       
       // Se não mudou para participacao agora, não fazer nada (já estava nela)
       if (!abaMudouParaParticipacao) {
-        // Se já está carregando ou já tem dados, não fazer nada
-        if (carregandoParticipacaoRef.current || clientesParticipacao.length > 0) {
+        // Se já está carregando, NÃO fazer nada (evitar múltiplas execuções)
+        if (carregandoParticipacaoRef.current) {
+          console.log('[Clientes] Já está carregando. Ignorando nova execução do useEffect.');
+          return;
+        }
+        // Se já tem dados, não fazer nada
+        if (clientesParticipacao.length > 0) {
           return;
         }
         // Se não está carregando e não tem dados, pode ser que houve erro - permitir nova tentativa
@@ -299,6 +566,8 @@ const Clientes: React.FC = () => {
           let temMais = true;
           
           while (temMais && !cancelarCarregamentoRef.current) {
+            console.log(`[Clientes Participação] 🔄 Iniciando iteração do loop. pagina=${pagina}, temMais=${temMais}, cancelarCarregamento=${cancelarCarregamentoRef.current}`);
+            
             let tentativas = 0;
             let sucesso = false;
             let items: Cliente[] = [];
@@ -348,37 +617,104 @@ const Clientes: React.FC = () => {
             
             todosClientes.push(...items);
             
-            // Verificar se há mais páginas
+            console.log(`[Clientes Participação] Página ${pagina}:`, {
+              itemsRecebidos: items.length,
+              totalAcumulado: todosClientes.length,
+              pagination: pagination ? {
+                page: pagination.page,
+                limit: pagination.limit,
+                total: pagination.total,
+                totalPages: pagination.totalPages
+              } : null
+            });
+            
+            // Verificar se há mais páginas ANTES de incrementar
+            // IMPORTANTE: O backend retorna pagination.totalPages baseado no total de clientes após filtros
+            // Precisamos continuar carregando até que não haja mais páginas
+            let temMaisProxima = false;
             if (pagination && pagination.totalPages) {
-              temMais = pagina < pagination.totalPages;
+              // Verificar se ainda há páginas para carregar
+              // Se pagina = 1 e totalPages = 3, ainda precisa carregar páginas 2 e 3
+              // Se pagina = 2 e totalPages = 3, ainda precisa carregar página 3
+              // Se pagina = 3 e totalPages = 3, não precisa mais (já carregou todas)
+              // Verificar a PRÓXIMA página (pagina + 1) para saber se deve continuar
+              temMaisProxima = (pagina + 1) <= pagination.totalPages;
+              console.log(`[Clientes Participação] Verificando paginação: página atual ${pagina}, próxima será ${pagina + 1}, total de páginas ${pagination.totalPages}, temMaisProxima: ${temMaisProxima}`);
             } else {
               // Se não retornou paginação, verificar se retornou menos que o limite
-              temMais = items.length === 100;
+              // Se retornou exatamente 100 itens, provavelmente há mais páginas
+              temMaisProxima = items.length === 100;
+              console.log(`[Clientes Participação] Sem paginação do backend: items.length=${items.length}, temMaisProxima: ${temMaisProxima}`);
             }
             
+            // Atualizar temMais para a próxima iteração
+            temMais = temMaisProxima;
+            
+            // Incrementar página DEPOIS de verificar, para que na próxima iteração já esteja correto
             pagina++;
             
             // Aguardar 1 segundo entre cada requisição para evitar rate limit (429)
             // Delay maior para garantir que o backend não bloqueie
             if (temMais) {
+              console.log(`[Clientes Participação] ⏳ Aguardando 1s antes de carregar página ${pagina}...`);
               await new Promise(resolve => setTimeout(resolve, 1000));
+              console.log(`[Clientes Participação] ✅ Aguardamento concluído. Verificando se deve continuar: temMais=${temMais}, cancelarCarregamento=${cancelarCarregamentoRef.current}`);
+            } else {
+              console.log(`[Clientes Participação] ✅ Todas as páginas foram carregadas. Total acumulado: ${todosClientes.length}`);
+            }
+            
+            // Verificar novamente se deve continuar (pode ter sido cancelado durante o await)
+            if (cancelarCarregamentoRef.current) {
+              console.log(`[Clientes Participação] ⚠️ Carregamento cancelado durante o loop. Parando.`);
+              break;
+            }
+            
+            // Verificar novamente temMais antes de continuar o loop
+            if (!temMais) {
+              console.log(`[Clientes Participação] ✅ Não há mais páginas. Finalizando loop.`);
+              break;
             }
           }
           
-          // Filtrar apenas matrizes (CNPJ termina em 0001)
+          console.log(`[Clientes Participação] 🏁 Loop finalizado. Motivo: temMais=${temMais}, cancelarCarregamento=${cancelarCarregamentoRef.current}, totalClientes=${todosClientes.length}`);
+          
+          // Filtrar apenas matrizes usando o campo tipo_empresa do cadastro
           // Filiais não têm sócios, então não devem aparecer na aba Participação
+          // IMPORTANTE: Usar o campo tipo_empresa, não o sufixo do CNPJ, pois existem matrizes com 0002, 0003, etc.
           const apenasMatrizes = todosClientes.filter(cliente => {
-            const cnpj = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
-            // Matriz tem os últimos 4 dígitos antes do verificador sendo "0001"
-            // Exemplo: 12.345.678/0001-90 (matriz) vs 12.345.678/0002-07 (filial)
-            if (cnpj.length === 14) {
-              const sufixo = cnpj.substring(8, 12); // Dígitos 9-12 (posições 8-11)
-              return sufixo === '0001';
-            }
-            return false; // Se não tem CNPJ válido, não é matriz
+            const tipoEmpresa = cliente.tipo_empresa;
+            // Considerar como matriz se tipo_empresa === 'Matriz'
+            // Também considerar null/undefined como potencial matriz (para compatibilidade com dados antigos)
+            return tipoEmpresa === 'Matriz';
           });
           
-          console.log(`[Clientes] Total de clientes: ${todosClientes.length}, Matrizes: ${apenasMatrizes.length}`);
+          console.log(`[Clientes] ✅ Carregamento concluído:`);
+          console.log(`   - Total de clientes carregados: ${todosClientes.length}`);
+          console.log(`   - Total de matrizes encontradas: ${apenasMatrizes.length}`);
+          console.log(`   - Páginas processadas: ${pagina - 1}`);
+          
+          // Verificar se há clientes duplicados
+          const idsUnicos = new Set(todosClientes.map(c => c.id));
+          if (idsUnicos.size !== todosClientes.length) {
+            console.warn(`[Clientes] ⚠️ ATENÇÃO: ${todosClientes.length - idsUnicos.size} clientes duplicados detectados!`);
+          }
+          
+          // Verificar distribuição de tipos de empresa
+          const tiposEmpresa = todosClientes.reduce((acc, c) => {
+            const tipo = c.tipo_empresa || 'NULL';
+            acc[tipo] = (acc[tipo] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+          console.log(`[Clientes] Distribuição de tipos de empresa:`, tiposEmpresa);
+          
+          // Verificar se há clientes sem CNPJ válido
+          const clientesSemCnpjValido = todosClientes.filter(cliente => {
+            const cnpj = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
+            return cnpj.length !== 14;
+          });
+          if (clientesSemCnpjValido.length > 0) {
+            console.warn(`[Clientes] ⚠️  ${clientesSemCnpjValido.length} cliente(s) sem CNPJ válido (14 dígitos) foram ignorados`);
+          }
           
           setClientesParticipacao(apenasMatrizes);
           setLoadingParticipacao(false);
@@ -409,25 +745,30 @@ const Clientes: React.FC = () => {
         }
       });
       
-      // Cleanup: cancelar se o componente desmontar ou a tab mudar
+      // Cleanup: NÃO cancelar automaticamente no cleanup
+      // O cancelamento só deve acontecer quando realmente sairmos da aba Participação
+      // Isso é feito no bloco else abaixo, não no cleanup
+      // O cleanup aqui não faz nada para evitar cancelar durante re-renders
       return () => {
-        cancelarCarregamentoRef.current = true;
-        carregandoParticipacaoRef.current = false;
-        toastInfoRef.current = null;
-        toastRateLimitParticipacaoRef.current = false;
+        // Não fazer nada no cleanup - deixar o carregamento continuar
+        // O cancelamento será feito no else abaixo quando realmente sairmos da aba
+        console.log('[Clientes] Cleanup do useEffect executado, mas não cancelando (pode ser apenas re-render)');
       };
     } else {
       // Atualizar ref da aba anterior
       activeTabAnteriorRef.current = activeTab;
       
       // Limpar clientes da participação quando sair da aba
-      cancelarCarregamentoRef.current = true;
-      setClientesParticipacao([]);
-      setSearchParticipacao(''); // Limpar busca ao sair da aba
-      carregandoParticipacaoRef.current = false;
-      toastInfoRef.current = null;
-      toastRateLimitParticipacaoRef.current = false;
-      jaTentouCarregarRef.current = false; // Resetar para permitir recarregar quando voltar
+      // IMPORTANTE: Só cancelar se realmente saiu da aba Participação
+      if (activeTabAnteriorRef.current === 'participacao') {
+        cancelarCarregamentoRef.current = true;
+        setClientesParticipacao([]);
+        setSearchParticipacao(''); // Limpar busca ao sair da aba
+        carregandoParticipacaoRef.current = false;
+        toastInfoRef.current = null;
+        toastRateLimitParticipacaoRef.current = false;
+        jaTentouCarregarRef.current = false; // Resetar para permitir recarregar quando voltar
+      }
     }
   }, [activeTab]); // Apenas activeTab como dependência
 
@@ -1407,8 +1748,16 @@ const Clientes: React.FC = () => {
                         }
                       } else {
                         const errorMsg = (result as any).error || 'Erro ao atualizar sócios';
+                        const errorMsgLower = errorMsg.toLowerCase();
+                        
+                        // Verificar se é erro de Capital Social Zerado
+                        if (errorMsgLower.includes('capital social zerado') || 
+                            errorMsgLower.includes('capital zerado') ||
+                            errorMsgLower.includes('capital social zero')) {
+                          toast.error('Capital Social Zerado: Não é possível atualizar os sócios quando o capital social está zerado.');
+                        }
                         // Se não houver situação fiscal, redirecionar para página de Situação Fiscal
-                        if (errorMsg.includes('Nenhuma situação fiscal encontrada') || errorMsg.includes('404')) {
+                        else if (errorMsg.includes('Nenhuma situação fiscal encontrada') || errorMsg.includes('404')) {
                           const cnpjCliente = visualizandoCliente?.cnpj_limpo || visualizandoCliente?.cnpj?.replace(/\D/g, '') || '';
                           if (cnpjCliente && cnpjCliente.length === 14) {
                             toast.info('Redirecionando para consultar a Situação Fiscal...');
@@ -1427,8 +1776,16 @@ const Clientes: React.FC = () => {
                     } catch (error: any) {
                       console.error('Erro ao atualizar sócios:', error);
                       const errorMsg = error.response?.data?.error || error.message || 'Erro ao atualizar sócios';
+                      const errorMsgLower = errorMsg.toLowerCase();
+                      
+                      // Verificar se é erro de Capital Social Zerado
+                      if (errorMsgLower.includes('capital social zerado') || 
+                          errorMsgLower.includes('capital zerado') ||
+                          errorMsgLower.includes('capital social zero')) {
+                        toast.error('Capital Social Zerado: Não é possível atualizar os sócios quando o capital social está zerado.');
+                      }
                       // Se não houver situação fiscal, redirecionar para página de Situação Fiscal
-                      if (error.response?.status === 404 || errorMsg.includes('Nenhuma situação fiscal encontrada')) {
+                      else if (error.response?.status === 404 || errorMsg.includes('Nenhuma situação fiscal encontrada')) {
                         const cnpjCliente = visualizandoCliente?.cnpj_limpo || visualizandoCliente?.cnpj?.replace(/\D/g, '') || '';
                         if (cnpjCliente && cnpjCliente.length === 14) {
                           toast.info('Redirecionando para consultar a Situação Fiscal...');
@@ -1563,6 +1920,8 @@ const Clientes: React.FC = () => {
                   <option value="cnpj">CNPJ ↑</option>
                   <option value="faltantes">Informações Faltantes</option>
                   <option value="sem-registro">Sem Registro</option>
+                  <option value="capital-zerado">Capital Social Zerado</option>
+                  <option value="divergente">Divergente</option>
                 </select>
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FunnelIcon className="h-5 w-5 text-amber-500" />
@@ -2387,6 +2746,18 @@ const Clientes: React.FC = () => {
         </div>
       )}
 
+      {/* Botão Voltar ao Topo - Aba Participação */}
+      {activeTab === 'participacao' && showScrollToTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-8 right-8 z-50 p-4 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-full shadow-lg hover:shadow-xl transform hover:scale-110 transition-all duration-300 animate-bounce hover:animate-none flex items-center justify-center group"
+          title="Voltar ao topo"
+          aria-label="Voltar ao topo"
+        >
+          <ArrowUpIcon className="h-6 w-6 group-hover:translate-y-[-2px] transition-transform duration-300" />
+        </button>
+      )}
+
       {/* Aba de Pagamentos */}
       {activeTab === 'pagamentos' && (
         <PagamentosTab cnpjPreenchido={cnpjParaPagamentos} />
@@ -2405,9 +2776,16 @@ const Clientes: React.FC = () => {
               <UserGroupIcon className="h-5 w-5 text-amber-600" />
               Participação Societária
             </h2>
-            <p className="text-xs text-gray-600 mt-0.5">
-              Busque por CNPJ ou Razão Social para visualizar os sócios
-            </p>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-xs text-gray-600">
+                Busque por CNPJ ou Razão Social para visualizar os sócios
+              </p>
+              {!loadingParticipacao && totalRegistrosFiltrados > 0 && (
+                <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded">
+                  {totalRegistrosFiltrados} registro{totalRegistrosFiltrados !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="p-6">
@@ -2475,6 +2853,56 @@ const Clientes: React.FC = () => {
                 } else if (ordenacaoParticipacao === 'sem-registro') {
                   // Sem sócios cadastrados
                   return !c.socios || c.socios.length === 0;
+                } else if (ordenacaoParticipacao === 'capital-zerado') {
+                  // Capital Social zerado ou nulo
+                  const capital = c.capital_social;
+                  if (capital === null || capital === undefined || capital === '') {
+                    return true;
+                  }
+                  // Tentar converter para número
+                  const capitalNum = typeof capital === 'number'
+                    ? capital
+                    : parseFloat(String(capital).replace(/[^\d,.-]/g, '').replace(',', '.'));
+                  return isNaN(capitalNum) || capitalNum === 0;
+                } else if (ordenacaoParticipacao === 'divergente') {
+                  // Empresas com divergências na verificação de 2 fatores
+                  // (percentuais não somam 100% OU valores não batem com Capital Social)
+                  const sociosComQualificacao = c.socios?.filter(s => s.qual && s.qual.trim() !== '') || [];
+                  
+                  if (sociosComQualificacao.length === 0) {
+                    return false; // Sem sócios, não é divergente
+                  }
+                  
+                  // Calcular soma de percentuais
+                  const somaPercentuais = sociosComQualificacao.reduce((acc, s) => {
+                    const percentual = s.participacao_percentual !== null && s.participacao_percentual !== undefined
+                      ? parseFloat(String(s.participacao_percentual))
+                      : 0;
+                    return acc + (isNaN(percentual) ? 0 : percentual);
+                  }, 0);
+                  
+                  // Calcular soma de valores
+                  const somaValores = sociosComQualificacao.reduce((acc, s) => {
+                    const valor = s.participacao_valor !== null && s.participacao_valor !== undefined
+                      ? parseFloat(String(s.participacao_valor))
+                      : 0;
+                    return acc + (isNaN(valor) ? 0 : valor);
+                  }, 0);
+                  
+                  // Calcular Capital Social
+                  const capitalSocial = c.capital_social 
+                    ? (typeof c.capital_social === 'number' 
+                        ? c.capital_social 
+                        : parseFloat(String(c.capital_social).replace(/[^\d,.-]/g, '').replace(',', '.')))
+                    : 0;
+                  const capitalSocialNum = isNaN(capitalSocial) ? 0 : capitalSocial;
+                  
+                  // Verificar divergências (com tolerância de 0.01% e R$ 0.01)
+                  const percentuaisOk = Math.abs(somaPercentuais - 100) < 0.01;
+                  const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.01;
+                  
+                  // Retornar true se houver divergência (percentuais OU valores não batem)
+                  return !percentuaisOk || !valoresOk;
                 }
                 return true; // Outros casos: sem filtro especial
               })
@@ -2494,8 +2922,46 @@ const Clientes: React.FC = () => {
                 }
                 return 0; // Filtros especiais mantêm ordem original
               })
-              .map((cliente) => (
-              <div key={cliente.id} className="border border-gray-200 rounded-lg overflow-hidden shadow-md mb-4">
+              .map((cliente) => {
+                // Exibir TODOS os sócios do QSA (sem filtrar por qualificação)
+                // A Situação Fiscal apenas atualiza CPF/CNPJ e porcentagens dos sócios existentes
+                const todosSocios = cliente.socios || [];
+                
+                // Verificação de 2 fatores: porcentagens e valores (apenas para sócios com qualificação)
+                const sociosComQualificacao = todosSocios.filter(s => s.qual && s.qual.trim() !== '');
+                const somaPercentuais = sociosComQualificacao.reduce((acc, s) => {
+                  const percentual = s.participacao_percentual !== null && s.participacao_percentual !== undefined
+                    ? parseFloat(String(s.participacao_percentual))
+                    : 0;
+                  return acc + (isNaN(percentual) ? 0 : percentual);
+                }, 0);
+                
+                const somaValores = sociosComQualificacao.reduce((acc, s) => {
+                  const valor = s.participacao_valor !== null && s.participacao_valor !== undefined
+                    ? parseFloat(String(s.participacao_valor))
+                    : 0;
+                  return acc + (isNaN(valor) ? 0 : valor);
+                }, 0);
+                
+                const capitalSocial = cliente.capital_social 
+                  ? (typeof cliente.capital_social === 'number' 
+                      ? cliente.capital_social 
+                      : parseFloat(String(cliente.capital_social).replace(/[^\d,.-]/g, '').replace(',', '.')))
+                  : 0;
+                const capitalSocialNum = isNaN(capitalSocial) ? 0 : capitalSocial;
+                
+                // Verificar se bate 100% (com tolerância de 0.01% para arredondamentos)
+                const percentuaisOk = Math.abs(somaPercentuais - 100) < 0.01;
+                
+                // Verificar se os valores batem com o Capital Social (com tolerância de R$ 0.01 para arredondamentos)
+                const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.01;
+                
+                return (
+              <div 
+                id={`cliente-${cliente.id}`}
+                key={cliente.id} 
+                className="border border-gray-200 rounded-lg overflow-hidden shadow-md mb-4 transition-all duration-300 scroll-mt-20"
+              >
                 {/* Header da Empresa */}
                 <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100">
                   <div className="flex items-center justify-between">
@@ -2504,51 +2970,141 @@ const Clientes: React.FC = () => {
                         <BuildingOfficeIcon className="h-5 w-5 text-white" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-base text-gray-900 truncate">
+                        <h3 
+                          className="font-bold text-base text-gray-900 truncate cursor-pointer hover:text-amber-700 transition-colors"
+                          onClick={() => {
+                            const cnpjParaBusca = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
+                            if (cnpjParaBusca.length === 14) {
+                              // Formatar CNPJ para o campo de busca
+                              const cnpjFormatado = cnpjParaBusca
+                                .replace(/(\d{2})(\d)/, '$1.$2')
+                                .replace(/(\d{3})(\d)/, '$1.$2')
+                                .replace(/(\d{3})(\d)/, '$1/$2')
+                                .replace(/(\d{4})(\d)/, '$1-$2');
+                              
+                              // Mudar para aba clientes (Cadastro) primeiro
+                              handleTabChange('clientes');
+                              
+                              // Preencher o campo de busca imediatamente
+                              setSearch(cnpjFormatado);
+                              
+                              // Navegar para aba Cadastro (clientes) com CNPJ na query string
+                              const params = new URLSearchParams();
+                              params.set('cnpj', cnpjParaBusca);
+                              // Remover 'tab' da URL para ir para a aba padrão (Cadastro)
+                              navigate({ search: params.toString() }, { replace: true });
+                            }
+                          }}
+                          title="Clique para ver detalhes na aba Cadastro"
+                        >
                           {cliente.razao_social || cliente.nome || 'Sem nome'}
                         </h3>
-                        <p className="text-sm text-gray-600">
-                          CNPJ: {cliente.cnpj || cliente.cnpj_limpo || 'Não informado'}
-                        </p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm text-gray-600">
+                              CNPJ: {formatCNPJ(cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '') || 'Não informado'}
+                            </p>
+                            {cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') ? (
+                              <button
+                                onClick={() => {
+                                  const cnpjLimpo = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
+                                  const cnpjFormatado = formatCNPJ(cnpjLimpo);
+                                  copyToClipboard(cnpjFormatado, cnpjLimpo);
+                                }}
+                                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                                title="Copiar CNPJ"
+                              >
+                                {copiedCnpj === (cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '')) ? (
+                                  <CheckIcon className="w-3.5 h-3.5 text-green-600" />
+                                ) : (
+                                  <ClipboardDocumentIcon className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            ) : null}
+                          </div>
+                          {cliente.capital_social && (
+                            <>
+                              <span className="text-gray-400">•</span>
+                              <p className="text-sm text-gray-600">
+                                Capital Social: <span className="font-semibold text-gray-900">
+                                  {(() => {
+                                    const capital = typeof cliente.capital_social === 'number'
+                                      ? cliente.capital_social
+                                      : parseFloat(String(cliente.capital_social).replace(/[^\d,.-]/g, '').replace(',', '.'));
+                                    return !isNaN(capital) 
+                                      ? capital.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                      : cliente.capital_social;
+                                  })()}
+                                </span>
+                              </p>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    {cliente.socios && cliente.socios.length > 0 && (
-                      <span className="px-3 py-1 bg-amber-600 text-white text-sm font-semibold rounded-full">
-                        {cliente.socios.length} sócio{cliente.socios.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => compartilharCliente(cliente.id!)}
+                        className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all duration-300 flex items-center justify-center group"
+                        title="Compartilhar link deste cliente"
+                      >
+                        {copiedLink === cliente.id ? (
+                          <CheckIcon className="w-5 h-5 text-green-600" />
+                        ) : (
+                          <ShareIcon className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+                        )}
+                      </button>
+                      {todosSocios.length > 0 && (
+                        <span className="px-3 py-1 bg-amber-600 text-white text-sm font-semibold rounded-full">
+                          {todosSocios.length} sócio{todosSocios.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Conteúdo */}
                 <div className="border-t border-gray-200 bg-gray-50">
-                  {/* Informações Básicas da Empresa - Horizontal e Compacta */}
-                  <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
-                    <div className="flex items-center gap-6 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <InformationCircleIcon className="h-4 w-4 text-blue-600" />
-                        <span className="font-medium text-gray-700">Informações da Empresa</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-600">CNPJ:</span>
-                        <span className="font-semibold text-gray-900">{cliente.cnpj || cliente.cnpj_limpo || 'N/A'}</span>
-                      </div>
-                      <div className="hidden md:flex items-center gap-1">
-                        <span className="text-gray-600">Razão Social:</span>
-                        <span className="font-semibold text-gray-900">{cliente.razao_social || cliente.nome || 'N/A'}</span>
-                      </div>
-                      <div className="flex items-center gap-1 ml-auto">
-                        <span className="text-gray-600">Capital Social:</span>
-                        <span className="font-bold text-blue-700">
-                          {cliente.capital_social 
-                            ? typeof cliente.capital_social === 'number'
-                              ? cliente.capital_social.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                              : cliente.capital_social
-                            : 'N/A'}
-                        </span>
+                  {/* Verificação de 2 Fatores - Versão Simplificada */}
+                  {sociosComQualificacao.length > 0 && todosSocios.length > 0 && (
+                    <div className={`px-4 py-2.5 border-b transition-colors ${
+                      percentuaisOk && valoresOk 
+                        ? 'bg-green-50 border-green-200' 
+                        : 'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        {percentuaisOk && valoresOk ? (
+                          <>
+                            <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                              <CheckIcon className="h-3.5 w-3.5 text-white" />
+                            </div>
+                            <span className="text-sm font-medium text-green-700">Dados verificados</span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                              <XMarkIcon className="h-3.5 w-3.5 text-white" />
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {!percentuaisOk && (
+                                <span className="text-sm font-medium text-red-700">
+                                  Percentual: {somaPercentuais.toFixed(2)}% (esperado: 100%)
+                                </span>
+                              )}
+                              {!percentuaisOk && !valoresOk && capitalSocialNum > 0 && (
+                                <span className="text-red-400">•</span>
+                              )}
+                              {!valoresOk && capitalSocialNum > 0 && (
+                                <span className="text-sm font-medium text-red-700">
+                                  Soma de valores ≠ Capital Social
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Lista de Sócios - Tabela Compacta */}
                   <div className="px-4 py-3">
@@ -2556,131 +3112,259 @@ const Clientes: React.FC = () => {
                       <div className="flex items-center gap-1.5">
                         <UserGroupIcon className="h-4 w-4 text-amber-600" />
                         <h4 className="text-sm font-semibold text-gray-900">
-                          Sócios ({cliente.socios?.length || 0})
+                          Sócios ({todosSocios.length})
                         </h4>
                       </div>
-                      <button
-                        onClick={async (e) => {
-                          console.log('[Clientes] Botão "Atualizar Sócios" clicado', { clienteId: cliente.id, cnpj: cliente.cnpj });
-                          e.stopPropagation();
-                          
-                          if (!cliente.id) {
-                            console.error('[Clientes] ID do cliente não disponível', cliente);
-                            toast.error('ID do cliente não disponível');
-                            return;
-                          }
-                          
-                          const clienteIdLocal = cliente.id; // Guardar o ID localmente para evitar problemas com estado assíncrono
-                          console.log('[Clientes] Iniciando atualização de sócios para cliente:', clienteIdLocal);
-                          setAtualizandoSocios(clienteIdLocal);
-                          atualizandoSociosIdRef.current = clienteIdLocal; // Usar ref para verificação imediata
-                          
-                          try {
-                            const cnpjLimpo = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
-                            console.log('[Clientes] CNPJ limpo:', cnpjLimpo);
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={handleUploadClick}
+                          disabled={uploadingPdf}
+                          className="p-2 text-white bg-green-600 hover:bg-green-700 disabled:bg-green-300 disabled:cursor-not-allowed rounded-lg transition-all duration-300 flex items-center justify-center shadow-sm hover:shadow-md"
+                          title="Fazer upload de PDF da Situação Fiscal"
+                        >
+                          {uploadingPdf ? (
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <PlusIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={async (e) => {
+                            console.log('[Clientes] Botão "Atualizar Sócios" clicado', { clienteId: cliente.id, cnpj: cliente.cnpj });
+                            e.stopPropagation();
                             
-                            if (!cnpjLimpo || cnpjLimpo.length !== 14) {
-                              console.error('[Clientes] CNPJ inválido:', cnpjLimpo);
-                              toast.error('CNPJ inválido para consulta');
-                              setAtualizandoSocios(null);
-                              atualizandoSociosIdRef.current = null;
+                            if (!cliente.id) {
+                              console.error('[Clientes] ID do cliente não disponível', cliente);
+                              toast.error('ID do cliente não disponível');
                               return;
                             }
                             
-                            // Usar a estrutura já pronta de Situação Fiscal (3 passos: token, protocolo, base64)
-                            // Chamar o endpoint que já faz todo o processo
-                            console.log('[Clientes] Iniciando consulta de Situação Fiscal para CNPJ:', cnpjLimpo);
-                            toast.info('Iniciando consulta de Situação Fiscal...');
+                            const clienteIdLocal = cliente.id; // Guardar o ID localmente para evitar problemas com estado assíncrono
+                            console.log('[Clientes] Iniciando atualização de sócios para cliente:', clienteIdLocal);
+                            setAtualizandoSocios(clienteIdLocal);
+                            atualizandoSociosIdRef.current = clienteIdLocal; // Usar ref para verificação imediata
                             
-                            let consultaConcluida = false;
-                            let tentativas = 0;
-                            const maxTentativas = 120; // ~4 minutos (120 * 2s) - tempo suficiente para os 3 passos
-                            
-                            console.log('[Clientes] Entrando no loop de consulta, maxTentativas:', maxTentativas);
-                            
-                            // Aguardar até que o endpoint retorne 200 (concluído) ou timeout
-                            while (tentativas < maxTentativas && !consultaConcluida) {
-                              console.log(`[Clientes] Loop iteração ${tentativas + 1}, consultaConcluida:`, consultaConcluida);
+                            try {
+                              const cnpjLimpo = cliente.cnpj_limpo || cliente.cnpj?.replace(/\D/g, '') || '';
+                              console.log('[Clientes] CNPJ limpo:', cnpjLimpo);
                               
-                              // Verificar se o usuário ainda está na mesma empresa (usando ref para verificação imediata)
-                              if (atualizandoSociosIdRef.current !== clienteIdLocal) {
-                                console.log('[Clientes] Usuário mudou de empresa ou cancelou. atualizandoSociosIdRef.current:', atualizandoSociosIdRef.current, 'clienteIdLocal:', clienteIdLocal);
-                                return; // Usuário cancelou ou mudou de empresa
+                              if (!cnpjLimpo || cnpjLimpo.length !== 14) {
+                                console.error('[Clientes] CNPJ inválido:', cnpjLimpo);
+                                toast.error('CNPJ inválido para consulta');
+                                setAtualizandoSocios(null);
+                                atualizandoSociosIdRef.current = null;
+                                return;
                               }
                               
-                              try {
-                                // Chamar o endpoint que já faz todo o processo (token → protocolo → base64)
-                                console.log(`[Clientes] Tentativa ${tentativas + 1}/${maxTentativas} - Chamando /situacao-fiscal/${cnpjLimpo}/download`);
-                                const response = await api.post(`/situacao-fiscal/${cnpjLimpo}/download`);
-                                console.log('[Clientes] Resposta recebida:', { status: response.status, data: response.data });
+                              // Usar a estrutura já pronta de Situação Fiscal (3 passos: token, protocolo, base64)
+                              // Chamar o endpoint que já faz todo o processo
+                              console.log('[Clientes] Iniciando consulta de Situação Fiscal para CNPJ:', cnpjLimpo);
+                              toast.info('Iniciando consulta de Situação Fiscal...');
+                              
+                              let consultaConcluida = false;
+                              let tentativas = 0;
+                              let errosConsecutivos = 0; // Contador de erros consecutivos (não 202/429)
+                              const maxTentativas = 120; // ~4 minutos (120 * 2s) - tempo suficiente para os 3 passos
+                              const maxErrosConsecutivos = 3; // Máximo de erros consecutivos antes de desistir
+                              
+                              console.log('[Clientes] Entrando no loop de consulta, maxTentativas:', maxTentativas);
+                              
+                              // Aguardar até que o endpoint retorne 200 (concluído) ou timeout
+                              while (tentativas < maxTentativas && !consultaConcluida) {
+                                console.log(`[Clientes] Loop iteração ${tentativas + 1}, consultaConcluida:`, consultaConcluida, 'errosConsecutivos:', errosConsecutivos);
                                 
-                                // Se retornou 200, a consulta está concluída (PDF base64 já foi extraído e salvo)
-                                if (response.status === 200 && response.data?.success && response.data?.step === 'concluido') {
-                                  console.log('[Clientes] Consulta concluída!');
-                                  consultaConcluida = true;
-                                  toast.success('Consulta de Situação Fiscal concluída!', 2000);
-                                  break;
+                                // Verificar se o usuário ainda está na mesma empresa (usando ref para verificação imediata)
+                                if (atualizandoSociosIdRef.current !== clienteIdLocal) {
+                                  console.log('[Clientes] Usuário mudou de empresa ou cancelou. atualizandoSociosIdRef.current:', atualizandoSociosIdRef.current, 'clienteIdLocal:', clienteIdLocal);
+                                  return; // Usuário cancelou ou mudou de empresa
                                 }
                                 
-                                // Se retornou 202, ainda está processando (aguardar e tentar novamente)
-                                if (response.status === 202) {
-                                  const retryAfter = response.data?.retryAfter || 5;
-                                  const step = response.data?.step || 'processando';
-                                  const stepMsg = step === 'protocolo' 
-                                    ? 'Solicitando protocolo...' 
-                                    : step === 'emitir'
-                                    ? 'Buscando PDF...'
-                                    : 'Processando...';
+                                try {
+                                  // Chamar o endpoint que já faz todo o processo (token → protocolo → base64)
+                                  console.log(`[Clientes] Tentativa ${tentativas + 1}/${maxTentativas} - Chamando /situacao-fiscal/${cnpjLimpo}/download`);
+                                  const response = await api.post(`/situacao-fiscal/${cnpjLimpo}/download`);
+                                  console.log('[Clientes] Resposta recebida:', { status: response.status, data: response.data });
                                   
-                                  // Aguardar o tempo indicado pelo backend
-                                  await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                                  // Resetar contador de erros se a requisição foi bem-sucedida
+                                  errosConsecutivos = 0;
                                   
-                                  // Feedback a cada 10 tentativas
-                                  if (tentativas % 10 === 0) {
-                                    toast.info(`${stepMsg} (${tentativas * 2}s)`);
+                                  // Se retornou 200, a consulta está concluída (PDF base64 já foi extraído e salvo)
+                                  if (response.status === 200 && response.data?.success && response.data?.step === 'concluido') {
+                                    console.log('[Clientes] Consulta concluída!');
+                                    consultaConcluida = true;
+                                    toast.success('Consulta de Situação Fiscal concluída!', 2000);
+                                    break;
                                   }
-                                } else {
-                                  // Outro status - aguardar 2s antes de tentar novamente
-                                  await new Promise(resolve => setTimeout(resolve, 2000));
+                                  
+                                  // Se retornou 202, ainda está processando (aguardar e tentar novamente)
+                                  if (response.status === 202) {
+                                    const retryAfter = response.data?.retryAfter || 5;
+                                    const step = response.data?.step || 'processando';
+                                    const stepMsg = step === 'protocolo' 
+                                      ? 'Solicitando protocolo...' 
+                                      : step === 'emitir'
+                                      ? 'Buscando PDF...'
+                                      : 'Processando...';
+                                    
+                                    // Aguardar o tempo indicado pelo backend
+                                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                                    
+                                    // Feedback a cada 10 tentativas
+                                    if (tentativas % 10 === 0) {
+                                      toast.info(`${stepMsg} (${tentativas * 2}s)`);
+                                    }
+                                  } else {
+                                    // Outro status - aguardar 2s antes de tentar novamente
+                                    console.warn('[Clientes] Status inesperado:', response.status);
+                                    await new Promise(resolve => setTimeout(resolve, 2000));
+                                  }
+                                } catch (error: any) {
+                                  const statusCode = error?.response?.status;
+                                  const errorMessage = error?.response?.data?.error || error?.message || 'Erro desconhecido';
+                                  
+                                  console.error(`[Clientes] Erro ao consultar situação fiscal (status ${statusCode}):`, errorMessage);
+                                  
+                                  // Erros fatais que não devem ser retentados (403, 400, 401, 404, 500, etc)
+                                  const errosFatais = [400, 401, 403, 404, 500, 502, 503];
+                                  if (statusCode && errosFatais.includes(statusCode)) {
+                                    console.error(`[Clientes] Erro fatal (${statusCode}):`, errorMessage, '- Parando tentativas');
+                                    toast.error(`Erro ao consultar Situação Fiscal: ${errorMessage} (${statusCode})`);
+                                    break; // Parar o loop imediatamente
+                                  }
+                                  
+                                  // Se for 202 ou 429, continuar tentando (ainda processando) e resetar contador de erros
+                                  if (statusCode === 202 || statusCode === 429) {
+                                    errosConsecutivos = 0; // Resetar contador de erros
+                                    const retryAfter = error.response.data?.retryAfter || 5;
+                                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                                  } else if (statusCode === 200) {
+                                    // Às vezes o axios trata 200 como erro em certas condições
+                                    errosConsecutivos = 0; // Resetar contador
+                                    consultaConcluida = true;
+                                    break;
+                                  } else {
+                                    // Outro erro - incrementar contador de erros consecutivos
+                                    errosConsecutivos++;
+                                    console.warn(`[Clientes] Erro consecutivo ${errosConsecutivos}/${maxErrosConsecutivos}`);
+                                    
+                                    // Se excedeu o limite de erros consecutivos, parar
+                                    if (errosConsecutivos >= maxErrosConsecutivos) {
+                                      console.error(`[Clientes] Muitos erros consecutivos (${errosConsecutivos}). Parando tentativas.`);
+                                      toast.error(`Erro ao consultar Situação Fiscal após ${errosConsecutivos} tentativas. Tente novamente mais tarde.`);
+                                      break;
+                                    }
+                                    
+                                    // Aguardar 2s antes de tentar novamente
+                                    await new Promise(resolve => setTimeout(resolve, 2000));
+                                  }
                                 }
-                              } catch (error: any) {
-                                // Se for 202 ou 429, continuar tentando (ainda processando)
-                                if (error?.response?.status === 202 || error?.response?.status === 429) {
-                                  const retryAfter = error.response.data?.retryAfter || 5;
-                                  await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-                                } else if (error?.response?.status === 200) {
-                                  // Às vezes o axios trata 200 como erro em certas condições
-                                  consultaConcluida = true;
-                                  break;
-                                } else {
-                                  // Outro erro - aguardar 2s e continuar
-                                  console.warn('[Clientes] Erro ao consultar situação fiscal:', error);
-                                  await new Promise(resolve => setTimeout(resolve, 2000));
-                                }
+                                
+                                tentativas++;
                               }
                               
-                              tentativas++;
-                            }
-                            
-                            console.log('[Clientes] Loop terminou. consultaConcluida:', consultaConcluida, 'tentativas:', tentativas);
-                            
-                            // Se a consulta foi concluída, os sócios já foram atualizados automaticamente durante a extração
-                            // Apenas aguardar um pouco para garantir que o backend salvou e buscar o cliente atualizado
-                            if (consultaConcluida) {
-                              console.log('[Clientes] Consulta concluída! Os sócios foram atualizados automaticamente durante a extração.');
-                              toast.info('Buscando dados atualizados dos sócios...');
+                              console.log('[Clientes] Loop terminou. consultaConcluida:', consultaConcluida, 'tentativas:', tentativas);
                               
-                              // Aguardar o backend salvar completamente (a extração já atualizou os sócios)
-                              await new Promise(resolve => setTimeout(resolve, 2000));
-                              
-                              try {
-                                // Buscar cliente atualizado (os sócios já foram atualizados pela extração)
-                                console.log('[Clientes] Buscando cliente atualizado...');
-                                const clienteAtualizado = await clientesService.obterCliente(cliente.id!);
+                              // Se a consulta foi concluída, os sócios já foram atualizados automaticamente durante a extração
+                              // Apenas aguardar um pouco para garantir que o backend salvou e buscar o cliente atualizado
+                              if (consultaConcluida) {
+                                console.log('[Clientes] Consulta concluída! Os sócios foram atualizados automaticamente durante a extração.');
+                                toast.info('Buscando dados atualizados dos sócios...');
                                 
-                                if (clienteAtualizado && typeof clienteAtualizado === 'object') {
-                                  let clienteComSocios: Cliente;
+                                // Aguardar o backend salvar completamente (a extração já atualizou os sócios)
+                                await new Promise(resolve => setTimeout(resolve, 2000));
+                                
+                                try {
+                                  // Buscar cliente atualizado (os sócios já foram atualizados pela extração)
+                                  console.log('[Clientes] Buscando cliente atualizado...');
+                                  const clienteAtualizado = await clientesService.obterCliente(cliente.id!);
                                   
+                                  if (clienteAtualizado && typeof clienteAtualizado === 'object') {
+                                    let clienteComSocios: Cliente;
+                                    
+                                    if ((clienteAtualizado as any).success && (clienteAtualizado as any).data) {
+                                      clienteComSocios = (clienteAtualizado as any).data as Cliente;
+                                    } else if ((clienteAtualizado as any).id) {
+                                      clienteComSocios = clienteAtualizado as Cliente;
+                                    } else {
+                                      throw new Error('Formato de resposta inválido');
+                                    }
+                                    
+                                    console.log('[Clientes] Cliente atualizado recebido. Total de sócios:', clienteComSocios.socios?.length || 0);
+                                    
+                                    // Atualizar apenas o cliente específico na lista (não recarregar toda a página)
+                                    setClientesParticipacao(prevClientes => 
+                                      prevClientes.map(c => c.id === cliente.id ? clienteComSocios : c)
+                                    );
+                                    
+                                    toast.success('Sócios atualizados com sucesso!');
+                                  } else {
+                                    console.error('[Clientes] Formato de resposta inválido:', clienteAtualizado);
+                                    toast.error('Erro ao obter dados atualizados do cliente');
+                                  }
+                                } catch (updateError: any) {
+                                  console.error('[Clientes] Erro ao buscar cliente atualizado:', updateError);
+                                  const errorMsg = updateError?.response?.data?.error || updateError?.message || 'Erro ao buscar dados atualizados';
+                                  toast.error(errorMsg);
+                                }
+                              } else {
+                                // Timeout - consulta ainda não concluída
+                                console.log('[Clientes] Timeout - consulta não concluída após', tentativas, 'tentativas');
+                                toast.warning('A consulta ainda está em processamento. Aguarde alguns minutos e tente novamente.');
+                              }
+                            } catch (error: any) {
+                              console.error('[Clientes] Erro ao atualizar sócios:', error);
+                              console.error('[Clientes] Stack do erro:', error?.stack);
+                              console.error('[Clientes] Response do erro:', error?.response);
+                              const errorMsg = error?.response?.data?.error || error?.message || 'Erro ao atualizar sócios';
+                              
+                              // Verificar se é erro de Capital Social Zerado
+                              const errorMsgLower = errorMsg.toLowerCase();
+                              if (errorMsgLower.includes('capital social zerado') || 
+                                  errorMsgLower.includes('capital social zerado') ||
+                                  errorMsgLower.includes('capital zerado') ||
+                                  errorMsgLower.includes('capital social zero')) {
+                                toast.error('Capital Social Zerado: Não é possível atualizar os sócios quando o capital social está zerado.');
+                              } else {
+                                toast.error(errorMsg);
+                              }
+                            } finally {
+                              console.log('[Clientes] Finalizando atualização de sócios');
+                              setAtualizandoSocios(null);
+                              atualizandoSociosIdRef.current = null; // Limpar ref também
+                            }
+                          }}
+                          disabled={atualizandoSocios === cliente.id}
+                          className="p-2 text-indigo-600 hover:text-white hover:bg-indigo-600 disabled:bg-indigo-100 disabled:cursor-not-allowed rounded-lg transition-all duration-300 flex items-center justify-center border border-indigo-200 hover:border-indigo-600"
+                          title="Atualizar sócios via Situação Fiscal"
+                        >
+                          <ArrowPathIcon className={`h-4 w-4 ${atualizandoSocios === cliente.id ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (recalculandoValores === cliente.id) return;
+                            
+                            setRecalculandoValores(cliente.id);
+                            
+                            try {
+                              console.log('[Clientes] Recalculando valores de participação para cliente:', cliente.id);
+                              toast.info('Recalculando valores de participação...', 2000);
+                              
+                              const result = await clientesService.recalcularValoresParticipacao(cliente.id);
+                              
+                              if (result.success) {
+                                const atualizados = result.data?.atualizados || 0;
+                                toast.success(`${atualizados} valor(es) recalculado(s) com sucesso!`, 3000);
+                                
+                                // Aguardar um pouco e então buscar o cliente atualizado
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                
+                                const clienteAtualizado = await clientesService.obterCliente(cliente.id);
+                                
+                                if (clienteAtualizado) {
+                                  let clienteComSocios: Cliente;
                                   if ((clienteAtualizado as any).success && (clienteAtualizado as any).data) {
                                     clienteComSocios = (clienteAtualizado as any).data as Cliente;
                                   } else if ((clienteAtualizado as any).id) {
@@ -2689,108 +3373,124 @@ const Clientes: React.FC = () => {
                                     throw new Error('Formato de resposta inválido');
                                   }
                                   
-                                  console.log('[Clientes] Cliente atualizado recebido. Total de sócios:', clienteComSocios.socios?.length || 0);
-                                  
-                                  // Atualizar apenas o cliente específico na lista (não recarregar toda a página)
+                                  // Atualizar apenas o cliente específico na lista
                                   setClientesParticipacao(prevClientes => 
                                     prevClientes.map(c => c.id === cliente.id ? clienteComSocios : c)
                                   );
-                                  
-                                  toast.success('Sócios atualizados com sucesso!');
-                                } else {
-                                  console.error('[Clientes] Formato de resposta inválido:', clienteAtualizado);
-                                  toast.error('Erro ao obter dados atualizados do cliente');
                                 }
-                              } catch (updateError: any) {
-                                console.error('[Clientes] Erro ao buscar cliente atualizado:', updateError);
-                                const errorMsg = updateError?.response?.data?.error || updateError?.message || 'Erro ao buscar dados atualizados';
+                              } else {
+                                const errorMsgResult = result.error || 'Erro ao recalcular valores';
+                                const errorMsgLower = errorMsgResult.toLowerCase();
+                                // Verificar se é erro de Capital Social Zerado
+                                if (errorMsgLower.includes('capital social zerado') || 
+                                    errorMsgLower.includes('capital zerado') ||
+                                    errorMsgLower.includes('capital social zero')) {
+                                  toast.error('Capital Social Zerado: Não é possível recalcular valores quando o capital social está zerado.');
+                                } else {
+                                  toast.error(errorMsgResult);
+                                }
+                              }
+                            } catch (error: any) {
+                              console.error('[Clientes] Erro ao recalcular valores:', error);
+                              const errorMsg = error?.response?.data?.error || error?.message || 'Erro ao recalcular valores';
+                              
+                              // Verificar se é erro de Capital Social Zerado
+                              const errorMsgLower = errorMsg.toLowerCase();
+                              if (errorMsgLower.includes('capital social zerado') || 
+                                  errorMsgLower.includes('capital zerado') ||
+                                  errorMsgLower.includes('capital social zero')) {
+                                toast.error('Capital Social Zerado: Não é possível recalcular valores quando o capital social está zerado.');
+                              } else {
                                 toast.error(errorMsg);
                               }
-                            } else {
-                              // Timeout - consulta ainda não concluída
-                              console.log('[Clientes] Timeout - consulta não concluída após', tentativas, 'tentativas');
-                              toast.warning('A consulta ainda está em processamento. Aguarde alguns minutos e tente novamente.');
+                            } finally {
+                              setRecalculandoValores(null);
                             }
-                          } catch (error: any) {
-                            console.error('[Clientes] Erro ao atualizar sócios:', error);
-                            console.error('[Clientes] Stack do erro:', error?.stack);
-                            console.error('[Clientes] Response do erro:', error?.response);
-                            const errorMsg = error?.response?.data?.error || error?.message || 'Erro ao atualizar sócios';
-                            toast.error(errorMsg);
-                          } finally {
-                            console.log('[Clientes] Finalizando atualização de sócios');
-                            setAtualizandoSocios(null);
-                            atualizandoSociosIdRef.current = null; // Limpar ref também
-                          }
-                        }}
-                                disabled={atualizandoSocios === cliente.id}
-                                className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 disabled:cursor-not-allowed rounded-lg transition-all duration-300 flex items-center gap-1.5 shadow-sm hover:shadow-md"
-                                title="Atualizar sócios via Situação Fiscal"
-                              >
-                                <ArrowPathIcon className={`h-3.5 w-3.5 ${atualizandoSocios === cliente.id ? 'animate-spin' : ''}`} />
-                                {atualizandoSocios === cliente.id ? 'Atualizando...' : 'Atualizar Sócios'}
-                              </button>
-                            </div>
+                          }}
+                          disabled={recalculandoValores === cliente.id}
+                          className="p-2 text-blue-600 hover:text-white hover:bg-blue-600 disabled:bg-blue-100 disabled:cursor-not-allowed rounded-lg transition-all duration-300 flex items-center justify-center border border-blue-200 hover:border-blue-600"
+                          title="Recalcular valores de participação usando Capital Social do cliente"
+                        >
+                          {recalculandoValores === cliente.id ? (
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <ArrowPathIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
 
-                            {!cliente.socios || cliente.socios.length === 0 ? (
-                              <div className="text-center py-6 bg-white rounded border border-dashed border-gray-200">
-                                <UserGroupIcon className="h-8 w-8 text-gray-300 mx-auto mb-1" />
-                                <p className="text-gray-500 text-xs">Nenhum sócio cadastrado</p>
-                              </div>
-                            ) : (
-                              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                  <thead className="bg-gray-50">
-                                    <tr>
-                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
-                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPF</th>
-                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qualificação</th>
-                                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Participação</th>
-                                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="bg-white divide-y divide-gray-200">
-                                    {cliente.socios!.map((socio, idx) => (
-                                      <tr key={socio.id || idx} className="hover:bg-amber-50 transition-colors">
-                                        <td className="px-3 py-2.5 whitespace-nowrap">
-                                          <div className="flex items-center gap-2">
-                                            <div className="w-7 h-7 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
-                                              <span className="text-amber-700 font-semibold text-xs">
-                                                {socio.nome?.charAt(0).toUpperCase() || '?'}
-                                              </span>
-                                            </div>
-                                            <span className="text-sm font-medium text-gray-900">{socio.nome || 'Sem nome'}</span>
-                                          </div>
-                                        </td>
-                                        <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-600">
-                                          {socio.cpf ? socio.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '-'}
-                                        </td>
-                                        <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-600">
-                                          {socio.qual || '-'}
-                                        </td>
-                                        <td className="px-3 py-2.5 whitespace-nowrap text-right">
-                                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold text-amber-700 bg-amber-100">
-                                            {socio.participacao_percentual !== null && socio.participacao_percentual !== undefined
-                                              ? `${socio.participacao_percentual.toFixed(2)}%`
-                                              : '-'}
-                                          </span>
-                                        </td>
-                                        <td className="px-3 py-2.5 whitespace-nowrap text-right text-sm font-semibold text-green-700">
-                                          {socio.participacao_valor
-                                            ? socio.participacao_valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                                            : '-'}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
+                    {todosSocios.length === 0 ? (
+                      <div className="text-center py-6 bg-white rounded border border-dashed border-gray-200">
+                        <UserGroupIcon className="h-8 w-8 text-gray-300 mx-auto mb-1" />
+                        <p className="text-gray-500 text-xs">Nenhum sócio cadastrado</p>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPF / CNPJ</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qualificação</th>
+                              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Participação</th>
+                              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {todosSocios.map((socio, idx) => (
+                              <tr key={socio.id || idx} className="hover:bg-amber-50 transition-colors">
+                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-7 h-7 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                      <span className="text-amber-700 font-semibold text-xs">
+                                        {socio.nome?.charAt(0).toUpperCase() || '?'}
+                                      </span>
+                                    </div>
+                                    <span className="text-sm font-medium text-gray-900">{socio.nome || 'Sem nome'}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-600">
+                                  {formatarCpfCnpj(socio.cpf || null)}
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-600">
+                                  {socio.qual || '-'}
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold text-amber-700 bg-amber-100">
+                                    {socio.participacao_percentual !== null && socio.participacao_percentual !== undefined
+                                      ? `${socio.participacao_percentual.toFixed(2)}%`
+                                      : '-'}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap text-right text-sm font-semibold text-green-700">
+                                  {socio.participacao_valor
+                                    ? socio.participacao_valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                    : '-'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
+                </div>
               </div>
-            ))}
+            );
+            })}
           </div>
+          {/* Input de arquivo oculto para upload de PDF */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            onChange={handleFileChange}
+            className="hidden"
+          />
         </div>
       )}
 

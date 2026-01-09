@@ -3,7 +3,6 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../hooks/useToast';
 import Alert from '../components/UI/Alert';
 import { clientesService } from '../services/clientes';
-import type { Cliente } from '../types';
 import {
   DocumentMagnifyingGlassIcon,
   MagnifyingGlassIcon,
@@ -18,7 +17,6 @@ import {
   DocumentTextIcon,
   TrashIcon,
   ArrowLeftIcon,
-  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import RegistroDetalhado from '../components/SituacaoFiscal/RegistroDetalhado';
 
@@ -120,9 +118,13 @@ export default function SituacaoFiscal() {
       // Formatar o CNPJ se vier da URL
       const cnpjLimpo = cnpjParam.replace(/\D/g, '');
       if (cnpjLimpo.length === 14) {
-        setCnpj(formatCNPJ(cnpjLimpo));
+        const cnpjFormatado = formatCNPJ(cnpjLimpo);
+        setCnpj(cnpjFormatado);
+        // Também preencher o campo de filtro para mostrar downloads recentes se existirem
+        setHistoryFilter(cnpjFormatado);
       } else {
         setCnpj(cnpjParam);
+        setHistoryFilter(cnpjParam);
       }
       // Scroll para o topo quando CNPJ vier da query string
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -412,6 +414,24 @@ export default function SituacaoFiscal() {
     }
   };
 
+  // Busca automática no campo de filtro quando o CNPJ tiver 14 dígitos ou estiver vazio
+  useEffect(() => {
+    const clean = historyFilter.replace(/\D/g, '');
+    
+    // Se o campo está vazio, buscar todos os registros
+    // Se tem 14 dígitos, buscar pelo CNPJ
+    // Aguardar 500ms após a última digitação para evitar múltiplas chamadas
+    const timeoutId = setTimeout(() => {
+      if (clean.length === 0 || clean.length === 14) {
+        setHistoryPage(1);
+        void fetchHistory(clean.length === 14 ? historyFilter : undefined, 1);
+      }
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyFilter]);
+
   const handleDeleteClick = (id: string, cnpj: string) => {
     // Limpar timer anterior se existir
     if (deleteTimer) {
@@ -688,7 +708,7 @@ export default function SituacaoFiscal() {
         
         // Verificar se o protocolo está inválido
         if (res.status === 400 && data.protocolInvalid) {
-          toast.error('Protocolo inválido', 'O protocolo utilizado não é mais válido. É necessário fazer uma nova consulta.');
+          toast.error('Protocolo inválido: O protocolo utilizado não é mais válido. É necessário fazer uma nova consulta.');
           // Atualizar lista de protocolos para remover o inválido
           await fetchArchivedProtocols();
         } else if (res.status === 400) {
@@ -756,7 +776,7 @@ export default function SituacaoFiscal() {
       // Verificar se é erro de protocolo inválido
       const errorMessage = err?.message || '';
       if (errorMessage.includes('protocolo') && errorMessage.includes('não é mais válido')) {
-        toast.error('Protocolo inválido', 'O protocolo utilizado não é mais válido. É necessário fazer uma nova consulta.');
+        toast.error('Protocolo inválido: O protocolo utilizado não é mais válido. É necessário fazer uma nova consulta.');
         // Atualizar lista de protocolos
         await fetchArchivedProtocols();
       } else {
@@ -902,7 +922,7 @@ export default function SituacaoFiscal() {
                 />
               </div>
             </div>
-            <div className="flex items-end">
+            <div className="flex items-end gap-3">
               <button
                 onClick={handleConsultar}
                 disabled={disabled}
@@ -974,26 +994,10 @@ export default function SituacaoFiscal() {
                   type="text"
                   value={historyFilter}
                   onChange={(e) => setHistoryFilter(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      setHistoryPage(1);
-                      fetchHistory(historyFilter, 1);
-                    }
-                  }}
-                  placeholder="Filtrar por CNPJ..."
+                  placeholder="Digite o CNPJ para filtrar..."
                   className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
                 />
               </div>
-              <button
-                onClick={() => {
-                  setHistoryPage(1);
-                  fetchHistory(historyFilter, 1);
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-              >
-                <MagnifyingGlassIcon className="h-4 w-4" />
-                Buscar
-              </button>
             </div>
           </div>
         </div>

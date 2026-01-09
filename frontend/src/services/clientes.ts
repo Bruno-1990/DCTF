@@ -66,6 +66,11 @@ export const clientesService = {
     return response.data; // { success, data: { clienteId, sociosAtualizados, message } }
   },
 
+  async recalcularValoresParticipacao(id: string) {
+    const response = await api.put(`/clientes/${id}/recalcular-valores-participacao`);
+    return response.data; // { success, data: { atualizados: number }, message }
+  },
+
   async buscarPorCNPJ(cnpj: string) {
     const cnpjLimpo = String(cnpj || '').replace(/\D/g, '');
     const response = await api.get(`/clientes/cnpj/${cnpjLimpo}`);

@@ -460,21 +460,24 @@ export async function updateExtractedSitfData(
           
           if (clienteResult.success && clienteResult.data) {
             const cliente = clienteResult.data;
-            // Buscar e normalizar capital social do cliente
+            
+            // ✅ Usar Capital Social do cadastro do cliente (vem da API da Receita)
+            // A Situação Fiscal fornece apenas a porcentagem de cada sócio
+            // Cálculo: valor = Capital Social (cliente) × porcentagem (SITF) / 100
             const capitalSocial = normalizarCapitalSocial((cliente as any).capital_social);
             
-            // Validar e preparar sócios com participação
-            let sociosValidados = validarSocios(extractedData.socios);
+            console.log('[Sitf Data Extractor] Capital Social do cliente (Receita):', capitalSocial);
             
-            // Ajustar percentuais para totalizar 100%
-            sociosValidados = ajustarPercentuais(sociosValidados) as any[];
+            // Validar e preparar sócios com participação
+            // ✅ IMPORTANTE: Usar exatamente os percentuais da Situação Fiscal, sem ajustes
+            const sociosValidados = validarSocios(extractedData.socios);
             
             // Converter para formato esperado pelo modelo
             const sociosComParticipacao = sociosValidados.map((s: any) => ({
               nome: s.nome,
               cpf: s.cpf,
               qual: s.qualificacao,
-              participacao_percentual: s.participacao_percentual,
+              participacao_percentual: s.participacao_percentual, // Usar exatamente o que vem da SITF
             }));
 
             console.log('[Sitf Data Extractor] Atualizando sócios com participação (UPDATE):', {
@@ -729,17 +732,37 @@ export async function saveExtractedSitfData(
             const capitalSocial = normalizarCapitalSocial((cliente as any).capital_social);
             
             // Validar e preparar sócios com participação
-            let sociosValidados = validarSocios(extractedData.socios);
+            // ✅ IMPORTANTE: Usar exatamente os percentuais da Situação Fiscal, sem ajustes
+            const sociosValidados = validarSocios(extractedData.socios);
             
-            // Ajustar percentuais para totalizar 100%
-            sociosValidados = ajustarPercentuais(sociosValidados) as any[];
+            // ✅ NOVO: Filtrar sócios que contenham "Qualif. Resp." ou "CONTRATANTE" antes de converter
+            const sociosFiltrados = sociosValidados.filter((s: any) => {
+              const nome = ((s.nome || '') + '').toUpperCase();
+              const qual = ((s.qualificacao || '') + '').toUpperCase();
+              const temQualifResp = nome.includes('QUALIF. RESP') || nome.includes('QUALIF RESP') || 
+                                    qual.includes('QUALIF. RESP') || qual.includes('QUALIF RESP');
+              const temContratante = nome.includes('CONTRATANTE: 32.401.481') || nome.includes('CONTRATANTE: 32401481') ||
+                                     qual.includes('CONTRATANTE: 32.401.481') || qual.includes('CONTRATANTE: 32401481');
+              
+              if (temQualifResp) {
+                console.log(`[Sitf Data Extractor] ⚠️ Sócio ignorado (contém Qualif. Resp.): ${s.nome}`);
+              }
+              
+              if (temContratante) {
+                console.log(`[Sitf Data Extractor] ⚠️ Sócio ignorado (contém CONTRATANTE): ${s.nome}`);
+              }
+              
+              return !temQualifResp && !temContratante;
+            });
+            
+            console.log(`[Sitf Data Extractor] ✅ Filtrados ${sociosValidados.length - sociosFiltrados.length} sócios com "Qualif. Resp." ou "CONTRATANTE" (de ${sociosValidados.length} total)`);
             
             // Converter para formato esperado pelo modelo
-            const sociosComParticipacao = sociosValidados.map((s: any) => ({
+            const sociosComParticipacao = sociosFiltrados.map((s: any) => ({
               nome: s.nome,
               cpf: s.cpf,
               qual: s.qualificacao,
-              participacao_percentual: s.participacao_percentual,
+              participacao_percentual: s.participacao_percentual, // Usar exatamente o que vem da SITF
             }));
 
             console.log('[Sitf Data Extractor] Atualizando sócios com participação:', {

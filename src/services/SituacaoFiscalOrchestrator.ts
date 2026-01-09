@@ -2,6 +2,7 @@ import axios from 'axios';
 import { randomUUID } from 'crypto';
 import { createSupabaseAdapter } from './SupabaseAdapter';
 import { saveExtractedSitfData, upsertExtractedSitfData, type SitfExtractedData } from './SitfDataExtractorService';
+import { extrairSociosComPythonBase64, converterSociosPythonParaNode } from '../utils/pythonExtractor';
 
 const supabaseAdmin = createSupabaseAdapter() as any;
 const supabase = createSupabaseAdapter() as any;
@@ -1208,6 +1209,15 @@ export async function extractDataFromPdfBase64(base64Pdf: string): Promise<{
     descricao?: string;
     situacao?: string;
   }>;
+  socios?: Array<{
+    nome: string;
+    cpf?: string;
+    qual?: string;
+    qualificacao?: string; // ✅ NOVO: Formato alternativo para compatibilidade
+    situacao_cadastral?: string; // ✅ NOVO: Situação cadastral extraída do Python
+    participacao_percentual?: number;
+  }>; // ✅ NOVO: Sócios extraídos via Python
+  cnpj?: string; // ✅ NOVO: CNPJ extraído do PDF via Python
 }> {
   try {
     // Converter base64 diretamente para Buffer
@@ -1295,11 +1305,51 @@ export async function extractDataFromPdfBase64(base64Pdf: string): Promise<{
     const debitos = text ? extractDebitos(text) : [];
     const pendencias = text ? extractPendencias(text) : [];
     
+    // ✅ NOVO: Usar Python (pdfplumber) para extrair sócios (mais robusto para tabelas)
+    let sociosExtraidos: Array<{
+      nome: string;
+      cpf?: string;
+      qual?: string;
+      participacao_percentual?: number;
+    }> | undefined = undefined;
+    let cnpjExtraido: string | undefined = undefined;
+    
+    try {
+      console.log('[Sitf Extract] 🐍 Tentando usar Python (pdfplumber) para extrair sócios do base64...');
+      console.log('[Sitf Extract] Base64 recebido para Python:', {
+        tamanho: base64Pdf.length,
+        primeiros100: base64Pdf.substring(0, 100),
+        ultimos100: base64Pdf.substring(Math.max(0, base64Pdf.length - 100)),
+        temPrefix: base64Pdf.includes(';base64,'),
+        temDataPrefix: base64Pdf.includes('data:'),
+      });
+      
+      const pythonResult = await extrairSociosComPythonBase64(base64Pdf);
+      
+      if (pythonResult.success && pythonResult.socios && pythonResult.socios.length > 0) {
+        sociosExtraidos = converterSociosPythonParaNode(pythonResult.socios);
+        cnpjExtraido = pythonResult.cnpj;
+        console.log(`[Sitf Extract] ✅ ${sociosExtraidos.length} sócios extraídos com Python (pdfplumber)`);
+        if (cnpjExtraido) {
+          console.log(`[Sitf Extract] ✅ CNPJ extraído do PDF via Python: ${cnpjExtraido}`);
+        }
+      } else {
+        console.log('[Sitf Extract] ⚠️ Python não retornou sócios, continuando sem eles');
+      }
+    } catch (pythonError: any) {
+      console.warn('[Sitf Extract] ⚠️ Erro ao usar Python para extrair sócios (continuando com extração Node.js):', pythonError.message);
+      // Continuar sem sócios do Python se houver erro
+      // A extração de sócios via Node.js continuará funcionando como fallback
+    }
+    
     console.log('[Sitf Extract] Dados extraídos:', {
       debitosCount: debitos.length,
       pendenciasCount: pendencias.length,
+      sociosCount: sociosExtraidos?.length || 0,
+      cnpjExtraido: cnpjExtraido || 'não extraído',
       debitosPreview: debitos.slice(0, 2),
       pendenciasPreview: pendencias.slice(0, 2),
+      sociosPreview: sociosExtraidos?.slice(0, 2),
     });
     
     return {
@@ -1309,6 +1359,8 @@ export async function extractDataFromPdfBase64(base64Pdf: string): Promise<{
       metadata,
       debitos,
       pendencias,
+      socios: sociosExtraidos, // ✅ NOVO: Sócios extraídos via Python
+      cnpj: cnpjExtraido, // ✅ NOVO: CNPJ extraído do PDF via Python
     };
   } catch (error: any) {
     console.error('[Sitf] Erro ao extrair dados do PDF:', error);
@@ -1996,6 +2048,29 @@ async function extractDataAndSave(
   try {
     console.log('[Sitf Extract] Iniciando extração automática para ID:', downloadId);
     
+    // Buscar sócios existentes do cliente para fazer matching por nome
+    let sociosExistentes: Array<{ nome: string; cpf?: string | null }> = [];
+    try {
+      const { Cliente } = await import('../models/Cliente');
+      const clienteModel = new Cliente();
+      
+      // Buscar cliente por CNPJ
+      const clienteResult = await clienteModel.findByCNPJ(cnpj);
+      if (clienteResult.success && clienteResult.data) {
+        const cliente = clienteResult.data as any;
+        const sociosResult = await clienteModel.listarSocios(cliente.id);
+        if (sociosResult.success && sociosResult.data) {
+          sociosExistentes = sociosResult.data.map((s: any) => ({
+            nome: s.nome || '',
+            cpf: s.cpf || null,
+          }));
+          console.log(`[Sitf Extract] ✅ ${sociosExistentes.length} sócios existentes encontrados para matching`);
+        }
+      }
+    } catch (sociosError: any) {
+      console.warn('[Sitf Extract] ⚠️ Erro ao buscar sócios existentes (não crítico):', sociosError?.message);
+    }
+    
     // Extrair texto e dados básicos do PDF
     const extractedData = await extractDataFromPdfBase64(pdfBase64);
     
@@ -2006,15 +2081,59 @@ async function extractDataAndSave(
       numPages: extractedData.numPages || 0,
       hasDebitos: extractedData.debitos && extractedData.debitos.length > 0,
       hasPendencias: extractedData.pendencias && extractedData.pendencias.length > 0,
+      hasSociosPython: extractedData.socios && extractedData.socios.length > 0,
+      cnpjExtraidoPython: extractedData.cnpj || 'não extraído',
       debitosCount: extractedData.debitos?.length || 0,
       pendenciasCount: extractedData.pendencias?.length || 0,
+      sociosPythonCount: extractedData.socios?.length || 0,
       textPreview: extractedData.text?.substring(0, 200) || 'N/A',
     });
     
-    // Tentar extrair dados estruturados do texto do PDF (se não vieram da API)
+    // ✅ NOVO: Se Python extraiu sócios, usá-los diretamente (mais preciso)
     let structuredData = structuredDataFromApi;
     if (!structuredData) {
-      structuredData = extractStructuredDataFromText(extractedData.text, cnpj);
+      // Tentar extrair dados estruturados do texto do PDF
+      structuredData = extractStructuredDataFromText(extractedData.text, cnpj, sociosExistentes);
+    }
+    
+    // ✅ Se Python extraiu sócios, usar eles diretamente (mais robusto)
+    if (extractedData.socios && extractedData.socios.length > 0) {
+      console.log('[Sitf Extract] ✅ Usando sócios extraídos via Python (pdfplumber) - mais preciso');
+      if (!structuredData) {
+        structuredData = {};
+      }
+      // Converter sócios do Python para formato SitfExtractedData
+      // ✅ Suporte para formato Python (qual) ou formato Node.js (qualificacao)
+      // ✅ NOVO: Filtrar sócios que contenham "Qualif. Resp." antes de converter
+      const sociosFiltrados = extractedData.socios.filter(s => {
+        const nome = (s.nome || '').toUpperCase();
+        const qual = ((s.qual || s.qualificacao || '') + '').toUpperCase();
+        const temQualifResp = nome.includes('QUALIF. RESP') || nome.includes('QUALIF RESP') || 
+                              qual.includes('QUALIF. RESP') || qual.includes('QUALIF RESP');
+        const temContratante = nome.includes('CONTRATANTE: 32.401.481') || nome.includes('CONTRATANTE: 32401481') ||
+                               qual.includes('CONTRATANTE: 32.401.481') || qual.includes('CONTRATANTE: 32401481');
+        
+        if (temQualifResp) {
+          console.log(`[Sitf Extract] ⚠️ Sócio ignorado (contém Qualif. Resp.): ${s.nome}`);
+        }
+        
+        if (temContratante) {
+          console.log(`[Sitf Extract] ⚠️ Sócio ignorado (contém CONTRATANTE): ${s.nome}`);
+        }
+        
+        return !temQualifResp && !temContratante;
+      });
+      
+      console.log(`[Sitf Extract] ✅ Filtrados ${extractedData.socios.length - sociosFiltrados.length} sócios com "Qualif. Resp." ou "CONTRATANTE" (de ${extractedData.socios.length} total)`);
+      
+      structuredData.socios = sociosFiltrados.map(s => ({
+        cpf: s.cpf || undefined,
+        nome: s.nome || '',
+        qualificacao: s.qual || s.qualificacao || undefined, // Suporte para ambos os formatos
+        situacao_cadastral: s.situacao_cadastral || 'ATIVA', // ✅ Usar do Python se disponível, senão default
+        participacao_percentual: s.participacao_percentual || undefined,
+      }));
+      console.log(`[Sitf Extract] ✅ ${structuredData.socios.length} sócios do Python incluídos nos dados estruturados`);
     }
     
     if (structuredData) {
@@ -2025,19 +2144,24 @@ async function extractDataAndSave(
       console.warn('[Sitf Extract] ⚠️ Não foi possível extrair dados estruturados do PDF');
     }
     
-    // Salvar dados extraídos (texto, débitos, pendências) no campo extracted_data do sitf_downloads
-    // Garantir que débitos e pendências estão incluídos
+    // Salvar dados extraídos (texto, débitos, pendências, sócios) no campo extracted_data do sitf_downloads
+    // Garantir que débitos, pendências e sócios estão incluídos
     const extractedDataToSave = {
       ...extractedData,
       debitos: extractedData.debitos || [],
       pendencias: extractedData.pendencias || [],
+      socios: extractedData.socios || undefined, // ✅ NOVO: Incluir sócios extraídos via Python
+      cnpj: extractedData.cnpj || undefined, // ✅ NOVO: Incluir CNPJ extraído via Python
     };
     
     console.log('[Sitf Extract] Salvando dados extraídos:', {
       id: downloadId,
       debitosCount: extractedDataToSave.debitos?.length || 0,
       pendenciasCount: extractedDataToSave.pendencias?.length || 0,
+      sociosCount: extractedDataToSave.socios?.length || 0,
+      cnpjExtraido: extractedDataToSave.cnpj || 'não extraído',
       debitosPreview: extractedDataToSave.debitos?.slice(0, 2),
+      sociosPreview: extractedDataToSave.socios?.slice(0, 2),
     });
     
     const client = supabaseAdmin || supabase;
@@ -2053,6 +2177,8 @@ async function extractDataAndSave(
       console.log('[Sitf Extract] ✅ Dados salvos no banco com sucesso para ID:', downloadId, {
         debitosCount: extractedDataToSave.debitos?.length || 0,
         pendenciasCount: extractedDataToSave.pendencias?.length || 0,
+        sociosCount: extractedDataToSave.socios?.length || 0,
+        cnpjExtraido: extractedDataToSave.cnpj || 'não extraído',
       });
     }
   } catch (error: any) {
@@ -2071,7 +2197,11 @@ async function extractDataAndSave(
  * Extrai dados estruturados do texto do PDF
  * Tenta encontrar JSON embutido ou extrair informações do texto
  */
-function extractStructuredDataFromText(text: string, cnpj: string): SitfExtractedData | null {
+function extractStructuredDataFromText(
+  text: string, 
+  cnpj: string,
+  sociosExistentes: Array<{ nome: string; cpf?: string | null }> = []
+): SitfExtractedData | null {
   try {
     if (!text || typeof text !== 'string' || text.length < 100) {
       console.warn('[Sitf Extract] Texto muito curto ou inválido para extração estruturada');
@@ -2258,23 +2388,148 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
       };
     }
     
+    // ✅ Função auxiliar para normalizar nome (remover acentos, espaços extras, etc.)
+    const normalizarNome = (nome: string): string => {
+      if (!nome) return '';
+      return nome
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+    
+    // ✅ Função auxiliar para fazer matching por nome (com tolerância a diferenças)
+    const fazerMatchPorNome = (nomeSitf: string, sociosExistentes: Array<{ nome: string; cpf?: string | null }>): { nome: string; cpf?: string | null } | null => {
+      const nomeSitfNormalizado = normalizarNome(nomeSitf);
+      
+      // Tentar match exato primeiro
+      for (const socioExistente of sociosExistentes) {
+        const nomeExistenteNormalizado = normalizarNome(socioExistente.nome);
+        if (nomeExistenteNormalizado === nomeSitfNormalizado) {
+          return socioExistente;
+        }
+      }
+      
+      // Tentar match parcial (nome contém ou é contido)
+      for (const socioExistente of sociosExistentes) {
+        const nomeExistenteNormalizado = normalizarNome(socioExistente.nome);
+        // Verificar se um nome contém o outro (para casos como "FRANCIANE DE FATIMA SOUZA LOPES DE" vs "FRANCIANE DE FATIMA SOUZA LOPES DE PONTES")
+        if (nomeSitfNormalizado.includes(nomeExistenteNormalizado) || nomeExistenteNormalizado.includes(nomeSitfNormalizado)) {
+          // Verificar se a diferença é pequena (apenas algumas palavras a mais/menos)
+          const palavrasSitf = nomeSitfNormalizado.split(/\s+/);
+          const palavrasExistente = nomeExistenteNormalizado.split(/\s+/);
+          const diferenca = Math.abs(palavrasSitf.length - palavrasExistente.length);
+          if (diferenca <= 2) { // Tolerância de até 2 palavras de diferença
+            return socioExistente;
+          }
+        }
+      }
+      
+      return null;
+    };
+    
     // Extrair Sócios (tabela de sócios)
     // Formato: CPF/CNPJ | Nome | Qualificação | Situação Cadastral | Cap. Social | Cap. Votante
     // Exemplo do PDF: "525.635.617-87 LUIZ CARLOS BERTOLLO SÓCIO-ADMINISTRADOR REGULAR 50,00%"
-    const sociosSectionMatch = text.match(/Sócios e Administradores[\s\S]*?(?=Certidão|Domicílio|Simples|Final|$)/i);
+    // ✅ Melhorar regex para capturar toda a seção, mesmo com muitos sócios
+    // ✅ Detectar múltiplas páginas e ignorar área vermelha (cabeçalho do MINISTÉRIO)
+    
+    // Detectar se há múltiplas páginas (pelo padrão "Página: X / Y" ou cabeçalho do MINISTÉRIO)
+    const temMultiplasPaginas = /Página\s*:\s*\d+\s*\/\s*\d+/i.test(text) || /MINISTÉRIO\s+DA\s+ECONOMIA/i.test(text);
+    
+    // Buscar todas as seções "Sócios e Administradores" (pode haver mais de uma em múltiplas páginas)
+    const todasSecoesSocios: string[] = [];
+    
+    // Primeira seção: desde "Sócios e Administradores" até encontrar uma seção seguinte, fim do documento, ou cabeçalho do MINISTÉRIO
+    const primeiraSecaoMatch = text.match(/Sócios\s+e\s+Administradores[\s\S]*?(?=(?:MINISTÉRIO\s+DA\s+ECONOMIA|SECRETARIA\s+ESPECIAL|Certidão|Domicílio|Simples\s+Nacional|Final|Página\s*:\s*\d+\s*\/\s*\d+|$))/i);
+    if (primeiraSecaoMatch) {
+      todasSecoesSocios.push(primeiraSecaoMatch[0]);
+    }
+    
+    // Se há múltiplas páginas, buscar segunda seção (após o cabeçalho do MINISTÉRIO)
+    if (temMultiplasPaginas) {
+      // ✅ MELHORAR: Buscar segunda seção mesmo quando há CNPJ diferente antes de "Sócios e Administradores"
+      // Pode haver: "CNPJ: 50.599.076 - DARWIN CAPIXABA EDITORA LTDA" antes da seção
+      const segundaSecaoMatch = text.match(/MINISTÉRIO\s+DA\s+ECONOMIA[\s\S]*?(?:CNPJ[:\s]+[\d\s\-\.]+[\s\-\s]+[^\n]+)?\s*Sócios\s+e\s+Administradores[\s\S]*?(?=(?:Certidão|Domicílio|Simples\s+Nacional|Final|Página\s*:\s*\d+\s*\/\s*\d+|$))/i);
+      if (segundaSecaoMatch) {
+        // Extrair apenas a parte após "Sócios e Administradores"
+        const segundaSecaoTexto = segundaSecaoMatch[0].replace(/[\s\S]*?Sócios\s+e\s+Administradores/i, 'Sócios e Administradores');
+        todasSecoesSocios.push(segundaSecaoTexto);
+        console.log('[Sitf Extract] ✅ Segunda seção de sócios encontrada (após área vermelha)');
+      }
+      
+      // ✅ Buscar também se houver "Sócios e Administradores" após qualquer CNPJ na segunda página
+      const todasSecoesAlternativas = text.matchAll(/Sócios\s+e\s+Administradores[\s\S]*?(?=(?:Sócios\s+e\s+Administradores|Certidão|Domicílio|Simples\s+Nacional|Final|Página\s*:\s*\d+\s*\/\s*\d+|$))/gi);
+      for (const secaoAlternativa of todasSecoesAlternativas) {
+        if (secaoAlternativa[0] && !todasSecoesSocios.includes(secaoAlternativa[0])) {
+          // Verificar se esta seção está após o cabeçalho do MINISTÉRIO
+          const indexNoTexto = secaoAlternativa.index || 0;
+          const textoAntes = text.substring(0, indexNoTexto);
+          if (textoAntes.includes('MINISTÉRIO DA ECONOMIA')) {
+            todasSecoesSocios.push(secaoAlternativa[0]);
+            console.log('[Sitf Extract] ✅ Seção adicional de sócios encontrada (alternativa)');
+          }
+        }
+      }
+    }
+    
+    // Processar todas as seções encontradas
+    const sociosSectionMatch = todasSecoesSocios.length > 0 ? { 0: todasSecoesSocios.join('\n\n--- SEÇÃO SEPARADORA ---\n\n') } : null;
     if (sociosSectionMatch) {
       const sociosText = sociosSectionMatch[0];
-      console.log('[Sitf Extract] Texto da seção de sócios (primeiros 1000 chars):', sociosText.substring(0, 1000));
+      console.log(`[Sitf Extract] Texto da seção de sócios (${sociosText.length} caracteres, ${todasSecoesSocios.length} seção(ões), primeiros 1000 chars):`, sociosText.substring(0, 1000));
       
       const socios: Array<{cpf?: string; nome?: string; qualificacao?: string; situacao_cadastral?: string; participacao_percentual?: number}> = [];
+      
+      // ✅ Rastrear quais sócios existentes já foram encontrados (para identificar faltantes)
+      const sociosEncontrados = new Set<string>();
       
       // Dividir em linhas e processar cada linha
       const lines = sociosText.split('\n');
       let currentSocio: any = null;
       
+      // ✅ Função auxiliar para buscar percentual em múltiplas colunas da tabela
+      const buscarPercentualNaLinha = (linha: string): { valor: number; match: string } | null => {
+        // Buscar TODOS os percentuais na linha (pode haver múltiplos em uma tabela)
+        const percentuaisMatch = linha.matchAll(/\b(\d{1,3}[,\.]\d{2})\s*%\b/g);
+        const percentuais: Array<{ valor: number; match: string }> = [];
+        
+        for (const match of percentuaisMatch) {
+          const percentValue = match[1].replace(',', '.');
+          const percent = parseFloat(percentValue);
+          if (!isNaN(percent) && percent <= 100) {
+            percentuais.push({ valor: percent > 100 ? percent / 100 : percent, match: match[0] });
+          }
+        }
+        
+        // Se encontrou múltiplos percentuais, usar o último (geralmente é o Cap. Social)
+        // Se encontrou apenas um, usar esse
+        return percentuais.length > 0 ? percentuais[percentuais.length - 1] : null;
+      };
+      
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
+        
+        // ✅ Padrão 1: Linha com "CPF Representante Legal" - buscar CPF e anexar ao sócio anterior (empresa)
+        const cpfRepLegalMatch = line.match(/CPF\s+Representante\s+Legal[:\s]+(\d{2,3}\.\d{3}\.\d{3}-\d{2})/i);
+        if (cpfRepLegalMatch && socios.length > 0) {
+          const ultimoSocio = socios[socios.length - 1];
+          // Verificar se o último sócio é uma empresa (tem LTDA, S/A, etc no nome)
+          if (ultimoSocio.nome && /LTDA|S\/A|EIRELI|HOLDING|PARTICIPACOES|EMPRESARIAIS/i.test(ultimoSocio.nome)) {
+            // Extrair também o "Qualif. Resp." se houver
+            const qualifRespMatch = line.match(/Qualif\.\s*Resp\.\s*:\s*([^\n]+)/i);
+            if (qualifRespMatch) {
+              ultimoSocio.qualificacao = ultimoSocio.qualificacao 
+                ? `${ultimoSocio.qualificacao} (Representante: ${qualifRespMatch[1].trim()})` 
+                : `Representante: ${qualifRespMatch[1].trim()}`;
+            }
+            // Não adicionar o CPF do representante como sócio novo
+            console.log(`[Sitf Extract] ✅ CPF Representante Legal encontrado para ${ultimoSocio.nome}: ${cpfRepLegalMatch[1]} (não será criado como novo sócio)`);
+            continue;
+          }
+        }
         
         // Procurar por padrão: CPF/CNPJ seguido de dados
         // CPF: \d{3}\.\d{3}\.\d{3}-\d{2} ou CNPJ: \d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}
@@ -2285,16 +2540,18 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
           const cpf = cpfMatch[1];
           const restOfLine = line.substring(cpfMatch.index! + cpf.length).trim();
           
-          // Verificar se esta linha é apenas informação adicional (ex: "Qualif. Resp.: PAI")
+          // Verificar se esta linha é apenas informação adicional (ex: "Qualif. Resp.: PAI" ou "CONTRATANTE: 32.401.481/0001-33")
           // e não um novo sócio. Se o CPF já existe em um sócio anterior, anexar a informação
-          const isInfoLine = /^(Qualif\.\s*Resp\.|CPF\s*Representante|Representante)/i.test(restOfLine.trim());
+          const isInfoLine = /^(Qualif\.\s*Resp\.|CPF\s*Representante|Representante|CONTRATANTE)/i.test(restOfLine.trim()) ||
+                             restOfLine.includes('CONTRATANTE: 32.401.481') || restOfLine.includes('CONTRATANTE: 32401481');
           
           // Verificar se tem percentual na linha - se não tiver, provavelmente é apenas informação adicional
           const temPercentualNaLinha = /(\d{1,3}[,\.]\d{2})\s*%/.test(restOfLine);
           
-          // Verificar se tem um nome válido (não apenas "Qualif. Resp." ou similar)
+          // Verificar se tem um nome válido (não apenas "Qualif. Resp." ou "CONTRATANTE" ou similar)
           const temNomeValido = restOfLine.trim().length > 0 && 
-            !/^(Qualif\.\s*Resp\.|CPF\s*Representante|Representante)/i.test(restOfLine.trim()) &&
+            !/^(Qualif\.\s*Resp\.|CPF\s*Representante|Representante|CONTRATANTE)/i.test(restOfLine.trim()) &&
+            !restOfLine.includes('CONTRATANTE: 32.401.481') && !restOfLine.includes('CONTRATANTE: 32401481') &&
             restOfLine.trim().split(/\s+/).length >= 2; // Pelo menos 2 palavras (nome completo)
           
           if (isInfoLine || (!temPercentualNaLinha && !temNomeValido)) {
@@ -2339,75 +2596,109 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
           
           // Se já temos um sócio sendo processado, salvá-lo antes de começar um novo
           if (currentSocio && currentSocio.nome) {
+            // ✅ Fazer matching por nome com sócios existentes
+            const matchExistente = fazerMatchPorNome(currentSocio.nome, sociosExistentes);
+            if (matchExistente) {
+              console.log(`[Sitf Extract] ✅ Match encontrado por nome: "${currentSocio.nome}" → "${matchExistente.nome}"`);
+              sociosEncontrados.add(normalizarNome(matchExistente.nome));
+              
+              // Se o sócio existente tem CPF mas o extraído não tem, usar o existente
+              if (!currentSocio.cpf && matchExistente.cpf) {
+                currentSocio.cpf = matchExistente.cpf;
+                console.log(`[Sitf Extract] ✅ CPF do sócio existente usado: ${currentSocio.cpf}`);
+              }
+            }
+            
             socios.push(currentSocio);
             console.log('[Sitf Extract] ✅ Sócio salvo:', currentSocio);
           }
           
           console.log('[Sitf Extract] Linha com CPF encontrada:', { cpf, restOfLine });
           
-          // Procurar porcentagem em qualquer lugar da linha (formato: XX,XX% ou XX.XX% ou XX,XX ou XX.XX)
-          // Tentar múltiplos padrões para capturar diferentes formatos
+          // ✅ MELHORAR: Buscar porcentagem em múltiplas colunas da tabela
+          // A porcentagem pode estar em qualquer coluna, não necessariamente na mesma linha que o CPF/CNPJ
           let participacaoPercentual: number | undefined;
+          let percentMatch: RegExpMatchArray | null = null;
           
-          // Padrão 1: XX,XX% ou XX.XX% (com vírgula ou ponto e símbolo %)
-          const percentPattern1 = /(\d{1,3}[,\.]\d{2})\s*%/;
-          let percentMatch = restOfLine.match(percentPattern1);
-          
-          // Padrão 2: XX,XX ou XX.XX (sem símbolo %, mas com vírgula/ponto) - verificar se está no contexto de Cap. Social
-          if (!percentMatch) {
-            const percentPattern2 = /Cap\.\s*Social[^\n]*:?\s*(\d{1,3}[,\.]\d{2})/i;
-            percentMatch = restOfLine.match(percentPattern2);
-          }
-          
-          // Padrão 3: XX,XX ou XX.XX seguido de espaço ou fim de linha (sem %)
-          if (!percentMatch) {
-            const percentPattern3 = /(\d{1,3}[,\.]\d{2})(?:\s|$)/;
-            const tempMatch = restOfLine.match(percentPattern3);
-            // Verificar se não é parte de um número maior (ex: data, CEP)
-            if (tempMatch && parseFloat(tempMatch[1].replace(',', '.')) <= 100) {
-              percentMatch = tempMatch;
+          // Primeiro, buscar na linha atual usando função auxiliar (busca em múltiplas colunas)
+          const percentualNaLinha = buscarPercentualNaLinha(restOfLine);
+          if (percentualNaLinha) {
+            participacaoPercentual = percentualNaLinha.valor;
+            percentMatch = [percentualNaLinha.match, percentualNaLinha.match.replace('%', '').trim()];
+            console.log('[Sitf Extract] Porcentagem encontrada (múltiplas colunas):', percentualNaLinha.match, '→', participacaoPercentual);
+          } else {
+            // Se não encontrou, tentar padrões alternativos
+            // Padrão 1: XX,XX% ou XX.XX% (com vírgula ou ponto e símbolo %)
+            percentMatch = restOfLine.match(/(\d{1,3}[,\.]\d{2})\s*%/);
+            
+            // Padrão 2: XX,XX ou XX.XX (sem símbolo %, mas com vírgula/ponto) - verificar se está no contexto de Cap. Social
+            if (!percentMatch) {
+              const percentPattern2 = /Cap\.\s*Social[^\n]*:?\s*(\d{1,3}[,\.]\d{2})/i;
+              percentMatch = restOfLine.match(percentPattern2);
             }
-          }
-          
-          // Padrão 4: XX% (número inteiro com %)
-          if (!percentMatch) {
-            const percentPattern4 = /(\d{1,3})\s*%/;
-            percentMatch = restOfLine.match(percentPattern4);
-          }
-          
+            
+            // Padrão 3: XX,XX ou XX.XX seguido de espaço ou fim de linha (sem %)
+            if (!percentMatch) {
+              const percentPattern3 = /(\d{1,3}[,\.]\d{2})(?:\s|$)/;
+              const tempMatch = restOfLine.match(percentPattern3);
+              // Verificar se não é parte de um número maior (ex: data, CEP)
+              if (tempMatch && parseFloat(tempMatch[1].replace(',', '.')) <= 100) {
+                percentMatch = tempMatch;
+              }
+            }
+            
+            // Padrão 4: XX% (número inteiro com %)
+            if (!percentMatch) {
+              const percentPattern4 = /(\d{1,3})\s*%/;
+              percentMatch = restOfLine.match(percentPattern4);
+            }
+            
           if (percentMatch) {
             const percentValue = percentMatch[1].replace(',', '.');
             participacaoPercentual = parseFloat(percentValue);
-            if (isNaN(participacaoPercentual)) {
-              participacaoPercentual = undefined;
-            } else {
-              // Garantir que está entre 0 e 100
-              if (participacaoPercentual > 100) {
-                participacaoPercentual = participacaoPercentual / 100; // Se for 5000, transformar em 50.00
+              if (isNaN(participacaoPercentual)) {
+                participacaoPercentual = undefined;
+              } else {
+                // Garantir que está entre 0 e 100
+                if (participacaoPercentual > 100) {
+                  participacaoPercentual = participacaoPercentual / 100; // Se for 5000, transformar em 50.00
+                }
+              }
+              console.log('[Sitf Extract] Porcentagem encontrada:', percentMatch[1], '→', participacaoPercentual);
+            }
+          }
+          
+          // ✅ MELHORAR: Se não encontrou na linha atual, buscar nas próximas 2 linhas e na linha anterior
+          if (!participacaoPercentual) {
+            // Buscar na linha anterior (pode estar na coluna anterior da tabela)
+            if (i > 0) {
+              const prevLine = lines[i - 1].trim();
+              const prevPercentual = buscarPercentualNaLinha(prevLine);
+              if (prevPercentual && prevPercentual.valor <= 100) {
+                participacaoPercentual = prevPercentual.valor;
+                console.log('[Sitf Extract] Porcentagem encontrada na linha anterior:', prevPercentual.match, '→', participacaoPercentual);
               }
             }
-            console.log('[Sitf Extract] Porcentagem encontrada:', percentMatch[1], '→', participacaoPercentual);
-          } else {
-            // Tentar buscar na próxima linha se não encontrou na atual
-            if (i + 1 < lines.length) {
-              const nextLine = lines[i + 1].trim();
-              const nextPercentMatch = nextLine.match(/(\d{1,3}[,\.]\d{2})\s*%/);
-              if (nextPercentMatch) {
-                const percentValue = nextPercentMatch[1].replace(',', '.');
-                participacaoPercentual = parseFloat(percentValue);
-                if (!isNaN(participacaoPercentual) && participacaoPercentual > 100) {
-                  participacaoPercentual = participacaoPercentual / 100;
+            
+            // Buscar nas próximas 2 linhas
+            if (!participacaoPercentual && i + 1 < lines.length) {
+              for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+                const nextLine = lines[j].trim();
+                const nextPercentual = buscarPercentualNaLinha(nextLine);
+                if (nextPercentual && nextPercentual.valor <= 100) {
+                  participacaoPercentual = nextPercentual.valor;
+                  console.log(`[Sitf Extract] Porcentagem encontrada na linha ${j + 1}:`, nextPercentual.match, '→', participacaoPercentual);
+                  break;
                 }
-                console.log('[Sitf Extract] Porcentagem encontrada na próxima linha:', nextPercentMatch[1], '→', participacaoPercentual);
               }
             }
           }
           
-          // Remover porcentagem para processar o resto
+          // Remover porcentagem para processar o resto (usar match encontrado)
           let restWithoutPercent = restOfLine;
-          if (percentMatch) {
-            const percentIndex = restOfLine.indexOf(percentMatch[0]);
-            restWithoutPercent = (restOfLine.substring(0, percentIndex).trim() + ' ' + restOfLine.substring(percentIndex + percentMatch[0].length).trim()).trim();
+          if (participacaoPercentual !== undefined) {
+            // Remover todos os percentuais encontrados na linha
+            restWithoutPercent = restOfLine.replace(/\b\d{1,3}[,\.]\d{2}\s*%\b/g, '').trim();
           }
           
           // Procurar situação cadastral (REGULAR, IRREGULAR, etc.)
@@ -2443,16 +2734,18 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
           // Limpar nome de espaços extras e caracteres indesejados
           nome = nome.replace(/\s+/g, ' ').trim();
           
-          // Validar se o nome não é apenas uma descrição (ex: "Qualif. Resp.: PAI")
-          const isNomeDescricao = /^(Qualif\.\s*Resp\.|CPF\s*Representante|Representante)/i.test(nome);
+          // Validar se o nome não é apenas uma descrição (ex: "Qualif. Resp.: PAI" ou "CONTRATANTE: 32.401.481/0001-33")
+          const isNomeDescricao = /^(Qualif\.\s*Resp\.|CPF\s*Representante|Representante|CONTRATANTE)/i.test(nome) ||
+                                   nome.includes('CONTRATANTE: 32.401.481') || nome.includes('CONTRATANTE: 32401481');
           
           // Verificar se tem um nome válido (não apenas descrições)
           const nomeValido = nome && nome.length >= 3 && !isNomeDescricao && nome.split(/\s+/).length >= 2;
           
-          // Se não tem nome válido OU não tem percentual, não criar sócio
-          // (pode ser apenas informação adicional)
-          if (isNomeDescricao || !nomeValido || (participacaoPercentual === undefined && !nomeValido)) {
-            console.warn('[Sitf Extract] ⚠️ Linha ignorada (sem nome válido ou percentual):', { cpf, restOfLine, nome, participacaoPercentual, isNomeDescricao, nomeValido });
+          // ✅ Melhorar validação: aceitar sócio mesmo sem percentual se tiver nome válido e CPF
+          // O percentual pode estar em outra linha ou pode não estar disponível
+          // Se não tem nome válido, não criar sócio (pode ser apenas informação adicional)
+          if (isNomeDescricao || !nomeValido) {
+            console.warn('[Sitf Extract] ⚠️ Linha ignorada (sem nome válido):', { cpf, restOfLine, nome, participacaoPercentual, isNomeDescricao, nomeValido });
             
             // Tentar anexar ao último sócio salvo se for informação de representante
             if (isNomeDescricao && socios.length > 0) {
@@ -2469,13 +2762,19 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
             continue; // Pular esta linha, não criar sócio
           }
           
+          // ✅ Se tem nome válido mas não tem percentual, ainda criar o sócio
+          // O percentual pode estar em outra linha ou pode não estar disponível
+          if (participacaoPercentual === undefined) {
+            console.warn('[Sitf Extract] ⚠️ Sócio sem percentual na linha inicial, tentando buscar nas próximas linhas:', { cpf, nome });
+          }
+          
           // Inicializar o sócio atual
           currentSocio = {
-            cpf,
-            nome,
-            qualificacao: qualificacao || null,
-            situacao_cadastral: situacao || null,
-            participacao_percentual: participacaoPercentual,
+              cpf,
+              nome,
+              qualificacao: qualificacao || null,
+              situacao_cadastral: situacao || null,
+            participacao_percentual: participacaoPercentual, // Pode ser undefined, será buscado nas próximas linhas
           };
           
           // Verificar se a próxima linha tem informações de representante legal
@@ -2498,7 +2797,122 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
             currentSocio = null;
           }
         } else {
-          // Se não é uma linha com CPF, pode ser uma linha de continuação ou informação adicional
+          // ✅ NOVO: Processar linha que pode começar com NOME (sem CPF/CNPJ inicial)
+          // Padrão: Nome em letras maiúsculas (possivelmente empresa com LTDA, S/A, etc)
+          const nomePattern = /^([A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇ][A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇ\s\.\&\-]+(?:LTDA|S\/A|EIRELI|ME|EPP|HOLDING|PARTICIPACOES|ADMINISTRACAO|EMPRESARIAIS|S\/A)?)/;
+          const nomeMatch = line.match(nomePattern);
+          
+          // Verificar se não é uma linha de informação (Qualif. Resp., CPF Representante, CONTRATANTE, etc)
+          const isInfoLine = /^(Qualif\.\s*Resp\.|CPF\s*Representante|Representante|Cap\.\s*Votante|Cap\.\s*Social|CONTRATANTE)/i.test(line) ||
+                             line.includes('CONTRATANTE: 32.401.481') || line.includes('CONTRATANTE: 32401481');
+          
+          if (nomeMatch && !isInfoLine && nomeMatch[1].split(/\s+/).length >= 2) {
+            const nomeInicial = nomeMatch[1].trim();
+            console.log('[Sitf Extract] 🔍 Linha com nome encontrada (sem CPF inicial):', nomeInicial);
+            
+            // Buscar CPF/CNPJ e percentual nas linhas seguintes e anteriores
+            let cpfParaSocio: string | undefined;
+            let percentualParaSocio: number | undefined;
+            let qualificacaoParaSocio: string | null = null;
+            let situacaoParaSocio: string | null = null;
+            
+            // Buscar nas próximas 3 linhas e na linha anterior
+            const linhasParaBuscar = [
+              ...(i > 0 ? [lines[i - 1].trim()] : []), // Linha anterior
+              line, // Linha atual
+              ...(i + 1 < lines.length ? lines.slice(i + 1, Math.min(i + 4, lines.length)).map(l => l.trim()) : []), // Próximas 3 linhas
+            ];
+            
+            for (const linhaParaBuscar of linhasParaBuscar) {
+              if (!linhaParaBuscar) continue;
+              
+              // Buscar CPF/CNPJ
+              const cpfNextMatch = linhaParaBuscar.match(/(\d{2,3}\.\d{3}\.\d{3}(?:\/\d{4})?-\d{2})/);
+              if (cpfNextMatch && !cpfParaSocio) {
+                // Verificar se não é um "CPF Representante Legal" (vem após o nome da empresa)
+                if (!/CPF\s+Representante\s+Legal/i.test(linhaParaBuscar)) {
+                  cpfParaSocio = cpfNextMatch[1];
+                  console.log(`[Sitf Extract] ✅ CPF/CNPJ encontrado para ${nomeInicial}: ${cpfParaSocio}`);
+                }
+              }
+              
+              // Buscar percentual
+              const percentualEncontrado = buscarPercentualNaLinha(linhaParaBuscar);
+              if (percentualEncontrado && !percentualParaSocio) {
+                percentualParaSocio = percentualEncontrado.valor;
+                console.log(`[Sitf Extract] ✅ Percentual encontrado para ${nomeInicial}: ${percentualParaSocio}%`);
+              }
+              
+              // Buscar qualificação
+              if (!qualificacaoParaSocio) {
+                const qualMatch = linhaParaBuscar.match(/(SÓCIO\s*OU\s*ACIONISTA\s*MENOR\s*\([^)]+\)|SÓCIO\s*OU\s*ACIONISTA\s*MENOR|SÓCIO-ADMINISTRADOR|ADMINISTRADOR|SÓCIO|QUOTISTA|DIRETOR|PRESIDENTE|GERENTE)/i);
+                if (qualMatch) {
+                  qualificacaoParaSocio = qualMatch[1].toUpperCase();
+                }
+              }
+              
+              // Buscar situação cadastral
+              if (!situacaoParaSocio) {
+                const situacaoMatch = linhaParaBuscar.match(/\b(REGULAR|IRREGULAR|SUSPENSO|CANCELADO|BAIXADO|ATIVA|INATIVA)\b/i);
+                if (situacaoMatch) {
+                  situacaoParaSocio = situacaoMatch[1].toUpperCase();
+                }
+              }
+            }
+            
+            // ✅ Fazer matching com sócios existentes para melhorar extração
+            const matchExistente = fazerMatchPorNome(nomeInicial, sociosExistentes);
+            if (matchExistente) {
+              console.log(`[Sitf Extract] ✅ Match encontrado por nome (sem CPF inicial): "${nomeInicial}" → "${matchExistente.nome}"`);
+              sociosEncontrados.add(normalizarNome(matchExistente.nome));
+              
+              // Usar CPF do sócio existente se não encontrou na extração
+              if (!cpfParaSocio && matchExistente.cpf) {
+                cpfParaSocio = matchExistente.cpf;
+                console.log(`[Sitf Extract] ✅ CPF do sócio existente usado: ${cpfParaSocio}`);
+              }
+            }
+            
+            // Criar sócio mesmo sem CPF/CNPJ se encontrou nome válido
+            // Isso é importante para sócios que vieram do QSA sem CPF
+            if (nomeInicial.length >= 3 && nomeInicial.split(/\s+/).length >= 2) {
+              // Se já temos um sócio sendo processado, salvá-lo antes de começar um novo
+              if (currentSocio && currentSocio.nome) {
+                // ✅ Fazer matching por nome com sócios existentes
+                const matchExistenteCurrent = fazerMatchPorNome(currentSocio.nome, sociosExistentes);
+                if (matchExistenteCurrent) {
+                  console.log(`[Sitf Extract] ✅ Match encontrado por nome: "${currentSocio.nome}" → "${matchExistenteCurrent.nome}"`);
+                  sociosEncontrados.add(normalizarNome(matchExistenteCurrent.nome));
+                  
+                  if (!currentSocio.cpf && matchExistenteCurrent.cpf) {
+                    currentSocio.cpf = matchExistenteCurrent.cpf;
+                  }
+                }
+                socios.push(currentSocio);
+                console.log('[Sitf Extract] ✅ Sócio salvo antes de processar novo:', currentSocio);
+              }
+              
+              const novoSocio = {
+                cpf: cpfParaSocio || undefined,
+                nome: nomeInicial,
+                qualificacao: qualificacaoParaSocio,
+                situacao_cadastral: situacaoParaSocio,
+                participacao_percentual: percentualParaSocio,
+              };
+              
+              currentSocio = novoSocio;
+              console.log(`[Sitf Extract] ✅ Sócio extraído por nome (sem CPF inicial): ${nomeInicial}`, novoSocio);
+              
+              // Pular linhas que já foram processadas (até 2 linhas à frente se necessário)
+              if (i + 2 < lines.length && cpfParaSocio && lines[i + 1].trim().includes(cpfParaSocio)) {
+                i++; // Pular uma linha se o CPF está na próxima linha
+              }
+              
+              continue; // Continuar para próxima iteração (sócio já foi criado)
+            }
+          }
+          
+          // Se não é uma linha com CPF nem com nome, pode ser uma linha de continuação ou informação adicional
           // Verificar se é informação de representante legal para o sócio atual
           if (currentSocio) {
             const lineLower = line.toLowerCase();
@@ -2512,14 +2926,10 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
             }
             // Verificar se há porcentagem nesta linha que não foi capturada antes
             if (currentSocio.participacao_percentual === undefined) {
-              const percentMatch = line.match(/(\d{1,3}[,\.]\d{2})\s*%/);
-              if (percentMatch) {
-                const percentValue = percentMatch[1].replace(',', '.');
-                const percent = parseFloat(percentValue);
-                if (!isNaN(percent)) {
-                  currentSocio.participacao_percentual = percent > 100 ? percent / 100 : percent;
-                  console.log('[Sitf Extract] Porcentagem encontrada em linha adicional:', percentMatch[1], '→', currentSocio.participacao_percentual);
-                }
+              const percentualEncontrado = buscarPercentualNaLinha(line);
+              if (percentualEncontrado) {
+                currentSocio.participacao_percentual = percentualEncontrado.valor;
+                console.log('[Sitf Extract] Porcentagem encontrada em linha adicional:', percentualEncontrado.match, '→', currentSocio.participacao_percentual);
               }
             }
           }
@@ -2528,8 +2938,43 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
       
       // Salvar o último sócio se houver
       if (currentSocio && currentSocio.nome) {
+        // ✅ Fazer matching por nome com sócios existentes
+        const matchExistente = fazerMatchPorNome(currentSocio.nome, sociosExistentes);
+        if (matchExistente) {
+          console.log(`[Sitf Extract] ✅ Match encontrado por nome: "${currentSocio.nome}" → "${matchExistente.nome}"`);
+          sociosEncontrados.add(normalizarNome(matchExistente.nome));
+          
+          // Se o sócio existente tem CPF mas o extraído não tem, usar o existente
+          if (!currentSocio.cpf && matchExistente.cpf) {
+            currentSocio.cpf = matchExistente.cpf;
+            console.log(`[Sitf Extract] ✅ CPF do sócio existente usado: ${currentSocio.cpf}`);
+          }
+        }
+        
         socios.push(currentSocio);
         console.log('[Sitf Extract] ✅ Último sócio salvo:', currentSocio);
+      }
+      
+      // ✅ Verificar se há sócios existentes que não foram encontrados na extração
+      if (sociosExistentes.length > 0) {
+        const sociosFaltantes = sociosExistentes.filter(s => {
+          const nomeNormalizado = normalizarNome(s.nome);
+          return !sociosEncontrados.has(nomeNormalizado);
+        });
+        
+        if (sociosFaltantes.length > 0) {
+          console.warn(`[Sitf Extract] ⚠️ ${sociosFaltantes.length} sócio(s) existente(s) não encontrado(s) na extração:`, 
+            sociosFaltantes.map(s => s.nome).join(', '));
+          
+          // Se há múltiplas páginas e sócios faltantes, tentar buscar na segunda seção
+          if (temMultiplasPaginas && todasSecoesSocios.length > 1) {
+            console.log('[Sitf Extract] 🔍 Tentando buscar sócios faltantes na segunda seção...');
+            // A segunda seção já foi incluída no sociosText, então os sócios devem ter sido extraídos
+            // Mas vamos verificar se ainda há faltantes após processar todas as seções
+          }
+          } else {
+          console.log('[Sitf Extract] ✅ Todos os sócios existentes foram encontrados na extração');
+        }
       }
       
       // Remover duplicatas por CPF (manter o primeiro com mais informações)
@@ -2570,45 +3015,21 @@ function extractStructuredDataFromText(text: string, cnpj: string): SitfExtracte
       }
       
       // Validar e ajustar soma dos percentuais
-      let totalPercentual = sociosUnicos.reduce((sum, s) => {
+      // ✅ IMPORTANTE: Não ajustar percentuais - usar exatamente o que vem da Situação Fiscal
+      // Apenas calcular os valores usando: Capital Social × Porcentagem (SITF) / 100
+      const totalPercentual = sociosUnicos.reduce((sum, s) => {
         const percent = s.participacao_percentual || 0;
         return sum + percent;
       }, 0);
       
-      console.log('[Sitf Extract] Soma inicial dos percentuais:', totalPercentual.toFixed(2) + '%');
+      console.log(`[Sitf Extract] Total de sócios extraídos: ${sociosUnicos.length}`);
+      console.log(`[Sitf Extract] Soma dos percentuais (da SITF, sem ajuste): ${totalPercentual.toFixed(2)}%`);
       
-      if (totalPercentual > 0 && Math.abs(totalPercentual - 100) > 0.01) {
-        console.warn(`[Sitf Extract] ⚠️ Soma dos percentuais (${totalPercentual.toFixed(2)}%) não é 100%. Ajustando proporcionalmente...`);
-        
-        // Ajustar proporcionalmente para totalizar 100%
-        const fator = 100 / totalPercentual;
-        sociosUnicos.forEach(s => {
-          if (s.participacao_percentual !== undefined && s.participacao_percentual !== null) {
-            const novoPercentual = s.participacao_percentual * fator;
-            s.participacao_percentual = parseFloat(novoPercentual.toFixed(2));
-            console.log(`[Sitf Extract] Ajustado ${s.nome}: ${(s.participacao_percentual / fator).toFixed(2)}% → ${s.participacao_percentual.toFixed(2)}%`);
-          }
-        });
-        
-        // Recalcular total após ajuste
-        totalPercentual = sociosUnicos.reduce((sum, s) => sum + (s.participacao_percentual || 0), 0);
-        console.log(`[Sitf Extract] ✅ Percentuais ajustados. Novo total: ${totalPercentual.toFixed(2)}%`);
-      }
-      
+      // Log detalhado de cada sócio
       if (sociosUnicos.length > 0) {
-        // Se há apenas 1 sócio e não tem percentual, assumir 100%
-        if (sociosUnicos.length === 1 && (sociosUnicos[0].participacao_percentual === undefined || sociosUnicos[0].participacao_percentual === null)) {
-          sociosUnicos[0].participacao_percentual = 100;
-          totalPercentual = 100;
-          console.log('[Sitf Extract] ⚠️ Apenas 1 sócio sem percentual. Assumindo 100%');
-        }
-        
         console.log('[Sitf Extract] Total de sócios extraídos (após remoção de duplicatas):', sociosUnicos.length);
-        console.log('[Sitf Extract] Soma final dos percentuais:', totalPercentual.toFixed(2) + '%');
-        
-        // Log detalhado de cada sócio
         sociosUnicos.forEach((s, idx) => {
-          console.log(`[Sitf Extract] Sócio ${idx + 1}: ${s.nome} - ${s.participacao_percentual?.toFixed(2) || 'N/A'}%`);
+          console.log(`[Sitf Extract] Sócio ${idx + 1}: ${s.nome} - CPF/CNPJ: ${s.cpf || 'N/A'} - ${s.participacao_percentual?.toFixed(2) || 'N/A'}%`);
         });
         
         data.socios = sociosUnicos;

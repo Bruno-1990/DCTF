@@ -28,6 +28,11 @@ router.get('/socios', (req, res) => {
   clienteController.listarSociosDistinct(req, res);
 });
 
+// PUT /api/clientes/:id/recalcular-valores-participacao - Recalcular valores de participação dos sócios
+router.put('/:id/recalcular-valores-participacao', validateParams(clienteSchemas.params), (req, res) => {
+  clienteController.recalcularValoresParticipacao(req, res);
+});
+
 // PUT /api/clientes/:id/atualizar-socios-situacao-fiscal - Atualizar sócios a partir da situação fiscal
 router.put('/:id/atualizar-socios-situacao-fiscal', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.atualizarSociosPorSituacaoFiscal(req, res);
