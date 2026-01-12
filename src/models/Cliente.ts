@@ -83,7 +83,10 @@ export class Cliente extends DatabaseService<ICliente> {
     const cols = await this.getTableColumns(table);
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(obj)) {
-      if (cols.has(k)) out[k] = v;
+      // Apenas incluir se a coluna existe na tabela E o valor não é undefined
+      if (cols.has(k) && v !== undefined) {
+        out[k] = v;
+      }
     }
     return out;
   }
@@ -297,7 +300,7 @@ export class Cliente extends DatabaseService<ICliente> {
       receita_telefone: row.receita_telefone || undefined,
       tipo_empresa: row.tipo_empresa || undefined,
       capital_social: row.capital_social ?? undefined,
-      regime_tributario: row.regime_tributario || undefined,
+      regime_tributario: row.regime_tributario || null,
       simples_optante: row.simples_optante === true || row.simples_optante === 1 ? true : (row.simples_optante === false || row.simples_optante === 0 ? false : undefined),
       // Normalizar datas de regimes para string YYYY-MM-DD
       simples_data_opcao: row.simples_data_opcao ? (row.simples_data_opcao instanceof Date ? row.simples_data_opcao.toISOString().slice(0, 10) : String(row.simples_data_opcao).slice(0, 10)) : undefined,
@@ -518,6 +521,16 @@ export class Cliente extends DatabaseService<ICliente> {
     
     // Remover cnpj se estiver presente (não salvar formatado)
     delete dataToUpdate.cnpj;
+
+    // Remover campos undefined (converter para null ou remover)
+    // O MySQL/Supabase não aceita undefined, apenas null ou omitir o campo
+    Object.keys(dataToUpdate).forEach(key => {
+      if (dataToUpdate[key] === undefined) {
+        // Se o campo é opcional, remover completamente
+        // Se o campo é obrigatório, converter para null (mas não deve acontecer em updates)
+        delete dataToUpdate[key];
+      }
+    });
 
     // Normalizar telefone se presente
     if (dataToUpdate.telefone !== undefined) {
@@ -1014,8 +1027,8 @@ export class Cliente extends DatabaseService<ICliente> {
     let sociosRemoved = 0;
 
     if (clienteExistente) {
-      // Comparar campos
-      const keys = Object.keys(updateFieldsSafe).filter((k) => updateFieldsSafe[k] !== undefined);
+      // Comparar campos (apenas campos que não são undefined)
+      const keys = Object.keys(updateFieldsSafe).filter((k) => updateFieldsSafe[k] !== undefined && updateFieldsSafe[k] !== null);
       for (const k of keys) {
         if (ignoredFieldsForDiff.has(k)) continue;
         const beforeRaw = (clienteExistente as any)[k];
@@ -1100,7 +1113,22 @@ export class Cliente extends DatabaseService<ICliente> {
           ...updateFieldsSafe, // Incluir todos os outros campos (incluindo datas já normalizadas)
         };
         const insertData = await this.filterToExistingColumns('clientes', insertDataFull);
-        const keys = Object.keys(insertData);
+        
+        // Remover campos undefined do insertData antes de criar keys
+        // Remover campos undefined do insertData antes de criar keys
+        const cleanedInsertData: Record<string, any> = {};
+        Object.keys(insertData).forEach(key => {
+          const val = (insertData as any)[key];
+          if (val !== undefined) {
+            cleanedInsertData[key] = val;
+          }
+        });
+        
+        const keys = Object.keys(cleanedInsertData);
+        if (keys.length === 0) {
+          throw new Error('Nenhum campo válido para inserir');
+        }
+        
         const cols = keys.map((k) => `\`${k}\``).join(', ');
         const placeholders = keys.map(() => '?').join(', ');
         // Garantir que datas sejam strings YYYY-MM-DD antes de enviar ao MySQL
@@ -1134,7 +1162,7 @@ export class Cliente extends DatabaseService<ICliente> {
         const dateFieldsForMySQL = ['abertura', 'data_situacao', 'data_situacao_especial', 'simples_data_opcao', 'simples_data_exclusao', 'simei_data_opcao', 'simei_data_exclusao'];
         const timestampFieldsForMySQL = ['receita_ws_consulta_em', 'receita_ws_ultima_atualizacao'];
         const values = keys.map((k) => {
-          const val = (insertData as any)[k];
+          const val = cleanedInsertData[k];
           if (dateFieldsForMySQL.includes(k)) {
             return normalizeDateValue(val);
           }
@@ -1160,49 +1188,56 @@ export class Cliente extends DatabaseService<ICliente> {
         updateKeys = updateKeys.filter((k) => changedFields.has(k));
       }
       if (updateKeys.length > 0) {
-        const setClause = updateKeys.map((k) => `\`${k}\` = ?`).join(', ');
-        // Garantir que datas sejam strings YYYY-MM-DD antes de enviar ao MySQL
-        const normalizeDateValue = (val: any): any => {
-          if (!val) return val;
-          if (val instanceof Date) {
-            const year = val.getFullYear();
-            const month = String(val.getMonth() + 1).padStart(2, '0');
-            const day = String(val.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-          }
-          if (typeof val === 'string' && val.includes('T') && val.includes('Z')) {
-            // Se for ISO timestamp, extrair apenas a data
-            return val.slice(0, 10);
-          }
-          return val;
-        };
-        // Normalizar timestamps (Date objects são aceitos, mas strings ISO precisam ser convertidas)
-        const normalizeTimestampValue = (val: any): any => {
-          if (!val) return val;
-          if (val instanceof Date) {
-            // Date object é aceito pelo MySQL, manter
+        // Remover campos undefined dos updateKeys antes de processar
+        const cleanedUpdateKeys = updateKeys.filter(k => updateFieldsSafe[k] !== undefined);
+        
+        if (cleanedUpdateKeys.length === 0) {
+          // Se não há campos válidos para atualizar, pular o UPDATE
+        } else {
+          const setClause = cleanedUpdateKeys.map((k) => `\`${k}\` = ?`).join(', ');
+          // Garantir que datas sejam strings YYYY-MM-DD antes de enviar ao MySQL
+          const normalizeDateValue = (val: any): any => {
+            if (!val) return val;
+            if (val instanceof Date) {
+              const year = val.getFullYear();
+              const month = String(val.getMonth() + 1).padStart(2, '0');
+              const day = String(val.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            }
+            if (typeof val === 'string' && val.includes('T') && val.includes('Z')) {
+              // Se for ISO timestamp, extrair apenas a data
+              return val.slice(0, 10);
+            }
             return val;
-          }
-          if (typeof val === 'string' && val.includes('T') && (val.includes('Z') || val.includes('+'))) {
-            // Converter string ISO para Date object
-            return new Date(val);
-          }
-          return val;
-        };
-        const dateFieldsForMySQL = ['abertura', 'data_situacao', 'data_situacao_especial', 'simples_data_opcao', 'simples_data_exclusao', 'simei_data_opcao', 'simei_data_exclusao'];
-        const timestampFieldsForMySQL = ['receita_ws_consulta_em', 'receita_ws_ultima_atualizacao'];
-        const values = updateKeys.map((k) => {
-          const val = updateFieldsSafe[k];
-          if (dateFieldsForMySQL.includes(k)) {
-            return normalizeDateValue(val);
-          }
-          if (timestampFieldsForMySQL.includes(k)) {
-            return normalizeTimestampValue(val);
-          }
-          return val;
-        });
-        values.push(clienteId);
-        await connection.execute(`UPDATE \`clientes\` SET ${setClause} WHERE id = ?`, values);
+          };
+          // Normalizar timestamps (Date objects são aceitos, mas strings ISO precisam ser convertidas)
+          const normalizeTimestampValue = (val: any): any => {
+            if (!val) return val;
+            if (val instanceof Date) {
+              // Date object é aceito pelo MySQL, manter
+              return val;
+            }
+            if (typeof val === 'string' && val.includes('T') && (val.includes('Z') || val.includes('+'))) {
+              // Converter string ISO para Date object
+              return new Date(val);
+            }
+            return val;
+          };
+          const dateFieldsForMySQL = ['abertura', 'data_situacao', 'data_situacao_especial', 'simples_data_opcao', 'simples_data_exclusao', 'simei_data_opcao', 'simei_data_exclusao'];
+          const timestampFieldsForMySQL = ['receita_ws_consulta_em', 'receita_ws_ultima_atualizacao'];
+          const values = cleanedUpdateKeys.map((k) => {
+            const val = updateFieldsSafe[k];
+            if (dateFieldsForMySQL.includes(k)) {
+              return normalizeDateValue(val);
+            }
+            if (timestampFieldsForMySQL.includes(k)) {
+              return normalizeTimestampValue(val);
+            }
+            return val;
+          });
+          values.push(clienteId);
+          await connection.execute(`UPDATE \`clientes\` SET ${setClause} WHERE id = ?`, values);
+        }
       }
 
       // Sincronizar sócios apenas se mudou (ou se cliente é novo).

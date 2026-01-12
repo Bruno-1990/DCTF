@@ -103,3 +103,4 @@ WHERE TABLE_SCHEMA = 'dctf_web'
 - O CPF deve ser armazenado sem formatação (apenas números)
 - A formatação do CPF é feita apenas na interface do usuário
 
+

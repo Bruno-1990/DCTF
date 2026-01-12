@@ -21,3 +21,4 @@ CREATE TABLE IF NOT EXISTS `sitf_lote_cnpjs_pendentes` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Tabela temporária para armazenar CNPJs pendentes de consulta em lote de Situação Fiscal';
 
+

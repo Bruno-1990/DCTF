@@ -207,3 +207,4 @@ if not m:
 
 **Conclusão**: Manter o script atual (`extract_socios_api.py`) e não substituir pelo código fornecido.
 
+

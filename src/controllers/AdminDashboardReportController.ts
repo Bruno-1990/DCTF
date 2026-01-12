@@ -141,6 +141,59 @@ class AdminDashboardReportController {
     stream.pipe(res);
   }
 
+  async saveHistory(req: Request, res: Response): Promise<void> {
+    try {
+      const file = (req as any).file;
+      if (!file) {
+        res.status(400).json({ success: false, error: 'Arquivo é obrigatório' });
+        return;
+      }
+
+      const { tipoRelatorio, titulo, formato } = req.body;
+      if (!tipoRelatorio || !titulo || !formato) {
+        res.status(400).json({ success: false, error: 'tipoRelatorio, titulo e formato são obrigatórios' });
+        return;
+      }
+
+      const format = formato.toLowerCase() as 'pdf' | 'xlsx';
+      if (format !== 'pdf' && format !== 'xlsx') {
+        res.status(400).json({ success: false, error: 'Formato inválido. Use "pdf" ou "xlsx"' });
+        return;
+      }
+
+      const config = FORMAT_CONFIG[format];
+      const buffer = file.buffer;
+
+      const record = AdminReportHistoryService.register({
+        title: titulo,
+        reportType: tipoRelatorio,
+        buffer,
+        format,
+        extension: config.extension,
+        mimeType: config.mimeType,
+        period: typeof req.body.period === 'string' ? req.body.period : undefined,
+        identification: typeof req.body.identification === 'string' ? req.body.identification : undefined,
+        responsible: typeof req.body.responsible === 'string' ? req.body.responsible : undefined,
+        notes: typeof req.body.notes === 'string' ? req.body.notes : undefined,
+        filters: req.body.filters ? JSON.parse(req.body.filters) : undefined,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: {
+          id: record.id,
+          titulo: record.title,
+          tipoRelatorio: record.reportType,
+          formato: record.format,
+          createdAt: record.createdAt,
+        },
+      });
+    } catch (error: any) {
+      console.error('Erro ao salvar relatório no histórico:', error);
+      res.status(500).json({ success: false, error: error.message || 'Não foi possível salvar o relatório no histórico.' });
+    }
+  }
+
   async deleteHistory(req: Request, res: Response): Promise<void> {
     const { id } = req.params;
     if (!id) {

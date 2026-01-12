@@ -79,6 +79,16 @@ router.post('/atualizar-todos-receita-ws', (req, res) => {
   clienteController.atualizarTodosReceitaWS(req, res);
 });
 
+// POST /api/clientes/atualizar-regimes-massa - Atualizar regimes tributários em massa
+router.post('/atualizar-regimes-massa', (req, res) => {
+  clienteController.atualizarRegimesMassa(req, res);
+});
+
+// POST /api/clientes/exportar-personalizado - Exportar clientes personalizado (XLSX)
+router.post('/exportar-personalizado', (req, res) => {
+  clienteController.exportarClientesPersonalizado(req, res);
+});
+
 // POST /api/clientes/import-json - Importar clientes em lote via JSON
 router.post('/import-json', (req, res) => {
   clienteController.importarClientesJson(req, res);

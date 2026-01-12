@@ -196,6 +196,13 @@ export class ClienteController {
         }
       }
 
+      // Ordenação padrão: A → Z por razão social
+      data = data.sort((a: any, b: any) => {
+        const nomeA = (a.razao_social || a.nome || '').toLowerCase().trim();
+        const nomeB = (b.razao_social || b.nome || '').toLowerCase().trim();
+        return nomeA.localeCompare(nomeB, 'pt-BR', { sensitivity: 'base' });
+      });
+
       // Paginação simples (sem contagens para performance)
       const pageNum = Number(page);
       const limitNum = Number(limit);
@@ -1050,6 +1057,404 @@ export class ClienteController {
       res.json(result);
     } catch (error) {
       console.error('[ClienteController] Erro ao identificar clientes sem DCTF:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Atualizar regimes tributários em massa a partir de um arquivo
+   * POST /api/clientes/atualizar-regimes-massa
+   * Body: { dados: Array<{ cnpj: string, regime: string }> }
+   */
+  async atualizarRegimesMassa(req: Request, res: Response): Promise<void> {
+    try {
+      const { dados } = req.body || {};
+      
+      if (!dados || !Array.isArray(dados)) {
+        res.status(400).json({ 
+          success: false, 
+          error: 'Campo "dados" é obrigatório e deve ser um array' 
+        });
+        return;
+      }
+
+      console.log(`[ClienteController] Iniciando atualização em massa de ${dados.length} registros`);
+
+      const resultados = {
+        total: dados.length,
+        atualizados: 0,
+        naoEncontrados: 0,
+        erros: 0,
+        detalhes: [] as Array<{ cnpj: string; status: string; mensagem?: string }>,
+      };
+
+      for (const item of dados) {
+        const cnpjOriginal = item.cnpj;
+        const regime = item.regime;
+
+        // Limpar CNPJ (remover pontos, barras, traços, espaços)
+        const cnpjLimpo = String(cnpjOriginal || '').replace(/\D/g, '');
+
+        if (cnpjLimpo.length !== 14) {
+          resultados.erros++;
+          resultados.detalhes.push({
+            cnpj: cnpjOriginal,
+            status: 'erro',
+            mensagem: `CNPJ inválido (${cnpjLimpo.length} dígitos)`,
+          });
+          continue;
+        }
+
+        try {
+          // Buscar cliente pelo CNPJ
+          const clienteResult = await this.clienteModel.findByCNPJ(cnpjLimpo);
+
+          if (!clienteResult.success || !clienteResult.data) {
+            resultados.naoEncontrados++;
+            resultados.detalhes.push({
+              cnpj: cnpjOriginal,
+              status: 'não encontrado',
+              mensagem: 'Cliente não cadastrado no sistema',
+            });
+            continue;
+          }
+
+          const cliente = clienteResult.data;
+
+          // Atualizar apenas o campo regime_tributario
+          const updateResult = await this.clienteModel.updateCliente(cliente.id!, {
+            regime_tributario: regime,
+          });
+
+          if (updateResult.success) {
+            resultados.atualizados++;
+            resultados.detalhes.push({
+              cnpj: cnpjOriginal,
+              status: 'atualizado',
+              mensagem: `Regime: ${regime}`,
+            });
+          } else {
+            resultados.erros++;
+            resultados.detalhes.push({
+              cnpj: cnpjOriginal,
+              status: 'erro',
+              mensagem: updateResult.error || 'Erro ao atualizar',
+            });
+          }
+        } catch (error) {
+          resultados.erros++;
+          resultados.detalhes.push({
+            cnpj: cnpjOriginal,
+            status: 'erro',
+            mensagem: error instanceof Error ? error.message : 'Erro desconhecido',
+          });
+        }
+      }
+
+      console.log(`[ClienteController] Atualização concluída:`, {
+        total: resultados.total,
+        atualizados: resultados.atualizados,
+        naoEncontrados: resultados.naoEncontrados,
+        erros: resultados.erros,
+      });
+
+      res.json({
+        success: true,
+        data: resultados,
+        message: `Atualização concluída. ${resultados.atualizados} registros atualizados, ${resultados.naoEncontrados} não encontrados, ${resultados.erros} erros.`,
+      });
+    } catch (error) {
+      console.error('[ClienteController] Erro ao atualizar regimes em massa:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Exportar clientes personalizado (XLSX)
+   * POST /api/clientes/exportar-personalizado
+   * Body: { campos: string[], filtros?: { search?: string, socio?: string } }
+   */
+  async exportarClientesPersonalizado(req: Request, res: Response): Promise<void> {
+    try {
+      const { campos, filtros } = req.body;
+
+      if (!campos || !Array.isArray(campos) || campos.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Campo "campos" é obrigatório e deve ser um array não vazio',
+        });
+        return;
+      }
+
+      // Buscar clientes (com filtros opcionais)
+      const params: any = {};
+      if (filtros?.search) {
+        params.search = filtros.search;
+      }
+      if (filtros?.socio) {
+        params.socio = filtros.socio;
+      }
+
+      const clientesResult = await this.clienteModel.findAll();
+
+      if (!clientesResult.success || !clientesResult.data) {
+        res.status(500).json({
+          success: false,
+          error: 'Erro ao buscar clientes',
+        });
+        return;
+      }
+
+      let clientes = clientesResult.data;
+
+      // Aplicar filtros de busca se necessário
+      if (filtros?.search) {
+        const searchLower = filtros.search.toLowerCase();
+        clientes = clientes.filter((cliente: any) => {
+          const razaoSocial = (cliente.razao_social || cliente.nome || '').toLowerCase();
+          const cnpj = (cliente.cnpj_limpo || cliente.cnpj || '').replace(/\D/g, '');
+          return razaoSocial.includes(searchLower) || cnpj.includes(searchLower);
+        });
+      }
+
+      // Mapear labels dos campos
+      const campoLabels: Record<string, string> = {
+        razao_social: 'Razão Social',
+        fantasia: 'Nome Fantasia',
+        cnpj: 'CNPJ',
+        tipo_empresa: 'Tipo',
+        email: 'E-mail',
+        telefone: 'Telefone',
+        receita_email: 'E-mail (Receita)',
+        receita_telefone: 'Telefone (Receita)',
+        logradouro: 'Logradouro',
+        numero: 'Número',
+        complemento: 'Complemento',
+        bairro: 'Bairro',
+        municipio: 'Município',
+        uf: 'UF',
+        cep: 'CEP',
+        endereco: 'Endereço Completo',
+        capital_social: 'Capital Social',
+        regime_tributario: 'Regime Tributário',
+        simples_optante: 'Optante Simples Nacional',
+        simples_data_opcao: 'Data Opção Simples',
+        simples_data_exclusao: 'Data Exclusão Simples',
+        simei_optante: 'Optante SIMEI',
+        situacao_cadastral: 'Situação Cadastral',
+        data_situacao: 'Data da Situação',
+        abertura: 'Data de Abertura',
+        porte: 'Porte',
+        natureza_juridica: 'Natureza Jurídica',
+        atividade_principal_code: 'CNAE Principal',
+        atividade_principal_text: 'Atividade Principal',
+        atividades_secundarias: 'Atividades Secundárias',
+        receita_ws_status: 'Status ReceitaWS',
+        receita_ws_consulta_em: 'Última Consulta ReceitaWS',
+        receita_ws_ultima_atualizacao: 'Última Atualização ReceitaWS',
+      };
+
+      // Verificar se atividades_secundarias está nos campos e processar dinamicamente
+      const temAtividadesSecundarias = campos.includes('atividades_secundarias');
+      let maxAtividades = 0;
+      let todasAtividades: any[] = [];
+
+      if (temAtividadesSecundarias) {
+        // Encontrar o número máximo de atividades secundárias entre todos os clientes
+        clientes.forEach((cliente: any) => {
+          let atividades: any[] = [];
+          try {
+            const valor = cliente.atividades_secundarias;
+            if (typeof valor === 'string') {
+              const parsed = JSON.parse(valor);
+              if (Array.isArray(parsed)) {
+                atividades = parsed;
+              }
+            } else if (Array.isArray(valor)) {
+              atividades = valor;
+            }
+          } catch {
+            // Ignorar erros de parsing
+          }
+          if (atividades.length > maxAtividades) {
+            maxAtividades = atividades.length;
+          }
+        });
+      }
+
+      // Preparar dados para o Excel
+      const dadosExportacao = clientes.map((cliente: any) => {
+        const row: any = {};
+        campos.forEach(campo => {
+          // Pular atividades_secundarias aqui - será processado separadamente
+          if (campo === 'atividades_secundarias') {
+            return;
+          }
+
+          const label = campoLabels[campo] || campo;
+          let valor = cliente[campo];
+
+          // Formatação especial para alguns campos
+          if (campo === 'cnpj') {
+            // Buscar CNPJ em cnpj_limpo primeiro, depois cnpj formatado
+            const cnpjLimpo = cliente.cnpj_limpo || (cliente.cnpj ? String(cliente.cnpj).replace(/\D/g, '') : '');
+            if (cnpjLimpo && cnpjLimpo.length === 14) {
+              valor = cnpjLimpo.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+            } else if (cliente.cnpj) {
+              // Se já estiver formatado, usar diretamente
+              valor = String(cliente.cnpj);
+            } else {
+              valor = '';
+            }
+          } else if (campo === 'capital_social' && valor) {
+            const num = parseFloat(String(valor));
+            if (!isNaN(num)) {
+              valor = `R$ ${num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            }
+          } else if (['abertura', 'data_situacao', 'simples_data_opcao', 'simples_data_exclusao'].includes(campo) && valor) {
+            try {
+              const data = new Date(valor);
+              if (!isNaN(data.getTime())) {
+                valor = data.toLocaleDateString('pt-BR');
+              }
+            } catch {
+              // Manter valor original se não conseguir formatar
+            }
+          } else if (['receita_ws_consulta_em', 'receita_ws_ultima_atualizacao'].includes(campo) && valor) {
+            try {
+              const data = new Date(valor);
+              if (!isNaN(data.getTime())) {
+                valor = data.toLocaleString('pt-BR');
+              }
+            } catch {
+              // Manter valor original se não conseguir formatar
+            }
+          } else if (campo === 'simples_optante' || campo === 'simei_optante') {
+            if (valor === true || valor === 1 || valor === '1') {
+              valor = 'Sim';
+            } else if (valor === false || valor === 0 || valor === '0') {
+              valor = 'Não';
+            }
+          }
+
+          row[label] = valor !== null && valor !== undefined ? String(valor) : '';
+        });
+
+        // Processar atividades secundárias em colunas separadas
+        if (temAtividadesSecundarias) {
+          let atividades: any[] = [];
+          try {
+            const valor = cliente.atividades_secundarias;
+            if (typeof valor === 'string') {
+              const parsed = JSON.parse(valor);
+              if (Array.isArray(parsed)) {
+                atividades = parsed;
+              }
+            } else if (Array.isArray(valor)) {
+              atividades = valor;
+            }
+          } catch {
+            // Ignorar erros de parsing
+          }
+
+          // Criar colunas dinâmicas para cada atividade
+          // Usar índice sequencial como chave para facilitar a busca depois
+          for (let i = 0; i < maxAtividades; i++) {
+            const atividade = atividades[i];
+            const chave = `atividade_secundaria_${i}`;
+            if (atividade) {
+              row[chave] = `${atividade.code || ''} - ${atividade.text || ''}`;
+            } else {
+              row[chave] = '';
+            }
+          }
+        }
+
+        return row;
+      });
+
+      // Gerar Excel usando ExcelJS
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Clientes');
+
+      // Preparar cabeçalhos (incluindo colunas dinâmicas de atividades)
+      const headers: string[] = [];
+      campos.forEach(campo => {
+        if (campo === 'atividades_secundarias') {
+          // Adicionar colunas dinâmicas para atividades secundárias
+          // Cada coluna terá o formato "CNAE - Atividade" como cabeçalho
+          for (let i = 0; i < maxAtividades; i++) {
+            headers.push('CNAE - Atividade');
+          }
+        } else {
+          headers.push(campoLabels[campo] || campo);
+        }
+      });
+      worksheet.addRow(headers);
+
+      // Estilizar cabeçalho
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4472C4' },
+      };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      headerRow.height = 25;
+
+      // Adicionar dados
+      dadosExportacao.forEach(row => {
+        const rowData: any[] = [];
+        campos.forEach(campo => {
+          if (campo === 'atividades_secundarias') {
+            // Adicionar dados das colunas dinâmicas de atividades
+            for (let i = 0; i < maxAtividades; i++) {
+              const chave = `atividade_secundaria_${i}`;
+              rowData.push(row[chave] || '');
+            }
+          } else {
+            const label = campoLabels[campo] || campo;
+            rowData.push(row[label] || '');
+          }
+        });
+        worksheet.addRow(rowData);
+      });
+
+      // Ajustar largura das colunas
+      worksheet.columns.forEach((column: any) => {
+        let maxLength = 0;
+        column.eachCell({ includeEmpty: true }, (cell: any) => {
+          const cellLength = cell.value ? cell.value.toString().length : 0;
+          if (cellLength > maxLength) {
+            maxLength = cellLength;
+          }
+        });
+        column.width = Math.min(Math.max(maxLength + 2, 12), 60);
+      });
+
+      // Congelar primeira linha (cabeçalho)
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+      // Gerar buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      // Enviar arquivo
+      const filename = `clientes_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(buffer);
+
+    } catch (error) {
+      console.error('[ClienteController] Erro ao exportar clientes:', error);
       res.status(500).json({
         success: false,
         error: 'Erro interno do servidor',

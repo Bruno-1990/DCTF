@@ -14,6 +14,49 @@ export const api = axios.create({
   },
 });
 
+// Função para remover campos undefined de objetos (recursiva)
+const removeUndefined = (obj: any): any => {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefined);
+  }
+  
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const key in obj) {
+      if (obj[key] !== undefined) {
+        cleaned[key] = removeUndefined(obj[key]);
+      }
+    }
+    return cleaned;
+  }
+  
+  return obj;
+};
+
+// Interceptor de requisição para remover campos undefined
+api.interceptors.request.use(
+  (config) => {
+    // Limpar campos undefined do body (data)
+    if (config.data && typeof config.data === 'object') {
+      config.data = removeUndefined(config.data);
+    }
+    
+    // Limpar campos undefined dos params
+    if (config.params && typeof config.params === 'object') {
+      config.params = removeUndefined(config.params);
+    }
+    
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Interceptors para tratamento de erros
 api.interceptors.response.use(
   (response) => response,

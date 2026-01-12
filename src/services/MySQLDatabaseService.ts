@@ -20,7 +20,7 @@ export abstract class MySQLDatabaseService<T> {
    */
   async findAll(): Promise<ApiResponse<T[]>> {
     try {
-      const query = `SELECT * FROM ${this.tableName}`;
+      const query = `SELECT * FROM \`${this.tableName}\``;
       const data = await executeQuery<T>(query);
 
       return {
@@ -40,7 +40,7 @@ export abstract class MySQLDatabaseService<T> {
    */
   async findById(id: string | number): Promise<ApiResponse<T>> {
     try {
-      const query = `SELECT * FROM ${this.tableName} WHERE id = ? LIMIT 1`;
+      const query = `SELECT * FROM \`${this.tableName}\` WHERE id = ? LIMIT 1`;
       const results = await executeQuery<T>(query, [id]);
 
       if (results.length === 0) {
@@ -74,14 +74,24 @@ export abstract class MySQLDatabaseService<T> {
         mutable.id = uuidv4();
       }
 
-      const keys = Object.keys(mutable);
+      // Remover campos undefined do objeto
+      // O MySQL não aceita undefined, apenas null ou omitir o campo
+      const cleaned: Record<string, any> = {};
+      Object.keys(mutable).forEach(key => {
+        const value = mutable[key];
+        if (value !== undefined) {
+          cleaned[key] = value;
+        }
+      });
+
+      const keys = Object.keys(cleaned);
       if (keys.length === 0) {
         return { success: false, error: 'Registro vazio: nenhum campo para inserir' };
       }
 
       const fields = keys.map((k) => `\`${k}\``).join(', ');
       const placeholders = keys.map(() => '?').join(', ');
-      const values = keys.map((k) => mutable[k]);
+      const values = keys.map((k) => cleaned[k]);
 
       const query = `INSERT INTO \`${this.tableName}\` (${fields}) VALUES (${placeholders})`;
       
@@ -115,19 +125,36 @@ export abstract class MySQLDatabaseService<T> {
    */
   async update(id: string | number, updates: Partial<T>): Promise<ApiResponse<T>> {
     try {
-      const fields = Object.keys(updates)
-        .map(key => `${key} = ?`)
-        .join(', ');
-      const values = [...Object.values(updates), id];
+      // Remover campos undefined do objeto updates
+      // O MySQL não aceita undefined, apenas null ou omitir o campo
+      const cleanedUpdates: Record<string, any> = {};
+      Object.keys(updates).forEach(key => {
+        const value = (updates as any)[key];
+        if (value !== undefined) {
+          cleanedUpdates[key] = value;
+        }
+      });
 
-      const query = `UPDATE ${this.tableName} SET ${fields} WHERE id = ?`;
+      if (Object.keys(cleanedUpdates).length === 0) {
+        return {
+          success: false,
+          error: 'Nenhum campo para atualizar',
+        };
+      }
+
+      const fields = Object.keys(cleanedUpdates)
+        .map(key => `\`${key}\` = ?`)
+        .join(', ');
+      const values = [...Object.values(cleanedUpdates), id];
+
+      const query = `UPDATE \`${this.tableName}\` SET ${fields} WHERE id = ?`;
       
       const connection = await mysqlPool.getConnection();
       try {
         await connection.execute(query, values);
         
         // Buscar o registro atualizado
-        const selectQuery = `SELECT * FROM ${this.tableName} WHERE id = ?`;
+        const selectQuery = `SELECT * FROM \`${this.tableName}\` WHERE id = ?`;
         const [rows] = await connection.execute(selectQuery, [id]);
         
         if ((rows as any[]).length === 0) {
@@ -159,7 +186,7 @@ export abstract class MySQLDatabaseService<T> {
    */
   async delete(id: string | number): Promise<ApiResponse<boolean>> {
     try {
-      const query = `DELETE FROM ${this.tableName} WHERE id = ?`;
+      const query = `DELETE FROM \`${this.tableName}\` WHERE id = ?`;
       await executeQuery(query, [id]);
 
       return {
@@ -179,12 +206,26 @@ export abstract class MySQLDatabaseService<T> {
    */
   async findBy(filters: Record<string, any>): Promise<ApiResponse<T[]>> {
     try {
-      const conditions = Object.keys(filters)
-        .map(key => `${key} = ?`)
-        .join(' AND ');
-      const values = Object.values(filters);
+      // Remover campos undefined dos filtros
+      const cleanedFilters: Record<string, any> = {};
+      Object.keys(filters).forEach(key => {
+        const value = filters[key];
+        if (value !== undefined) {
+          cleanedFilters[key] = value;
+        }
+      });
 
-      const query = `SELECT * FROM ${this.tableName} WHERE ${conditions}`;
+      if (Object.keys(cleanedFilters).length === 0) {
+        // Se não há filtros válidos, retornar todos os registros
+        return this.findAll();
+      }
+
+      const conditions = Object.keys(cleanedFilters)
+        .map(key => `\`${key}\` = ?`)
+        .join(' AND ');
+      const values = Object.values(cleanedFilters);
+
+      const query = `SELECT * FROM \`${this.tableName}\` WHERE ${conditions}`;
       const data = await executeQuery<T>(query, values);
 
       return {

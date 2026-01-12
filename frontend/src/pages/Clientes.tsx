@@ -20,11 +20,13 @@ import {
   FunnelIcon,
   ChevronDownIcon,
   ShareIcon,
+  DocumentArrowDownIcon,
 } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import type { AxiosError } from 'axios';
 import PagamentosTab from '../components/Clientes/PagamentosTab';
 import EProcessosTab from '../components/Clientes/EProcessosTab';
+import ExportClientesModal from '../components/Clientes/ExportClientesModal';
 import { clientesService } from '../services';
 import { useToast } from '../hooks/useToast';
 
@@ -49,6 +51,7 @@ const Clientes: React.FC = () => {
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
   const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente'>('a-z');
+  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'z-a' | 'cnpj'>('a-z');
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
   // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
@@ -87,8 +90,15 @@ const Clientes: React.FC = () => {
   const [visualizandoCliente, setVisualizandoCliente] = useState<Cliente | null>(null);
   const [atualizandoCliente, setAtualizandoCliente] = useState(false);
   const [atualizandoSocios, setAtualizandoSocios] = useState<string | null>(null); // ID do cliente sendo atualizado
-  const [recalculandoValores, setRecalculandoValores] = useState<string | null>(null); // ID do cliente sendo recalculado
+ // ID do cliente sendo recalculado
   const [uploadingPdf, setUploadingPdf] = useState(false); // Estado para upload de PDF
+  // Estados para modal de regime tributário
+  const [showRegimeModal, setShowRegimeModal] = useState(false);
+  const [regimeSelecionado, setRegimeSelecionado] = useState<string>('');
+  const [clienteParaRegime, setClienteParaRegime] = useState<Cliente | null>(null);
+  const [salvandoRegime, setSalvandoRegime] = useState(false);
+  // Estados para modal de exportação
+  const [showExportModal, setShowExportModal] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -499,7 +509,9 @@ const Clientes: React.FC = () => {
       return; // Não fazer requisições na aba principal quando estiver em Participação
     }
     
-    loadClientes({ page, limit, search: debouncedSearch, socio: socioFiltro || undefined }).then(({ pagination }) => {
+    // Só aplicar filtro de sócio se estiver na aba participação
+    const socioFiltroParaBusca = activeTab === 'participacao' ? (socioFiltro || undefined) : undefined;
+    loadClientes({ page, limit, search: debouncedSearch, socio: socioFiltroParaBusca }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
@@ -892,12 +904,24 @@ const Clientes: React.FC = () => {
 
   const handleImportarReceitaWS = async () => {
     const cnpjLimpo = (formData.cnpj_limpo || (formData.cnpj ? formData.cnpj.replace(/\D/g, '') : '') || '').replace(/\D/g, '');
-    if (cnpjLimpo.length !== 14) {
-      setCustomErrorMessage('CNPJ inválido. Deve conter 14 dígitos.');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
+    
+    // Validação de CNPJ
+    if (!cnpjLimpo || cnpjLimpo.trim() === '') {
+      toast.error('Por favor, informe um CNPJ válido');
       return;
     }
+    
+    if (cnpjLimpo.length !== 14) {
+      toast.error(`CNPJ inválido. Deve conter 14 dígitos. Você digitou ${cnpjLimpo.length} dígitos.`);
+      return;
+    }
+    
+    // Validação básica de CNPJ (apenas dígitos numéricos)
+    if (!/^\d{14}$/.test(cnpjLimpo)) {
+      toast.error('CNPJ inválido. Deve conter apenas números.');
+      return;
+    }
+    
     try {
       setImportandoReceita(true);
       setCustomErrorMessage('');
@@ -919,18 +943,133 @@ const Clientes: React.FC = () => {
       // Atualizar listagem visível (mantendo pagina/filtro)
       await loadClientes({ page, limit, search: debouncedSearch }).catch(() => {});
 
-      setSuccessMessage(resp?.message || '✅ Import concluído.');
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 4000);
+      // Verificar se regime_tributario está vazio ou nulo
+      const regimeTributario = (imported as any).regime_tributario;
+      if (!regimeTributario || regimeTributario.trim() === '' || regimeTributario === 'A Definir') {
+        // Abrir modal para selecionar regime tributário
+        setClienteParaRegime(imported);
+        setRegimeSelecionado('');
+        setShowRegimeModal(true);
+      } else {
+        setSuccessMessage(resp?.message || '✅ Import concluído.');
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 4000);
+      }
     } catch (e: any) {
       console.error('[Clientes] Erro ao importar ReceitaWS:', e);
       setShowSuccess(false);
-      setCustomErrorMessage(e?.message || 'Erro ao importar dados da ReceitaWS');
+      
+      // Mensagens de erro mais específicas
+      let errorMessage = 'Erro ao importar dados da ReceitaWS';
+      
+      if (e?.message?.toLowerCase().includes('cnpj')) {
+        errorMessage = 'CNPJ inválido ou não encontrado na Receita Federal';
+      } else if (e?.message?.toLowerCase().includes('não encontrado')) {
+        errorMessage = 'Empresa não encontrada na base da Receita Federal';
+      } else if (e?.message?.toLowerCase().includes('timeout') || e?.message?.toLowerCase().includes('network')) {
+        errorMessage = 'Erro de conexão com a Receita Federal. Tente novamente.';
+      } else if (e?.response?.status === 400) {
+        errorMessage = e?.response?.data?.error || 'CNPJ inválido ou dados incorretos';
+      } else if (e?.response?.status === 404) {
+        errorMessage = 'Empresa não encontrada na Receita Federal';
+      } else if (e?.response?.status === 500) {
+        errorMessage = 'Erro no servidor. Verifique o CNPJ e tente novamente.';
+      } else if (e?.message) {
+        errorMessage = e.message;
+      }
+      
+      // Exibir apenas o alerta visual (sem toast duplicado)
+      setCustomErrorMessage(errorMessage);
       setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
-      // mensagem detalhada vai no console; manter toast simples para UX
+      setTimeout(() => setShowError(false), 6000);
     } finally {
       setImportandoReceita(false);
+    }
+  };
+
+  const handleSalvarRegimeTributario = async () => {
+    if (!regimeSelecionado || !clienteParaRegime?.id) {
+      toast.error('Por favor, selecione um regime tributário');
+      return;
+    }
+
+    try {
+      setSalvandoRegime(true);
+      
+      // Criar payload limpo, removendo campos undefined
+      const payload: Partial<Cliente> = {
+        regime_tributario: regimeSelecionado,
+      };
+      
+      // Remover qualquer campo undefined do payload
+      Object.keys(payload).forEach(key => {
+        if (payload[key as keyof Cliente] === undefined) {
+          delete payload[key as keyof Cliente];
+        }
+      });
+      
+      await updateClienteById(clienteParaRegime.id, payload);
+      
+      // Atualizar o formData se estiver editando
+      if (editingCliente?.id === clienteParaRegime.id) {
+        setFormData(prev => ({ ...prev, regime_tributario: regimeSelecionado } as any));
+      }
+      
+      // Atualizar visualizandoCliente se estiver visualizando
+      if (visualizandoCliente?.id === clienteParaRegime.id) {
+        setVisualizandoCliente(prev => prev ? { ...prev, regime_tributario: regimeSelecionado } as Cliente : null);
+      }
+
+      // Fechar modal e mostrar sucesso
+      setShowRegimeModal(false);
+      setClienteParaRegime(null);
+      setRegimeSelecionado('');
+      
+      // Mostrar alert moderno de sucesso
+      toast.success('Regime tributário salvo com sucesso!', 3000);
+      
+      // Atualizar listagem
+      await loadClientes({ page, limit, search: debouncedSearch }).catch(() => {});
+    } catch (error: any) {
+      console.error('[Clientes] Erro ao salvar regime tributário:', error);
+      toast.error(error?.message || 'Erro ao salvar regime tributário');
+    } finally {
+      setSalvandoRegime(false);
+    }
+  };
+
+  const handleExportarClientes = async (campos: string[]) => {
+    try {
+      // Só aplicar filtro de sócio se estiver na aba participação
+      const socioFiltroParaExport = activeTab === 'participacao' ? (socioFiltro || undefined) : undefined;
+      const response = await api.post(
+        '/clientes/exportar-personalizado',
+        { 
+          campos,
+          filtros: {
+            search: debouncedSearch || undefined,
+            socio: socioFiltroParaExport,
+          }
+        },
+        { responseType: 'blob' }
+      );
+
+      // Download do arquivo
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const filename = `clientes_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success('Relatório exportado com sucesso!', 3000);
+      setShowExportModal(false);
+    } catch (error: any) {
+      console.error('[Clientes] Erro ao exportar:', error);
+      toast.error(error?.response?.data?.error || error?.message || 'Erro ao exportar relatório');
     }
   };
 
@@ -1442,8 +1581,20 @@ const Clientes: React.FC = () => {
                       return;
                     }
                     const cnpj = visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj?.replace(/\D/g, '') || '';
-                    if (!cnpj || cnpj.length !== 14) {
-                      toast.error('CNPJ inválido');
+                    
+                    // Validação detalhada de CNPJ
+                    if (!cnpj || cnpj.trim() === '') {
+                      toast.error('CNPJ não disponível para atualização');
+                      return;
+                    }
+                    
+                    if (cnpj.length !== 14) {
+                      toast.error(`CNPJ inválido. Deve conter 14 dígitos. Encontrado: ${cnpj.length} dígitos.`);
+                      return;
+                    }
+                    
+                    if (!/^\d{14}$/.test(cnpj)) {
+                      toast.error('CNPJ inválido. Deve conter apenas números.');
                       return;
                     }
                     
@@ -1461,13 +1612,39 @@ const Clientes: React.FC = () => {
                         const clienteResp = await clientesService.obterCliente(visualizandoCliente.id!);
                         const clienteAtualizado = (clienteResp as any)?.data || clienteResp;
                         setVisualizandoCliente(clienteAtualizado as Cliente);
-                        toast.success('Dados atualizados com sucesso!');
+                        
+                        // Verificar se regime_tributario está vazio ou nulo
+                        const regimeTributario = (clienteAtualizado as any)?.regime_tributario;
+                        if (!regimeTributario || regimeTributario.trim() === '' || regimeTributario === 'A Definir') {
+                          // Abrir modal para selecionar regime tributário
+                          setClienteParaRegime(clienteAtualizado as Cliente);
+                          setRegimeSelecionado('');
+                          setShowRegimeModal(true);
+                        } else {
+                          toast.success('Dados atualizados com sucesso!');
+                        }
                       } else {
                         toast.error(resp.error || 'Erro ao atualizar dados da Receita');
                       }
                     } catch (error: any) {
                       console.error('Erro ao atualizar cliente:', error);
-                      toast.error(error?.response?.data?.error || error?.message || 'Erro ao atualizar dados');
+                      
+                      // Mensagens de erro mais específicas
+                      let errorMessage = 'Erro ao atualizar dados';
+                      
+                      if (error?.response?.data?.error) {
+                        errorMessage = error.response.data.error;
+                      } else if (error?.message?.toLowerCase().includes('cnpj')) {
+                        errorMessage = 'CNPJ inválido ou não encontrado na Receita Federal';
+                      } else if (error?.message?.toLowerCase().includes('timeout')) {
+                        errorMessage = 'Erro de conexão com a Receita Federal. Tente novamente.';
+                      } else if (error?.response?.status === 404) {
+                        errorMessage = 'Empresa não encontrada na Receita Federal';
+                      } else if (error?.message) {
+                        errorMessage = error.message;
+                      }
+                      
+                      toast.error(errorMessage, 6000);
                     } finally {
                       setAtualizandoCliente(false);
                     }
@@ -1903,28 +2080,24 @@ const Clientes: React.FC = () => {
               />
             </div>
           </div>
-          {activeTab === 'participacao' && (
+          {activeTab === 'clientes' && (
             <div className="w-full md:w-64">
               <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                <FunnelIcon className="h-4 w-4 text-amber-600" />
-                Ordenar / Filtrar
+                <FunnelIcon className="h-4 w-4 text-blue-600" />
+                Ordenar
               </label>
               <div className="relative">
                 <select
-                  value={ordenacaoParticipacao}
-                  onChange={(e) => setOrdenacaoParticipacao(e.target.value as any)}
-                  className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-amber-300"
+                  value={ordenacaoClientes}
+                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'z-a' | 'cnpj')}
+                  className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
                 >
                   <option value="a-z">A → Z</option>
                   <option value="z-a">Z → A</option>
                   <option value="cnpj">CNPJ ↑</option>
-                  <option value="faltantes">Informações Faltantes</option>
-                  <option value="sem-registro">Sem Registro</option>
-                  <option value="capital-zerado">Capital Social Zerado</option>
-                  <option value="divergente">Divergente</option>
                 </select>
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FunnelIcon className="h-5 w-5 text-amber-500" />
+                  <FunnelIcon className="h-5 w-5 text-blue-500" />
                 </div>
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                   <ChevronDownIcon className="h-5 w-5 text-gray-400" />
@@ -1932,97 +2105,135 @@ const Clientes: React.FC = () => {
               </div>
             </div>
           )}
-          {activeTab === 'clientes' && (
-            <div className="w-full md:w-72 socio-filter-container">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sócio (filtro)</label>
-              <div className="relative">
+          {activeTab === 'participacao' && (
+            <>
+              <div className="w-full md:w-64">
+                <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                  <FunnelIcon className="h-4 w-4 text-amber-600" />
+                  Ordenar / Filtrar
+                </label>
                 <div className="relative">
-                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={socioSearchInput}
-                    onChange={(e) => {
-                      setSocioSearchInput(e.target.value);
-                      setShowSocioDropdown(true);
-                    }}
-                    onFocus={() => setShowSocioDropdown(true)}
-                    placeholder="Buscar sócio..."
-                    className="w-full pl-10 pr-10 py-2.5 border-2 border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  />
-                  {socioFiltro && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSocioFiltro('');
-                        setSocioSearchInput('');
-                        setShowSocioDropdown(false);
-                        setPage(1);
-                      }}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
-                      title="Limpar filtro"
-                    >
-                      <XMarkIcon className="h-4 w-4" />
-                    </button>
-                  )}
+                  <select
+                    value={ordenacaoParticipacao}
+                    onChange={(e) => setOrdenacaoParticipacao(e.target.value as any)}
+                    className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-amber-300"
+                  >
+                    <option value="a-z">A → Z</option>
+                    <option value="z-a">Z → A</option>
+                    <option value="cnpj">CNPJ ↑</option>
+                    <option value="faltantes">Informações Faltantes</option>
+                    <option value="sem-registro">Sem Registro</option>
+                    <option value="capital-zerado">Capital Social Zerado</option>
+                    <option value="divergente">Divergente</option>
+                  </select>
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <FunnelIcon className="h-5 w-5 text-amber-500" />
+                  </div>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                  </div>
                 </div>
-                {showSocioDropdown && sociosOptions.length > 0 && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSocioFiltro('');
-                        setSocioSearchInput('');
-                        setShowSocioDropdown(false);
-                        setPage(1);
+              </div>
+              <div className="w-full md:w-72 socio-filter-container">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sócio (filtro)</label>
+                <div className="relative">
+                  <div className="relative">
+                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={socioSearchInput}
+                      onChange={(e) => {
+                        setSocioSearchInput(e.target.value);
+                        setShowSocioDropdown(true);
                       }}
-                      className={`w-full px-4 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
-                        !socioFiltro ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700'
-                      }`}
-                    >
-                      Todos
-                    </button>
-                    {sociosOptions
-                      .filter((nome) =>
-                        nome.toLowerCase().includes(socioSearchInput.toLowerCase())
-                      )
-                      .map((nome) => (
-                        <button
-                          key={nome}
-                          type="button"
-                          onClick={() => {
-                            setSocioFiltro(nome);
-                            setSocioSearchInput(nome);
-                            setShowSocioDropdown(false);
-                            setPage(1);
-                          }}
-                          className={`w-full px-4 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
-                            socioFiltro === nome ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700'
-                          }`}
-                        >
-                          {nome}
-                        </button>
-                      ))}
-                    {sociosOptions.filter((nome) =>
-                      nome.toLowerCase().includes(socioSearchInput.toLowerCase())
-                    ).length === 0 && (
-                      <div className="px-4 py-2 text-sm text-gray-500 text-center">
-                        Nenhum sócio encontrado
-                      </div>
+                      onFocus={() => setShowSocioDropdown(true)}
+                      placeholder="Buscar sócio..."
+                      className="w-full pl-10 pr-10 py-2.5 border-2 border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    />
+                    {socioFiltro && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSocioFiltro('');
+                          setSocioSearchInput('');
+                          setShowSocioDropdown(false);
+                        }}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                        title="Limpar filtro"
+                      >
+                        <XMarkIcon className="h-4 w-4" />
+                      </button>
                     )}
                   </div>
-                )}
+                  {showSocioDropdown && sociosOptions.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSocioFiltro('');
+                          setSocioSearchInput('');
+                          setShowSocioDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
+                          !socioFiltro ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700'
+                        }`}
+                      >
+                        Todos
+                      </button>
+                      {sociosOptions
+                        .filter((nome) =>
+                          nome.toLowerCase().includes(socioSearchInput.toLowerCase())
+                        )
+                        .map((nome) => (
+                          <button
+                            key={nome}
+                            type="button"
+                            onClick={() => {
+                              setSocioFiltro(nome);
+                              setSocioSearchInput(nome);
+                              setShowSocioDropdown(false);
+                            }}
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
+                              socioFiltro === nome ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700'
+                            }`}
+                          >
+                            {nome}
+                          </button>
+                        ))}
+                      {sociosOptions.filter((nome) =>
+                        nome.toLowerCase().includes(socioSearchInput.toLowerCase())
+                      ).length === 0 && (
+                        <div className="px-4 py-2 text-sm text-gray-500 text-center">
+                          Nenhum sócio encontrado
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            </>
           )}
           {activeTab === 'clientes' && (
             <div className="flex gap-3 items-end">
-              <button
-                onClick={() => setShowForm(true)}
-                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 transform"
-              >
-                <PlusIcon className="h-5 w-5" />
-                Novo Cliente
-              </button>
+              <div className="flex flex-col">
+                <label className="block text-sm font-semibold text-gray-700 mb-2 opacity-0 pointer-events-none">Ações</label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 transform"
+                  >
+                    <PlusIcon className="h-5 w-5" />
+                    Novo Cliente
+                  </button>
+                  <button
+                    onClick={() => setShowExportModal(true)}
+                    className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 hover:scale-105 transform"
+                  >
+                    <DocumentArrowDownIcon className="h-5 w-5" />
+                    Exportar Personalizado
+                  </button>
+                </div>
+              </div>
             </div>
           )}
           {activeTab === 'lancamentos' && (
@@ -2580,20 +2791,40 @@ const Clientes: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {clientes.length === 0 ? (
-                <tr>
-                  <td colSpan={socioFiltro ? 5 : 4} className="px-6 py-12 text-center">
-                    <div className="flex flex-col items-center gap-2">
-                      <UserGroupIcon className="h-12 w-12 text-gray-400" />
-                      <p className="text-gray-500 font-medium">Nenhum cliente encontrado</p>
-                      <p className="text-sm text-gray-400">
-                        {search ? 'Tente ajustar os termos de busca' : 'Cadastre um novo cliente para começar'}
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                clientes.map((cliente) => {
+              {(() => {
+                // Aplicar ordenação aos clientes
+                // Sempre ordenar no frontend para garantir consistência
+                const clientesOrdenados = [...clientes].sort((a, b) => {
+                  if (ordenacaoClientes === 'a-z') {
+                    const nomeA = (a.razao_social || a.nome || '').toLowerCase().trim();
+                    const nomeB = (b.razao_social || b.nome || '').toLowerCase().trim();
+                    return nomeA.localeCompare(nomeB, 'pt-BR', { sensitivity: 'base' });
+                  } else if (ordenacaoClientes === 'z-a') {
+                    const nomeA = (a.razao_social || a.nome || '').toLowerCase().trim();
+                    const nomeB = (b.razao_social || b.nome || '').toLowerCase().trim();
+                    return nomeB.localeCompare(nomeA, 'pt-BR', { sensitivity: 'base' });
+                  } else if (ordenacaoClientes === 'cnpj') {
+                    const cnpjA = (a.cnpj_limpo || a.cnpj || '').replace(/\D/g, '');
+                    const cnpjB = (b.cnpj_limpo || b.cnpj || '').replace(/\D/g, '');
+                    return cnpjA.localeCompare(cnpjB);
+                  }
+                  return 0;
+                });
+
+                return clientesOrdenados.length === 0 ? (
+                  <tr>
+                    <td colSpan={socioFiltro ? 5 : 4} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <UserGroupIcon className="h-12 w-12 text-gray-400" />
+                        <p className="text-gray-500 font-medium">Nenhum cliente encontrado</p>
+                        <p className="text-sm text-gray-400">
+                          {search ? 'Tente ajustar os termos de busca' : 'Cadastre um novo cliente para começar'}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  clientesOrdenados.map((cliente) => {
                   const cnpjDisplay = displayCNPJ(cliente.cnpj_limpo || cliente.cnpj);
                   const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
                   const cnpjKey = `${cliente.id}-${cnpjValue}`;
@@ -2648,7 +2879,7 @@ const Clientes: React.FC = () => {
                             onClick={() => {
                               navigate(`/situacao-fiscal?cnpj=${cnpjValue}`);
                             }}
-                            className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 border border-blue-200 hover:border-blue-600"
+                            className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 border-2 border-blue-300 hover:border-blue-600"
                             title="Consultar Situação Fiscal"
                           >
                             Sit. Fis
@@ -2657,7 +2888,7 @@ const Clientes: React.FC = () => {
                             onClick={() => {
                               navigate(`/clientes?tab=pagamentos&cnpj=${cnpjValue}`);
                             }}
-                            className="px-3 py-1.5 text-xs font-semibold text-purple-600 hover:text-white hover:bg-purple-600 rounded-lg transition-all duration-300 border border-purple-200 hover:border-purple-600"
+                            className="px-3 py-1.5 text-xs font-semibold text-purple-600 hover:text-white hover:bg-purple-600 rounded-lg transition-all duration-300 border-2 border-purple-300 hover:border-purple-600"
                             title="Ver Pagamentos"
                           >
                             Pag
@@ -2666,7 +2897,7 @@ const Clientes: React.FC = () => {
                             onClick={() => {
                               navigate(`/dctf?search=${cnpjValue}`);
                             }}
-                            className="px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:text-white hover:bg-indigo-600 rounded-lg transition-all duration-300 border border-indigo-200 hover:border-indigo-600"
+                            className="px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:text-white hover:bg-indigo-600 rounded-lg transition-all duration-300 border-2 border-indigo-300 hover:border-indigo-600"
                             title="Ver DCTF"
                           >
                             DCTF
@@ -2677,14 +2908,14 @@ const Clientes: React.FC = () => {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => handleEdit(cliente)}
-                            className="px-3 py-1.5 text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 border border-blue-200 hover:border-blue-600 flex items-center justify-center"
+                            className="px-3 py-1.5 text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 border-2 border-blue-300 hover:border-blue-600 flex items-center justify-center"
                             title="Editar cliente"
                           >
                             <PencilIcon className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteClick(cliente)}
-                            className="px-3 py-1.5 text-red-600 hover:text-white hover:bg-red-600 rounded-lg transition-all duration-300 border border-red-200 hover:border-red-600 flex items-center justify-center"
+                            className="px-3 py-1.5 text-red-600 hover:text-white hover:bg-red-600 rounded-lg transition-all duration-300 border-2 border-red-300 hover:border-red-600 flex items-center justify-center"
                             title="Excluir cliente"
                           >
                             <TrashIcon className="h-4 w-4" />
@@ -2693,8 +2924,9 @@ const Clientes: React.FC = () => {
                       </td>
                     </tr>
                   );
-                })
-              )}
+                  })
+                );
+              })()}
             </tbody>
           </table>
         </div>
@@ -2842,6 +3074,18 @@ const Clientes: React.FC = () => {
                 );
                 
                 return cnpjMatch || nomeMatch || palavrasMatch || inicioPalavraMatch;
+              })
+              // 2. Aplicar filtro de sócio (se selecionado)
+              .filter(c => {
+                if (!socioFiltro || !socioFiltro.trim()) return true;
+                
+                // Verificar se algum sócio do cliente corresponde ao filtro
+                const socios = c.socios || [];
+                return socios.some((socio: any) => {
+                  const nomeSocio = (socio.nome || socio.Nome || socio.name || '').toLowerCase().trim();
+                  const filtroLower = socioFiltro.toLowerCase().trim();
+                  return nomeSocio === filtroLower || nomeSocio.includes(filtroLower);
+                });
               })
               // 2. Aplicar filtros especiais
               .filter(c => {
@@ -3268,16 +3512,31 @@ const Clientes: React.FC = () => {
                               console.log('[Clientes] Loop terminou. consultaConcluida:', consultaConcluida, 'tentativas:', tentativas);
                               
                               // Se a consulta foi concluída, os sócios já foram atualizados automaticamente durante a extração
-                              // Apenas aguardar um pouco para garantir que o backend salvou e buscar o cliente atualizado
+                              // Agora vamos recalcular os valores para garantir formatação correta
                               if (consultaConcluida) {
                                 console.log('[Clientes] Consulta concluída! Os sócios foram atualizados automaticamente durante a extração.');
-                                toast.info('Buscando dados atualizados dos sócios...');
+                                toast.info('Recalculando valores de participação...', 2000);
                                 
                                 // Aguardar o backend salvar completamente (a extração já atualizou os sócios)
                                 await new Promise(resolve => setTimeout(resolve, 2000));
                                 
                                 try {
-                                  // Buscar cliente atualizado (os sócios já foram atualizados pela extração)
+                                  // Recalcular valores de participação (incorporando a lógica do segundo botão)
+                                  console.log('[Clientes] Recalculando valores de participação para cliente:', cliente.id);
+                                  const recalculoResult = await clientesService.recalcularValoresParticipacao(cliente.id!);
+                                  
+                                  if (recalculoResult.success) {
+                                    const atualizados = recalculoResult.data?.atualizados || 0;
+                                    console.log('[Clientes] Valores recalculados com sucesso. Sócios atualizados:', atualizados);
+                                    
+                                    // Aguardar um pouco para garantir que o backend salvou
+                                    await new Promise(resolve => setTimeout(resolve, 500));
+                                  } else {
+                                    console.warn('[Clientes] Recalculo retornou erro, mas continuando:', recalculoResult.error);
+                                    // Continuar mesmo se o recálculo falhar (os dados da Situação Fiscal já foram salvos)
+                                  }
+                                  
+                                  // Buscar cliente atualizado (com valores recalculados)
                                   console.log('[Clientes] Buscando cliente atualizado...');
                                   const clienteAtualizado = await clientesService.obterCliente(cliente.id!);
                                   
@@ -3299,7 +3558,7 @@ const Clientes: React.FC = () => {
                                       prevClientes.map(c => c.id === cliente.id ? clienteComSocios : c)
                                     );
                                     
-                                    toast.success('Sócios atualizados com sucesso!');
+                                    toast.success('Sócios atualizados e valores recalculados com sucesso!');
                                   } else {
                                     console.error('[Clientes] Formato de resposta inválido:', clienteAtualizado);
                                     toast.error('Erro ao obter dados atualizados do cliente');
@@ -3307,7 +3566,16 @@ const Clientes: React.FC = () => {
                                 } catch (updateError: any) {
                                   console.error('[Clientes] Erro ao buscar cliente atualizado:', updateError);
                                   const errorMsg = updateError?.response?.data?.error || updateError?.message || 'Erro ao buscar dados atualizados';
-                                  toast.error(errorMsg);
+                                  
+                                  // Verificar se é erro de Capital Social Zerado
+                                  const errorMsgLower = errorMsg.toLowerCase();
+                                  if (errorMsgLower.includes('capital social zerado') || 
+                                      errorMsgLower.includes('capital zerado') ||
+                                      errorMsgLower.includes('capital social zero')) {
+                                    toast.warning('Capital Social Zerado: Valores não podem ser recalculados, mas os sócios foram atualizados.');
+                                  } else {
+                                    toast.error(errorMsg);
+                                  }
                                 }
                               } else {
                                 // Timeout - consulta ainda não concluída
@@ -3341,84 +3609,6 @@ const Clientes: React.FC = () => {
                           title="Atualizar sócios via Situação Fiscal"
                         >
                           <ArrowPathIcon className={`h-4 w-4 ${atualizandoSocios === cliente.id ? 'animate-spin' : ''}`} />
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (recalculandoValores === cliente.id) return;
-                            
-                            setRecalculandoValores(cliente.id);
-                            
-                            try {
-                              console.log('[Clientes] Recalculando valores de participação para cliente:', cliente.id);
-                              toast.info('Recalculando valores de participação...', 2000);
-                              
-                              const result = await clientesService.recalcularValoresParticipacao(cliente.id);
-                              
-                              if (result.success) {
-                                const atualizados = result.data?.atualizados || 0;
-                                toast.success(`${atualizados} valor(es) recalculado(s) com sucesso!`, 3000);
-                                
-                                // Aguardar um pouco e então buscar o cliente atualizado
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                                
-                                const clienteAtualizado = await clientesService.obterCliente(cliente.id);
-                                
-                                if (clienteAtualizado) {
-                                  let clienteComSocios: Cliente;
-                                  if ((clienteAtualizado as any).success && (clienteAtualizado as any).data) {
-                                    clienteComSocios = (clienteAtualizado as any).data as Cliente;
-                                  } else if ((clienteAtualizado as any).id) {
-                                    clienteComSocios = clienteAtualizado as Cliente;
-                                  } else {
-                                    throw new Error('Formato de resposta inválido');
-                                  }
-                                  
-                                  // Atualizar apenas o cliente específico na lista
-                                  setClientesParticipacao(prevClientes => 
-                                    prevClientes.map(c => c.id === cliente.id ? clienteComSocios : c)
-                                  );
-                                }
-                              } else {
-                                const errorMsgResult = result.error || 'Erro ao recalcular valores';
-                                const errorMsgLower = errorMsgResult.toLowerCase();
-                                // Verificar se é erro de Capital Social Zerado
-                                if (errorMsgLower.includes('capital social zerado') || 
-                                    errorMsgLower.includes('capital zerado') ||
-                                    errorMsgLower.includes('capital social zero')) {
-                                  toast.error('Capital Social Zerado: Não é possível recalcular valores quando o capital social está zerado.');
-                                } else {
-                                  toast.error(errorMsgResult);
-                                }
-                              }
-                            } catch (error: any) {
-                              console.error('[Clientes] Erro ao recalcular valores:', error);
-                              const errorMsg = error?.response?.data?.error || error?.message || 'Erro ao recalcular valores';
-                              
-                              // Verificar se é erro de Capital Social Zerado
-                              const errorMsgLower = errorMsg.toLowerCase();
-                              if (errorMsgLower.includes('capital social zerado') || 
-                                  errorMsgLower.includes('capital zerado') ||
-                                  errorMsgLower.includes('capital social zero')) {
-                                toast.error('Capital Social Zerado: Não é possível recalcular valores quando o capital social está zerado.');
-                              } else {
-                                toast.error(errorMsg);
-                              }
-                            } finally {
-                              setRecalculandoValores(null);
-                            }
-                          }}
-                          disabled={recalculandoValores === cliente.id}
-                          className="p-2 text-blue-600 hover:text-white hover:bg-blue-600 disabled:bg-blue-100 disabled:cursor-not-allowed rounded-lg transition-all duration-300 flex items-center justify-center border border-blue-200 hover:border-blue-600"
-                          title="Recalcular valores de participação usando Capital Social do cliente"
-                        >
-                          {recalculandoValores === cliente.id ? (
-                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                          ) : (
-                            <ArrowPathIcon className="h-4 w-4" />
-                          )}
                         </button>
                       </div>
                     </div>
@@ -3661,6 +3851,121 @@ const Clientes: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Regime Tributário */}
+      {showRegimeModal && (
+        <>
+          {/* Overlay com backdrop blur */}
+          <div 
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] animate-fade-in"
+            onClick={() => {
+              setShowRegimeModal(false);
+              setClienteParaRegime(null);
+              setRegimeSelecionado('');
+            }}
+          />
+          
+          {/* Modal */}
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4">
+            <div 
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full transform transition-all animate-slide-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header do Modal */}
+              <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-6 py-5 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                      <BuildingOfficeIcon className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">Regime Tributário</h3>
+                      <p className="text-sm text-white/90">
+                        {clienteParaRegime?.razao_social || clienteParaRegime?.nome || 'Cliente'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowRegimeModal(false);
+                      setClienteParaRegime(null);
+                      setRegimeSelecionado('');
+                    }}
+                    className="text-white hover:text-gray-200 transition-colors p-1 rounded-lg hover:bg-white/10"
+                  >
+                    <XMarkIcon className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body do Modal */}
+              <div className="p-6">
+                <p className="text-gray-700 mb-4 text-sm">
+                  A Receita Federal não forneceu informações sobre o regime tributário. Por favor, selecione o regime adequado:
+                </p>
+                
+                <div className="mb-6">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Selecione o Regime Tributário
+                  </label>
+                  <select
+                    value={regimeSelecionado}
+                    onChange={(e) => setRegimeSelecionado(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm hover:border-gray-400"
+                  >
+                    <option value="">Selecione uma opção...</option>
+                    <option value="Lucro Presumido">Lucro Presumido</option>
+                    <option value="Lucro Real">Lucro Real</option>
+                  </select>
+                </div>
+
+                {/* Botões */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSalvarRegimeTributario}
+                    disabled={!regimeSelecionado || salvandoRegime}
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 transform disabled:hover:scale-100"
+                  >
+                    {salvandoRegime ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <CheckIcon className="h-5 w-5" />
+                        Salvar
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowRegimeModal(false);
+                      setClienteParaRegime(null);
+                      setRegimeSelecionado('');
+                    }}
+                    className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-semibold transition-all duration-300 flex items-center gap-2 shadow-sm hover:shadow-md border border-gray-200 hover:scale-105 transform"
+                  >
+                    <XMarkIcon className="h-5 w-5" />
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal de Exportação Personalizada */}
+      {showExportModal && (
+        <ExportClientesModal
+          onClose={() => setShowExportModal(false)}
+          onExport={handleExportarClientes}
+        />
+      )}
       
       <style>{`
         @keyframes fadeIn {
@@ -3690,6 +3995,12 @@ const Clientes: React.FC = () => {
             opacity: 0;
             transform: translateY(20px) scale(0.95);
           }
+        }
+        .animate-fade-in {
+          animation: fadeIn 0.2s ease-out;
+        }
+        .animate-slide-up {
+          animation: slideUp 0.3s ease-out;
         }
         @keyframes toast-slide-in {
           from {

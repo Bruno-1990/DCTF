@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { relatoriosService } from '../services/relatorios';
 import { dctfService } from '../services/dctf';
+import { clientesService } from '../services/clientes';
 import {
   ChartBarIcon,
   DocumentCheckIcon,
@@ -13,6 +14,7 @@ import {
   CurrencyDollarIcon,
   FunnelIcon,
   TableCellsIcon,
+  UserGroupIcon,
 } from '@heroicons/react/24/outline';
 
 const RelatoriosPage: React.FC = () => {
@@ -135,12 +137,12 @@ const RelatoriosPage: React.FC = () => {
     };
   }, [deleteTimer]);
 
-  const handleGenerate = async (reportType: 'gerencial' | 'clientes' | 'dctf' | 'conferencia' | 'pendentes' | 'pagamentos-pendentes', format: 'pdf' | 'xlsx') => {
+  const handleGenerate = async (reportType: 'gerencial' | 'clientes' | 'dctf' | 'conferencia' | 'pendentes' | 'participacao', format: 'pdf' | 'xlsx') => {
     try {
       setGeneratingTarget(`${reportType}-${format}`);
       // Tratamentos especiais gerados no front
-      if (reportType === 'pagamentos-pendentes') {
-        await gerarRelatorioPagamentosPendentesXLSX();
+      if (reportType === 'participacao') {
+        await gerarRelatorioParticipacaoXLSX();
         await fetchData({ page: 1, limit });
         setPage(1);
         return;
@@ -193,113 +195,145 @@ const RelatoriosPage: React.FC = () => {
     }
   };
 
-  // Geração client-side: Relatório de Pagamentos Pendentes (XLSX)
-  const gerarRelatorioPagamentosPendentesXLSX = async () => {
+  // Geração client-side: Relatório de Participação Societária
+  const gerarRelatorioParticipacaoXLSX = async () => {
     try {
-      const res = await fetch('/api/receita-pagamentos');
-      if (!res.ok) {
-        throw new Error(`Falha ao buscar pagamentos (${res.status})`);
-      }
-      const body = await res.json();
-      const data: any[] = body?.data ?? [];
+      // Buscar todos os clientes (matrizes) com seus sócios
+      let todosClientes: any[] = [];
+      let pagina = 1;
+      const limite = 100;
+      let temMais = true;
 
-      // Agrupar por CNPJ e por numeroDocumento (estrutura pai -> filhos)
-      const byCliente = new Map<string, { nome: string; cnpj: string; documentos: Map<string, any[]> }>();
-      data.forEach((item: any) => {
-        const cnpjOriginal = item.cnpj || item.cnpj_contribuinte || '';
-        const cnpjLimpo = String(cnpjOriginal).replace(/\D/g, '');
-        const chave = cnpjLimpo.length === 14 ? cnpjLimpo : (cnpjOriginal || 'SEM_CNPJ');
-        if (!byCliente.has(chave)) {
-          byCliente.set(chave, {
-            nome: item.clienteNome || chave,
-            cnpj: chave,
-            documentos: new Map(),
-          });
+      while (temMais) {
+        const resposta = await clientesService.getAll({ page: pagina, limit: limite });
+        const clientes = resposta.items || [];
+        
+        // Filtrar apenas matrizes
+        const matrizes = clientes.filter((c: any) => c.tipo_empresa === 'Matriz');
+        
+        // Buscar sócios para cada matriz
+        for (const cliente of matrizes) {
+          try {
+            const clienteCompleto = await clientesService.obterCliente(cliente.id);
+            let clienteComSocios: any;
+            
+            if ((clienteCompleto as any).success && (clienteCompleto as any).data) {
+              clienteComSocios = (clienteCompleto as any).data;
+            } else if ((clienteCompleto as any).id) {
+              clienteComSocios = clienteCompleto;
+            } else {
+              clienteComSocios = cliente;
+            }
+            
+            todosClientes.push(clienteComSocios);
+          } catch (err) {
+            console.warn(`Erro ao buscar sócios para cliente ${cliente.id}:`, err);
+            todosClientes.push(cliente);
+          }
         }
-        const cli = byCliente.get(chave)!;
-        const ndoc = item.numeroDocumento;
-        if (!cli.documentos.has(ndoc)) cli.documentos.set(ndoc, []);
-        cli.documentos.get(ndoc)!.push(item);
-      });
+        
+        temMais = clientes.length === limite && (resposta.pagination?.totalPages || 0) > pagina;
+        pagina++;
+        
+        // Pequeno delay para não sobrecarregar o servidor
+        if (temMais) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
 
-      const formatDate = (s: string) => (s ? new Date(s).toLocaleDateString('pt-BR') : '—');
-      const maskCNPJ = (value: string) => {
-        const digits = String(value).replace(/\D/g, '');
-        if (digits.length <= 2) return digits;
-        if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-        if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
-        if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+      // Funções auxiliares
+      const formatarCNPJ = (cnpj: string) => {
+        const digits = String(cnpj || '').replace(/\D/g, '');
+        if (digits.length !== 14) return cnpj || '';
         return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
       };
 
-      // Montagem com ExcelJS para suportar estilos de cabeçalho
+      const formatarCPF = (cpf: string) => {
+        const digits = String(cpf || '').replace(/\D/g, '');
+        if (digits.length !== 11) return cpf || '';
+        return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
+      };
+
+      const formatarCpfCnpj = (valor: string) => {
+        if (!valor) return '';
+        const digits = String(valor).replace(/\D/g, '');
+        if (digits.length === 11) return formatarCPF(valor);
+        if (digits.length === 14) return formatarCNPJ(valor);
+        return valor;
+      };
+
+      const formatarMoeda = (valor: number | string | null | undefined) => {
+        if (valor === null || valor === undefined || valor === '') return 'R$ 0,00';
+        const num = typeof valor === 'string' ? parseFloat(valor.replace(/[^\d,.-]/g, '').replace(',', '.')) : Number(valor);
+        if (isNaN(num)) return 'R$ 0,00';
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+      };
+
+      const formatarPercentual = (valor: number | string | null | undefined) => {
+        if (valor === null || valor === undefined || valor === '') return '0,00%';
+        const num = typeof valor === 'string' ? parseFloat(valor.replace(',', '.')) : Number(valor);
+        if (isNaN(num)) return '0,00%';
+        return `${num.toFixed(2).replace('.', ',')}%`;
+      };
+
+      // Cabeçalhos
       const header = [
-        'Cliente',
+        'Empresa',
         'CNPJ',
-        'Nº Documento / Seq',
-        'Tipo / Descrição',
-        'Competência/Período',
-        'Vencimento',
-        'Arrecadação',
-        'Valor',
-        'Saldo',
-        'Status',
-        'Cód Receita',
+        'Capital Social',
+        'Sócio',
+        'CPF / CNPJ',
+        'Qualificação',
+        'Participação %',
+        'Participação Valor',
       ];
+
       const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet('Pagamentos Pendentes', {
+      const sheet = workbook.addWorksheet('Participação Societária', {
         views: [{ state: 'frozen', ySplit: 1 }], // Cabeçalho fixo
       });
+
       sheet.addRow(header);
 
-      // Iterar por cliente
-      for (const [, cli] of byCliente) {
-        for (const [, registros] of cli.documentos) {
-          const semSeq = registros.filter((r) => !r.sequencial);
-          const comSeq = registros.filter((r) => r.sequencial);
-          const pai = semSeq[0] || { ...comSeq[0] } || registros[0];
-          if (!pai) continue;
-          const saldoPai = Number(pai.valorSaldoDocumento ?? 0);
-          const temFilhoPendente = comSeq.some((f: any) => (f.valorSaldoLinha ?? f.valorSaldoDocumento ?? 0) > 0);
-          if (saldoPai <= 0 && !temFilhoPendente) continue; // só pendentes
-          // Linha do Pai no formato plano
+      // Adicionar dados
+      todosClientes.forEach((cliente, indexCliente) => {
+        const socios = cliente.socios || [];
+        const temSocios = socios.length > 0;
+
+        if (temSocios) {
+          // Adicionar uma linha para cada sócio
+          socios.forEach((socio: any, indexSocio: number) => {
+            sheet.addRow([
+              indexSocio === 0 ? cliente.razao_social || cliente.nome || '—' : '', // Nome da empresa apenas na primeira linha
+              indexSocio === 0 ? formatarCNPJ(cliente.cnpj_limpo || cliente.cnpj || '') : '', // CNPJ apenas na primeira linha
+              indexSocio === 0 ? formatarMoeda(cliente.capital_social) : '', // Capital Social apenas na primeira linha
+              socio.nome || '—',
+              formatarCpfCnpj(socio.cpf || ''),
+              socio.qual || socio.qualificacao || '—',
+              formatarPercentual(socio.participacao_percentual),
+              formatarMoeda(socio.participacao_valor),
+            ]);
+          });
+        } else {
+          // Se não tem sócios, adicionar apenas a linha da empresa
           sheet.addRow([
-            cli.nome,
-            maskCNPJ(cli.cnpj),
-            pai.numeroDocumento,
-            pai.tipoDocumento || '—',
-            (pai.competencia || pai.periodoApuracao?.substring(0, 7) || '—'),
-            formatDate(pai.dataVencimento),
-            formatDate(pai.dataArrecadacao),
-            pai.valorDocumento ?? 0,
-            pai.valorSaldoDocumento ?? 0,
-            (Number(pai.valorSaldoDocumento ?? 0) === 0 ? 'Pago' : 'Pendente'),
-            '', // código receita (somente filhos)
+            cliente.razao_social || cliente.nome || '—',
+            formatarCNPJ(cliente.cnpj_limpo || cliente.cnpj || ''),
+            formatarMoeda(cliente.capital_social),
+            '—',
+            '—',
+            '—',
+            '—',
+            '—',
           ]);
-          // filhos
-          comSeq
-            .sort((a: any, b: any) => Number(a.sequencial || 0) - Number(b.sequencial || 0))
-            .forEach((f: any, idx: number) => {
-              const saldoFilho = f.valorSaldoLinha ?? f.valorSaldoDocumento ?? 0;
-              if (saldoFilho <= 0) return;
-              sheet.addRow([
-                cli.nome,
-                maskCNPJ(cli.cnpj),
-                `#${f.sequencial || idx + 1}`,
-                f.descricaoReceitaLinha || '—',
-                f.periodoApuracaoLinha ? formatDate(f.periodoApuracaoLinha).substring(3) : (f.competencia || '—'),
-                f.dataVencimentoLinha ? formatDate(f.dataVencimentoLinha) : '—',
-                '—',
-                f.valorLinha ?? f.valorDocumento ?? 0,
-                saldoFilho,
-                (Number(saldoFilho) === 0 ? 'Pago' : 'Pendente'),
-                f.codigoReceitaLinha || '—',
-              ]);
-            });
-          // Linha em branco após cada bloco (pai + filhos) para leitura
-          sheet.addRow(['', '', '', '', '', '', '', '', '', '', '']);
         }
-      }
+
+        // Adicionar 2 linhas em branco entre empresas (exceto após a última)
+        if (indexCliente < todosClientes.length - 1) {
+          sheet.addRow(['', '', '', '', '', '', '', '']);
+          sheet.addRow(['', '', '', '', '', '', '', '']);
+        }
+      });
 
       // Estilos: cabeçalho azul, fonte branca, centralizado; altura linhas
       sheet.getRow(1).height = 30;
@@ -307,13 +341,27 @@ const RelatoriosPage: React.FC = () => {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
         cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
         cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
       });
+
       sheet.eachRow((row, number) => {
         if (number !== 1) row.height = 25;
         row.eachCell((cell) => {
-          cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
+          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+            left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+            right: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+          };
         });
       });
+
       // Larguras aproximadas com base no conteúdo
       for (let c = 1; c <= header.length; c++) {
         let max = header[c - 1].length + 2;
@@ -322,21 +370,45 @@ const RelatoriosPage: React.FC = () => {
           const len = String(v ?? '').length + 2;
           if (len > max) max = len;
         });
-        sheet.getColumn(c).width = Math.min(60, Math.max(10, max));
+        sheet.getColumn(c).width = Math.min(60, Math.max(15, max));
       }
 
       const wbout = await workbook.xlsx.writeBuffer();
       const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      
+      // Fazer download
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `pagamentos_pendentes_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const fileName = `participacao_societaria_${new Date().toISOString().split('T')[0]}.xlsx`;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+
+      // Salvar no histórico
+      try {
+        const formData = new FormData();
+        formData.append('file', blob, fileName);
+        formData.append('tipoRelatorio', 'participacao');
+        formData.append('titulo', `Participação Societária - ${new Date().toLocaleDateString('pt-BR')}`);
+        formData.append('formato', 'xlsx');
+
+        const saveResponse = await fetch('/api/dashboard/admin/reports/history', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!saveResponse.ok) {
+          console.warn('Falha ao salvar relatório no histórico:', await saveResponse.text());
+        }
+      } catch (saveError) {
+        console.warn('Erro ao salvar relatório no histórico:', saveError);
+        // Não bloquear o download se falhar ao salvar
+      }
     } catch (e: any) {
-      alert(e?.message || 'Falha ao gerar relatório de pagamentos pendentes.');
+      alert(e?.message || 'Falha ao gerar relatório de participação societária.');
     }
   };
 
@@ -432,7 +504,7 @@ const RelatoriosPage: React.FC = () => {
     { key: 'clientes', title: 'Relatório de Clientes', description: 'Resumo por contribuinte com saldos e status', icon: BuildingOfficeIcon, color: 'indigo', anchor: 'historico' },
     { key: 'dctf', title: 'Relatório DCTF', description: 'Lista detalhada das declarações transmitidas', icon: DocumentTextIcon, color: 'green', anchor: 'historico' },
     { key: 'pendentes', title: 'DCTFs Em Aberto', description: 'Declarações em aberto com prazo vigente', icon: ExclamationTriangleIcon, color: 'orange', anchor: 'historico' },
-    { key: 'pagamentos-pendentes', title: 'Pagamentos Pendentes', description: 'Pagamentos em aberto por cliente', icon: CurrencyDollarIcon, color: 'red', anchor: 'historico' },
+    { key: 'participacao', title: 'Participação Societária', description: 'Exportação de empresas e seus sócios', icon: UserGroupIcon, color: 'teal', anchor: 'historico' },
   ];
 
   const scrollToAnchor = (anchorId: string) => {
@@ -449,6 +521,7 @@ const RelatoriosPage: React.FC = () => {
     green: 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100',
     orange: 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100',
     red: 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100',
+    teal: 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100',
   };
 
   return (
@@ -538,7 +611,7 @@ const RelatoriosPage: React.FC = () => {
                 <option value="clientes">Relatório de Clientes</option>
                 <option value="dctf">Relatório DCTF</option>
                 <option value="pendentes">DCTFs Em Aberto</option>
-                <option value="pagamentos-pendentes">Pagamentos Pendentes</option>
+                <option value="participacao">Participação Societária</option>
               </select>
             </label>
           </div>

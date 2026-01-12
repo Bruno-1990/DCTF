@@ -104,3 +104,4 @@ Se ainda não funcionar, verificar:
 3. Comparar resultado com a execução direta do script
 4. Se ainda não funcionar, usar os logs para identificar o problema específico
 
+

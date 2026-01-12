@@ -494,6 +494,17 @@ router.get('/pdf/:id', async (req, res, next) => {
       });
     }
     
+    // Atualizar a data quando o PDF for baixado
+    // Atualizar created_at para que o registro apareça como mais recente na lista
+    try {
+      const updateQuery = 'UPDATE sitf_downloads SET created_at = NOW() WHERE id = ?';
+      await executeQuery(updateQuery, [id]);
+      console.log(`[Sitf PDF] Data de download atualizada para o registro ID: ${id}`);
+    } catch (updateError: any) {
+      // Log o erro mas não impede o download
+      console.error('[Sitf PDF] Erro ao atualizar data do download:', updateError);
+    }
+    
     // Converter base64 para buffer
     const pdfBuffer = Buffer.from(download.pdf_base64, 'base64');
     
@@ -1188,14 +1199,14 @@ async function aguardarConclusaoConsulta(
 
       // Se retornou 202, ainda está processando - aguardar e tentar novamente
       if (downloadRes.status === 202) {
-        const body = await downloadRes.json().catch(() => ({}));
-        retryAfter = Number(downloadRes.headers.get('Retry-After') || body.retryAfter || 5);
+        const body = await downloadRes.json().catch(() => ({})) as any;
+        retryAfter = Number(downloadRes.headers.get('Retry-After') || (body as any)?.retryAfter || 5);
         
         // Resetar contador de rate limit quando receber 202 (processo normal)
         rateLimitCount = 0;
         
         // Atualizar status no progresso
-        global.sitfLoteProgress[progressId].cnpjAtual = `${cnpjLimpo} (${body.step || 'processando'}...)`;
+        global.sitfLoteProgress[progressId].cnpjAtual = `${cnpjLimpo} (${(body as any)?.step || 'processando'}...)`;
         
         // Aguardar antes de tentar novamente (com verificação de cancelamento)
         const naoCancelado = await aguardarComCancelamento(progressId, retryAfter * 1000);
@@ -1255,8 +1266,8 @@ async function aguardarConclusaoConsulta(
       }
 
       // Se retornou erro, tentar obter mensagem
-      const errorBody = await downloadRes.json().catch(() => ({}));
-      const errorMsg = errorBody.error || errorBody.message || `Erro HTTP ${downloadRes.status}`;
+      const errorBody = await downloadRes.json().catch(() => ({})) as any;
+      const errorMsg = (errorBody as any)?.error || (errorBody as any)?.message || `Erro HTTP ${downloadRes.status}`;
       
       // Se for erro 429 mas não foi capturado acima, tratar como rate limit
       if (downloadRes.status === 429 || errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
