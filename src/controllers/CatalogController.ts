@@ -346,5 +346,101 @@ LIMIT 100;  -- Ajuste o limite conforme necessário
       });
     }
   }
+
+  /**
+   * Consulta de faturamento (TPEDIDOS_BI_FAT_RESULTADOS)
+   * POST /api/sci/catalog/consulta-faturamento
+   * Body: { cod_emp: number, ano?: string }
+   */
+  async consultaFaturamento(req: Request, res: Response): Promise<void> {
+    try {
+      const { cod_emp, ano } = req.body;
+
+      // Validações
+      if (!cod_emp || typeof cod_emp !== 'number') {
+        res.status(400).json({ error: 'Campo "cod_emp" é obrigatório e deve ser um número' });
+        return;
+      }
+
+      // Ano padrão: ano atual se não informado
+      const anoConsulta = ano || new Date().getFullYear().toString();
+
+      // SQL da consulta - Ajustada para Firebird
+      // BDREF pode ser INTEGER ou VARCHAR, então convertemos para string para fazer SUBSTRING
+      const sql = `
+        SELECT
+          BDREF,
+          MAX(CASE WHEN BDORDEM = 1 THEN BDVALOR END) AS VENDAS_BRUTAS,
+          MAX(CASE WHEN BDORDEM = 2 THEN BDVALOR END) AS DEVOLUCOES_DEDUCOES,
+          MAX(CASE WHEN BDORDEM = 3 THEN BDVALOR END) AS VENDAS_LIQUIDAS,
+          MAX(CASE WHEN BDORDEM = 4 THEN BDVALOR END) AS SERVICOS,
+          MAX(CASE WHEN BDORDEM = 5 THEN BDVALOR END) AS OUTRAS_RECEITAS,
+          MAX(CASE WHEN BDORDEM = 6 THEN BDVALOR END) AS OPERACOES_IMOBILIARIAS,
+          MAX(CASE WHEN BDORDEM = 7 THEN BDVALOR END) AS FATURAMENTO_TOTAL
+        FROM TPEDIDOS_BI_FAT_RESULTADOS
+        WHERE BDCODEMP = ${cod_emp}
+          AND SUBSTRING(CAST(BDREF AS VARCHAR(50)) FROM 1 FOR 4) = '${anoConsulta}'
+        GROUP BY BDREF
+        ORDER BY BDREF
+      `;
+
+      // Caminho para o script Python
+      const scriptPath = path.join(
+        __dirname,
+        '../../python/catalog/executar_sql.py'
+      );
+
+      // Usar base64 para passar SQL de forma segura
+      const sqlBase64 = Buffer.from(sql, 'utf-8').toString('base64');
+
+      // Construir comando Python
+      const command = `python "${scriptPath}" --base64 ${sqlBase64}`;
+
+      // Executar script Python
+      const { stdout, stderr } = await execAsync(command, {
+        encoding: 'utf-8',
+        maxBuffer: 50 * 1024 * 1024, // 50MB
+      });
+
+      if (stderr && !stderr.includes('INFO')) {
+        console.error('Python stderr:', stderr);
+      }
+
+      // Parse do resultado JSON
+      try {
+        const resultado = JSON.parse(stdout);
+        
+        if (!resultado.success) {
+          res.status(500).json({ 
+            error: resultado.error || 'Erro ao executar consulta de faturamento',
+            details: resultado.details 
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          cod_emp,
+          ano: anoConsulta,
+          columns: resultado.columns || [],
+          rows: resultado.rows || [],
+          rowCount: resultado.rowCount || 0
+        });
+      } catch (parseError) {
+        console.error('Erro ao parsear resultado:', parseError);
+        console.error('Stdout:', stdout);
+        res.status(500).json({ 
+          error: 'Erro ao processar resultado da consulta',
+          details: stdout 
+        });
+      }
+    } catch (error: any) {
+      console.error('Erro ao consultar faturamento:', error);
+      res.status(500).json({ 
+        error: 'Erro ao consultar faturamento',
+        message: error.message 
+      });
+    }
+  }
 }
 

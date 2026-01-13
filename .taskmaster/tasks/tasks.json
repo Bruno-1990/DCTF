@@ -1340,5 +1340,664 @@
       "updated": "2025-12-18T20:49:22.558Z",
       "description": "Tag principal com todas as tarefas do projeto DCTF e Sistema de Conferência SPED"
     }
+  },
+  "validacao-sped-v2": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "FASE 1: Modelo Canônico Fiscal (Python)",
+        "description": "Implementar classes base do modelo canônico: DocumentoFiscal, ItemFiscal, TributoICMS, TributoICMSST, TributoIPI. Criar parsers: XML → Modelo Canônico, EFD → Modelo Canônico. Implementar testes unitários.",
+        "details": "Criar estrutura python/sped/v2/canonical/ com classes base. Implementar normalização de conceitos fiscais (ICMS próprio vs ST vs DIFAL/FCP). Preservar metadados (chave NF-e, referências, ajustes). Testes unitários para garantir qualidade.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "FASE 1: Camada A - Normalização",
+        "description": "Implementar XML Normalizer e EFD Normalizer. Unificar conceitos fiscais. Preservar metadados.",
+        "details": "Criar python/sped/v2/normalization/ com xml_normalizer.py e efd_normalizer.py. Converter XML e EFD para modelo canônico. Unificar conceitos fiscais (ICMS próprio vs ST vs DIFAL/FCP). Integrar com modelo canônico da tarefa anterior.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "FASE 1: Estrutura Base Backend",
+        "description": "Criar rotas /api/sped/v2/*, controllers e services base. Integração Python mantendo compatibilidade.",
+        "details": "Criar src/routes/sped-v2.ts com rotas principais. Criar SpedV2ValidationController e SpedV2ValidationService. Integração com scripts Python mantendo compatibilidade com sistema atual (/api/sped/validar).",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "FASE 1: Estrutura Base Frontend",
+        "description": "Criar nova aba Validação SPED v2.0 e componentes base. Integração com API.",
+        "details": "Criar frontend/src/pages/SpedValidacaoV2.tsx. Criar componentes base: PipelineView, SummaryPanel. Configurar rotas e navegação. Integração com API backend.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          3
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "FASE 2: Validador Interno da EFD (Camada B)",
+        "description": "Implementar validação de consistência interna do SPED: C170→C190→C100→E110/E111",
+        "details": "Criar python/sped/v2/validation/efd_internal_validator.py. Validação C170 → C190 (totalização). Validação C190 → C100 (valores). Validação C100 → E110/E111 (impacto). Detecção de ajustes C197/E111. Validação de cadastros 0150/0190/0200.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1,
+          2
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "FASE 2: Frontend - Visualização Validações Internas",
+        "description": "Criar componente para exibir resultados da validação interna da EFD",
+        "details": "Componente para exibir resultados da validação interna. Cards de inconsistências encontradas. Evidências SPED lado a lado. Integração com backend.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          5,
+          4
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "FASE 3: Matching Robusto de Documentos",
+        "description": "Implementar matching robusto: chave NF-e, fallback, probabilístico",
+        "details": "Criar python/sped/v2/matching/match_documentos.py. Match por chave NF-e (prioritário). Fallback: CNPJ + modelo + série + número + data + vNF. Fallback probabilístico: tolerâncias + heurística. Integração com match_robusto.py existente.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          2
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "FASE 3: Matching Robusto de Itens",
+        "description": "Matching de itens com inferência de CFOP/CST. Integração com match_items_robusto.py",
+        "details": "Criar python/sped/v2/matching/match_itens.py. Integração com match_items_robusto.py existente. Inferência de CFOP/CST quando item não está no SPED. Score de matching. Múltiplas camadas (6 camadas).",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          7
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "FASE 3: Confronto Básico XML × EFD",
+        "description": "Implementar confronto conceitual XML vs EFD (não campo a campo)",
+        "details": "Criar python/sped/v2/validation/xml_efd_validator.py. Comparação conceitual (não campo a campo). Consideração de contexto (CFOP, CST, finalidade). Detecção de divergências básicas. Integração com modelo canônico.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          2,
+          7,
+          8
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "FASE 3: Frontend - Visualização Matching e Divergências",
+        "description": "Criar interface para exibir documentos conciliados e divergências encontradas",
+        "details": "Componente para exibir documentos conciliados / não conciliados. Cards de divergências encontradas. Indicadores de matching (score, tipo). Filtros básicos. Integração com backend.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          9,
+          4
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "FASE 4: Matriz de Legitimação e Classificação",
+        "description": "Implementar classificador ERRO/REVISAR/LEGÍTIMO com features de contexto",
+        "details": "Criar python/sped/v2/classification/matriz_legitimacao.py. Classificador: ERRO / REVISAR / LEGÍTIMO. Features de contexto (CFOP, CST, finalidade, ajustes). Regras de divergência legítima (whitelist). Integração com packs por segmento.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          9
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "FASE 4: Score de Confiança",
+        "description": "Implementar cálculo de score de confiança (0-100) para cada divergência",
+        "details": "Criar python/sped/v2/classification/score_calculator.py. Cálculo de score (0-100). Fatores: match, impacto, ajustes, CFOP, ST. Limiares: 80-100 (ERRO), 50-79 (REVISAR), 0-49 (LEGÍTIMO). Integração com matriz de legitimação.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          11
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "FASE 4: Motor de Totalização",
+        "description": "Implementar cadeias de totalização: C170→C190→C100→E110 com tolerâncias",
+        "details": "Implementar cadeias de totalização no validador. Cadeia C170 → C190. Cadeia C190 → C100. Cadeia C100 → E110 (impacto). Tolerâncias: linha R$ 0,01, documento R$ 0,05-0,10, período R$ 0,50-2,00.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          11
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "FASE 4: Frontend - Visualização de Classificação",
+        "description": "Criar interface para exibir divergências classificadas com score e impacto",
+        "details": "Cards com classificação (ERRO/REVISAR/LEGÍTIMO). Score de confiança visual (barra + número). Impacto (alto/médio/baixo/nenhum). Filtros por classificação e impacto. Ordenação inteligente (impacto alto primeiro).",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          12,
+          4
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 15,
+        "title": "FASE 5: Gerador de Evidências",
+        "description": "Implementar gerador de evidências XML e SPED para exibição lado a lado",
+        "details": "Criar python/sped/v2/evidence/evidence_generator.py. Extrair tags XML relevantes (ICMS/ST/FCP). Extrair linhas SPED relevantes (C100/C170/C190/E110/E111). Explicação da regra aplicada. Formatação de dados para exibição.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          12
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 16,
+        "title": "FASE 5: Frontend - Drawer/Modal de Evidências",
+        "description": "Criar componente de evidências lado a lado (3 abas: XML, SPED, Regra)",
+        "details": "Criar componente EvidenceDrawer (Drawer/Modal). 3 abas: XML, SPED, Regra. Visualização de tags XML formatadas (syntax highlighting). Visualização de linhas SPED formatadas. Explicação da regra (texto + highlights). Antes/depois visual.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          15,
+          4
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 17,
+        "title": "FASE 6: Gerador de Plano de Correções",
+        "description": "Implementar gerador de plano de correções com antes/depois e impacto",
+        "details": "Criar python/sped/v2/corrections/plan_generator.py. Lista de correções (antes/depois, regra, score, impacto). Totais por tipo de correção. Itens bloqueados (REVISAR). Impacto estimado total. JSON estruturado do plano.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          12
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 18,
+        "title": "FASE 6: Frontend - Plano de Correções (Tela 5)",
+        "description": "Criar tela de plano de correções com lista detalhada e perfis de execução",
+        "details": "Criar componente Step5CorrectionPlan (CorrectionPlanView). Lista de correções com antes/depois. Filtros e agrupamentos. Perfis de execução (SEGURO/INTERMEDIÁRIO/AVANÇADO). Visualização de totais por tipo. Checkbox para incluir REVISAR.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          17,
+          4
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 19,
+        "title": "FASE 6: Frontend - Modal de Aprovação (Tela 6)",
+        "description": "Criar modal de aprovação em 2 níveis com checklists e travas por risco",
+        "details": "Criar componente Step6Approval (ApprovalModal). Nível 1: Aprovar plano. Nível 2: Confirmação final (checklists, trava por impacto). Simulação (modo prévia). Validações e bloqueios. Input de confirmação quando impacto alto.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          18,
+          4
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 20,
+        "title": "FASE 7: Motor de Correção",
+        "description": "Implementar aplicação de correções com guardrails e recalculação de totais",
+        "details": "Criar python/sped/v2/corrections/corrector.py e guardrails.py. Aplicação de correções (C100, C170, C190). Guardrails (verificar condições antes de corrigir). Recalculação de totais (C190 quando necessário). Validação pós-correção. Geração de SPED corrigido.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          17
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 21,
+        "title": "FASE 7: Sistema de Auditoria",
+        "description": "Implementar sistema completo de auditoria com log antes/depois e rollback",
+        "details": "Criar tabelas MySQL: sped_v2_audit_log, sped_v2_corrections. Log antes/depois (por campo). Registro de regra aplicada. Registro de usuário. Rollback por lote. Backend: endpoints de auditoria. Frontend: visualização de log.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          20
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 22,
+        "title": "FASE 7: Frontend - Execução de Correções (Tela 7)",
+        "description": "Criar tela de execução com feedback em tempo real e download do pacote",
+        "details": "Criar componente Step7Execution (ExecutionView). Feedback em tempo real (SSE/WebSocket). Eventos: backup, correções aplicadas, itens pulados, validação, download. Log técnico (detalhes expansível). Status visual (estilo build/deploy).",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          20,
+          4
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 23,
+        "title": "FASE 7: Frontend - Pacote de Download",
+        "description": "Criar componente de download do pacote completo (SPED, relatório, audit log)",
+        "details": "Criar componente DownloadPackage. Downloads: SPED corrigido, Relatório (PDF/HTML/TXT), Audit log (JSON). Opcionais: diff SPED, plano de correções (JSON). Download individual e zip. Visualização de arquivos disponíveis.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          22,
+          4
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 24,
+        "title": "FASE 8: Packs por Segmento",
+        "description": "Implementar packs por segmento: Comércio, Bebidas, Indústria, E-commerce",
+        "details": "Criar python/sped/v2/packs/ com: base.py, comercio.py, bebidas.py, industria.py, ecommerce.py. Pack Comércio: regras, CFOPs típicos, tolerâncias. Pack Bebidas: ST/PMPF/MVA, CEST críticos. Pack Indústria: IPI, insumos, Bloco G. Pack E-commerce: DIFAL/FCP, interestadual. Estrutura modular e plugável.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          11
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 25,
+        "title": "FASE 8: Configuração de Cliente",
+        "description": "Criar sistema de cadastro fiscal do cliente e seleção de packs",
+        "details": "Criar tabela MySQL: sped_v2_client_profiles. Cadastro fiscal: regime, segmento, CFOPs esperados, flags (ST?, regime especial?, DIFAL?). Interface de configuração. Seleção de pack(s) por validação. Persistência e reutilização.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          24
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 26,
+        "title": "FASE 1: Frontend - Tela 1: Seleção Cliente e Perfil Fiscal",
+        "description": "Criar tela de seleção do cliente e configuração do perfil fiscal",
+        "details": "Criar componente Step1ClientProfile. Campos: Cliente (autocomplete), Competência, Segmento, Regime. Flags: Opera ST?, Regime especial?, Interestadual/DIFAL?. Validações e feedback. Integração com cadastro de clientes.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          4,
+          25
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 27,
+        "title": "FASE 1: Frontend - Tela 2: Upload com Pré-Check",
+        "description": "Criar tela de upload com validações imediatas e pré-check automático",
+        "details": "Criar componente Step2FileUpload. Upload SPED (drag & drop). Upload XML (zip ou múltiplos). Pré-check automático: XML lidos, registros SPED, competências, chave NF-e. Feedback visual e validações. Resumo do lote.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          4
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 28,
+        "title": "FASE 1: Frontend - Tela 3: Pipeline de Processamento",
+        "description": "Criar tela de pipeline de processamento com feedback em tempo real",
+        "details": "Criar componente Step3ProcessingPipeline. Pipeline visual com status e contadores. Painel-resumo no topo (sempre visível). Mensagens contextuais. Progresso em tempo real (SSE/WebSocket). Integração com backend.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          4,
+          3
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 29,
+        "title": "FASE 4: Frontend - Tela 4: Resultados (Cards com Filtros)",
+        "description": "Criar tela de resultados com cards de divergências e filtros avançados",
+        "details": "Criar componente Step4ResultsView. Cards de divergência (cabeçalho, corpo, rodapé). Filtros essenciais (sidebar): classificação, impacto, não conciliado, CFOP/CST, ST, ajustes. Ordenação inteligente. Busca livre. Integração com evidências.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          14,
+          16,
+          4
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 30,
+        "title": "FASE 8: Dashboard Operações/Histórico (Visão B)",
+        "description": "Criar dashboard para coordenadores gerenciarem múltiplos lotes",
+        "details": "Criar componente OperationsDashboard. Fila de processamento (tabela). Métricas gerais (cards). Histórico recente (tabela). Top erros / Top clientes (gráficos/tabelas). Funcionalidades: reprocessar, download em lote, export métricas. Integração com backend.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          4,
+          3
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 31,
+        "title": "FASE 8: Melhorias Finais e Polimento",
+        "description": "Implementar melhorias finais: performance, UX, documentação, testes",
+        "details": "Otimizações de performance. Polimento de UX (acessibilidade, responsividade). Documentação (usuário + técnico). Testes (integração, E2E). Validação de edge cases. Feedback de usuários. Preparação para produção.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          23,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "priority": "low",
+        "subtasks": []
+      },
+      {
+        "id": 32,
+        "title": "FASE 0: Estrutura do Banco de Dados para Documentos Legais",
+        "description": "Criar tabelas MySQL para armazenar documentos legais (PDFs, DOCX), chunks de texto, regras estruturadas e metadados",
+        "details": "Tabelas: sped_v2_legal_documents (documentos com versionamento por vigência), sped_v2_document_chunks (chunks de texto extraídos para RAG), sped_v2_legal_rules (regras estruturadas extraídas dos documentos). Índices para busca rápida por vigência, categoria, tipo. Sistema de versionamento por período (mês/ano). Campos para hash de arquivo, metadados JSON, referências legais (artigos, parágrafos). Estrutura: document_id, documento_tipo, documento_nome, versao, vigencia_inicio, vigencia_fim, arquivo_path, hash_arquivo, metadata JSON.",
+        "testStrategy": "Testes de criação de tabelas, inserção de documentos, consultas por vigência, validação de índices",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 33,
+        "title": "FASE 0: Parser de Documentos Legais (PDF/DOCX)",
+        "description": "Criar sistema de extração de texto de documentos legais com preservação de estrutura e metadados",
+        "details": "Parser para PDFs (PyPDF2/pdfplumber) e DOCX (python-docx). Extração de metadados: versão, vigência, tipo de documento, autor, data de publicação. Identificação de estrutura: seções, artigos, parágrafos, itens. Extração de tabelas e listas. Preservação de hierarquia e referências. Sistema de detecção de mudanças (hash de arquivo). Script de ingestão em lote da pasta DOCS. Criar python/sped/v2/knowledge/document_parser.py.",
+        "testStrategy": "Testes de extração de PDF, extração de DOCX, identificação de estrutura, extração de metadados, detecção de hash",
+        "status": "done",
+        "dependencies": [
+          32
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 34,
+        "title": "FASE 0: Sistema de Chunking Inteligente",
+        "description": "Implementar divisão de documentos em chunks semânticos para RAG com preservação de contexto",
+        "details": "Chunking por seção/artigo (preservar contexto). Chunking por tamanho com overlap (para não perder contexto entre chunks). Metadados por chunk: título da seção, número do artigo, página, contexto. Sistema de priorização de chunks (títulos, artigos mais importantes). Preservação de referências cruzadas entre chunks. Armazenamento no banco (sped_v2_document_chunks) com índice de chunk_index e document_id. Criar python/sped/v2/knowledge/chunking.py.",
+        "testStrategy": "Testes de chunking por seção, chunking com overlap, preservação de metadados, referências cruzadas",
+        "status": "done",
+        "dependencies": [
+          33
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 35,
+        "title": "FASE 0: Sistema RAG - Vector Store e Embeddings",
+        "description": "Implementar sistema RAG completo com vector store, embeddings e busca semântica",
+        "details": "Setup de vector store (ChromaDB local ou FAISS). Geração de embeddings (modelo local ou API - OpenAI/Claude). Indexação de chunks com embeddings. Sistema de busca semântica (similarity search). Classe LegalDocumentRAG com métodos: index_documents, query_legal_context, generate_rule_with_context. Integração com banco de dados para metadados. Cache de embeddings para performance. Criar python/sped/v2/knowledge/legal_rag.py.",
+        "testStrategy": "Testes de indexação, busca semântica, geração de contexto, cache de embeddings, performance",
+        "status": "done",
+        "dependencies": [
+          34
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 36,
+        "title": "FASE 0: Extrator de Regras Estruturadas",
+        "description": "Criar sistema para extrair regras estruturadas dos documentos legais com classificação e referências",
+        "details": "Parser de regras: identificação de padrões (validações, obrigatoriedades, tolerâncias, exceções). Classificação de regras: tipo (VALIDACAO, OBRIGATORIEDADE, TOLERANCIA, EXCECAO), categoria (C100, C170, C190, E110, etc.). Extração de condições e referências legais. Armazenamento em sped_v2_legal_rules com referências a documentos. Sistema de versionamento de regras por vigência. Criar python/sped/v2/knowledge/rule_extractor.py.",
+        "testStrategy": "Testes de extração de regras, classificação, identificação de padrões, referências legais",
+        "status": "done",
+        "dependencies": [
+          33
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 37,
+        "title": "FASE 0: API de Consulta de Documentos Legais",
+        "description": "Criar endpoints backend para consulta de documentos com busca semântica e regras estruturadas",
+        "details": "GET /api/sped/v2/knowledge/documents - listar documentos por período/vigência. GET /api/sped/v2/knowledge/query - busca semântica (RAG) com filtros. GET /api/sped/v2/knowledge/rules - buscar regras estruturadas por categoria/tipo/período. POST /api/sped/v2/knowledge/generate-rule - gerar regra consultando documentos. Integração com LegalDocumentRAG e banco de dados. Retorno de referências legais e confiança do match. Criar src/routes/sped-v2-knowledge.ts e SpedV2KnowledgeController.",
+        "testStrategy": "Testes de endpoints, busca semântica, consulta de regras, geração de regras com contexto",
+        "status": "pending",
+        "dependencies": [
+          35,
+          36
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura de rotas e controller base",
+            "description": "Criar arquivo src/routes/sped-v2-knowledge.ts e src/controllers/SpedV2KnowledgeController.ts com estrutura base",
+            "details": "",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 37
+          },
+          {
+            "id": 2,
+            "title": "Implementar endpoint GET /api/sped/v2/knowledge/documents",
+            "description": "Endpoint para listar documentos por período/vigência com filtros",
+            "details": "",
+            "status": "pending",
+            "dependencies": [
+              "37.1"
+            ],
+            "parentTaskId": 37
+          },
+          {
+            "id": 3,
+            "title": "Implementar endpoint GET /api/sped/v2/knowledge/query",
+            "description": "Endpoint para busca semântica (RAG) com filtros e retorno de chunks relevantes",
+            "details": "",
+            "status": "pending",
+            "dependencies": [
+              "37.1"
+            ],
+            "parentTaskId": 37
+          },
+          {
+            "id": 4,
+            "title": "Implementar endpoint GET /api/sped/v2/knowledge/rules",
+            "description": "Endpoint para buscar regras estruturadas por categoria/tipo/período",
+            "details": "",
+            "status": "pending",
+            "dependencies": [
+              "37.1"
+            ],
+            "parentTaskId": 37
+          },
+          {
+            "id": 5,
+            "title": "Implementar endpoint POST /api/sped/v2/knowledge/generate-rule",
+            "description": "Endpoint para gerar regra consultando documentos com contexto RAG",
+            "details": "",
+            "status": "pending",
+            "dependencies": [
+              "37.3",
+              "37.4"
+            ],
+            "parentTaskId": 37
+          },
+          {
+            "id": 6,
+            "title": "Integrar rotas no app principal e testar endpoints",
+            "description": "Registrar rotas no Express e criar testes básicos",
+            "details": "",
+            "status": "pending",
+            "dependencies": [
+              "37.2",
+              "37.3",
+              "37.4",
+              "37.5"
+            ],
+            "parentTaskId": 37
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "title": "FASE 0: Integração RAG + Banco no Gerador de Regras",
+        "description": "Integrar sistema híbrido no gerador de regras com consulta prévia de documentos legais",
+        "details": "Antes de gerar regra: consulta RAG (contexto semântico) + consulta banco (regras estruturadas). Combinação de resultados: priorizar regras estruturadas, complementar com contexto RAG. Geração de regra com referências legais: documento, versão, artigo, seção. Validação de vigência do período. Sistema de confiança: score baseado em match RAG + existência de regra estruturada. Integração com validators.py existente. Modificar python/sped/v2/validation/ para usar sistema de conhecimento.",
+        "testStrategy": "Testes de integração, geração de regras com referências, validação de vigência, score de confiança",
+        "status": "pending",
+        "dependencies": [
+          37
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 39,
+        "title": "FASE 0: Sistema de Versionamento e Vigência",
+        "description": "Implementar sistema robusto de versionamento por período com histórico e migração automática",
+        "details": "Validação de vigência: checar período (mês/ano) contra vigencia_inicio/vigencia_fim dos documentos. Sistema de histórico: manter versões antigas quando documento é atualizado. Migração automática: quando novo documento é ingerido, marcar versão anterior como vigencia_fim. Consulta inteligente: retornar documento correto para o período consultado. Interface para gerenciar versões e vigências. Criar python/sped/v2/knowledge/versioning.py.",
+        "testStrategy": "Testes de validação de vigência, histórico de versões, migração automática, consulta por período",
+        "status": "pending",
+        "dependencies": [
+          32
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 40,
+        "title": "FASE 0: Script de Ingestão Inicial da Pasta DOCS",
+        "description": "Criar script para ingestão inicial de todos os documentos da pasta SPED 2.0/DOCS",
+        "details": "Script Python: percorrer pasta DOCS, identificar tipo de documento (Guia Prático, Ato COTEPE, Convênio, Portaria, NT), extrair versão e vigência do nome/metadados, processar cada documento (parser + chunking + extração de regras), salvar no banco, indexar no RAG. Log de progresso e erros. Validação de duplicatas (hash). Relatório de ingestão. Criar python/sped/v2/knowledge/ingest_docs.py.",
+        "testStrategy": "Testes de ingestão em lote, identificação de tipo, extração de versão, validação de duplicatas",
+        "status": "pending",
+        "dependencies": [
+          33,
+          34,
+          36
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 41,
+        "title": "FASE 0: Frontend - Interface de Consulta de Documentos Legais",
+        "description": "Criar interface frontend para consultar documentos legais com busca semântica e visualização",
+        "details": "Componente KnowledgeBaseView: busca semântica (input de texto), filtros (período, tipo de documento, categoria), resultados: documentos relevantes, chunks destacados, regras estruturadas, referências legais. Visualização de documentos: PDF viewer ou texto formatado. Exibição de referências: links para artigos, seções. Integração com API de consulta. Interface para administradores gerenciar documentos. Criar frontend/src/pages/SpedKnowledgeBase.tsx.",
+        "testStrategy": "Testes de busca semântica, filtros, visualização de documentos, exibição de referências",
+        "status": "pending",
+        "dependencies": [
+          37,
+          4
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 42,
+        "title": "FASE 0: Sistema de Referências Legais nas Regras",
+        "description": "Integrar referências legais nas regras geradas com validação de vigência e atualização automática",
+        "details": "Cada regra deve incluir: lista de referências (documento, versão, artigo, seção), link para documento original, contexto extraído (chunk relevante). Exibição no frontend: badge de referência, tooltip com detalhes, link para visualizar documento. Validação: checar se referência ainda está vigente no período. Sistema de atualização: quando documento muda, atualizar referências nas regras afetadas. Integração com EvidenceDrawer e regras geradas.",
+        "testStrategy": "Testes de inclusão de referências, validação de vigência, atualização automática, exibição no frontend",
+        "status": "pending",
+        "dependencies": [
+          38,
+          16
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 43,
+        "title": "FASE 0: Otimização e Cache do Sistema RAG",
+        "description": "Implementar otimizações de performance com cache de embeddings e consultas",
+        "details": "Cache de embeddings: evitar regenerar embeddings para documentos já processados. Cache de consultas: cachear resultados de queries RAG frequentes (TTL configurável). Indexação incremental: atualizar apenas chunks novos quando documento é atualizado. Batch processing: processar múltiplos documentos em paralelo. Monitoramento: métricas de performance (tempo de consulta, taxa de cache hit). Limpeza automática de cache antigo. Criar python/sped/v2/knowledge/cache_manager.py.",
+        "testStrategy": "Testes de cache de embeddings, cache de consultas, indexação incremental, performance",
+        "status": "pending",
+        "dependencies": [
+          35
+        ],
+        "priority": "low",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2026-01-12T20:51:50.054Z",
+      "updated": "2026-01-13T14:19:49.154Z",
+      "description": "Validação SPED v2.0 - Sistema Robusto de Conferência XML × SPED com arquitetura em 3 camadas, matriz de legitimação e UX profissional"
+    }
   }
 }

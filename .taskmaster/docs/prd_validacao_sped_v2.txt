@@ -1,0 +1,1215 @@
+# PRD: Validação SPED v2.0 - Sistema Robusto de Conferência XML × SPED (EFD ICMS/IPI)
+
+## Overview
+
+Evolução do sistema atual de validação SPED para um motor robusto de conferência XML × SPED (EFD ICMS/IPI), seguindo arquitetura em 3 camadas, com matriz de legitimação inteligente, score de confiança, guardrails de segurança e UX profissional.
+
+### Problema Atual
+
+O sistema atual de validação SPED apresenta:
+- Muitos falsos positivos (ruído) por comparação direta XML vs SPED
+- Falta de normalização/canonical model antes da comparação
+- Ausência de classificação clara (ERRO/REVISAR/LEGÍTIMO)
+- Autocorreção sem guardrails adequados
+- UX limitada (falta de evidências e explicações)
+- Processamento sem pipeline visível
+- Matching não robusto em todos os cenários
+- Falta de packs por segmento bem definidos
+
+### Solução Proposta
+
+Sistema profissional em 3 camadas com:
+- **Camada A**: Normalização (Modelo Canônico Fiscal)
+- **Camada B**: Validação Interna da EFD (antes do XML)
+- **Camada C**: Confronto XML × EFD (somente depois)
+
+Com matriz de legitimação inteligente, score de confiança (0-100), guardrails de autocorreção, pipeline visível de processamento e UX profissional com evidências lado a lado.
+
+---
+
+## Core Features
+
+### 1. Arquitetura em 3 Camadas
+
+#### 1.1. Camada A - Normalização (Fonte Única)
+**O que faz**: Converte XML e EFD para um Data Model Fiscal CANÔNICO interno.
+
+**Por que é importante**: Elimina comparações diretas que geram falsos positivos. Antes de comparar, normaliza tudo para o mesmo formato conceitual.
+
+**Como funciona**:
+- Parser XML → Modelo Canônico (Documento, Item, Tributos)
+- Parser EFD → Modelo Canônico (C100, C170, C190, E110/E111)
+- Unificação de conceitos fiscais (ICMS próprio vs ST vs DIFAL/FCP)
+- Preservação de metadados (chave NF-e, referências, ajustes)
+
+#### 1.2. Camada B - Validação Interna da EFD
+**O que faz**: Checa consistência do SPED por si só: C170 → C190 → C100 → E110/E111.
+
+**Por que é importante**: Se a EFD falhar internamente, a divergência pode não ser "do XML", mas do SPED. Detecta erros de totalização antes do confronto.
+
+**Como funciona**:
+- Validação de totalização C170 → C190 (por CST/CFOP/ALIQ)
+- Validação de totalização C190 → C100 (valores do documento)
+- Validação de cadeia C100 → E110/E111 (impacto na apuração)
+- Detecção de ajustes (C197/E111) que explicam divergências
+- Validação de cadastros obrigatórios (0150/0190/0200)
+
+#### 1.3. Camada C - Confronto XML × EFD
+**O que faz**: Compara o "esperado pelo XML" com o "representado pela EFD", considerando regras do Guia Prático, enquadramento do cliente e exceções legítimas.
+
+**Por que é importante**: Detecta divergências que representam ERRO REAL de escrituração/apuração, minimizando divergências legítimas.
+
+**Como funciona**:
+- Matching robusto por chave NF-e (prioritário)
+- Fallback: matching por (CNPJ + modelo + série + número + data + vNF)
+- Fallback probabilístico: tolerâncias + heurística
+- Comparação conceitual (não campo a campo)
+- Consideração de contexto (CFOP, CST, finalidade, tpNF, ajustes)
+
+### 2. Modelo Canônico Fiscal
+
+#### 2.1. Entidade Documento (NF-e)
+**Campos mínimos**:
+- Identificação: chave_nfe, modelo, série, número, data_emissão
+- Contexto: finalidade (finNFe), tpNF (entrada/saída)
+- Emitente: CNPJ, IE, UF
+- Destinatário: CNPJ/CPF, IE, UF
+- Totais: vProd, vNF, vDesc, vFrete, vSeg, vOutro, vTotTrib
+
+#### 2.2. Entidade Item da NF-e
+**Campos mínimos**:
+- Identificação: nItem, CFOP, NCM, CEST (quando aplicável), uCom, qCom, vUnCom, vProd
+- Tributos (conceitos, não campos):
+  - ICMS: CST/CSOSN + modalidade BC + vBC + pICMS + vICMS
+  - ICMS-ST: vBCST + pMVAST/pRedBCST + pICMSST + vICMSST + PMPF
+  - FCP/FCPST (quando aplicável)
+  - IPI: vBC, pIPI, vIPI
+  - PIS/COFINS (para conferência de total)
+
+#### 2.3. Entidades SPED (EFD)
+**Registros relevantes**:
+- C100: capa do documento (chave, modelo, série, número, data, valores, COD_SIT)
+- C170: itens (CFOP, CST, valores e bases)
+- C190: resumo por CST/CFOP/ALIQ (VL_OPR, VL_BC_ICMS, VL_ICMS, VL_BC_ICMS_ST, VL_ICMS_ST)
+- C197/C195: ajustes/observações que explicam divergências
+- E110: apuração do ICMS do período (impacto de divergências)
+- E111: ajustes da apuração (crédito/débito)
+
+### 3. Matching Robusto Multi-Camadas
+
+#### 3.1. Ordem de Conciliação
+1. **Match por chave NF-e (C100.CHV_NFE)** = EXATO (score 100)
+2. **Fallback**: (CNPJ emit/dest + modelo + série + número + data + vNF) (score 90)
+3. **Fallback probabilístico**: tolerâncias em data/vNF + heurística (score 60-80)
+4. **Não conciliado**: "DOCUMENTO NÃO CONCILIADO" (não é erro fiscal por si só)
+
+#### 3.2. Matching de Itens (C170)
+**Camadas de matching**:
+1. Match exato por NUM_ITEM (score 100)
+2. Match por NCM + Quantidade + Valor Unitário (score 90-95)
+3. Match por Descrição (Fuzzy) + NCM (score 80-90)
+4. Match por Cadastro 0200 (score 85)
+5. Match por Descrição + Quantidade (score 70-80)
+6. Match por Valor Total + CFOP/CST (score 60-70)
+
+**Inferência de CFOP/CST** (quando item não está no SPED):
+- Busca por NCM + FORNECEDOR (COD_PART)
+- Busca por NCM + Descrição similar
+- Busca por Cadastro 0200
+- Busca no mesmo C100
+- Busca por regras do setor
+- Busca histórica (outros C100s)
+- Fallback: usar CFOP/CST do XML
+
+### 4. Matriz de Legitimação (Classificador)
+
+#### 4.1. Classificações
+- **ERRO** (alta confiança): Evidência forte + impacto na apuração + score ≥ 80
+- **REVISAR** (média/baixa confiança): Pode ser legítimo (devolução, ajuste, ST complexo, regime especial) + score 50-79
+- **LEGÍTIMO** (whitelist): Cenários conhecidos como "não erro" (ST com BC própria zero, ajustes coerentes, arredondamento) + score 0-49
+
+#### 4.2. Features de Contexto (obrigatórias)
+Por documento/item:
+- CFOP
+- CST/CSOSN + tag ICMS do XML (ICMS00, ICMS20, ICMS60, etc.)
+- finalidade NF-e (normal/complementar/ajuste)
+- tpNF (entrada/saída)
+- indicadores SPED (COD_SIT, IND_OPER, IND_EMIT)
+- existência de ajustes (C197/E111) relacionados
+
+#### 4.3. Regras de Divergência Legítima (Whitelist)
+- **Devolução** (CFOP 1201/1202/2201/2202): Marcar como REVISAR, verificar ajustes
+- **Substituição Tributária** (CST 60): Não exigir BC própria, validar bloco ST
+- **Nota Complementar/Ajuste**: Agrupar por referência, geralmente REVISAR
+- **Bonificação/Remessa/Amostra**: Pack por segmento, geralmente REVISAR
+- **DIFAL/FCP**: Validar campos específicos e ajustes
+- **Regime Especial**: Bloquear autocorreções, elevar para REVISAR
+
+### 5. Score de Confiança (0-100)
+
+#### 5.1. Cálculo do Score
+- **Match por chave** (forte): +40 pontos
+- **Match por fallback**: +15 pontos
+- **Match probabilístico**: +5 pontos
+- **Impacto no E110** (alto): +25 pontos
+- **Impacto no E110** (médio): +15 pontos
+- **Impacto no E110** (baixo): +5 pontos
+- **Ajuste explicativo** (sim): -30 pontos
+- **CFOP devolução/complementar**: -20 pontos
+- **ST detectada e regra correta**: +10 pontos
+
+#### 5.2. Limiares
+- **80-100**: ERRO (alta confiança)
+- **50-79**: REVISAR
+- **0-49**: LEGÍTIMO / ruído
+
+### 6. Motor de Totalização (Cadeia de Prova)
+
+#### 6.1. Cadeia C170 → C190
+- Para cada NF-e (C100), somar itens (C170) por (CST, CFOP, ALIQ)
+- Comparar com C190 correspondente
+- Se C190 não totaliza corretamente C170 e não existe ajuste: ALERTA
+
+#### 6.2. Cadeia C190 → C100
+- Somatórios do resumo (C190) devem fazer sentido com totais do documento (C100)
+- Atenção: operações podem ter campos zerados em ICMS próprio e preenchidos em ST/FCP
+
+#### 6.3. Cadeia C100 → E110 (impacto)
+- Divergência é PRIORIDADE quando altera a apuração do período
+- Divergência sem impacto: classificar como "Baixa prioridade" ou "Revisar"
+
+#### 6.4. Tolerâncias
+- Por campo monetário por linha: R$ 0,01
+- Por documento: R$ 0,05 a R$ 0,10
+- Por período (acumulado): R$ 0,50 a R$ 2,00
+
+### 7. Packs por Segmento (Plugáveis)
+
+#### 7.1. PACK COMÉRCIO GERAL
+- Regras para CFOPs típicos (5102/6102, etc.)
+- Devoluções e remessas
+- Validação de CST/ALIQ coerente
+- Tolerância maior em arredondamentos
+
+#### 7.2. PACK BEBIDAS
+- Forte presença de ST/PMPF/MVA
+- Validação ST por item + coerência no resumo
+- Evitar comparar BC própria quando operação é ST
+- CEST críticos
+
+#### 7.3. PACK INDÚSTRIA
+- Validação IPI (quando aplicável)
+- Conferência de insumos e devoluções industriais
+- Cadeia de totalização item → resumo com maior peso
+- Bloco G (ativo)
+
+#### 7.4. PACK E-COMMERCE
+- DIFAL/FCP/partilha
+- Operações interestaduais
+- Ajustes correlatos
+
+### 8. Auto-Correção com Guardrails
+
+#### 8.1. Pode Autocorrigir Quando (TODOS verdade):
+- Match por chave = OK
+- XML e C170 batem "no conceito" (CFOP/CST/valores por item)
+- Divergência é apenas "derivada" (erro de resumo C190) e não há ajustes externos
+- Impacto é determinístico e reversível
+- Regra disparada é "alta confiança" (score ≥ 80)
+
+#### 8.2. NÃO Autocorrigir Quando:
+- CFOP de devolução / nota complementar / ajuste
+- Existência de ajustes no período (E111/C197) ligados ao caso
+- Presença de regime especial / cenários não padrão
+- Divergência envolve ST e há incerteza no enquadramento
+
+#### 8.3. Tudo que for Autocorrigido Deve:
+- Gerar log detalhado
+- Guardar "antes/depois" por campo
+- Permitir rollback por lote
+- Exigir confirmação humana quando impacto for alto
+
+---
+
+## User Experience
+
+### 1. Modelo Ideal de UX: "Assistente em Etapas" + Dashboard
+
+O sistema oferece duas visões complementares para diferentes necessidades:
+
+#### 1.1. Visão A — Wizard (Passo a Passo) para Executar um Lote
+**Objetivo**: Levar o usuário do upload até o download do SPED corrigido, sem pular etapa crítica.
+
+**Etapas do Wizard**:
+1. Selecionar cliente / competência / perfil fiscal
+2. Importar arquivos (SPED + pasta XML)
+3. Conferir conciliação (match) e qualidade do lote
+4. Resultados (erros reais / revisar / legítimos) + filtros
+5. Plano de correções (antes/depois + impacto)
+6. Aprovação
+7. Aplicar + validar
+8. Download + auditoria
+
+#### 1.2. Visão B — Dashboard "Operações / Histórico"
+**Objetivo**: O coordenador/usuário ver:
+- Lotes em processamento
+- Status (em fila / executando / concluído / com falha)
+- Histórico e reprocessamento
+- Métricas (top erros, top clientes, etc.)
+
+### 2. Tela 1 — Seleção do Cliente e "Perfil Fiscal"
+
+**Essa tela é obrigatória e curta. Corta 60% dos falsos positivos.**
+
+#### 2.1. Campos Obrigatórios
+- **Cliente**: CNPJ / IE / UF (pré-cadastrado, busca/autocomplete)
+- **Competência**: Mês/Ano (seletor de data)
+- **Segmento**: Comércio / Bebidas / Indústria / E-commerce / Outros (dropdown)
+- **Regime**: RPA / Simples Nacional / Outros (dropdown)
+
+#### 2.2. Flags (Checkboxes)
+- **Opera muito com ST?** (sim/não) - Influencia validação de ST
+- **Tem regime especial?** (sim/não) - Bloqueia autocorreções
+- **Opera interestadual/DIFAL?** (sim/não) - Ativa validações de DIFAL/FCP
+
+#### 2.3. Por que isso é UX boa?
+- Usuário entende que "o sistema vai comparar com base no enquadramento"
+- Reduz "erro" onde era ST ou devolução
+- Configuração uma vez, reutilizável para próximos lotes do mesmo cliente
+
+### 3. Tela 2 — Upload com Validações Imediatas (Pré-Check)
+
+**Aqui a UX precisa impedir entrada errada.**
+
+#### 3.1. Componentes de Upload
+- **Upload do SPED**: Drag & drop ou seleção de arquivo (.txt)
+- **Upload de XML**: Zip ou múltiplos arquivos (drag & drop múltiplo)
+- **Validação de formato**: Feedback imediato se arquivo inválido
+
+#### 3.2. Pré-Check Automático (Barra de Progresso Curta)
+Após upload, executar validações imediatas e mostrar:
+
+- **Quantos XML lidos**: "X XMLs carregados com sucesso"
+- **SPED tem registros esperados**: Verificar presença de 0000/0001/C100/etc.
+- **Competências batem**: Comparar data dos documentos vs período do SPED
+- **XML fora do período**: Alerta (não erro) - "Y XMLs fora do período do SPED"
+- **Chave NF-e no C100**: "Z% dos C100 têm chave NF-e" (indicador de qualidade)
+
+#### 3.3. Saída desta Tela
+- **Resumo do lote**: Total de documentos, período, qualidade
+- **Botão "OK para processar"**: Só habilitado se pré-check passar
+- **Avisos**: Mostrar avisos (não bloqueiam), erros bloqueiam
+
+### 4. Tela 3 — Processamento em Pipeline (com Feedback Útil)
+
+**Evite um "spinner". Use pipeline + contadores.**
+
+#### 4.1. Pipeline Visual (com Contagem Real)
+Exibir pipeline com status e contadores:
+
+1. **Importação de arquivos** ✅ (X arquivos processados)
+2. **Normalização** ✅ (Modelo canônico criado)
+3. **Match** 🔄 (312/1.240 documentos conciliados)
+4. **Validação interna EFD** 🔄 (C170→C190→C100 verificados)
+5. **Confronto XML×EFD** 🔄 (Comparação em andamento)
+6. **Classificação + Score** ✅ (Divergências classificadas)
+7. **Simulação de impacto** ✅ (Impacto no E110 calculado)
+8. **Plano de correções** ✅ (Plano gerado)
+
+**Status**: Aguardando / Executando / Concluído / Falhou
+
+#### 4.2. Painel-Resumo no Topo (Sempre Visível)
+Indicadores em tempo real:
+
+- **Documentos**: Conciliados: X | Não conciliados: Y
+- **Divergências**: Erros reais: N | Revisar: M | Legítimos: L
+- **Impacto potencial no E110**: R$ X.XXX,XX
+- **Correções "aplicáveis automaticamente"**: K (alta confiança)
+
+#### 4.3. Mensagens que Ajudam
+Exibir mensagens contextuais durante processamento:
+
+- "15 XML não encontrados no SPED (sem match) → provável falha de importação do ERP"
+- "5 notas com devolução + ajuste: marcadas como REVISAR"
+- "37 divergências C190 totalização: aplicáveis (alta confiança)"
+- "3 documentos sem chave NF-e: usar match probabilístico"
+
+### 5. Tela 4 — Resultado (Lista de Cards com Filtros + Prioridades)
+
+**Aqui é onde o usuário "trabalha".**
+
+#### 5.1. Cards de Divergência
+Cada card deve conter:
+
+**Cabeçalho**:
+- Chave NF-e (linkável)
+- Número + Série + Data
+- Emitente / Destinatário (resumido)
+
+**Corpo**:
+- **Resumo do problema** (1 linha): "BC ICMS divergente: XML R$ 1.234,56 vs SPED R$ 1.200,00"
+- **Badge**: ERRO / REVISAR / LEGÍTIMO (cores distintas)
+- **Score**: 0–100 (barra visual + número)
+- **Impacto**: alto / médio / baixo / nenhum (badge colorido)
+
+**Rodapé (Botões)**:
+- **Ver evidências** (sempre disponível)
+- **Adicionar nota** (comentário do usuário)
+- **Marcar como legítimo** (whitelist manual)
+- **Enviar para revisão** (marcar para revisão posterior)
+- **Aplicar correção** (só se for caso permitido e score ≥ 80)
+
+#### 5.2. Filtros Essenciais
+Sidebar ou barra de filtros:
+
+- **Classificação**: ERRO / REVISAR / LEGÍTIMO (checkboxes)
+- **Impacto**: alto / médio / baixo / nenhum (checkboxes)
+- **Não conciliado**: Sim / Não (checkbox)
+- **Devolução/Complementar/Ajuste**: Sim / Não (checkbox)
+- **ST detectada**: Sim / Não (checkbox)
+- **Com ajuste E111/C197**: Sim / Não (bloqueia autocorreção)
+- **CFOP**: Input de busca / dropdown
+- **CST**: Input de busca / dropdown
+- **Busca livre**: Por chave NF-e, número, emitente, etc.
+
+#### 5.3. Ordenação Inteligente (Default)
+Ordenar por prioridade (configurável):
+
+1. **Impacto alto** (primeiro)
+2. **Erro real** (score maior)
+3. **Não conciliados** (depois)
+4. **Revisar** (por último)
+
+Opções de ordenação:
+- Prioridade (default)
+- Score (maior primeiro)
+- Data (mais recente primeiro)
+- Impacto (alto → baixo)
+- Alfabética (chave NF-e)
+
+### 6. Drawer/Modal "Evidências" (A Parte Mais Importante)
+
+**Quando o usuário abre um card, mostrar 3 colunas/abas lado a lado.**
+
+#### 6.1. Aba XML (Relevante)
+Mostrar tags XML formatadas e destacadas:
+
+- **CFOP**: Valor + descrição (se disponível)
+- **CST/CSOSN**: Valor + descrição
+- **Valores**: vProd, vNF, vDesc, vFrete, etc.
+- **ICMS próprio**: vBC, pICMS, vICMS (quando aplicável)
+- **ICMS-ST**: vBCST, pMVAST, vICMSST, PMPF (quando aplicável)
+- **FCP/FCPST**: Valores quando aplicável
+- **Finalidade**: finNFe (normal/complementar/ajuste)
+- **tpNF**: Entrada/Saída
+
+**Visualização**: XML formatado com syntax highlighting, tags relevantes destacadas
+
+#### 6.2. Aba SPED (Relevante)
+Mostrar linhas SPED formatadas:
+
+- **C100**: Linha completa do documento (formatação legível)
+- **C170**: Itens relacionados (tabela formatada)
+- **C190**: Resumo por CST/CFOP/ALIQ (quando relevante)
+- **E110/E111**: Apuração e ajustes (quando afetar)
+
+**Visualização**: Tabela formatada, campos divergentes destacados, links para linhas relacionadas
+
+#### 6.3. Aba Regra Aplicada
+Explicação clara e objetiva:
+
+**Seção 1 - "Por que isso é ERRO/REVISAR"**:
+- Explicação textual da regra
+- Contexto (CFOP, CST, finalidade)
+- Por que foi classificado assim
+
+**Seção 2 - "O que mudaria (antes/depois)"**:
+- Tabela comparativa: Campo | Valor Atual (SPED) | Valor Esperado (XML) | Valor Corrigido
+- Highlight visual das mudanças
+
+**Seção 3 - "Por que é seguro ou por que foi bloqueado"**:
+- Se score ≥ 80 e sem bloqueios: "Seguro para autocorreção: match por chave, sem ajustes relacionados"
+- Se bloqueado: "Bloqueado: existe ajuste E111 relacionado" ou "Bloqueado: CFOP de devolução"
+
+**Isso reduz o "medo" do usuário dar OK.**
+
+### 7. Tela 5 — Plano de Correções (Aprovação por Lote)
+
+**Antes de mexer no SPED, gerar um Plano.**
+
+#### 7.1. Visualização do Plano
+O Plano deve mostrar:
+
+**Totais por tipo de correção**:
+- "Recalcular C190": 37 correções
+- "Ajustar C170": 3 correções
+- "Ajustar C100": 0 correções
+
+**Lista detalhada** (tabela expansível):
+- Chave NF-e / Documento
+- Campo a corrigir
+- **Antes → Depois** (valores lado a lado)
+- Regra ID (link para detalhes)
+- Score (0-100)
+- Impacto no E110 (se calculável): R$ X.XX
+- Status: Aplicável / Bloqueado (com motivo)
+
+#### 7.2. Aprovação em "Modo"
+Seletor de modo de aprovação:
+
+- **Seguro (default)**:
+  - Só score ≥ 80
+  - Sem E111/C197 envolvidos
+  - Sem devolução/complementar/ajuste
+  - Sem ST "incerto"
+  - **Total aplicável**: X correções
+
+- **Intermediário**:
+  - Score ≥ 70
+  - Mais casos cobertos
+  - Ainda bloqueia cenários críticos
+  - **Total aplicável**: Y correções
+
+- **Avançado** (com alertas):
+  - Permite aplicar com risco maior
+  - Sempre com avisos e confirmação reforçada
+  - **Total aplicável**: Z correções
+
+**Checkbox**: "Incluir itens REVISAR no plano" (desmarcado por padrão)
+
+### 8. Tela 6 — Confirmação Final (com Travas por Risco)
+
+**Antes de aplicar, exigir confirmações.**
+
+#### 8.1. Checklist Obrigatório
+Checkboxes que devem ser marcados:
+
+- ☐ **"Ciente que será gerado SPED retificado e preciso validar no PVA"**
+- ☐ **"Vou arquivar o relatório e o SPED original"**
+
+#### 8.2. Travas por Impacto
+**Se impacto alto** (R$ > X.XXX,XX ou N correções > Y):
+- Exigir revisão de X itens (abrir modal com lista) OU
+- Exigir digitar "CONFIRMO" (input de texto)
+
+**Se houver itens REVISAR selecionados**:
+- Bloquear botão "Aplicar" até desmarcar ou mudar modo
+
+#### 8.3. Botão Final
+- **"Aplicar Correções"**: Só habilitado se todas as condições atendidas
+- **"Cancelar"**: Volta para tela anterior
+- **"Simular Novamente"**: Reexecuta simulação
+
+### 9. Tela 7 — Execução e Entrega (com Pacote Completo)
+
+**Durante aplicação, feedback em tempo real.**
+
+#### 9.1. Execução (Feedback Visual)
+Exibir eventos em sequência (estilo build/deploy):
+
+- ✅ **Backup criado**: "SPED original salvo em: [caminho]"
+- ✅ **Correções aplicadas**: "37 correções aplicadas (C190 recalculado)"
+- ⚠️ **Itens pulados**: "5 itens pulados (REVISAR: devolução/ajustes)"
+- ✅ **Validação pós-correção**: "OK (C170→C190→C100→E110 validado)"
+- 📦 **SPED corrigido pronto**: "sped_corrigido_[timestamp].txt"
+- 📄 **Relatório pronto**: "relatorio_conferencias_[timestamp].pdf"
+- 📋 **Audit log pronto**: "audit_log_[timestamp].json"
+
+**Opção "Detalhes"**: Expandir para log técnico completo (sem poluir tela principal)
+
+#### 9.2. Pacote de Download
+**Downloads obrigatórios**:
+1. **SPED_corrigido.txt**: Arquivo SPED com correções aplicadas
+2. **Relatorio_conferencias.pdf/html/txt**: Relatório completo de conferências
+3. **audit_log.json**: Log de auditoria (antes/depois por registro, regra, usuário, timestamp)
+
+**Downloads opcionais** (muito úteis):
+4. **diff_sped.txt**: Diferenças no estilo "patch" (linha por linha)
+5. **plano_correcoes.json**: O que foi aprovado (JSON estruturado)
+
+**Botões de download**:
+- Download individual (cada arquivo)
+- Download tudo (zip com todos os arquivos)
+
+### 10. Detalhes de UX que Fazem Muita Diferença
+
+#### 10.1. "Não Conciliado" não é "Erro Fiscal"
+**Tratar como categoria própria**:
+
+- **Categoria**: "Falha de integração/escrituração"
+- **Visual**: Badge/cor diferente (ex.: amarelo/laranja, não vermelho)
+- **Ação recomendada**: "Verificar importação do ERP / entradas faltantes"
+- **Não aparece em**: Filtro "ERRO" (aparece em filtro próprio "Não conciliado")
+
+**Por quê**: Evita confundir problema técnico com erro fiscal.
+
+#### 10.2. O Usuário Precisa "Confiar no Sistema"
+**Mostrar sempre**:
+
+- **Score + Regra + Evidência**: Tudo visível antes de aprovar
+- **Botão "Desfazer correções"**: Rollback por lote (sempre disponível)
+- **Histórico de correções**: Ver o que foi corrigido anteriormente
+- **Comparação antes/depois**: Visual claro das mudanças
+
+**Transparência total**: O usuário nunca deve se sentir "no escuro".
+
+### 11. Dashboard "Operações / Histórico" (Visão B)
+
+**Para coordenadores e usuários que gerenciam múltiplos lotes.**
+
+#### 11.1. Visão Geral do Dashboard
+**Layout**: Grid com cards e tabelas
+
+**Seções principais**:
+1. **Fila de Processamento** (topo)
+2. **Métricas Gerais** (cards)
+3. **Histórico Recente** (tabela)
+4. **Top Erros / Top Clientes** (gráficos/tabelas)
+
+#### 11.2. Fila de Processamento
+**Tabela com colunas**:
+- ID do Lote
+- Cliente / CNPJ
+- Competência
+- Status: Em fila / Executando / Concluído / Com falha
+- Progresso: Barra de progresso + percentual
+- Iniciado em: Data/hora
+- Tempo decorrido: X minutos
+- Ações: Ver detalhes / Cancelar (se em execução)
+
+**Filtros**:
+- Por status
+- Por cliente
+- Por competência
+- Por data
+
+#### 11.3. Métricas Gerais (Cards)
+**Cards com indicadores**:
+- **Lotes processados hoje**: X
+- **Lotes em processamento**: Y
+- **Lotes com falha**: Z
+- **Total de correções aplicadas (hoje)**: N
+- **Impacto total (hoje)**: R$ X.XXX,XX
+- **Taxa de sucesso**: X% (lotes concluídos / total)
+
+#### 11.4. Histórico Recente
+**Tabela com colunas**:
+- Data/Hora
+- Cliente
+- Competência
+- Status
+- Total de divergências
+- Correções aplicadas
+- Impacto
+- Ações: Ver detalhes / Reprocessar / Download
+
+**Ordenação**: Por data (mais recente primeiro)
+
+**Paginação**: 20 itens por página
+
+#### 11.5. Top Erros / Top Clientes
+**Gráficos/Tabelas**:
+- **Top 10 Erros mais frequentes**: Tabela com tipo de erro, quantidade, % do total
+- **Top 10 Clientes com mais divergências**: Tabela com cliente, quantidade, tendência
+- **Gráfico de tendência**: Divergências por dia/semana (linha temporal)
+
+#### 11.6. Funcionalidades do Dashboard
+- **Reprocessar**: Botão para reprocessar um lote (abre modal de confirmação)
+- **Download em lote**: Selecionar múltiplos lotes e baixar relatórios
+- **Export de métricas**: Exportar métricas para Excel/PDF
+- **Notificações**: Alertas quando lote concluir ou falhar (opcional)
+
+### 4. Aprovação em 2 Níveis
+
+#### 4.1. Nível 1 - Aprovar o PLANO DE CORREÇÕES
+O sistema gera um Plano com:
+- Lista de correções (antes/depois, regra aplicada, score, impacto)
+- Totais por tipo de correção
+- Itens bloqueados (REVISAR) que NÃO serão aplicados
+- Impacto estimado total na apuração
+
+Ação do usuário:
+- "Aprovar plano e gerar SPED corrigido"
+- "Aprovar apenas correções de ALTA CONFIANÇA" (modo seguro default)
+
+#### 4.2. Perfis de Execução
+- **SEGURO** (default): Score ≥ 80, sem ajustes E111/C197, sem devolução/complementar
+- **INTERMEDIÁRIO**: Score ≥ 70 + mais casos cobertos
+- **AVANÇADO**: Permite aplicar com risco maior (com avisos)
+
+#### 4.3. Nível 2 - Confirmação Final
+Antes de aplicar:
+- Checkbox: "Ciente que será gerado SPED retificado e preciso validar no PVA"
+- Checkbox: "Vou arquivar o relatório e o SPED original"
+- Se impacto alto: exigir revisão ou digitar "CONFIRMO"
+- Botão final: "Aplicar Correções"
+
+#### 4.4. Simulação (Modo Prévia)
+Botão: "Simular Correções"
+- Mostra o que mudaria (antes/depois)
+- Qual o impacto estimado no E110
+- Sem alterar o arquivo ainda
+
+### 5. Execução das Correções (Feedback em Tempo Real)
+
+Exibir eventos em sequência:
+- ✅ Backup do SPED original criado
+- ✅ Aplicadas N correções (C190 recalculado)
+- ⚠️ M itens pulados (REVISAR: devolução/ajustes)
+- ✅ Validação pós-correção: OK
+- 📦 SPED corrigido pronto para download
+- 📄 Relatório de auditoria pronto para download
+
+### 6. Pacote Final de Download
+
+Entregar sempre:
+1. **SPED_corrigido.txt**
+2. **Relatorio_conferencias.pdf/html/txt**
+3. **audit_log.json** (antes/depois por registro, regra, usuário, timestamp)
+
+Opcional (muito útil):
+4. **diff_sped.txt** (diferenças no estilo "patch")
+5. **plano_correcoes.json** (o que foi aprovado)
+
+---
+
+## Technical Architecture
+
+### 1. Sistema de Componentes
+
+#### 1.1. Backend (Node.js/TypeScript)
+- **Routes**: `/api/sped/v2/validar`, `/api/sped/v2/correcoes`, etc.
+- **Controllers**: SpedV2ValidationController, SpedV2CorrectionsController
+- **Services**: SpedV2ValidationService (orquestração), SpedV2CanonicalService, SpedV2MatchingService
+- **Python Integration**: Scripts Python mantidos, integração via API
+
+#### 1.2. Python (Motor de Validação)
+**Estrutura proposta**:
+- `canonical/`: Modelo canônico (documento.py, item.py, tributo.py)
+- `normalization/`: Normalizadores (xml_normalizer.py, efd_normalizer.py)
+- `matching/`: Matching robusto (match_documentos.py, match_itens.py, match_robusto.py existente)
+- `validation/`: Validadores (efd_internal_validator.py, xml_efd_validator.py)
+- `classification/`: Classificador (matriz_legitimacao.py, score_calculator.py)
+- `corrections/`: Correções (corrector.py, guardrails.py)
+- `packs/`: Packs por segmento (comercio.py, bebidas.py, industria.py, ecommerce.py)
+
+#### 1.3. Frontend (React/TypeScript)
+- **Páginas**: 
+  - `SpedValidacaoV2.tsx` (nova aba - Wizard)
+  - `SpedValidacaoV2Dashboard.tsx` (Dashboard de operações/histórico)
+- **Componentes Wizard (Visão A)**:
+  - `Step1ClientProfile.tsx`: Seleção do cliente e perfil fiscal
+  - `Step2FileUpload.tsx`: Upload com pré-check automático
+  - `Step3ProcessingPipeline.tsx`: Pipeline de processamento com feedback
+  - `Step4ResultsView.tsx`: Lista de cards com filtros
+  - `Step5CorrectionPlan.tsx`: Plano de correções
+  - `Step6Approval.tsx`: Confirmação final
+  - `Step7Execution.tsx`: Execução e entrega
+  - `EvidenceDrawer.tsx`: Drawer/Modal de evidências (3 abas)
+  - `DivergenceCard.tsx`: Card de divergência
+  - `SummaryPanel.tsx`: Painel-resumo (sempre visível)
+  - `DownloadPackage.tsx`: Pacote de download
+- **Componentes Dashboard (Visão B)**:
+  - `OperationsDashboard.tsx`: Dashboard principal
+  - `ProcessingQueue.tsx`: Fila de processamento
+  - `HistoryView.tsx`: Histórico de validações
+  - `MetricsPanel.tsx`: Métricas (top erros, top clientes)
+  - `ReprocessButton.tsx`: Botão de reprocessamento
+
+### 2. Data Models
+
+#### 2.1. Modelo Canônico (Python)
+```python
+@dataclass
+class DocumentoFiscal:
+    chave_nfe: str
+    modelo: int
+    serie: int
+    numero: int
+    data_emissao: datetime
+    finalidade: str
+    tp_nf: str  # entrada/saída
+    emitente: Participante
+    destinatario: Participante
+    totais: TotaisDocumento
+    itens: List[ItemFiscal]
+
+@dataclass
+class ItemFiscal:
+    n_item: int
+    cfop: int
+    ncm: str
+    cest: Optional[str]
+    u_com: str
+    q_com: float
+    v_un_com: float
+    v_prod: float
+    icms: TributoICMS
+    icms_st: Optional[TributoICMSST]
+    ipi: Optional[TributoIPI]
+    # ...
+
+@dataclass
+class Divergencia:
+    tipo: str  # ERRO, REVISAR, LEGITIMO
+    score: float  # 0-100
+    impacto: str  # alto, medio, baixo, nenhum
+    causa_provavel: str
+    evidencias_xml: Dict
+    evidencias_sped: Dict
+    regra_aplicada: str
+    correcao_sugerida: Optional[Correcao]
+```
+
+#### 2.2. Banco de Dados (MySQL)
+**Tabelas propostas**:
+- `sped_v2_validations`: Validações executadas
+- `sped_v2_divergences`: Divergências encontradas
+- `sped_v2_corrections`: Correções aplicadas
+- `sped_v2_audit_log`: Log de auditoria (antes/depois)
+- `sped_v2_correction_plans`: Planos de correção aprovados
+
+### 3. APIs e Integrações
+
+#### 3.1. Endpoints Principais
+- `POST /api/sped/v2/validar`: Iniciar validação
+- `GET /api/sped/v2/validar/:id/status`: Status da validação
+- `GET /api/sped/v2/validar/:id/resultados`: Resultados da validação
+- `POST /api/sped/v2/validar/:id/plano-correcoes`: Gerar plano de correções
+- `POST /api/sped/v2/correcoes/aplicar`: Aplicar correções
+- `GET /api/sped/v2/correcoes/:id/download`: Download do pacote
+
+#### 3.2. Python Integration
+- Scripts Python mantidos (compatibilidade)
+- Novos módulos Python (canonical, normalization, classification)
+- Comunicação via JSON (stdout/stdin ou API REST)
+
+### 4. Infraestrutura
+
+#### 4.1. Processamento
+- Processamento assíncrono (fila de jobs)
+- Streaming de progresso (SSE ou WebSocket)
+- Cache de resultados intermediários
+- Limpeza automática de arquivos temporários
+
+#### 4.2. Armazenamento
+- Arquivos temporários: `/tmp/sped_v2_validations/:id/`
+- Resultados: MySQL (metadados) + Filesystem (arquivos grandes)
+- Auditoria: MySQL (audit_log) com histórico completo
+
+---
+
+## Development Roadmap
+
+### FASE 1: Fundação (Core Architecture)
+**Objetivo**: Estabelecer arquitetura em 3 camadas e modelo canônico.
+
+**Entregas**:
+1. Modelo Canônico Fiscal (Python)
+   - Classes: DocumentoFiscal, ItemFiscal, TributoICMS, TributoICMSST, etc.
+   - Parsers: XML → Modelo Canônico, EFD → Modelo Canônico
+   - Testes unitários
+
+2. Camada A - Normalização
+   - XML Normalizer (parse XML → Modelo Canônico)
+   - EFD Normalizer (parse EFD → Modelo Canônico)
+   - Unificação de conceitos fiscais
+   - Testes de normalização
+
+3. Estrutura Base Backend
+   - Rotas `/api/sped/v2/*`
+   - Controller base
+   - Service base (orquestração)
+   - Integração Python (mantendo compatibilidade)
+
+4. Estrutura Base Frontend
+   - Nova aba "Validação SPED v2.0"
+   - Componentes base (PipelineView, SummaryPanel)
+   - Integração com API
+
+**Critério de Sucesso**: Sistema consegue normalizar XML e EFD para modelo canônico e exibir pipeline básico.
+
+---
+
+### FASE 2: Validação Interna da EFD (Camada B)
+**Objetivo**: Validar consistência do SPED internamente antes do confronto com XML.
+
+**Entregas**:
+1. Validador Interno da EFD (Python)
+   - Validação C170 → C190 (totalização por CST/CFOP/ALIQ)
+   - Validação C190 → C100 (valores do documento)
+   - Validação C100 → E110/E111 (impacto na apuração)
+   - Detecção de ajustes (C197/E111)
+   - Validação de cadastros (0150/0190/0200)
+
+2. Frontend - Visualização de Validações Internas
+   - Exibir resultados da validação interna
+   - Cards de inconsistências encontradas
+   - Evidências SPED lado a lado
+
+**Critério de Sucesso**: Sistema detecta e exibe inconsistências internas da EFD antes do confronto com XML.
+
+---
+
+### FASE 3: Matching Robusto e Confronto (Camada C - Parte 1)
+**Objetivo**: Implementar matching robusto e confronto básico XML × EFD.
+
+**Entregas**:
+1. Matching Robusto de Documentos (Python)
+   - Match por chave NF-e (prioritário)
+   - Fallback: match por (CNPJ + modelo + série + número + data + vNF)
+   - Fallback probabilístico: tolerâncias + heurística
+   - Integração com match_robusto.py existente
+
+2. Matching Robusto de Itens (Python)
+   - Integração com match_items_robusto.py existente
+   - Inferência de CFOP/CST (quando item não está no SPED)
+   - Score de matching
+
+3. Confronto Básico XML × EFD (Python)
+   - Comparação conceitual (não campo a campo)
+   - Consideração de contexto (CFOP, CST, finalidade)
+   - Detecção de divergências básicas
+
+4. Frontend - Visualização de Matching e Divergências
+   - Exibir documentos conciliados / não conciliados
+   - Cards de divergências encontradas
+   - Indicadores de matching (score, tipo)
+
+**Critério de Sucesso**: Sistema consegue fazer matching robusto e detectar divergências básicas entre XML e EFD.
+
+---
+
+### FASE 4: Matriz de Legitimação e Classificação
+**Objetivo**: Classificar divergências em ERRO/REVISAR/LEGÍTIMO com score de confiança.
+
+**Entregas**:
+1. Matriz de Legitimação (Python)
+   - Classificador: ERRO / REVISAR / LEGÍTIMO
+   - Features de contexto (CFOP, CST, finalidade, ajustes)
+   - Regras de divergência legítima (whitelist)
+   - Packs por segmento (comercio, bebidas, industria, ecommerce)
+
+2. Score de Confiança (Python)
+   - Cálculo de score (0-100)
+   - Fatores: match, impacto, ajustes, CFOP, ST
+   - Limiares: 80-100 (ERRO), 50-79 (REVISAR), 0-49 (LEGÍTIMO)
+
+3. Motor de Totalização (Python)
+   - Cadeia C170 → C190
+   - Cadeia C190 → C100
+   - Cadeia C100 → E110 (impacto)
+   - Tolerâncias (arredondamento)
+
+4. Frontend - Visualização de Classificação
+   - Cards com classificação (ERRO/REVISAR/LEGÍTIMO)
+   - Score de confiança visual
+   - Impacto (alto/médio/baixo/nenhum)
+   - Filtros por classificação e impacto
+
+**Critério de Sucesso**: Sistema classifica divergências corretamente e calcula score de confiança.
+
+---
+
+### FASE 5: Evidências e Explicabilidade
+**Objetivo**: Mostrar evidências lado a lado e explicar regras aplicadas.
+
+**Entregas**:
+1. Gerador de Evidências (Python)
+   - Extrair tags XML relevantes (ICMS/ST/FCP)
+   - Extrair linhas SPED relevantes (C100/C170/C190/E110/E111)
+   - Explicação da regra aplicada
+
+2. Frontend - Evidências Lado a Lado
+   - Componente EvidenceView (3 abas: XML, SPED, Regra)
+   - Visualização de tags XML formatadas
+   - Visualização de linhas SPED formatadas
+   - Explicação da regra (texto + highlights)
+
+**Critério de Sucesso**: Usuário consegue ver evidências completas e entender por que uma divergência foi classificada.
+
+---
+
+### FASE 6: Plano de Correções e Aprovação
+**Objetivo**: Gerar plano de correções e sistema de aprovação em 2 níveis.
+
+**Entregas**:
+1. Gerador de Plano de Correções (Python)
+   - Lista de correções (antes/depois, regra, score, impacto)
+   - Totais por tipo de correção
+   - Itens bloqueados (REVISAR)
+   - Impacto estimado total
+
+2. Frontend - Plano de Correções
+   - Componente CorrectionPlanView
+   - Lista de correções com antes/depois
+   - Filtros e agrupamentos
+   - Perfis de execução (SEGURO/INTERMEDIÁRIO/AVANÇADO)
+
+3. Frontend - Modal de Aprovação
+   - Componente ApprovalModal
+   - Nível 1: Aprovar plano
+   - Nível 2: Confirmação final (checklists, trava por impacto)
+   - Simulação (modo prévia)
+
+**Critério de Sucesso**: Usuário consegue gerar, revisar e aprovar plano de correções com segurança.
+
+---
+
+### FASE 7: Auto-Correção com Guardrails
+**Objetivo**: Implementar autocorreção segura com guardrails e rollback.
+
+**Entregas**:
+1. Motor de Correção (Python)
+   - Aplicação de correções (C100, C170, C190)
+   - Guardrails (verificar condições antes de corrigir)
+   - Recalculação de totais (C190 quando necessário)
+   - Validação pós-correção
+
+2. Sistema de Auditoria (Backend/Frontend)
+   - Log antes/depois (por campo)
+   - Registro de regra aplicada
+   - Registro de usuário (se aplicável)
+   - Rollback por lote
+
+3. Frontend - Execução de Correções
+   - Componente ExecutionView (feedback em tempo real)
+   - Eventos: backup, correções aplicadas, itens pulados, validação, download
+   - Log técnico (detalhes)
+
+4. Frontend - Pacote de Download
+   - Componente DownloadPackage
+   - SPED corrigido
+   - Relatório de conferências
+   - Audit log (JSON)
+   - Diff SPED (opcional)
+   - Plano de correções (JSON, opcional)
+
+**Critério de Sucesso**: Sistema aplica correções com segurança, registra auditoria completa e permite rollback.
+
+---
+
+### FASE 8: Packs por Segmento e Melhorias
+**Objetivo**: Implementar packs por segmento e melhorias finais.
+
+**Entregas**:
+1. Packs por Segmento (Python)
+   - Pack Comércio Geral (regras, CFOPs típicos, tolerâncias)
+   - Pack Bebidas (ST/PMPF/MVA, CEST críticos)
+   - Pack Indústria (IPI, insumos, Bloco G)
+   - Pack E-commerce (DIFAL/FCP, interestadual)
+
+2. Configuração de Cliente
+   - Cadastro fiscal do cliente (regime, segmento, CFOPs esperados)
+   - Seleção de pack(s) por validação
+   - Persistência no banco
+
+3. Melhorias Finais
+   - Performance (otimizações)
+   - UX (polimento, acessibilidade)
+   - Documentação (usuário + técnico)
+   - Testes (integração, E2E)
+
+**Critério de Sucesso**: Sistema suporta múltiplos segmentos e está pronto para produção.
+
+---
+
+## Logical Dependency Chain
+
+### Ordem de Desenvolvimento (Fundação → Funcionalidades)
+
+**FASE 1 (Fundação)** deve vir primeiro:
+- Modelo Canônico é base para tudo
+- Normalização é pré-requisito para validação e confronto
+- Estrutura base (backend/frontend) permite desenvolvimento incremental
+
+**FASE 2 (Validação Interna)** pode ser desenvolvida em paralelo após FASE 1:
+- Não depende de confronto XML × EFD
+- Usa modelo canônico da FASE 1
+- Pode ser testada independentemente
+
+**FASE 3 (Matching e Confronto)** depende de FASE 1:
+- Usa modelo canônico
+- Matching robusto já existe (pode ser integrado/evoluído)
+- Confronto básico é pré-requisito para classificação
+
+**FASE 4 (Classificação)** depende de FASE 3:
+- Precisa de divergências detectadas
+- Usa contexto do matching
+- Score e classificação são base para correções
+
+**FASE 5 (Evidências)** pode ser desenvolvida em paralelo após FASE 4:
+- Precisa de divergências classificadas
+- Melhora UX significativamente
+- Não bloqueia desenvolvimento de correções
+
+**FASE 6 (Plano e Aprovação)** depende de FASE 4:
+- Precisa de divergências classificadas
+- Gera plano baseado em classificação
+- Não aplica correções ainda (apenas planeja)
+
+**FASE 7 (Correção)** depende de FASE 6:
+- Precisa de plano aprovado
+- Aplica correções baseadas no plano
+- Sistema de auditoria é crítico
+
+**FASE 8 (Packs e Melhorias)** pode ser desenvolvida em paralelo:
+- Packs são extensões (não bloqueiam core)
+- Melhorias finais são polimento
+
+### Getting Quickly to Something Usable
+
+**MVP Visível** (após FASE 1 + parte de FASE 3):
+- Usuário faz upload de SPED e XML
+- Sistema normaliza e faz matching básico
+- Exibe pipeline de processamento
+- Mostra documentos conciliados / não conciliados
+- Interface funcional (mesmo que básica)
+
+**MVP Funcional** (após FASE 1-4):
+- Validação completa (interna + confronto)
+- Classificação de divergências
+- Visualização de resultados
+- Sistema utilizável (mesmo que sem correções automáticas)
+
+**MVP Completo** (após FASE 1-7):
+- Todas as funcionalidades core
+- Correções automáticas com guardrails
+- Sistema pronto para uso em produção
+
+---
+
+## Risks and Mitigations
+
+### 1. Complexidade Técnica
+
+**Risco**: Arquitetura em 3 camadas e modelo canônico são complexos.
+
+**Mitigação**:
+- Desenvolvimento incremental (FASE por FASE)
+- Reutilizar código existente (match_robusto.py, validators.py)
+- Testes unitários desde o início
+- Documentação técnica detalhada
+
+### 2. Compatibilidade com Sistema Atual
+
+**Risco**: Quebrar sistema atual de validação SPED.
+
+**Mitigação**:
+- Criar nova aba "Validação SPED v2.0" (não alterar atual)
+- Manter rotas antigas funcionando
+- Migração gradual (usuário escolhe qual versão usar)
+- Compatibilidade de dados (quando possível)
+
+### 3. Performance
+
+**Risco**: Normalização e matching podem ser lentos para arquivos grandes.
+
+**Mitigação**:
+- Processamento assíncrono (já implementado)
+- Cache de resultados intermediários
+- Otimizações (paralelização, índices)
+- Limites de tamanho (quando necessário)
+
+### 4. Falsos Positivos (Ainda)
+
+**Risco**: Mesmo com matriz de legitimação, ainda podem haver falsos positivos.
+
+**Mitigação**:
+- Matriz de legitimação conservadora (errar para REVISAR)
+- Packs por segmento bem calibrados
+- Feedback do usuário (marcar como legítimo)
+- Melhoria contínua baseada em dados reais
+
+### 5. Autocorreção Perigosa
+
+**Risco**: Autocorreção pode corrigir errado e gerar passivo.
+
+**Mitigação**:
+- Guardrails rigorosos (não corrigir quando incerto)
+- Aprovação em 2 níveis
+- Auditoria completa (antes/depois)
+- Rollback sempre disponível
+- Modo SEGURO como padrão
+
+### 6. Dependências Externas
+
+**Risco**: Dependências de bibliotecas Python ou Node.js podem quebrar.
+
+**Mitigação**:
+- Versionamento de dependências (requirements.txt, package-lock.json)
+- Testes de integração
+- Docker (isolamento, quando possível)
+- Documentação de dependências
+
+---
+
+## Appendix
+
+### A. Referências Técnicas
+
+#### Documentos da Pasta "SPED 2.0"
+- `roteiro_conferencia_xml_sped_efd_es.txt`: Roteiro completo de evolução do motor
+- `ux_processamento_aprovacao_sped.txt`: Guia de UX para processamento e aprovação
+- `bibliografia.txt`: Base de conhecimento (Guias Práticos, Manuais, Convênios)
+
+#### Documentos Atuais do Sistema
+- `python/sped/MATCHING_ROBUSTO.md`: Sistema de matching robusto (já implementado)
+- `python/sped/SPED_INDEX_VALIDATION.md`: Validação de índices do SPED
+- `python/sped/validators.py`: Validador atual (base para evolução)
+
+### B. Estrutura de Arquivos Proposta
+
+```
+python/sped/v2/
+├── canonical/
+│   ├── __init__.py
+│   ├── documento.py
+│   ├── item.py
+│   └── tributo.py
+├── normalization/
+│   ├── __init__.py
+│   ├── xml_normalizer.py
+│   └── efd_normalizer.py
+├── matching/
+│   ├── __init__.py
+│   ├── match_documentos.py
+│   └── match_itens.py (usa match_items_robusto.py existente)
+├── validation/
+│   ├── __init__.py
+│   ├── efd_internal_validator.py
+│   └── xml_efd_validator.py
+├── classification/
+│   ├── __init__.py
+│   ├── matriz_legitimacao.py
+│   └── score_calculator.py
+├── corrections/
+│   ├── __init__.py
+│   ├── corrector.py
+│   └── guardrails.py
+└── packs/
+    ├── __init__.py
+    ├── base.py
+    ├── comercio.py
+    ├── bebidas.py
+    ├── industria.py
+    └── ecommerce.py
+```
+
+### C. Principais Mudanças em Relação ao Sistema Atual
+
+1. **Arquitetura**: 3 camadas (Normalização → Validação Interna → Confronto) vs comparação direta
+2. **Modelo Canônico**: Unificação de conceitos fiscais antes da comparação
+3. **Classificação**: ERRO/REVISAR/LEGÍTIMO com score vs apenas divergências
+4. **UX**: Pipeline visível, evidências lado a lado, aprovação em 2 níveis
+5. **Guardrails**: Autocorreção segura com condições rigorosas
+6. **Packs**: Packs por segmento mais robustos e configuráveis
+
+### D. Compatibilidade e Migração
+
+- **Sistema Atual**: Mantido funcionando (rota `/api/sped/validar`)
+- **Sistema Novo**: Nova rota `/api/sped/v2/validar` (nova aba no frontend)
+- **Migração**: Gradual (usuário escolhe qual versão usar)
+- **Dados**: Compartilhamento quando possível (arquivos temporários, resultados)
+- **Código**: Reutilização de componentes existentes (match_robusto.py, parsers.py, etc.)
+

@@ -77,5 +77,10 @@ router.post('/catalog/consulta-centro-custo', (req, res) => {
   catalogController.consultaCentroCusto(req, res);
 });
 
+// POST /api/sci/catalog/consulta-faturamento - Consulta de faturamento (TPEDIDOS_BI_FAT_RESULTADOS)
+router.post('/catalog/consulta-faturamento', (req, res) => {
+  catalogController.consultaFaturamento(req, res);
+});
+
 export default router;
 
