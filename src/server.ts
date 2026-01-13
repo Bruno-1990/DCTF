@@ -28,6 +28,7 @@ import situacaoFiscalRoutes from './routes/situacao-fiscal';
 import hostDadosRoutes from './routes/host-dados';
 import sciRoutes from './routes/sci';
 import spedRoutes from './routes/sped';
+import spedV2KnowledgeRoutes from './routes/sped-v2-knowledge';
 
 class Server {
   private app: express.Application;
@@ -173,6 +174,7 @@ class Server {
     console.log('   - GET /api/sped/correcoes/:validationId/download');
     
     this.app.use('/api/sped', spedRoutes);
+    this.app.use('/api/sped/v2/knowledge', spedV2KnowledgeRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {
