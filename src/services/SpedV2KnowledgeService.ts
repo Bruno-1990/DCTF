@@ -194,5 +194,106 @@ export class SpedV2KnowledgeService {
       };
     }
   }
+
+  /**
+   * Buscar regras estruturadas por categoria/tipo/período
+   */
+  async getRules(filters: {
+    categoria?: string;
+    tipo?: string;
+    periodo?: string; // MM/YYYY
+    document_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ApiResponse<any[]>> {
+    try {
+      let query = `
+        SELECT 
+          id,
+          rule_type,
+          rule_category,
+          rule_description,
+          rule_condition,
+          legal_reference,
+          article_reference,
+          section_reference,
+          vigencia_inicio,
+          vigencia_fim,
+          document_id,
+          metadata,
+          created_at,
+          updated_at
+        FROM sped_v2_legal_rules
+        WHERE 1=1
+      `;
+      
+      const params: any[] = [];
+      
+      // Filtro por categoria SPED
+      if (filters.categoria) {
+        query += ` AND rule_category = ?`;
+        params.push(filters.categoria);
+      }
+      
+      // Filtro por tipo de regra
+      if (filters.tipo) {
+        query += ` AND rule_type = ?`;
+        params.push(filters.tipo);
+      }
+      
+      // Filtro por período (vigência)
+      if (filters.periodo) {
+        // Validar formato MM/YYYY
+        const periodoMatch = filters.periodo.match(/^(\d{2})\/(\d{4})$/);
+        if (!periodoMatch) {
+          return {
+            success: false,
+            error: 'Formato de período inválido. Use MM/YYYY (ex: 01/2025)',
+            data: null
+          };
+        }
+        
+        const [, month, year] = periodoMatch;
+        const periodoDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+        const periodoDateStr = periodoDate.toISOString().split('T')[0];
+        
+        query += ` AND vigencia_inicio <= ? AND (vigencia_fim IS NULL OR vigencia_fim >= ?)`;
+        params.push(periodoDateStr, periodoDateStr);
+      }
+      
+      // Filtro por documento
+      if (filters.document_id) {
+        query += ` AND document_id = ?`;
+        params.push(filters.document_id);
+      }
+      
+      query += ` ORDER BY rule_category ASC, rule_type ASC, vigencia_inicio DESC`;
+      
+      // Paginação
+      if (filters.limit) {
+        query += ` LIMIT ?`;
+        params.push(filters.limit);
+        
+        if (filters.offset) {
+          query += ` OFFSET ?`;
+          params.push(filters.offset);
+        }
+      }
+      
+      const rules = await executeQuery<any>(query, params);
+      
+      return {
+        success: true,
+        data: rules || []
+      };
+    } catch (error: any) {
+      console.error('[SpedV2KnowledgeService] Erro ao buscar regras:', error);
+      return {
+        success: false,
+        error: error.message || 'Erro ao buscar regras',
+        data: null
+      };
+    }
+  }
 }
 

@@ -94,15 +94,29 @@ export class SpedV2KnowledgeController {
   /**
    * Buscar regras estruturadas
    * GET /api/sped/v2/knowledge/rules
+   * Query params: categoria, tipo, periodo (MM/YYYY), document_id, limit, offset
    */
   async getRules(req: Request, res: Response): Promise<void> {
     try {
-      // TODO: Implementar na subtask 37.4
-      res.status(200).json({
-        success: true,
-        data: [],
-        message: 'Endpoint em implementação'
-      } as ApiResponse);
+      const { categoria, tipo, periodo, document_id, limit, offset } = req.query;
+      
+      const filters = {
+        categoria: categoria as string | undefined,
+        tipo: tipo as string | undefined,
+        periodo: periodo as string | undefined,
+        document_id: document_id as string | undefined,
+        limit: limit ? parseInt(limit as string, 10) : undefined,
+        offset: offset ? parseInt(offset as string, 10) : undefined,
+      };
+      
+      const result = await this.service.getRules(filters);
+      
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      
+      res.status(200).json(result);
     } catch (error: any) {
       res.status(500).json({
         success: false,
