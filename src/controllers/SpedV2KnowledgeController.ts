@@ -51,15 +51,37 @@ export class SpedV2KnowledgeController {
   /**
    * Busca semântica (RAG)
    * GET /api/sped/v2/knowledge/query
+   * Query params: q (obrigatório), n_results, document_id, min_score
    */
   async queryDocuments(req: Request, res: Response): Promise<void> {
     try {
-      // TODO: Implementar na subtask 37.3
-      res.status(200).json({
-        success: true,
-        data: [],
-        message: 'Endpoint em implementação'
-      } as ApiResponse);
+      const { q, n_results, document_id, min_score } = req.query;
+      
+      // Validar query obrigatória
+      if (!q || (typeof q === 'string' && q.trim().length === 0)) {
+        res.status(400).json({
+          success: false,
+          error: 'Parâmetro "q" (query) é obrigatório e não pode estar vazio',
+          data: null
+        } as ApiResponse);
+        return;
+      }
+      
+      const filters = {
+        query: q as string,
+        n_results: n_results ? parseInt(n_results as string, 10) : undefined,
+        document_id: document_id as string | undefined,
+        min_score: min_score ? parseFloat(min_score as string) : undefined,
+      };
+      
+      const result = await this.service.queryDocuments(filters);
+      
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      
+      res.status(200).json(result);
     } catch (error: any) {
       res.status(500).json({
         success: false,

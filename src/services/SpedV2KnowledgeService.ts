@@ -21,6 +21,16 @@ export interface LegalDocument {
   updated_at: string;
 }
 
+export interface QueryResult {
+  chunk_id: string;
+  chunk_text: string;
+  score: number;
+  metadata: any;
+  document_id?: string;
+  section_title?: string;
+  article_number?: string;
+}
+
 export class SpedV2KnowledgeService {
   /**
    * Listar documentos por período/vigência com filtros
@@ -112,6 +122,74 @@ export class SpedV2KnowledgeService {
       return {
         success: false,
         error: error.message || 'Erro ao listar documentos',
+        data: null
+      };
+    }
+  }
+
+  /**
+   * Busca semântica (RAG) com filtros
+   */
+  async queryDocuments(filters: {
+    query: string;
+    n_results?: number;
+    document_id?: string;
+    min_score?: number;
+  }): Promise<ApiResponse<QueryResult[]>> {
+    try {
+      // Validar query
+      if (!filters.query || filters.query.trim().length === 0) {
+        return {
+          success: false,
+          error: 'Query é obrigatória e não pode estar vazia',
+          data: null
+        };
+      }
+
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const path = require('path');
+      const execAsync = promisify(exec) as any;
+
+      // Caminho do script Python
+      const pythonScript = path.join(__dirname, '../../../python/sped/v2/knowledge/query_rag.py');
+      
+      // Construir comando
+      const args = [
+        filters.query,
+        String(filters.n_results || 5),
+        filters.document_id || '',
+        String(filters.min_score || 0.3)
+      ];
+      
+      const command = `python "${pythonScript}" "${args[0]}" "${args[1]}" "${args[2]}" "${args[3]}"`;
+
+      // Executar script Python
+      const { stdout } = await execAsync(command, {
+        cwd: path.join(__dirname, '../../../python/sped/v2/knowledge'),
+        maxBuffer: 10 * 1024 * 1024 // 10MB
+      });
+
+      // Parsear resultado JSON
+      const result = JSON.parse(stdout.trim());
+      
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || 'Erro na busca semântica',
+          data: null
+        };
+      }
+
+      return {
+        success: true,
+        data: result.data || []
+      };
+    } catch (error: any) {
+      console.error('[SpedV2KnowledgeService] Erro na busca semântica:', error);
+      return {
+        success: false,
+        error: error.message || 'Erro ao executar busca semântica',
         data: null
       };
     }
