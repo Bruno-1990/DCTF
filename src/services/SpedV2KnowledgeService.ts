@@ -295,5 +295,83 @@ export class SpedV2KnowledgeService {
       };
     }
   }
+
+  /**
+   * Gerar regra consultando documentos com contexto RAG
+   */
+  async generateRule(filters: {
+    rule_description: string;
+    periodo?: string; // MM/YYYY
+    n_context_chunks?: number;
+  }): Promise<ApiResponse<any>> {
+    try {
+      // Validar rule_description
+      if (!filters.rule_description || filters.rule_description.trim().length === 0) {
+        return {
+          success: false,
+          error: 'rule_description é obrigatória e não pode estar vazia',
+          data: null
+        };
+      }
+
+      // Validar período se fornecido
+      if (filters.periodo) {
+        const periodoMatch = filters.periodo.match(/^(\d{2})\/(\d{4})$/);
+        if (!periodoMatch) {
+          return {
+            success: false,
+            error: 'Formato de período inválido. Use MM/YYYY (ex: 01/2025)',
+            data: null
+          };
+        }
+      }
+
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const path = require('path');
+      const execAsync = promisify(exec) as any;
+
+      // Caminho do script Python
+      const pythonScript = path.join(__dirname, '../../../python/sped/v2/knowledge/generate_rule.py');
+      
+      // Construir comando
+      const args = [
+        filters.rule_description,
+        filters.periodo || '',
+        String(filters.n_context_chunks || 5)
+      ];
+      
+      const command = `python "${pythonScript}" "${args[0]}" "${args[1]}" "${args[2]}"`;
+
+      // Executar script Python
+      const { stdout } = await execAsync(command, {
+        cwd: path.join(__dirname, '../../../python/sped/v2/knowledge'),
+        maxBuffer: 10 * 1024 * 1024 // 10MB
+      });
+
+      // Parsear resultado JSON
+      const result = JSON.parse(stdout.trim());
+      
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || 'Erro ao gerar regra',
+          data: null
+        };
+      }
+
+      return {
+        success: true,
+        data: result.data || null
+      };
+    } catch (error: any) {
+      console.error('[SpedV2KnowledgeService] Erro ao gerar regra:', error);
+      return {
+        success: false,
+        error: error.message || 'Erro ao executar geração de regra',
+        data: null
+      };
+    }
+  }
 }
 

@@ -129,15 +129,26 @@ export class SpedV2KnowledgeController {
   /**
    * Gerar regra consultando documentos
    * POST /api/sped/v2/knowledge/generate-rule
+   * Body: { rule_description (obrigatório), periodo (opcional), n_context_chunks (opcional) }
    */
   async generateRule(req: Request, res: Response): Promise<void> {
     try {
-      // TODO: Implementar na subtask 37.5
-      res.status(200).json({
-        success: true,
-        data: null,
-        message: 'Endpoint em implementação'
-      } as ApiResponse);
+      const { rule_description, periodo, n_context_chunks } = req.body;
+      
+      const filters = {
+        rule_description: rule_description as string,
+        periodo: periodo as string | undefined,
+        n_context_chunks: n_context_chunks ? parseInt(n_context_chunks as string, 10) : undefined,
+      };
+      
+      const result = await this.service.generateRule(filters);
+      
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      
+      res.status(200).json(result);
     } catch (error: any) {
       res.status(500).json({
         success: false,
