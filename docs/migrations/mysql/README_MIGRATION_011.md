@@ -104,3 +104,4 @@ WHERE TABLE_SCHEMA = 'dctf_web'
 - A formatação do CPF é feita apenas na interface do usuário
 
 
+

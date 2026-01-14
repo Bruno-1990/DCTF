@@ -89,3 +89,4 @@ Um relatório completo será salvo em `logs/relatorio-regimes-[timestamp].json`
 Os logs detalhados são salvos em:
 - `logs/relatorio-regimes-[timestamp].json` - Relatório completo com todos os detalhes
 
+

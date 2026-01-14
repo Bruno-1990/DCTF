@@ -10,7 +10,11 @@ import {
   ClockIcon,
   CodeBracketIcon,
   DocumentCheckIcon,
+  CurrencyDollarIcon,
 } from '@heroicons/react/24/outline';
+import {
+  PaperClipIcon,
+} from '@heroicons/react/24/solid';
 
 const navigation = [
   { name: 'Visão Geral', href: '/', icon: HomeIcon },
@@ -24,14 +28,17 @@ const navigation = [
   { name: 'SCI - Gerador SQL', href: '/sci/gerador-sql', icon: CodeBracketIcon },
   { name: 'SPED Validação', href: '/sped', icon: DocumentCheckIcon },
   { name: 'SPED Validação v2.0', href: '/sped/v2', icon: DocumentCheckIcon },
-  { name: 'IRPF 2025', href: '/irpf-2025', icon: ChartBarIcon },
+  { name: 'IRPF 2026', href: '/irpf-2026', icon: CurrencyDollarIcon },
 ];
 
 interface SidebarProps {
   onClose?: () => void;
+  pinned?: boolean;
+  onTogglePin?: () => void;
+  lockedClosed?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ onClose, pinned = false, onTogglePin, lockedClosed = false }) => {
   const location = useLocation();
 
   const isActive = (path: string) => {
@@ -44,18 +51,32 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   return (
     <aside className="w-64 bg-white">
       <div className="p-5">
-        <div className="mb-5">
+        <div className="mb-5 flex items-center justify-between">
           <h2 
-            className="text-base font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors duration-200 select-none"
+            className="text-base font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors duration-200 select-none flex-1"
             onClick={() => {
-              if (onClose && window.innerWidth >= 1024) {
+              if (onClose && window.innerWidth >= 1024 && !pinned && !lockedClosed) {
                 onClose();
               }
             }}
-            title="Clique para fechar o menu (ou pressione ESC)"
+            title={pinned ? "Menu fixado" : lockedClosed ? "Menu trancado fechado" : "Clique para fechar o menu (ou pressione ESC)"}
           >
             DCTF ANALYZER
           </h2>
+          {onTogglePin && (
+            <button
+              onClick={onTogglePin}
+              className={`p-1.5 rounded-lg transition-all duration-200 ${
+                pinned
+                  ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+              }`}
+              title={pinned ? 'Desfixar menu' : 'Fixar menu sempre aberto'}
+              aria-label={pinned ? 'Desfixar menu' : 'Fixar menu'}
+            >
+              <PaperClipIcon className={`h-4 w-4 transition-transform duration-200 ${pinned ? 'rotate-45' : ''}`} />
+            </button>
+          )}
         </div>
         <nav className="space-y-1.5">
           {navigation.map((item) => {

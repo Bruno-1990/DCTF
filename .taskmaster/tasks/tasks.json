@@ -1349,7 +1349,7 @@
         "description": "Implementar classes base do modelo canônico: DocumentoFiscal, ItemFiscal, TributoICMS, TributoICMSST, TributoIPI. Criar parsers: XML → Modelo Canônico, EFD → Modelo Canônico. Implementar testes unitários.",
         "details": "Criar estrutura python/sped/v2/canonical/ com classes base. Implementar normalização de conceitos fiscais (ICMS próprio vs ST vs DIFAL/FCP). Preservar metadados (chave NF-e, referências, ajustes). Testes unitários para garantir qualidade.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": []
@@ -1360,7 +1360,7 @@
         "description": "Implementar XML Normalizer e EFD Normalizer. Unificar conceitos fiscais. Preservar metadados.",
         "details": "Criar python/sped/v2/normalization/ com xml_normalizer.py e efd_normalizer.py. Converter XML e EFD para modelo canônico. Unificar conceitos fiscais (ICMS próprio vs ST vs DIFAL/FCP). Integrar com modelo canônico da tarefa anterior.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           1
         ],
@@ -1373,7 +1373,7 @@
         "description": "Criar rotas /api/sped/v2/*, controllers e services base. Integração Python mantendo compatibilidade.",
         "details": "Criar src/routes/sped-v2.ts com rotas principais. Criar SpedV2ValidationController e SpedV2ValidationService. Integração com scripts Python mantendo compatibilidade com sistema atual (/api/sped/validar).",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           1
         ],
@@ -1386,7 +1386,7 @@
         "description": "Criar nova aba Validação SPED v2.0 e componentes base. Integração com API.",
         "details": "Criar frontend/src/pages/SpedValidacaoV2.tsx. Criar componentes base: PipelineView, SummaryPanel. Configurar rotas e navegação. Integração com API backend.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           3
         ],
@@ -1399,7 +1399,7 @@
         "description": "Implementar validação de consistência interna do SPED: C170→C190→C100→E110/E111",
         "details": "Criar python/sped/v2/validation/efd_internal_validator.py. Validação C170 → C190 (totalização). Validação C190 → C100 (valores). Validação C100 → E110/E111 (impacto). Detecção de ajustes C197/E111. Validação de cadastros 0150/0190/0200.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           1,
           2
@@ -1427,7 +1427,7 @@
         "description": "Implementar matching robusto: chave NF-e, fallback, probabilístico",
         "details": "Criar python/sped/v2/matching/match_documentos.py. Match por chave NF-e (prioritário). Fallback: CNPJ + modelo + série + número + data + vNF. Fallback probabilístico: tolerâncias + heurística. Integração com match_robusto.py existente.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2
         ],
@@ -1440,7 +1440,7 @@
         "description": "Matching de itens com inferência de CFOP/CST. Integração com match_items_robusto.py",
         "details": "Criar python/sped/v2/matching/match_itens.py. Integração com match_items_robusto.py existente. Inferência de CFOP/CST quando item não está no SPED. Score de matching. Múltiplas camadas (6 camadas).",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           7
         ],
@@ -1834,7 +1834,7 @@
         "description": "Criar endpoints backend para consulta de documentos com busca semântica e regras estruturadas",
         "details": "GET /api/sped/v2/knowledge/documents - listar documentos por período/vigência. GET /api/sped/v2/knowledge/query - busca semântica (RAG) com filtros. GET /api/sped/v2/knowledge/rules - buscar regras estruturadas por categoria/tipo/período. POST /api/sped/v2/knowledge/generate-rule - gerar regra consultando documentos. Integração com LegalDocumentRAG e banco de dados. Retorno de referências legais e confiança do match. Criar src/routes/sped-v2-knowledge.ts e SpedV2KnowledgeController.",
         "testStrategy": "Testes de endpoints, busca semântica, consulta de regras, geração de regras com contexto",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           35,
           36
@@ -1846,7 +1846,7 @@
             "title": "Criar estrutura de rotas e controller base",
             "description": "Criar arquivo src/routes/sped-v2-knowledge.ts e src/controllers/SpedV2KnowledgeController.ts com estrutura base",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 37
           },
@@ -1855,7 +1855,7 @@
             "title": "Implementar endpoint GET /api/sped/v2/knowledge/documents",
             "description": "Endpoint para listar documentos por período/vigência com filtros",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               "37.1"
             ],
@@ -1866,7 +1866,7 @@
             "title": "Implementar endpoint GET /api/sped/v2/knowledge/query",
             "description": "Endpoint para busca semântica (RAG) com filtros e retorno de chunks relevantes",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               "37.1"
             ],
@@ -1877,7 +1877,7 @@
             "title": "Implementar endpoint GET /api/sped/v2/knowledge/rules",
             "description": "Endpoint para buscar regras estruturadas por categoria/tipo/período",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               "37.1"
             ],
@@ -1888,7 +1888,7 @@
             "title": "Implementar endpoint POST /api/sped/v2/knowledge/generate-rule",
             "description": "Endpoint para gerar regra consultando documentos com contexto RAG",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               "37.3",
               "37.4"
@@ -1900,7 +1900,7 @@
             "title": "Integrar rotas no app principal e testar endpoints",
             "description": "Registrar rotas no Express e criar testes básicos",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               "37.2",
               "37.3",
@@ -1996,7 +1996,7 @@
     ],
     "metadata": {
       "created": "2026-01-12T20:51:50.054Z",
-      "updated": "2026-01-13T14:19:49.154Z",
+      "updated": "2026-01-13T19:32:13.207Z",
       "description": "Validação SPED v2.0 - Sistema Robusto de Conferência XML × SPED com arquitetura em 3 camadas, matriz de legitimação e UX profissional"
     }
   }

@@ -218,3 +218,4 @@ WHERE r.status = 'ativo'
 -- 2. Execute: source docs/migrations/mysql/013_create_sped_v2_legal_documents.sql
 -- ============================================================================
 
+

@@ -82,5 +82,10 @@ router.post('/catalog/consulta-faturamento', (req, res) => {
   catalogController.consultaFaturamento(req, res);
 });
 
+// POST /api/sci/catalog/sp-bi-fat - Executar stored procedure SP_BI_FAT
+router.post('/catalog/sp-bi-fat', (req, res) => {
+  catalogController.executarSP_BI_FAT(req, res);
+});
+
 export default router;
 

@@ -16,6 +16,7 @@ export interface Cliente extends BaseEntity {
   razao_social: string; // Campo obrigatório no banco
   cnpj_limpo: string; // CNPJ sem formatação (14 dígitos) - ÚNICA coluna no banco
   // cnpj formatado é gerado apenas na exibição, não é salvo no banco
+  codigo_sci?: string; // Código SCI do sistema
   email?: string;
   telefone?: string;
   endereco?: string;

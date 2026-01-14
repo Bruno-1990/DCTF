@@ -43,5 +43,10 @@ router.post('/faturamento/atualizar-todos', async (req, res) => {
   }
 });
 
+// POST /api/irpf/consulta-personalizada - Consulta personalizada de faturamento
+router.post('/consulta-personalizada', (req, res) => {
+  irpfController.consultaPersonalizada(req, res);
+});
+
 export default router;
 

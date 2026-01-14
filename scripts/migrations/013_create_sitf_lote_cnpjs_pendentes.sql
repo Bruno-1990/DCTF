@@ -22,3 +22,4 @@ CREATE TABLE IF NOT EXISTS `sitf_lote_cnpjs_pendentes` (
 COMMENT='Tabela temporária para armazenar CNPJs pendentes de consulta em lote de Situação Fiscal';
 
 
+

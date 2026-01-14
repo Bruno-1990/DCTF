@@ -680,7 +680,10 @@ router.post('/extract/:id', async (req, res, next) => {
               nome: s.nome || '',
               cpf: s.cpf || null, // CPF/CNPJ extraído da SITF (Python ou Node.js)
               qual: s.qual || s.qualificacao || null, // Suporte para ambos os formatos
-              participacao_percentual: s.participacao_percentual || null, // Usar exatamente o que vem da SITF
+              // Usar verificação explícita para não converter 0 em null
+              participacao_percentual: s.participacao_percentual !== null && s.participacao_percentual !== undefined
+                ? s.participacao_percentual
+                : 0, // Se não houver participação definida, usar 0 (não null)
             }));
             
             // Log para verificação (sem ajustar)

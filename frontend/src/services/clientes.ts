@@ -50,6 +50,33 @@ export const clientesService = {
     return response.data; // { success, data: Cliente }
   },
 
+  /**
+   * Atualizar capital_social usando dados do banco (sem consultar ReceitaWS)
+   * Atualiza dados diretamente do PDF/banco sem baixar situação fiscal
+   */
+  async atualizarCapitalSocial(dryRun: boolean = false) {
+    const response = await api.post('/clientes/atualizar-capital-social', { dryRun });
+    return response.data; // { success, message, relatorio, output }
+  },
+
+  /**
+   * Atualizar participacao_percentual e participacao_valor dos sócios
+   * Atualiza valores e porcentagens dos sócios usando dados do PDF
+   */
+  async atualizarSocios(dryRun: boolean = false) {
+    const response = await api.post('/clientes/atualizar-socios', { dryRun });
+    return response.data; // { success, message, relatorio }
+  },
+
+  /**
+   * Recalcular valores de participação para todos os clientes divergentes
+   * Calcula participacao_valor = (capital_social * participacao_percentual) / 100
+   */
+  async recalcularValoresDivergentes() {
+    const response = await api.post('/clientes/recalcular-valores-divergentes');
+    return response.data; // { success, message, relatorio }
+  },
+
   async listarSociosDistinct() {
     const response = await api.get('/clientes/socios');
     return response.data; // { success, data: [{nome}] }
@@ -71,6 +98,11 @@ export const clientesService = {
     return response.data; // { success, data: { atualizados: number }, message }
   },
 
+  async atualizarCodigoSCI(id: string) {
+    const response = await api.put(`/clientes/${id}/atualizar-codigo-sci`);
+    return response.data; // { success, data: { codigo_sci: string, cliente: Cliente }, message }
+  },
+
   async buscarPorCNPJ(cnpj: string) {
     const cnpjLimpo = String(cnpj || '').replace(/\D/g, '');
     const response = await api.get(`/clientes/cnpj/${cnpjLimpo}`);
@@ -80,6 +112,14 @@ export const clientesService = {
   async atualizarTodosReceitaWS() {
     const response = await api.post('/clientes/atualizar-todos-receita-ws');
     return response.data; // { success, data: { total, sucessos, erros, resultados } }
+  },
+
+  async editarParticipacaoManual(id: string, capitalSocial: number, socios: Array<{ id: number; participacao_percentual: number; participacao_valor: number }>) {
+    const response = await api.put(`/clientes/${id}/editar-participacao-manual`, {
+      capital_social: capitalSocial,
+      socios,
+    });
+    return response.data; // { success, data: { clienteId, message } }
   },
 
 };

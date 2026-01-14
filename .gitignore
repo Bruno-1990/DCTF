@@ -132,3 +132,18 @@ __pycache__/
 # Excel files
 *.xlsx
 *.xls
+
+logs
+dev-debug.log
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+
+# Task files
+# tasks.json
+# tasks/ 

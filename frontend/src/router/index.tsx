@@ -85,7 +85,7 @@ const router = createBrowserRouter([
         element: <SpedValidacaoV2 />,
       },
       {
-        path: 'irpf-2025',
+        path: 'irpf-2026',
         element: <Irpf2025 />,
       },
     ],

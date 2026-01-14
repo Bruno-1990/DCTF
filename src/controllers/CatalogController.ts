@@ -442,5 +442,96 @@ LIMIT 100;  -- Ajuste o limite conforme necessário
       });
     }
   }
+
+  /**
+   * Executar stored procedure SP_BI_FAT
+   * POST /api/sci/catalog/sp-bi-fat
+   * Body: { cod_emp: number, param1?: number, param2?: number, data_inicio?: string, data_fim?: string, param3?: number }
+   */
+  async executarSP_BI_FAT(req: Request, res: Response): Promise<void> {
+    try {
+      const { cod_emp, param1, param2, data_inicio, data_fim, param3 } = req.body;
+
+      // Validações
+      if (!cod_emp || typeof cod_emp !== 'number') {
+        res.status(400).json({ error: 'Campo "cod_emp" é obrigatório e deve ser um número' });
+        return;
+      }
+
+      // Valores padrão
+      const p1 = param1 !== undefined ? param1 : 2;
+      const p2 = param2 !== undefined ? param2 : 2;
+      const dataIni = data_inicio || '01.12.2024';
+      const dataFim = data_fim || '31.12.2024';
+      const p3 = param3 !== undefined ? param3 : 1;
+
+      // SQL para executar a stored procedure
+      // No Firebird, stored procedures são chamadas via SELECT * FROM nome_procedure(params)
+      const sql = `SELECT * FROM SP_BI_FAT(${cod_emp}, ${p1}, ${p2}, '${dataIni}', '${dataFim}', ${p3})`;
+
+      // Caminho para o script Python
+      const scriptPath = path.join(
+        __dirname,
+        '../../python/catalog/executar_sql.py'
+      );
+
+      // Usar base64 para passar SQL de forma segura
+      const sqlBase64 = Buffer.from(sql, 'utf-8').toString('base64');
+
+      // Construir comando Python
+      const command = `python "${scriptPath}" --base64 ${sqlBase64}`;
+
+      // Executar script Python
+      const { stdout, stderr } = await execAsync(command, {
+        encoding: 'utf-8',
+        maxBuffer: 50 * 1024 * 1024, // 50MB
+      });
+
+      if (stderr && !stderr.includes('INFO')) {
+        console.error('Python stderr:', stderr);
+      }
+
+      // Parse do resultado JSON
+      try {
+        const resultado = JSON.parse(stdout);
+        
+        if (!resultado.success) {
+          res.status(500).json({ 
+            error: resultado.error || 'Erro ao executar stored procedure SP_BI_FAT',
+            details: resultado.details 
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          cod_emp,
+          parametros: {
+            param1: p1,
+            param2: p2,
+            data_inicio: dataIni,
+            data_fim: dataFim,
+            param3: p3,
+          },
+          columns: resultado.columns || [],
+          rows: resultado.rows || [],
+          rowCount: resultado.rowCount || 0
+        });
+      } catch (parseError) {
+        console.error('Erro ao parsear resultado:', parseError);
+        console.error('Stdout:', stdout);
+        res.status(500).json({ 
+          error: 'Erro ao processar resultado da stored procedure',
+          details: stdout 
+        });
+      }
+    } catch (error: any) {
+      console.error('Erro ao executar SP_BI_FAT:', error);
+      res.status(500).json({ 
+        error: 'Erro ao executar stored procedure SP_BI_FAT',
+        message: error.message 
+      });
+    }
+  }
 }
 

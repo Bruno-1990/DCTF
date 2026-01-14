@@ -8,7 +8,12 @@ import {
   ChartBarIcon,
   ArrowPathIcon,
   MagnifyingGlassIcon,
+  CurrencyDollarIcon,
+  ArrowUpIcon,
+  XMarkIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
+import ExcelJS from 'exceljs';
 
 const Irpf2025: React.FC = () => {
   const { loadClientes } = useClientes();
@@ -27,9 +32,15 @@ const Irpf2025: React.FC = () => {
   >(new Map());
   const [searchTerm, setSearchTerm] = useState('');
   const [anoAtual] = useState(new Date().getFullYear());
-  const [carregandoTodos, setCarregandoTodos] = useState(false);
   const [loadingClientes, setLoadingClientes] = useState(true);
   const carregandoRef = React.useRef(false);
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const [showAvisoFaturamento, setShowAvisoFaturamento] = useState(() => {
+    // Verificar se o usuário já fechou o aviso anteriormente
+    const fechado = localStorage.getItem('irpf-aviso-faturamento-fechado');
+    return fechado !== 'true';
+  });
+  const [exportando, setExportando] = useState(false);
   
   // Sempre os últimos 2 anos completos (ex: 2024 e 2025 se estamos em 2026)
   const anosParaBuscar = [anoAtual - 2, anoAtual - 1];
@@ -74,7 +85,7 @@ const Irpf2025: React.FC = () => {
         // Só atualizar estados quando TODOS os clientes estiverem carregados
         // Isso garante que a lista apareça de uma vez (como na participação)
         setTodosClientes(todosClientesArray);
-        inicializarClientes(todosClientesArray);
+        await inicializarClientes(todosClientesArray);
       } catch (error: any) {
         console.error('Erro ao carregar clientes:', error);
       } finally {
@@ -87,11 +98,18 @@ const Irpf2025: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const inicializarClientes = (clientesList: Cliente[]) => {
-    const clientesComCodigoSCI = clientesList.filter(
+  const inicializarClientes = async (clientesList: Cliente[]) => {
+    // Filtrar apenas matrizes (mesma lógica da aba Participação)
+    const apenasMatrizes = clientesList.filter(
+      (c) => c.tipo_empresa === 'Matriz'
+    );
+    
+    // Filtrar apenas matrizes com código SCI
+    const clientesComCodigoSCI = apenasMatrizes.filter(
       (c) => c.codigo_sci && !isNaN(Number(c.codigo_sci))
     );
 
+    // Primeiro, inicializar o map com os clientes
     setClientesComDados((prev) => {
       const novoMap = new Map(prev);
       
@@ -110,127 +128,288 @@ const Irpf2025: React.FC = () => {
 
       return novoMap;
     });
+
+    // Depois, carregar automaticamente os dados do cache para todos os clientes
+    // Isso garante que os dados sejam restaurados quando a página é recarregada
+    try {
+      const promises = clientesComCodigoSCI.map(async (cliente) => {
+        try {
+          const faturamento = await irpfService.buscarApenasCache(cliente.id, anosParaBuscar);
+          
+          // Garantir que sempre temos os 2 anos, preenchendo com zeros se necessário
+          const faturamentoCompleto = anosParaBuscar.map((ano) => {
+            const encontrado = faturamento.find((f) => f.ano === ano);
+            return encontrado || {
+              ano,
+              valorTotal: 0,
+              mediaMensal: 0,
+              meses: [],
+            };
+          });
+
+          setClientesComDados((prev) => {
+            const novo = new Map(prev);
+            const atual = novo.get(cliente.id);
+            if (atual) {
+              novo.set(cliente.id, {
+                ...atual,
+                faturamento: faturamentoCompleto,
+                carregado: true,
+                loadingFaturamento: false,
+                errorFaturamento: undefined,
+              });
+            }
+            return novo;
+          });
+        } catch (error: any) {
+          // Se não encontrar no cache, não é erro - apenas não marca como carregado
+          console.log(`[IRPF] Cache não encontrado para cliente ${cliente.id}:`, error.message);
+          // Não atualizar o estado - deixar como não carregado para o usuário poder carregar manualmente
+        }
+      });
+
+      // Aguardar todas as requisições, mas não bloquear se algumas falharem
+      await Promise.allSettled(promises);
+    } catch (error: any) {
+      console.error('[IRPF] Erro ao carregar cache inicial:', error);
+    }
   };
 
-  const carregarFaturamentoCliente = async (clienteId: string, forcarAtualizacao: boolean = false) => {
-    const item = clientesComDados.get(clienteId);
-    if (!item) return;
-
-    // Se já está carregando, não fazer nada
-    if (item.loadingFaturamento) return;
-
-    const codigoSci = Number(item.cliente.codigo_sci);
-    if (!codigoSci) return;
-
-    // Atualizar estado para loading
-    setClientesComDados((prev) => {
-      const novo = new Map(prev);
-      const atual = novo.get(clienteId);
-      if (atual) {
-        novo.set(clienteId, { 
-          ...atual, 
-          loadingFaturamento: true,
-          errorFaturamento: undefined, // Limpar erro anterior
-        });
-      }
-      return novo;
-    });
-
-    try {
-      let faturamento: FaturamentoAnual[];
+  // Detectar scroll para mostrar botão "voltar ao topo"
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      const shouldShow = scrollY > 300;
+      setShowScrollToTop(shouldShow);
       
-      console.log(`[IRPF Frontend] Carregando faturamento para cliente ${clienteId}, forcarAtualizacao: ${forcarAtualizacao}`);
-      
-      if (forcarAtualizacao) {
-        // Forçar atualização do cache - retorna os dados atualizados diretamente
-        faturamento = await irpfService.atualizarCache(
-          item.cliente.id,
-          anosParaBuscar
-        );
-        console.log(`[IRPF Frontend] Faturamento atualizado:`, faturamento);
+      // Notificar Layout para esconder/mostrar o menu lateral
+      if (shouldShow) {
+        window.dispatchEvent(new CustomEvent('showScrollToTopButton'));
       } else {
-        // Buscar normalmente (com cache)
-        faturamento = await irpfService.buscarFaturamentoCliente(
-          item.cliente.id,
-          anosParaBuscar
-        );
-        console.log(`[IRPF Frontend] Faturamento do cache:`, faturamento);
+        window.dispatchEvent(new CustomEvent('hideScrollToTopButton'));
       }
+    };
 
-      console.log(`[IRPF Frontend] Faturamento recebido (${faturamento.length} anos):`, JSON.stringify(faturamento, null, 2));
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
-      // Garantir que sempre temos os 2 anos, preenchendo com zeros se necessário
-      const faturamentoCompleto = anosParaBuscar.map((ano) => {
-        const encontrado = faturamento.find((f) => f.ano === ano);
-        return encontrado || {
-          ano,
-          valorTotal: 0,
-          mediaMensal: 0,
-          meses: [],
+  // Função para voltar ao topo
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
+
+  // Função para exportar dados do IRPF
+  const handleExportarIRPF = async () => {
+    if (exportando) return;
+    
+    setExportando(true);
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('IRPF 2026', {
+        views: [{ 
+          state: 'frozen', 
+          ySplit: 1,
+          showGridLines: false // Remover linhas de grade
+        }],
+      });
+
+      // Cabeçalhos
+      const headers = [
+        'CNPJ',
+        'RAZÃO SOCIAL',
+        'NOME SÓCIO',
+        'CPF SÓCIO',
+        'QUALIFICAÇÃO SÓCIO',
+        'PARTICIPAÇÃO %',
+        'VALOR PARTICIPAÇÃO',
+        'FATURAMENTO 2024',
+        'FATURAMENTO 2025',
+      ];
+
+      // Adicionar cabeçalhos na linha 1
+      const headerRow = sheet.addRow(headers);
+      headerRow.height = 30;
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF10B981' }, // Verde esmeralda
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: 'FFFFFFFF' },
+          size: 12,
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: 'center',
+          wrapText: true,
+        };
+        // Bordas discretas apenas no cabeçalho
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
         };
       });
 
-      setClientesComDados((prev) => {
-        const novo = new Map(prev);
-        const atual = novo.get(clienteId);
-        if (atual) {
-          novo.set(clienteId, {
-            ...atual,
-            faturamento: faturamentoCompleto,
-            loadingFaturamento: false,
-            carregado: true,
-            errorFaturamento: undefined,
-          });
+      // Processar dados
+      const dataRows: any[][] = [];
+      let cnpjAnterior = '';
+      
+      clientesFiltrados.forEach((item, index) => {
+        const { cliente, faturamento } = item;
+        const capitalSocial =
+          typeof cliente.capital_social === 'string'
+            ? parseFloat(cliente.capital_social)
+            : cliente.capital_social || 0;
+
+        const cnpj = formatarCNPJ(cliente.cnpj_limpo || cliente.cnpj || '');
+        const razaoSocial = cliente.razao_social || cliente.nome || 'Sem nome';
+        
+        // Se é um novo CNPJ e não é o primeiro, adicionar 2 linhas em branco
+        if (index > 0 && cnpj !== cnpjAnterior && cnpjAnterior !== '') {
+          dataRows.push([]); // Linha em branco 1
+          dataRows.push([]); // Linha em branco 2
         }
-        return novo;
+        
+        cnpjAnterior = cnpj;
+        
+        // Obter faturamentos (sempre 2024 e 2025)
+        const fat2024 = faturamento.find((f) => f.ano === 2024);
+        const fat2025 = faturamento.find((f) => f.ano === 2025);
+        const valorFat2024 = typeof fat2024?.valorTotal === 'number' ? fat2024.valorTotal : parseFloat(String(fat2024?.valorTotal || 0));
+        const valorFat2025 = typeof fat2025?.valorTotal === 'number' ? fat2025.valorTotal : parseFloat(String(fat2025?.valorTotal || 0));
+
+        // Se tem sócios, criar uma linha por sócio
+        if (cliente.socios && cliente.socios.length > 0) {
+          cliente.socios.forEach((socio) => {
+            let participacaoPercentual = typeof socio.participacao_percentual === 'number' 
+              ? socio.participacao_percentual 
+              : parseFloat(String(socio.participacao_percentual || 0));
+            
+            // Garantir que participação seja no máximo 100% (se vier como 50.00 ao invés de 0.50, converter)
+            if (participacaoPercentual > 1 && participacaoPercentual <= 100) {
+              participacaoPercentual = participacaoPercentual / 100;
+            } else if (participacaoPercentual > 100) {
+              participacaoPercentual = 1; // Limitar a 100%
+            }
+            
+            const participacaoValor = typeof socio.participacao_valor === 'number'
+              ? socio.participacao_valor
+              : parseFloat(String(socio.participacao_valor || (capitalSocial * participacaoPercentual)));
+
+            dataRows.push([
+              cnpj,
+              razaoSocial,
+              socio.nome || '-',
+              socio.cpf || '-',
+              socio.qual || '-',
+              participacaoPercentual,
+              participacaoValor,
+              valorFat2024,
+              valorFat2025,
+            ]);
+          });
+        } else {
+          // Se não tem sócios, criar uma linha sem dados de sócio
+          dataRows.push([
+            cnpj,
+            razaoSocial,
+            '-',
+            '-',
+            '-',
+            null,
+            null,
+            valorFat2024,
+            valorFat2025,
+          ]);
+        }
       });
+
+        // Adicionar dados
+      dataRows.forEach((row) => {
+        // Se a linha está vazia (linha em branco entre CNPJs), adicionar linha vazia
+        if (row.length === 0 || row.every(cell => cell === null || cell === '')) {
+          sheet.addRow([]);
+          return;
+        }
+        
+        const dataRow = sheet.addRow(row);
+        dataRow.height = 20;
+        // Aplicar bordas discretas em todas as células desta linha (linha com dados)
+        dataRow.eachCell((cell, colNumber) => {
+          // Coluna 3 (NOME SÓCIO) deve ser alinhada à esquerda, demais colunas centralizadas
+          const isNomeSocio = colNumber === 3;
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: (colNumber <= 2 || isNomeSocio) ? 'left' : 'center',
+            wrapText: false,
+          };
+          // Bordas discretas em todas as células da linha (linha com registros)
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          
+          // Formatação especial para colunas numéricas
+          if (colNumber === 6) {
+            // Coluna PARTICIPAÇÃO % - formato percentual com zeros à esquerda
+            if (cell.value !== null && cell.value !== '-') {
+              cell.numFmt = '00.00%';
+            }
+          } else if (colNumber === 7 || colNumber === 8 || colNumber === 9) {
+            // Colunas de valores monetários (VALOR PARTICIPAÇÃO, FAT 2024, FAT 2025)
+            if (cell.value !== null && cell.value !== '-') {
+              cell.numFmt = 'R$ #,##0.00';
+            }
+          }
+        });
+      });
+
+      // Ajustar largura das colunas
+      sheet.columns = [
+        { width: 18 }, // CNPJ
+        { width: 40 }, // RAZÃO SOCIAL
+        { width: 30 }, // NOME SÓCIO
+        { width: 18 }, // CPF SÓCIO
+        { width: 25 }, // QUALIFICAÇÃO SÓCIO
+        { width: 15 }, // PARTICIPAÇÃO %
+        { width: 20 }, // VALOR PARTICIPAÇÃO
+        { width: 20 }, // FATURAMENTO 2024
+        { width: 20 }, // FATURAMENTO 2025
+      ];
+
+      // Gerar arquivo
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dataExportacao = new Date().toISOString().split('T')[0];
+      link.download = `irpf_2026_${dataExportacao}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (error: any) {
-      console.error(
-        `Erro ao buscar faturamento para cliente ${clienteId}:`,
-        error
-      );
-      setClientesComDados((prev) => {
-        const novo = new Map(prev);
-        const atual = novo.get(clienteId);
-        if (atual) {
-          novo.set(clienteId, {
-            ...atual,
-            loadingFaturamento: false,
-            errorFaturamento:
-              error.message || 'Erro ao buscar faturamento do SCI',
-            carregado: true,
-          });
-        }
-        return novo;
-      });
+      console.error('Erro ao exportar IRPF:', error);
+      alert('Erro ao exportar dados: ' + (error.message || 'Erro desconhecido'));
+    } finally {
+      setExportando(false);
     }
   };
 
-  // Carregar faturamento em lotes (batch) para não sobrecarregar
-  const carregarTodosFaturamentos = async () => {
-    const clientesParaCarregar = Array.from(clientesComDados.values()).filter(
-      (item) => !item.carregado && !item.loadingFaturamento
-    );
 
-    if (clientesParaCarregar.length === 0) return;
-
-    setCarregandoTodos(true);
-
-    // Processar em lotes de 3 clientes por vez para não sobrecarregar
-    const batchSize = 3;
-    for (let i = 0; i < clientesParaCarregar.length; i += batchSize) {
-      const batch = clientesParaCarregar.slice(i, i + batchSize);
-      await Promise.all(
-        batch.map((item) => carregarFaturamentoCliente(item.cliente.id))
-      );
-      // Pequeno delay entre lotes para não sobrecarregar o servidor
-      if (i + batchSize < clientesParaCarregar.length) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }
-
-    setCarregandoTodos(false);
-  };
 
   const formatarCNPJ = (cnpj?: string) => {
     if (!cnpj) return '-';
@@ -287,20 +466,26 @@ const Irpf2025: React.FC = () => {
     .length;
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
-          <ChartBarIcon className="h-8 w-8 text-blue-600" />
-          IRPF 2025
-        </h1>
-        <p className="text-gray-600">
-          Dados para declaração de Imposto de Renda Pessoa Física 2025
-        </p>
+    <div className="container mx-auto px-4 py-6 max-w-7xl">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 rounded-2xl shadow-lg p-8 text-white relative overflow-hidden">
+          <div className="absolute inset-0 bg-black opacity-10"></div>
+          <div className="relative z-10">
+            <h1 className="text-3xl font-bold mb-3 flex items-center gap-3">
+              <CurrencyDollarIcon className="h-8 w-8" />
+              IRPF 2026
+            </h1>
+            <p className="text-emerald-100 text-lg">Dados para declaração de Imposto de Renda Pessoa Física 2026</p>
+          </div>
+          <div className="absolute top-0 right-0 -mt-4 -mr-4 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 -mb-4 -ml-4 w-48 h-48 bg-white opacity-5 rounded-full blur-3xl"></div>
+        </div>
       </div>
 
-      {/* Busca e Controles */}
-      <div className="mb-6 space-y-4">
-        <div className="flex gap-3">
+      {/* Busca */}
+      <div className="mb-6">
+        <div className="flex gap-3 items-center">
           <div className="relative flex-1">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
@@ -308,110 +493,66 @@ const Irpf2025: React.FC = () => {
               placeholder="Buscar por CNPJ ou Razão Social..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
             />
           </div>
           <button
-            onClick={async () => {
-              setCarregandoTodos(true);
-              try {
-                // Buscar apenas do cache para todos os clientes
-                const promises = Array.from(clientesComDados.keys()).map((clienteId) =>
-                  irpfService.buscarApenasCache(clienteId, anosParaBuscar)
-                    .then((faturamento) => {
-                      // Garantir que sempre temos os 2 anos, preenchendo com zeros se necessário
-                      const faturamentoCompleto = anosParaBuscar.map((ano) => {
-                        const encontrado = faturamento.find((f) => f.ano === ano);
-                        return encontrado || {
-                          ano,
-                          valorTotal: 0,
-                          mediaMensal: 0,
-                          meses: [],
-                        };
-                      });
-                      
-                      setClientesComDados((prev) => {
-                        const novo = new Map(prev);
-                        const atual = novo.get(clienteId);
-                        if (atual) {
-                          novo.set(clienteId, {
-                            ...atual,
-                            faturamento: faturamentoCompleto,
-                            carregado: true,
-                            loadingFaturamento: false,
-                            errorFaturamento: undefined,
-                          });
-                        }
-                        return novo;
-                      });
-                    })
-                    .catch((error) => {
-                      console.error(`Erro ao buscar cache para ${clienteId}:`, error);
-                      setClientesComDados((prev) => {
-                        const novo = new Map(prev);
-                        const atual = novo.get(clienteId);
-                        if (atual) {
-                          novo.set(clienteId, {
-                            ...atual,
-                            carregado: false,
-                            loadingFaturamento: false,
-                            errorFaturamento: 'Dados não encontrados no cache',
-                          });
-                        }
-                        return novo;
-                      });
-                    })
-                );
-                await Promise.all(promises);
-              } catch (error: any) {
-                console.error('Erro ao atualizar todos:', error);
-              } finally {
-                setCarregandoTodos(false);
-              }
-            }}
-            disabled={carregandoTodos || loadingClientes}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Buscar faturamento de todos os clientes do cache (sem consultar SCI)"
+            onClick={handleExportarIRPF}
+            disabled={exportando || clientesFiltrados.length === 0}
+            className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-all duration-300 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            title="Exportar dados para Excel"
           >
-            <ArrowPathIcon className={`h-4 w-4 ${carregandoTodos ? 'animate-spin' : ''}`} />
-            Atualizar Todos (Cache)
+            <ArrowDownTrayIcon className={`h-5 w-5 ${exportando ? 'animate-spin' : ''}`} />
+            {exportando ? 'Exportando...' : 'Exportar Excel'}
           </button>
         </div>
-        {clientesComCodigoSCI > 0 && (
-          <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+        {clientesComCodigoSCI > 0 && showAvisoFaturamento && (
+          <div className="mt-4 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg p-3 relative">
+            <div className="flex-1 pr-4">
+              <div className="text-sm text-gray-700">
+                <span className="font-medium">{clientesComCodigoSCI}</span> cliente
+                {clientesComCodigoSCI !== 1 ? 's' : ''} com código SCI
+                {clientesCarregados > 0 && (
+                  <span className="text-emerald-600 ml-2">
+                    ({clientesCarregados} com faturamento carregado)
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                💡 Acesse as abas "Participação" e "Faturamento SCI" em Clientes para atualizar os dados de sócios e faturamento
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowAvisoFaturamento(false);
+                localStorage.setItem('irpf-aviso-faturamento-fechado', 'true');
+              }}
+              className="flex-shrink-0 p-1 hover:bg-emerald-100 rounded-full transition-colors duration-200"
+              title="Fechar aviso"
+              aria-label="Fechar aviso"
+            >
+              <XMarkIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
+            </button>
+          </div>
+        )}
+        {clientesComCodigoSCI > 0 && !showAvisoFaturamento && (
+          <div className="mt-4 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg p-3">
             <div className="text-sm text-gray-700">
               <span className="font-medium">{clientesComCodigoSCI}</span> cliente
               {clientesComCodigoSCI !== 1 ? 's' : ''} com código SCI
               {clientesCarregados > 0 && (
-                <span className="text-blue-600 ml-2">
+                <span className="text-emerald-600 ml-2">
                   ({clientesCarregados} com faturamento carregado)
                 </span>
               )}
             </div>
-            <button
-              onClick={carregarTodosFaturamentos}
-              disabled={carregandoTodos}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-            >
-              {carregandoTodos ? (
-                <>
-                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                  Carregando...
-                </>
-              ) : (
-                <>
-                  <ChartBarIcon className="h-4 w-4" />
-                  Carregar Todos os Faturamentos
-                </>
-              )}
-            </button>
           </div>
         )}
       </div>
 
       {loadingClientes && (
         <div className="text-center py-12">
-          <ArrowPathIcon className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <ArrowPathIcon className="h-8 w-8 animate-spin text-emerald-600 mx-auto mb-4" />
           <p className="text-gray-600">Carregando clientes... Isso pode levar alguns segundos.</p>
         </div>
       )}
@@ -443,10 +584,10 @@ const Irpf2025: React.FC = () => {
               className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden"
             >
               {/* Cabeçalho */}
-              <div className="bg-orange-50 border-b border-orange-200 px-6 py-4">
+              <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="bg-orange-500 rounded-full p-3">
+                    <div className="bg-emerald-500 rounded-full p-3">
                       <BuildingOfficeIcon className="h-6 w-6 text-white" />
                     </div>
                     <div>
@@ -469,8 +610,8 @@ const Irpf2025: React.FC = () => {
                     </div>
                   </div>
                   {cliente.socios && cliente.socios.length > 0 && (
-                    <div className="bg-orange-100 px-3 py-1 rounded-full">
-                      <span className="text-sm font-medium text-orange-800">
+                    <div className="bg-emerald-100 px-3 py-1 rounded-full">
+                      <span className="text-sm font-medium text-emerald-800">
                         {cliente.socios.length} sócio
                         {cliente.socios.length !== 1 ? 's' : ''}
                       </span>
@@ -483,9 +624,11 @@ const Irpf2025: React.FC = () => {
                 {/* Seção Sócios */}
                 {cliente.socios && cliente.socios.length > 0 && (
                   <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <UserGroupIcon className="h-5 w-5 text-gray-600" />
-                      <h3 className="text-lg font-semibold text-gray-900">
+                    <div className="flex items-center gap-3 mb-4 pb-3 border-b border-emerald-200">
+                      <div className="bg-emerald-100 rounded-lg p-2">
+                        <UserGroupIcon className="h-6 w-6 text-emerald-600" />
+                      </div>
+                      <h3 className="text-xl font-bold text-emerald-700">
                         Sócios ({cliente.socios.length})
                       </h3>
                     </div>
@@ -522,8 +665,8 @@ const Irpf2025: React.FC = () => {
                               <tr key={socio.id || idx} className="hover:bg-gray-50">
                                 <td className="px-4 py-3 whitespace-nowrap">
                                   <div className="flex items-center gap-2">
-                                    <div className="bg-orange-100 rounded-full w-8 h-8 flex items-center justify-center">
-                                      <span className="text-sm font-medium text-orange-700">
+                                    <div className="bg-emerald-100 rounded-full w-8 h-8 flex items-center justify-center">
+                                      <span className="text-sm font-medium text-emerald-700">
                                         {socio.nome.charAt(0).toUpperCase()}
                                       </span>
                                     </div>
@@ -539,7 +682,7 @@ const Irpf2025: React.FC = () => {
                                   {socio.qual || '-'}
                                 </td>
                                 <td className="px-4 py-3 whitespace-nowrap">
-                                  <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-sm font-medium">
+                                  <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-sm font-medium">
                                     {formatarPercentual(
                                       socio.participacao_percentual
                                     )}
@@ -559,60 +702,20 @@ const Irpf2025: React.FC = () => {
 
                 {/* Seção Faturamento */}
                 <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <ChartBarIcon className="h-5 w-5 text-gray-600" />
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        Faturamento
-                      </h3>
+                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-emerald-200">
+                    <div className="bg-emerald-100 rounded-lg p-2">
+                      <ChartBarIcon className="h-6 w-6 text-emerald-600" />
                     </div>
-                    <div className="flex items-center gap-2">
-                      {!item.carregado && !item.loadingFaturamento && (
-                        <button
-                          onClick={() => carregarFaturamentoCliente(cliente.id, false)}
-                          className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-                        >
-                          <ChartBarIcon className="h-4 w-4" />
-                          Carregar Faturamento
-                        </button>
-                      )}
-                      {item.carregado && !item.loadingFaturamento && (
-                        <button
-                          onClick={() => carregarFaturamentoCliente(cliente.id, true)}
-                          className="text-sm text-green-600 hover:text-green-700 font-medium flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Forçar atualização do faturamento do SCI"
-                        >
-                          <ArrowPathIcon className="h-4 w-4" />
-                          Atualizar
-                        </button>
-                      )}
-                      {item.loadingFaturamento && (
-                        <span className="text-sm text-gray-500 flex items-center gap-1 px-3 py-1.5">
-                          <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                          Atualizando...
-                        </span>
-                      )}
-                    </div>
+                    <h3 className="text-xl font-bold text-emerald-700">
+                      Faturamento
+                    </h3>
                   </div>
 
-                  {item.loadingFaturamento ? (
-                    <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                        <p className="text-sm">Carregando faturamento...</p>
-                      </div>
-                    </div>
-                  ) : errorFaturamento ? (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                  {errorFaturamento ? (
+                    <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg">
                       <p className="text-sm">
-                        <strong>Erro:</strong> {errorFaturamento}
+                        <strong>Aviso:</strong> Dados não disponíveis. Acesse a aba "Faturamento SCI" em Clientes para atualizar.
                       </p>
-                      <button
-                        onClick={() => carregarFaturamentoCliente(cliente.id, false)}
-                        className="mt-2 text-xs text-red-600 hover:text-red-700 underline"
-                      >
-                        Tentar novamente
-                      </button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -642,7 +745,7 @@ const Irpf2025: React.FC = () => {
                           </div>
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-gray-600">Média Mensal:</span>
-                            <span className="font-semibold text-blue-700">
+                            <span className="font-semibold text-emerald-700">
                               {formatarMoeda(fat.mediaMensal || 0)}
                             </span>
                           </div>
@@ -680,6 +783,18 @@ const Irpf2025: React.FC = () => {
           );
         })}
       </div>
+      )}
+
+      {/* Botão Voltar ao Topo */}
+      {showScrollToTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-8 right-8 z-50 p-4 bg-gradient-to-r from-emerald-400 to-teal-500 text-white rounded-full shadow-lg hover:shadow-xl transform hover:scale-110 transition-all duration-300 animate-bounce hover:animate-none flex items-center justify-center group"
+          title="Voltar ao topo"
+          aria-label="Voltar ao topo"
+        >
+          <ArrowUpIcon className="h-6 w-6 group-hover:translate-y-[-2px] transition-transform duration-300" />
+        </button>
       )}
     </div>
   );

@@ -271,6 +271,7 @@ export class Cliente extends DatabaseService<ICliente> {
       id: row.id,
       razao_social: row.razao_social || row.nome || '',
       cnpj_limpo: row.cnpj_limpo || (row.cnpj ? this.cleanCNPJ(row.cnpj) : ''),
+      codigo_sci: row.codigo_sci || undefined,
       email: row.email || undefined,
       telefone: row.telefone || undefined,
       endereco: row.endereco || undefined,
@@ -299,7 +300,7 @@ export class Cliente extends DatabaseService<ICliente> {
       receita_email: row.receita_email || undefined,
       receita_telefone: row.receita_telefone || undefined,
       tipo_empresa: row.tipo_empresa || undefined,
-      capital_social: row.capital_social ?? undefined,
+      capital_social: row.capital_social !== null && row.capital_social !== undefined ? (typeof row.capital_social === 'number' ? row.capital_social : parseFloat(String(row.capital_social)) || 0) : null,
       regime_tributario: row.regime_tributario || null,
       simples_optante: row.simples_optante === true || row.simples_optante === 1 ? true : (row.simples_optante === false || row.simples_optante === 0 ? false : undefined),
       // Normalizar datas de regimes para string YYYY-MM-DD
@@ -1488,7 +1489,9 @@ export class Cliente extends DatabaseService<ICliente> {
 
           const cpfLimpo = limparCpfCnpj(s.cpf);
           const qual = s.qual ? String(s.qual).trim() : null;
-          const participacaoPercentual = s.participacao_percentual ? parseFloat(String(s.participacao_percentual)) : null;
+          const participacaoPercentual = s.participacao_percentual !== null && s.participacao_percentual !== undefined
+            ? parseFloat(String(s.participacao_percentual))
+            : null;
           
           // Log detalhado do sócio sendo processado
           console.log(`[Cliente Model] 🔍 Processando sócio da SITF:`, {
@@ -1500,10 +1503,17 @@ export class Cliente extends DatabaseService<ICliente> {
           
           // Calcular valor da participação se temos porcentagem e capital social
           // Fórmula: valor = Capital Social (cliente) × porcentagem (SITF) / 100
+          // Se participacao_percentual for 0, o valor também será 0
           let participacaoValor: number | null = null;
-          if (participacaoPercentual !== null && capitalSocialNum !== null && !isNaN(capitalSocialNum)) {
-            participacaoValor = (capitalSocialNum * participacaoPercentual) / 100;
-            console.log(`[Cliente Model] 💰 Cálculo participação: ${capitalSocialNum} × ${participacaoPercentual}% / 100 = ${participacaoValor}`);
+          if (participacaoPercentual !== null && !isNaN(participacaoPercentual)) {
+            if (capitalSocialNum !== null && !isNaN(capitalSocialNum)) {
+              participacaoValor = (capitalSocialNum * participacaoPercentual) / 100;
+              console.log(`[Cliente Model] 💰 Cálculo participação: ${capitalSocialNum} × ${participacaoPercentual}% / 100 = ${participacaoValor}`);
+            } else {
+              // Se capital social for 0 ou null, o valor também será 0
+              participacaoValor = 0;
+              console.log(`[Cliente Model] 💰 Capital social zerado ou nulo, definindo valor como 0`);
+            }
           }
 
           // Tentar fazer match por CPF/CNPJ primeiro (mais confiável)
@@ -1663,13 +1673,21 @@ export class Cliente extends DatabaseService<ICliente> {
             const cpfFaltante = !limparCpfCnpj(existente.cpf) ? limparCpfCnpj(socioSitfEncontrado.cpf) : limparCpfCnpj(existente.cpf);
             const qualFaltante = !existente.qual ? (socioSitfEncontrado.qual ? String(socioSitfEncontrado.qual).trim() : null) : existente.qual;
             const percentualFaltante = existente.participacao_percentual === null || existente.participacao_percentual === undefined
-              ? (socioSitfEncontrado.participacao_percentual ? parseFloat(String(socioSitfEncontrado.participacao_percentual)) : null)
+              ? (socioSitfEncontrado.participacao_percentual !== null && socioSitfEncontrado.participacao_percentual !== undefined
+                  ? parseFloat(String(socioSitfEncontrado.participacao_percentual))
+                  : null)
               : existente.participacao_percentual;
             
             // Calcular valor se temos percentual e capital social
+            // Se participacao_percentual for 0, o valor também será 0
             let participacaoValor: number | null = null;
-            if (percentualFaltante !== null && capitalSocialNum !== null && !isNaN(capitalSocialNum)) {
-              participacaoValor = (capitalSocialNum * percentualFaltante) / 100;
+            if (percentualFaltante !== null && !isNaN(percentualFaltante)) {
+              if (capitalSocialNum !== null && !isNaN(capitalSocialNum)) {
+                participacaoValor = (capitalSocialNum * percentualFaltante) / 100;
+              } else {
+                // Se capital social for 0 ou null, o valor também será 0
+                participacaoValor = 0;
+              }
             }
             
             console.log(`[Cliente Model] ✅ Matching reverso encontrado: "${existente.nome}" → dados da SITF:`, {

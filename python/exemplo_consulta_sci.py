@@ -194,3 +194,4 @@ if __name__ == "__main__":
     print("\nDica: Modifique a função 'exemplo_consulta_personalizada()'")
     print("      para criar suas próprias consultas!")
 
+

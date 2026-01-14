@@ -314,13 +314,20 @@ export function converterSociosPythonParaNode(pythonSocios: SocioExtracted[]): A
   
   return sociosFiltrados.map(s => {
     // Extrair percentual de "Cap. Social" (ex: "7,60%" ou "7.60%")
-    let participacaoPercentual: number | undefined;
+    // Se não houver "Cap. Social" (ex: ADMINISTRADOR), definir como 0
+    let participacaoPercentual: number | null = null;
     if (s['Cap. Social']) {
       const percentStr = s['Cap. Social'].replace('%', '').replace(',', '.');
       const percent = parseFloat(percentStr);
       if (!isNaN(percent) && percent <= 100 && percent >= 0) {
         participacaoPercentual = percent;
+      } else {
+        // Se o valor extraído for inválido, definir como 0
+        participacaoPercentual = 0;
       }
+    } else {
+      // Se não há "Cap. Social" (ex: ADMINISTRADOR), definir como 0
+      participacaoPercentual = 0;
     }
     
     // Normalizar CPF/CNPJ (remover formatação)

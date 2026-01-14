@@ -5,6 +5,7 @@ export interface Cliente {
   razao_social?: string; // Campo real do banco
   cnpj?: string; // CNPJ formatado
   cnpj_limpo?: string; // CNPJ sem formatação
+  codigo_sci?: string; // Código SCI do sistema
   email?: string;
   telefone?: string;
   endereco?: string;

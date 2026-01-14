@@ -494,5 +494,255 @@ export class IrpfController {
       });
     }
   }
+
+  /**
+   * Consulta personalizada de faturamento
+   * POST /api/irpf/consulta-personalizada
+   * Body: {
+   *   busca: string, // CNPJ ou Razão Social
+   *   dataInicial: string, // formato YYYY-MM-DD
+   *   dataFinal: string, // formato YYYY-MM-DD
+   *   tipoFaturamento: 'detalhado' | 'consolidado',
+   *   somarMatrizFilial: boolean
+   * }
+   */
+  async consultaPersonalizada(req: Request, res: Response): Promise<void> {
+    try {
+      const { busca, dataInicial, dataFinal, tipoFaturamento, somarMatrizFilial } = req.body;
+
+      // Validações
+      if (!busca || !dataInicial || !dataFinal) {
+        res.status(400).json({
+          success: false,
+          error: 'Campos obrigatórios: busca, dataInicial, dataFinal'
+        });
+        return;
+      }
+
+      if (!tipoFaturamento || !['detalhado', 'consolidado'].includes(tipoFaturamento)) {
+        res.status(400).json({
+          success: false,
+          error: 'tipoFaturamento deve ser "detalhado" ou "consolidado"'
+        });
+        return;
+      }
+
+      // Buscar cliente por CNPJ ou Razão Social
+      const cnpjLimpo = busca.replace(/\D/g, '');
+      let cliente: any = null;
+
+      if (cnpjLimpo.length === 14) {
+        // Buscar por CNPJ
+        const clienteResult = await this.clienteModel.findByCNPJ(cnpjLimpo);
+        if (clienteResult.success && clienteResult.data) {
+          cliente = clienteResult.data;
+        }
+      } else {
+        // Buscar por Razão Social
+        const clientesResult = await this.clienteModel.findBy({ razao_social: busca });
+        if (clientesResult.success && clientesResult.data && clientesResult.data.length > 0) {
+          // Pegar o primeiro resultado (ou implementar busca mais sofisticada)
+          cliente = clientesResult.data[0];
+        }
+      }
+
+      if (!cliente) {
+        res.status(404).json({
+          success: false,
+          error: 'Cliente não encontrado'
+        });
+        return;
+      }
+
+      const codigoSci = cliente.codigo_sci ? Number(cliente.codigo_sci) : null;
+      if (!codigoSci || isNaN(codigoSci)) {
+        res.status(400).json({
+          success: false,
+          error: 'Cliente não possui código SCI configurado'
+        });
+        return;
+      }
+
+      // Converter datas para formato do Firebird (DD.MM.YYYY)
+      // As datas vêm no formato YYYY-MM-DD do frontend
+      const dataIni = new Date(dataInicial + 'T00:00:00'); // Adicionar hora para evitar problemas de timezone
+      const dataFim = new Date(dataFinal + 'T23:59:59');
+      
+      const diaInicio = String(dataIni.getDate()).padStart(2, '0');
+      const mesInicio = String(dataIni.getMonth() + 1).padStart(2, '0');
+      const anoInicio = dataIni.getFullYear();
+      const dataInicioFormatada = `${diaInicio}.${mesInicio}.${anoInicio}`;
+      
+      const diaFim = String(dataFim.getDate()).padStart(2, '0');
+      const mesFim = String(dataFim.getMonth() + 1).padStart(2, '0');
+      const anoFim = dataFim.getFullYear();
+      const dataFimFormatada = `${diaFim}.${mesFim}.${anoFim}`;
+
+      // Determinar parâmetros da query baseado no tipo
+      // tipoFaturamento: 'detalhado' = 2, 'consolidado' = 1
+      // somarMatrizFilial: true = 1, false = 0
+      const paramTipo = tipoFaturamento === 'detalhado' ? 2 : 1;
+      const paramSomar = somarMatrizFilial ? 1 : 0;
+
+      // Montar query SQL usando o padrão exato fornecido pelo usuário
+      // Query separada para evitar erros e facilitar manutenção
+      // Seguindo exatamente o formato das 4 queries fornecidas
+      const sql = `WITH FAT AS (
+    SELECT *
+    FROM SP_BI_FAT(${codigoSci}, 2, ${paramTipo}, '${dataInicioFormatada}', '${dataFimFormatada}', ${paramSomar})
+)
+SELECT
+    BDCODEMP,
+    BDREF,
+    BDORDEM,
+    BDDESCRICAO,
+    BDVALOR
+FROM FAT
+
+UNION ALL
+
+SELECT
+    NULL,
+    NULL,
+    NULL,
+    'TOTAL',
+    SUM(BDVALOR)
+FROM FAT`;
+
+      console.log(`[IRPF] Consulta Personalizada - Cliente: ${cliente.razao_social} (SCI ${codigoSci})`);
+      console.log(`[IRPF] Parâmetros: tipo=${tipoFaturamento} (${paramTipo}), somar=${somarMatrizFilial} (${paramSomar})`);
+      console.log(`[IRPF] Período: ${dataInicioFormatada} a ${dataFimFormatada}`);
+      console.log(`[IRPF] SQL:\n${sql}`);
+
+      // Executar query via Python
+      const scriptPath = path.join(
+        __dirname,
+        '../../python/catalog/executar_sql.py'
+      );
+
+      const { stdout, stderr } = await execAsync(
+        `python "${scriptPath}" --base64 ${Buffer.from(sql, 'utf-8').toString('base64')}`,
+        {
+          encoding: 'utf-8',
+          maxBuffer: 50 * 1024 * 1024, // 50MB
+        }
+      );
+
+      if (stderr && !stderr.includes('INFO')) {
+        console.error('[IRPF] Python stderr:', stderr);
+      }
+
+      // Parse do resultado JSON
+      const resultado = JSON.parse(stdout);
+
+      if (resultado.error) {
+        res.status(500).json({
+          success: false,
+          error: resultado.error,
+          details: resultado.details
+        });
+        return;
+      }
+
+      // Processar resultados
+      const dados = resultado.data || [];
+      console.log('[IRPF] Dados brutos recebidos:', JSON.stringify(dados, null, 2));
+      console.log('[IRPF] Total de registros:', dados.length);
+
+      // Procurar pelo total - pode vir como objeto ou array
+      let total = null;
+      let detalhes: any[] = [];
+
+      if (Array.isArray(dados)) {
+        // Se for array, procurar pelo registro com BDDESCRICAO = 'TOTAL'
+        total = dados.find((row: any) => {
+          if (Array.isArray(row)) {
+            // Se row é array, verificar índice 3 (BDDESCRICAO)
+            return row[3] === 'TOTAL';
+          } else {
+            // Se row é objeto, verificar propriedade
+            return row.BDDESCRICAO === 'TOTAL' || row.bddescricao === 'TOTAL' || row.descricao === 'TOTAL';
+          }
+        });
+
+        detalhes = dados.filter((row: any) => {
+          if (Array.isArray(row)) {
+            return row[3] !== 'TOTAL';
+          } else {
+            const descricao = row.BDDESCRICAO || row.bddescricao || row.descricao || '';
+            return descricao !== 'TOTAL';
+          }
+        });
+      }
+
+      // Extrair valor do total
+      let valorTotal = 0;
+      if (total) {
+        if (Array.isArray(total)) {
+          // Se total é array, valor está no índice 4 (BDVALOR)
+          valorTotal = Number(total[4]) || 0;
+        } else {
+          // Se total é objeto, tentar diferentes nomes de propriedade
+          valorTotal = Number(total.BDVALOR || total.bdvalor || total.valor || total[4] || 0);
+        }
+      }
+
+      console.log('[IRPF] Total encontrado:', valorTotal);
+      console.log('[IRPF] Detalhes encontrados:', detalhes.length);
+
+      // Processar detalhes
+      const detalhesProcessados = detalhes.map((row: any, index: number) => {
+        if (Array.isArray(row)) {
+          // Se row é array: [BDCODEMP, BDREF, BDORDEM, BDDESCRICAO, BDVALOR]
+          return {
+            codigoEmpresa: row[0] || null,
+            referencia: row[1] || null,
+            ordem: row[2] || null,
+            descricao: row[3] || '',
+            valor: Number(row[4]) || 0
+          };
+        } else {
+          // Se row é objeto
+          return {
+            codigoEmpresa: row.BDCODEMP || row.bdcodemp || row.codigoEmpresa || null,
+            referencia: row.BDREF || row.bdref || row.referencia || null,
+            ordem: row.BDORDEM || row.bdordem || row.ordem || null,
+            descricao: row.BDDESCRICAO || row.bddescricao || row.descricao || '',
+            valor: Number(row.BDVALOR || row.bdvalor || row.valor || 0)
+          };
+        }
+      });
+
+      console.log('[IRPF] Detalhes processados:', detalhesProcessados.length);
+
+      res.json({
+        success: true,
+        data: {
+          cliente: {
+            id: cliente.id,
+            razao_social: cliente.razao_social,
+            cnpj: cliente.cnpj_limpo,
+            codigo_sci: codigoSci
+          },
+          periodo: {
+            dataInicial,
+            dataFinal
+          },
+          tipoFaturamento,
+          somarMatrizFilial,
+          total: valorTotal,
+          detalhes: detalhesProcessados
+        }
+      });
+
+    } catch (error: any) {
+      console.error('[IRPF] Erro na consulta personalizada:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao executar consulta personalizada',
+        message: error.message
+      });
+    }
+  }
 }
 

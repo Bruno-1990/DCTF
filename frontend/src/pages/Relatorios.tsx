@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+// import * as XLSX from 'xlsx'; // Não utilizado diretamente
 import ExcelJS from 'exceljs';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { relatoriosService } from '../services/relatorios';
@@ -11,7 +11,7 @@ import {
   BuildingOfficeIcon,
   DocumentTextIcon,
   ExclamationTriangleIcon,
-  CurrencyDollarIcon,
+  // CurrencyDollarIcon, // Não utilizado
   FunnelIcon,
   TableCellsIcon,
   UserGroupIcon,
@@ -26,7 +26,7 @@ const RelatoriosPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [generatingTarget, setGeneratingTarget] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ id: string | null; titulo: string; countdown: number }>({ id: null, titulo: '', countdown: 0 });
-  const [deleteTimer, setDeleteTimer] = useState<NodeJS.Timeout | null>(null);
+  const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = (params: { page: number; limit: number }) =>
     load({
@@ -413,6 +413,7 @@ const RelatoriosPage: React.FC = () => {
   };
 
   // Geração client-side: DCTFs Em Aberto (fallback – só se backend indisponível)
+  // @ts-ignore - Função mantida para uso futuro
   const gerarRelatorioDCTFPendentesXLSX = async () => {
     // Buscar todas DCTFs (sem filtro de status para garantir retorno)
     const { items } = await dctfService.getAll({ limit: 1000, page: 1 });

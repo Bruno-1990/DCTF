@@ -104,6 +104,58 @@ export const irpfService = {
   },
 
   /**
+   * Consulta personalizada de faturamento
+   * @param params Parâmetros da consulta
+   */
+  async consultaPersonalizada(params: {
+    busca: string;
+    dataInicial: string;
+    dataFinal: string;
+    tipoFaturamento: 'detalhado' | 'consolidado';
+    somarMatrizFilial: boolean;
+  }): Promise<{
+    cliente: {
+      id: string;
+      razao_social: string;
+      cnpj: string;
+      codigo_sci: number;
+    };
+    periodo: {
+      dataInicial: string;
+      dataFinal: string;
+    };
+    tipoFaturamento: string;
+    somarMatrizFilial: boolean;
+    total: number;
+    detalhes: Array<{
+      codigoEmpresa: number;
+      referencia: string;
+      ordem: number;
+      descricao: string;
+      valor: number;
+    }>;
+  }> {
+    console.log('[IRPF Service] Enviando requisição:', params);
+    const response = await api.post('/irpf/consulta-personalizada', params);
+    console.log('[IRPF Service] Resposta completa:', response.data);
+    
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Erro ao executar consulta personalizada');
+    }
+
+    const data = response.data.data;
+    console.log('[IRPF Service] Dados extraídos:', {
+      cliente: data?.cliente,
+      total: data?.total,
+      detalhesCount: data?.detalhes?.length || 0,
+      tipoFaturamento: data?.tipoFaturamento,
+      somarMatrizFilial: data?.somarMatrizFilial
+    });
+    
+    return data;
+  },
+
+  /**
    * Busca faturamento do SCI para um cliente (método legado - usar buscarFaturamentoCliente)
    * @param codigoSci Código da empresa no SCI
    * @param ano Ano do faturamento (ex: 2024, 2025)

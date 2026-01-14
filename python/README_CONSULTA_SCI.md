@@ -210,3 +210,4 @@ Apenas consultas **SELECT** são permitidas.
    SELECT * FROM BDCOL WHERE BDDATAADMCOL >= '2024-01-01'
    ```
 
+

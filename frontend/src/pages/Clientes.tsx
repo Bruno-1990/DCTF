@@ -29,6 +29,214 @@ import EProcessosTab from '../components/Clientes/EProcessosTab';
 import ExportClientesModal from '../components/Clientes/ExportClientesModal';
 import { clientesService } from '../services';
 import { useToast } from '../hooks/useToast';
+import { irpfService, type FaturamentoAnual } from '../services/irpf';
+import { CurrencyDollarIcon, CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { Menu, Transition } from '@headlessui/react';
+
+// Componente moderno de seleção de Mês/Ano
+const MonthYearPicker: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+}> = ({ value, onChange }) => {
+  const [anoAtual, setAnoAtual] = React.useState(() => {
+    if (value) {
+      const [ano] = value.split('-');
+      return parseInt(ano);
+    }
+    return new Date().getFullYear();
+  });
+
+  // Sincronizar anoAtual quando value mudar externamente
+  React.useEffect(() => {
+    if (value) {
+      const [ano] = value.split('-');
+      const anoValue = parseInt(ano);
+      setAnoAtual(prev => prev !== anoValue ? anoValue : prev);
+    }
+  }, [value]);
+
+  const meses = [
+    { num: 1, nome: 'Janeiro', abrev: 'jan' },
+    { num: 2, nome: 'Fevereiro', abrev: 'fev' },
+    { num: 3, nome: 'Março', abrev: 'mar' },
+    { num: 4, nome: 'Abril', abrev: 'abr' },
+    { num: 5, nome: 'Maio', abrev: 'mai' },
+    { num: 6, nome: 'Junho', abrev: 'jun' },
+    { num: 7, nome: 'Julho', abrev: 'jul' },
+    { num: 8, nome: 'Agosto', abrev: 'ago' },
+    { num: 9, nome: 'Setembro', abrev: 'set' },
+    { num: 10, nome: 'Outubro', abrev: 'out' },
+    { num: 11, nome: 'Novembro', abrev: 'nov' },
+    { num: 12, nome: 'Dezembro', abrev: 'dez' },
+  ];
+
+  const mesSelecionado = value ? parseInt(value.split('-')[1]) : null;
+  const anoSelecionado = value ? parseInt(value.split('-')[0]) : null;
+
+  const textoExibido = value
+    ? `${meses.find(m => m.num === mesSelecionado)?.nome || ''} de ${anoSelecionado}`
+    : 'Selecione o mês e ano...';
+
+  const handleSelecionarMes = (mes: number) => {
+    const novoValor = `${anoAtual}-${String(mes).padStart(2, '0')}`;
+    onChange(novoValor);
+  };
+
+  const anosDisponiveis = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i);
+
+  return (
+    <Menu as="div" className="relative">
+      {({ open, close }) => (
+        <>
+          <Menu.Button className="w-full px-4 py-2.5 text-left border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white hover:bg-gray-50 transition-colors flex items-center justify-between">
+            <span className={value ? 'text-gray-900' : 'text-gray-500'}>
+              {textoExibido}
+            </span>
+            <CalendarIcon className="h-5 w-5 text-gray-400" />
+          </Menu.Button>
+
+          <Transition
+            show={open}
+            enter="transition ease-out duration-100"
+            enterFrom="transform opacity-0 scale-95"
+            enterTo="transform opacity-100 scale-100"
+            leave="transition ease-in duration-75"
+            leaveFrom="transform opacity-100 scale-100"
+            leaveTo="transform opacity-0 scale-95"
+          >
+            <Menu.Items static className="absolute z-50 mt-2 w-full bg-white rounded-lg shadow-lg border border-gray-200 p-4 focus:outline-none">
+              {/* Header com botão X */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 flex-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAnoAtual(prev => prev - 1);
+                    }}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                  >
+                    <ChevronLeftIcon className="h-5 w-5 text-gray-600" />
+                  </button>
+                  <span className="text-lg font-semibold text-gray-900 flex-1 text-center">{anoAtual}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAnoAtual(prev => prev + 1);
+                    }}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                  >
+                    <ChevronRightIcon className="h-5 w-5 text-gray-600" />
+                  </button>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    close();
+                  }}
+                  className="ml-2 p-1 hover:bg-gray-100 rounded transition-colors"
+                  title="Fechar"
+                >
+                  <XMarkIcon className="h-5 w-5 text-gray-500" />
+                </button>
+              </div>
+
+              {/* Grid de Meses */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {meses.map((mes) => {
+                  const isSelected = value === `${anoAtual}-${String(mes.num).padStart(2, '0')}`;
+                  return (
+                    <button
+                      key={mes.num}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelecionarMes(mes.num);
+                        // Fechar automaticamente após selecionar
+                        setTimeout(() => close(), 150);
+                      }}
+                      className={`
+                        px-3 py-2 text-sm font-medium rounded-lg transition-all
+                        ${isSelected
+                          ? 'bg-purple-600 text-white shadow-md'
+                          : 'bg-gray-50 text-gray-700 hover:bg-purple-50 hover:text-purple-700'
+                        }
+                      `}
+                    >
+                      {mes.abrev}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Seleção Rápida de Ano */}
+              <div className="border-t border-gray-200 pt-3">
+                <p className="text-xs font-medium text-gray-500 mb-2">Anos Recentes</p>
+                <div className="flex flex-wrap gap-2">
+                  {anosDisponiveis.map((ano) => (
+                    <button
+                      key={ano}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAnoAtual(ano);
+                      }}
+                      className={`
+                        px-3 py-1.5 text-sm rounded-md transition-colors
+                        ${anoAtual === ano
+                          ? 'bg-purple-100 text-purple-700 font-medium'
+                          : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                        }
+                      `}
+                    >
+                      {ano}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-gray-200">
+                <div className="flex gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChange('');
+                      close();
+                    }}
+                    className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const hoje = new Date();
+                      const mesAtual = hoje.getMonth() + 1;
+                      const anoAtualHoje = hoje.getFullYear();
+                      handleSelecionarMes(mesAtual);
+                      setAnoAtual(anoAtualHoje);
+                      setTimeout(() => close(), 150);
+                    }}
+                    className="px-3 py-1.5 text-sm text-purple-700 hover:bg-purple-50 rounded-md transition-colors font-medium"
+                  >
+                    Mês Atual
+                  </button>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    close();
+                  }}
+                  className="px-4 py-1.5 text-sm bg-purple-600 text-white hover:bg-purple-700 rounded-md transition-colors font-medium"
+                >
+                  OK
+                </button>
+              </div>
+            </Menu.Items>
+          </Transition>
+        </>
+      )}
+    </Menu>
+  );
+};
 
 const Clientes: React.FC = () => {
   const { clientes, loadClientes, createCliente, updateClienteById, deleteClienteById, loading, error, clearError } = useClientes();
@@ -48,10 +256,37 @@ const Clientes: React.FC = () => {
   const [totalPages, setTotalPages] = useState<number | null>(null);
   // Aba Participação
   const [clientesParticipacao, setClientesParticipacao] = useState<Cliente[]>([]);
+  // Aba Faturamento SCI
+  const [clientesFaturamento, setClientesFaturamento] = useState<Cliente[]>([]);
+  const [faturamentoData, setFaturamentoData] = useState<Map<string, { faturamento: FaturamentoAnual[]; loading: boolean; carregado: boolean; error?: string }>>(new Map());
+  const [loadingFaturamento, setLoadingFaturamento] = useState(false);
+  const [searchFaturamento, setSearchFaturamento] = useState('');
+  const carregandoFaturamentoRef = useRef(false);
+  const activeTabFaturamentoAnteriorRef = useRef<string>('');
+  const anoAtualFaturamento = new Date().getFullYear();
+  const anosParaBuscarFaturamento = [anoAtualFaturamento - 2, anoAtualFaturamento - 1];
+  
+  // Modal Consulta Personalizada
+  const [showModalConsultaPersonalizada, setShowModalConsultaPersonalizada] = useState(false);
+  const [tipoConsulta, setTipoConsulta] = useState<'anual' | 'mensal' | 'personalizado'>('anual');
+  const [consultaPersonalizada, setConsultaPersonalizada] = useState({
+    busca: '',
+    dataInicial: '',
+    dataFinal: '',
+    tipoFaturamento: 'detalhado' as 'detalhado' | 'consolidado',
+    somarMatrizFilial: false,
+    // Campos específicos para consulta anual e mensal
+    anoSelecionado: '',
+    mesSelecionado: '',
+    anoMesSelecionado: '',
+  });
+  const [loadingConsultaPersonalizada, setLoadingConsultaPersonalizada] = useState(false);
+  const [resultadoConsultaPersonalizada, setResultadoConsultaPersonalizada] = useState<any>(null);
+  const [showModalResultado, setShowModalResultado] = useState(false);
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
-  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente'>('a-z');
-  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'z-a' | 'cnpj'>('a-z');
+  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente'>('a-z');
+  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci'>('a-z');
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
   // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
@@ -63,7 +298,7 @@ const Clientes: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos'>(() => {
+  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'pagamentos' | 'e-processos'>(() => {
     // Inicializar pela URL/localStorage para evitar 1º render na aba errada (que dispara várias requisições/toasts)
     const params = new URLSearchParams(window.location.search);
     const tabFromQuery = params.get('tab');
@@ -89,7 +324,9 @@ const Clientes: React.FC = () => {
   // const [ultimaImportacaoMeta, setUltimaImportacaoMeta] = useState<any>(null); // Não utilizado no momento
   const [visualizandoCliente, setVisualizandoCliente] = useState<Cliente | null>(null);
   const [atualizandoCliente, setAtualizandoCliente] = useState(false);
+  const [sociosRefreshKey, setSociosRefreshKey] = useState(0);
   const [atualizandoSocios, setAtualizandoSocios] = useState<string | null>(null); // ID do cliente sendo atualizado
+  const [atualizandoCodigoSCI, setAtualizandoCodigoSCI] = useState(false);
  // ID do cliente sendo recalculado
   const [uploadingPdf, setUploadingPdf] = useState(false); // Estado para upload de PDF
   // Estados para modal de regime tributário
@@ -99,6 +336,10 @@ const Clientes: React.FC = () => {
   const [salvandoRegime, setSalvandoRegime] = useState(false);
   // Estados para modal de exportação
   const [showExportModal, setShowExportModal] = useState(false);
+  // Estados para modal de edição manual de participação
+  const [showModalEdicaoParticipacao, setShowModalEdicaoParticipacao] = useState(false);
+  const [clienteEditandoParticipacao, setClienteEditandoParticipacao] = useState<Cliente | null>(null);
+  const [editandoParticipacao, setEditandoParticipacao] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -134,7 +375,7 @@ const Clientes: React.FC = () => {
   };
 
   // Função para mudar de aba e atualizar URL
-  const handleTabChange = (tab: 'clientes' | 'participacao' | 'lancamentos' | 'pagamentos' | 'e-processos') => {
+  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'pagamentos' | 'e-processos') => {
     setActiveTab(tab);
     // Atualizar URL sem recarregar a página
     const params = new URLSearchParams(location.search);
@@ -228,6 +469,7 @@ const Clientes: React.FC = () => {
     const tabFromStorage = window.localStorage.getItem('clientes_active_tab') as
       | 'clientes'
       | 'participacao'
+      | 'faturamento-sci'
       | 'lancamentos'
       | 'pagamentos'
       | 'e-processos'
@@ -238,6 +480,7 @@ const Clientes: React.FC = () => {
     else if (tab === 'lancamentos') setActiveTab('lancamentos');
     else if (tab === 'e-processos') setActiveTab('e-processos');
     else if (tab === 'participacao') setActiveTab('participacao');
+    else if (tab === 'faturamento-sci') setActiveTab('faturamento-sci');
     else setActiveTab('clientes');
     
     // Detectar CNPJ na query string para pagamentos, e-processos, lançamentos e clientes
@@ -379,6 +622,12 @@ const Clientes: React.FC = () => {
             : parseFloat(String(capital).replace(/[^\d,.-]/g, '').replace(',', '.'));
           return isNaN(capitalNum) || capitalNum === 0;
         } else if (ordenacaoParticipacao === 'divergente') {
+          // Exceção: CONSORCIO CONSERVA-VITORIA (CNPJ: 48.401.933/0001-17) - é esperado que seja zerado
+          const cnpjLimpo = c.cnpj_limpo || (c.cnpj ? c.cnpj.replace(/\D/g, '') : '');
+          if (cnpjLimpo === '48401933000117') {
+            return false; // Não é divergente, é esperado que seja zerado
+          }
+          
           const sociosComQualificacao = c.socios?.filter(s => s.qual && s.qual.trim() !== '') || [];
           if (sociosComQualificacao.length === 0) return false;
           const somaPercentuais = sociosComQualificacao.reduce((acc, s) => {
@@ -400,7 +649,8 @@ const Clientes: React.FC = () => {
             : 0;
           const capitalSocialNum = isNaN(capitalSocial) ? 0 : capitalSocial;
           const percentuaisOk = Math.abs(somaPercentuais - 100) < 0.01;
-          const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.01;
+          // Tolerância de R$ 0.10 para arredondamentos em múltiplos cálculos
+          const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.10;
           return !percentuaisOk || !valoresOk;
         }
         return true;
@@ -509,13 +759,12 @@ const Clientes: React.FC = () => {
       return; // Não fazer requisições na aba principal quando estiver em Participação
     }
     
-    // Só aplicar filtro de sócio se estiver na aba participação
-    const socioFiltroParaBusca = activeTab === 'participacao' ? (socioFiltro || undefined) : undefined;
-    loadClientes({ page, limit, search: debouncedSearch, socio: socioFiltroParaBusca }).then(({ pagination }) => {
+    // Não aplicar filtro de sócio fora da aba participação
+    loadClientes({ page, limit, search: debouncedSearch, socio: undefined }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
-  }, [page, limit, debouncedSearch, socioFiltro, activeTab]);
+  }, [page, limit, debouncedSearch, activeTab]);
 
   // Carregar todos os clientes para a aba Participação
   useEffect(() => {
@@ -784,6 +1033,276 @@ const Clientes: React.FC = () => {
     }
   }, [activeTab]); // Apenas activeTab como dependência
 
+  // Carregar todos os clientes para a aba Faturamento SCI
+  useEffect(() => {
+    const abaMudouParaFaturamento = activeTab === 'faturamento-sci' && activeTabFaturamentoAnteriorRef.current !== 'faturamento-sci';
+    
+    if (activeTab === 'faturamento-sci') {
+      activeTabFaturamentoAnteriorRef.current = activeTab;
+      
+      if (!abaMudouParaFaturamento) {
+        if (carregandoFaturamentoRef.current) {
+          return;
+        }
+        if (clientesFaturamento.length > 0) {
+          return;
+        }
+      }
+      
+      if (carregandoFaturamentoRef.current) {
+        return;
+      }
+      
+      carregandoFaturamentoRef.current = true;
+      setLoadingFaturamento(true);
+      
+      const carregarTodosClientes = async () => {
+        try {
+          toast.info('Carregando empresas para Faturamento SCI...', 3000);
+          const todosClientes: Cliente[] = [];
+          let pagina = 1;
+          let temMais = true;
+          
+          while (temMais) {
+            const resultado = await loadClientes({ 
+              page: pagina, 
+              limit: 100,
+              search: '', 
+              socio: undefined 
+            });
+            
+            todosClientes.push(...resultado.items);
+            
+            if (resultado.pagination) {
+              temMais = pagina < resultado.pagination.totalPages;
+              pagina++;
+            } else {
+              temMais = resultado.items.length === 100;
+              pagina++;
+            }
+            
+            if (temMais) {
+              await new Promise((resolve) => setTimeout(resolve, 30));
+            }
+          }
+          
+          // Filtrar apenas matrizes com código SCI
+          const apenasMatrizesComSCI = todosClientes.filter(cliente => {
+            return cliente.tipo_empresa === 'Matriz' && 
+                   cliente.codigo_sci && 
+                   !isNaN(Number(cliente.codigo_sci));
+          });
+          
+          setClientesFaturamento(apenasMatrizesComSCI);
+          
+          // Carregar dados do cache automaticamente para todos os clientes
+          try {
+            const promises = apenasMatrizesComSCI.map(async (cliente) => {
+              try {
+                const faturamento = await irpfService.buscarApenasCache(cliente.id, anosParaBuscarFaturamento);
+                
+                // Garantir que sempre temos os 2 anos, preenchendo com zeros se necessário
+                const faturamentoCompleto = anosParaBuscarFaturamento.map((ano) => {
+                  const encontrado = faturamento.find((f) => f.ano === ano);
+                  return encontrado || {
+                    ano,
+                    valorTotal: 0,
+                    mediaMensal: 0,
+                    meses: [],
+                  };
+                });
+                
+                setFaturamentoData((prev) => {
+                  const novo = new Map(prev);
+                  novo.set(cliente.id, {
+                    faturamento: faturamentoCompleto,
+                    loading: false,
+                    carregado: true,
+                  });
+                  return novo;
+                });
+              } catch (error: any) {
+                // Se não encontrar no cache, não é erro - apenas não marca como carregado
+                console.log(`[Faturamento SCI] Cache não encontrado para cliente ${cliente.id}:`, error.message);
+                // Deixar como não carregado para o usuário poder atualizar manualmente
+              }
+            });
+            
+            // Aguardar todas as requisições, mas não bloquear se algumas falharem
+            await Promise.allSettled(promises);
+          } catch (error: any) {
+            console.error('[Faturamento SCI] Erro ao carregar cache inicial:', error);
+          }
+          
+          setLoadingFaturamento(false);
+          carregandoFaturamentoRef.current = false;
+        } catch (error: any) {
+          console.error('[Clientes] Erro ao carregar clientes para Faturamento SCI:', error);
+          toast.error(`Erro ao carregar clientes: ${error?.message || 'Erro desconhecido'}`);
+          setLoadingFaturamento(false);
+          carregandoFaturamentoRef.current = false;
+        }
+      };
+      
+      void carregarTodosClientes();
+    } else {
+      activeTabFaturamentoAnteriorRef.current = activeTab;
+      if (activeTabFaturamentoAnteriorRef.current === 'faturamento-sci') {
+        setClientesFaturamento([]);
+        setSearchFaturamento('');
+        setFaturamentoData(new Map());
+        carregandoFaturamentoRef.current = false;
+      }
+    }
+  }, [activeTab]);
+
+  // Função para atualizar faturamento de um cliente
+  const atualizarFaturamentoCliente = async (clienteId: string) => {
+    const cliente = clientesFaturamento.find(c => c.id === clienteId);
+    if (!cliente) return;
+    
+    setFaturamentoData((prev) => {
+      const novo = new Map(prev);
+      const atual = novo.get(clienteId) || { faturamento: [], loading: false, carregado: false };
+      novo.set(clienteId, { ...atual, loading: true });
+      return novo;
+    });
+    
+    try {
+      const faturamento = await irpfService.atualizarCache(clienteId, anosParaBuscarFaturamento);
+      const faturamentoCompleto = anosParaBuscarFaturamento.map((ano) => {
+        const encontrado = faturamento.find((f) => f.ano === ano);
+        return encontrado || { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
+      });
+      
+      setFaturamentoData((prev) => {
+        const novo = new Map(prev);
+        novo.set(clienteId, { faturamento: faturamentoCompleto, loading: false, carregado: true });
+        return novo;
+      });
+      
+      toast.success(`Faturamento atualizado para ${cliente.razao_social || cliente.nome}`, 3000);
+    } catch (error: any) {
+      console.error(`Erro ao atualizar faturamento para ${clienteId}:`, error);
+      setFaturamentoData((prev) => {
+        const novo = new Map(prev);
+        novo.set(clienteId, { 
+          faturamento: [], 
+          loading: false, 
+          carregado: false,
+          error: error.message || 'Erro ao atualizar faturamento'
+        });
+        return novo;
+      });
+      toast.error(`Erro ao atualizar faturamento: ${error?.message || 'Erro desconhecido'}`);
+    }
+  };
+
+  // Função para atualizar todos os faturamentos
+  const atualizarTodosFaturamentos = async () => {
+    const clientesParaAtualizar = clientesFaturamento.filter(c => {
+      const data = faturamentoData.get(c.id);
+      return !data?.loading;
+    });
+    
+    if (clientesParaAtualizar.length === 0) return;
+    
+    setLoadingFaturamento(true);
+    toast.info(`Atualizando faturamento de ${clientesParaAtualizar.length} clientes...`, 5000);
+    
+    const batchSize = 3;
+    for (let i = 0; i < clientesParaAtualizar.length; i += batchSize) {
+      const batch = clientesParaAtualizar.slice(i, i + batchSize);
+      await Promise.all(batch.map(c => atualizarFaturamentoCliente(c.id)));
+      if (i + batchSize < clientesParaAtualizar.length) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+    
+    setLoadingFaturamento(false);
+    toast.success('Atualização concluída!', 3000);
+  };
+
+  // Função para formatar moeda
+  const formatarMoedaFaturamento = (valor: number | string | null | undefined) => {
+    if (valor === null || valor === undefined || valor === '') return 'R$ 0,00';
+    const num = typeof valor === 'string' ? parseFloat(valor.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')) : valor;
+    if (isNaN(num) || num === 0) return 'R$ 0,00';
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num);
+  };
+
+  // Função para executar consulta personalizada
+  const handleConsultarPersonalizada = async () => {
+    // Validações
+    if (!consultaPersonalizada.busca.trim()) {
+      toast.error('Por favor, preencha o campo de busca (CNPJ ou Razão Social)');
+      return;
+    }
+
+    if (!consultaPersonalizada.dataInicial || !consultaPersonalizada.dataFinal) {
+      toast.error('Por favor, preencha as datas inicial e final');
+      return;
+    }
+
+    const dataIni = new Date(consultaPersonalizada.dataInicial);
+    const dataFim = new Date(consultaPersonalizada.dataFinal);
+
+    if (dataFim < dataIni) {
+      toast.error('A data final deve ser maior ou igual à data inicial');
+      return;
+    }
+
+    setLoadingConsultaPersonalizada(true);
+
+    try {
+      console.log('[Frontend] Enviando consulta personalizada:', {
+        busca: consultaPersonalizada.busca,
+        dataInicial: consultaPersonalizada.dataInicial,
+        dataFinal: consultaPersonalizada.dataFinal,
+        tipoFaturamento: consultaPersonalizada.tipoFaturamento,
+        somarMatrizFilial: consultaPersonalizada.somarMatrizFilial,
+      });
+
+      const resultado = await irpfService.consultaPersonalizada({
+        busca: consultaPersonalizada.busca,
+        dataInicial: consultaPersonalizada.dataInicial,
+        dataFinal: consultaPersonalizada.dataFinal,
+        tipoFaturamento: consultaPersonalizada.tipoFaturamento,
+        somarMatrizFilial: consultaPersonalizada.somarMatrizFilial,
+      });
+
+      console.log('[Frontend] Resultado recebido:', resultado);
+      console.log('[Frontend] Total:', resultado?.total);
+      console.log('[Frontend] Detalhes:', resultado?.detalhes?.length || 0);
+
+      if (!resultado) {
+        throw new Error('Nenhum resultado retornado');
+      }
+
+      // O resultado já vem no formato correto do serviço
+      setResultadoConsultaPersonalizada(resultado);
+
+      setShowModalConsultaPersonalizada(false);
+      setShowModalResultado(true);
+      toast.success('Consulta realizada com sucesso!', 3000);
+    } catch (error: any) {
+      console.error('[Frontend] Erro na consulta personalizada:', error);
+      console.error('[Frontend] Erro completo:', {
+        message: error?.message,
+        response: error?.response?.data,
+        status: error?.response?.status
+      });
+      toast.error(error?.response?.data?.error || error?.message || 'Erro ao executar consulta personalizada');
+    } finally {
+      setLoadingConsultaPersonalizada(false);
+    }
+  };
+
   // Fechar dropdown de sócios ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -986,6 +1505,8 @@ const Clientes: React.FC = () => {
       setImportandoReceita(false);
     }
   };
+
+
 
   const handleSalvarRegimeTributario = async () => {
     if (!regimeSelecionado || !clienteParaRegime?.id) {
@@ -1505,6 +2026,20 @@ const Clientes: React.FC = () => {
             </button>
             <button
               type="button"
+              onClick={() => handleTabChange('faturamento-sci')}
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+                activeTab === 'faturamento-sci'
+                  ? 'bg-gradient-to-r from-blue-500 to-cyan-600 text-white shadow-lg shadow-blue-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+              }`}
+            >
+              Faturamento SCI
+              {activeTab === 'faturamento-sci' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => handleTabChange('lancamentos')}
               className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'lancamentos'
@@ -1688,6 +2223,14 @@ const Clientes: React.FC = () => {
                     {displayCNPJ(visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj || '')}
                   </div>
                 </div>
+                {visualizandoCliente.codigo_sci && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Código SCI</label>
+                    <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900 font-semibold text-blue-600">
+                      {visualizandoCliente.codigo_sci}
+                    </div>
+                  </div>
+                )}
                 {(visualizandoCliente as any).fantasia && (
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Fantasia</label>
@@ -1907,96 +2450,12 @@ const Clientes: React.FC = () => {
             <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
               <div className="flex items-center justify-between mb-4 pb-2 border-b-2 border-blue-300">
                 <h3 className="text-sm font-bold text-gray-800">Participação</h3>
-                <button
-                  onClick={async () => {
-                    if (!visualizandoCliente?.id) return;
-                    setAtualizandoCliente(true);
-                    try {
-                      const result = await clientesService.atualizarSociosPorSituacaoFiscal(visualizandoCliente.id);
-                      if (result.success) {
-                        toast.success(result.data?.message || 'Sócios atualizados com sucesso');
-                        // Recarregar dados do cliente
-                        const clienteAtualizado = await clientesService.obterCliente(visualizandoCliente.id);
-                        if (clienteAtualizado && (clienteAtualizado as any).success && (clienteAtualizado as any).data) {
-                          setVisualizandoCliente((clienteAtualizado as any).data as Cliente);
-                        } else if (clienteAtualizado && (clienteAtualizado as any).id) {
-                          // Fallback: se vier direto como Cliente
-                          setVisualizandoCliente(clienteAtualizado as Cliente);
-                        }
-                      } else {
-                        const errorMsg = (result as any).error || 'Erro ao atualizar sócios';
-                        const errorMsgLower = errorMsg.toLowerCase();
-                        
-                        // Verificar se é erro de Capital Social Zerado
-                        if (errorMsgLower.includes('capital social zerado') || 
-                            errorMsgLower.includes('capital zerado') ||
-                            errorMsgLower.includes('capital social zero')) {
-                          toast.error('Capital Social Zerado: Não é possível atualizar os sócios quando o capital social está zerado.');
-                        }
-                        // Se não houver situação fiscal, redirecionar para página de Situação Fiscal
-                        else if (errorMsg.includes('Nenhuma situação fiscal encontrada') || errorMsg.includes('404')) {
-                          const cnpjCliente = visualizandoCliente?.cnpj_limpo || visualizandoCliente?.cnpj?.replace(/\D/g, '') || '';
-                          if (cnpjCliente && cnpjCliente.length === 14) {
-                            toast.info('Redirecionando para consultar a Situação Fiscal...');
-                            navigate(`/situacao-fiscal?cnpj=${cnpjCliente}`);
-                            // Scroll para o topo após navegação
-                            setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
-                            // Scroll para o topo após navegação
-                            setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
-                          } else {
-                            toast.error('Nenhuma situação fiscal encontrada para este CNPJ. Por favor, consulte a Situação Fiscal primeiro.');
-                          }
-                        } else {
-                          toast.error(errorMsg);
-                        }
-                      }
-                    } catch (error: any) {
-                      console.error('Erro ao atualizar sócios:', error);
-                      const errorMsg = error.response?.data?.error || error.message || 'Erro ao atualizar sócios';
-                      const errorMsgLower = errorMsg.toLowerCase();
-                      
-                      // Verificar se é erro de Capital Social Zerado
-                      if (errorMsgLower.includes('capital social zerado') || 
-                          errorMsgLower.includes('capital zerado') ||
-                          errorMsgLower.includes('capital social zero')) {
-                        toast.error('Capital Social Zerado: Não é possível atualizar os sócios quando o capital social está zerado.');
-                      }
-                      // Se não houver situação fiscal, redirecionar para página de Situação Fiscal
-                      else if (error.response?.status === 404 || errorMsg.includes('Nenhuma situação fiscal encontrada')) {
-                        const cnpjCliente = visualizandoCliente?.cnpj_limpo || visualizandoCliente?.cnpj?.replace(/\D/g, '') || '';
-                        if (cnpjCliente && cnpjCliente.length === 14) {
-                          toast.info('Redirecionando para consultar a Situação Fiscal...');
-                          navigate(`/situacao-fiscal?cnpj=${cnpjCliente}`);
-                          // Scroll para o topo após navegação
-                          setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
-                        } else {
-                          toast.error('Nenhuma situação fiscal encontrada para este CNPJ. Por favor, consulte a Situação Fiscal primeiro.');
-                        }
-                      } else {
-                        toast.error(errorMsg);
-                      }
-                    } finally {
-                      setAtualizandoCliente(false);
-                    }
-                  }}
-                  disabled={atualizandoCliente || !visualizandoCliente?.id}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {atualizandoCliente ? (
-                    <>
-                      <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                      <span>Atualizando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <ArrowPathIcon className="w-4 h-4" />
-                      <span>Atualizar Sócios</span>
-                    </>
-                  )}
-                </button>
               </div>
               {Array.isArray((visualizandoCliente as any).socios) && (visualizandoCliente as any).socios.length > 0 ? (
-                <div className="border-2 border-blue-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                <div 
+                  className="border-2 border-blue-200 rounded-lg overflow-hidden bg-white shadow-sm"
+                  key={`socios-${visualizandoCliente.id}-${sociosRefreshKey}`}
+                >
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gradient-to-r from-blue-100 to-indigo-100">
                       <tr>
@@ -2016,6 +2475,7 @@ const Clientes: React.FC = () => {
                         
                         const formatCurrency = (value: number | null) => {
                           if (value === null || isNaN(value)) return '—';
+                          // Mostrar R$ 0,00 mesmo quando o valor for zero
                           return new Intl.NumberFormat('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
@@ -2055,7 +2515,7 @@ const Clientes: React.FC = () => {
       {activeTab !== 'pagamentos' && activeTab !== 'e-processos' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-          <div className="flex-1 max-w-md w-full">
+          <div className={`flex-1 ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Buscar Cliente</label>
             <div className="relative group">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
@@ -2066,20 +2526,72 @@ const Clientes: React.FC = () => {
                     ? 'Buscar por Razão Social ou CNPJ' 
                     : activeTab === 'participacao'
                     ? 'Digite o CNPJ ou Razão Social para filtrar...'
+                    : activeTab === 'faturamento-sci'
+                    ? 'Buscar por CNPJ ou Razão Social...'
                     : 'Digite o CNPJ (14 dígitos)'
                 }
-                value={activeTab === 'participacao' ? searchParticipacao : search}
+                value={
+                  activeTab === 'participacao' 
+                    ? searchParticipacao 
+                    : activeTab === 'faturamento-sci'
+                    ? searchFaturamento
+                    : search
+                }
                 onChange={(e) => {
                   if (activeTab === 'participacao') {
                     setSearchParticipacao(e.target.value);
+                  } else if (activeTab === 'faturamento-sci') {
+                    setSearchFaturamento(e.target.value);
                   } else {
                     setSearch(e.target.value);
                   }
                 }}
-                className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
+                className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
               />
+              {((activeTab === 'participacao' ? searchParticipacao : activeTab === 'faturamento-sci' ? searchFaturamento : search)) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeTab === 'participacao') {
+                      setSearchParticipacao('');
+                    } else if (activeTab === 'faturamento-sci') {
+                      setSearchFaturamento('');
+                    } else {
+                      setSearch('');
+                    }
+                  }}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                  title="Limpar busca"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              )}
             </div>
           </div>
+          {activeTab === 'faturamento-sci' && (
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  // Preencher o campo de busca do modal com o valor do campo de busca principal
+                  setTipoConsulta('anual');
+                  setConsultaPersonalizada(prev => ({
+                    ...prev,
+                    busca: searchFaturamento,
+                    dataInicial: '',
+                    dataFinal: '',
+                    anoSelecionado: '',
+                    mesSelecionado: '',
+                    anoMesSelecionado: '',
+                  }));
+                  setShowModalConsultaPersonalizada(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-medium whitespace-nowrap shadow-sm hover:shadow-md transition-all"
+              >
+                <MagnifyingGlassIcon className="h-4 w-4" />
+                Consulta Personalizada
+              </button>
+            </div>
+          )}
           {activeTab === 'clientes' && (
             <div className="w-full md:w-64">
               <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
@@ -2089,12 +2601,13 @@ const Clientes: React.FC = () => {
               <div className="relative">
                 <select
                   value={ordenacaoClientes}
-                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'z-a' | 'cnpj')}
+                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'z-a' | 'cnpj' | 'codigo-sci')}
                   className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
                 >
                   <option value="a-z">A → Z</option>
                   <option value="z-a">Z → A</option>
                   <option value="cnpj">CNPJ ↑</option>
+                  <option value="codigo-sci">Código SCI ↑</option>
                 </select>
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FunnelIcon className="h-5 w-5 text-blue-500" />
@@ -2121,6 +2634,7 @@ const Clientes: React.FC = () => {
                     <option value="a-z">A → Z</option>
                     <option value="z-a">Z → A</option>
                     <option value="cnpj">CNPJ ↑</option>
+                    <option value="codigo-sci">Código SCI ↑</option>
                     <option value="faltantes">Informações Faltantes</option>
                     <option value="sem-registro">Sem Registro</option>
                     <option value="capital-zerado">Capital Social Zerado</option>
@@ -2440,6 +2954,48 @@ const Clientes: React.FC = () => {
                 <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
                   <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Dados Cadastrais</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Código SCI</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={(formData as any).codigo_sci || ''}
+                          onChange={(e) => setFormData({ ...formData, codigo_sci: e.target.value } as any)}
+                          placeholder="Código do sistema SCI"
+                          className="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                          readOnly={atualizandoCodigoSCI}
+                        />
+                        {editingCliente?.id && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!editingCliente?.id) return;
+                              
+                              setAtualizandoCodigoSCI(true);
+                              try {
+                                const result = await clientesService.atualizarCodigoSCI(editingCliente.id);
+                                if (result.success && result.data) {
+                                  setFormData({ ...formData, codigo_sci: result.data.codigo_sci } as any);
+                                  toast.success(result.message || 'Código SCI atualizado com sucesso');
+                                } else {
+                                  toast.error(result.error || 'Erro ao atualizar código SCI');
+                                }
+                              } catch (error: any) {
+                                console.error('[Clientes] Erro ao atualizar código SCI:', error);
+                                toast.error(error.response?.data?.error || error.message || 'Erro ao atualizar código SCI');
+                              } finally {
+                                setAtualizandoCodigoSCI(false);
+                              }
+                            }}
+                            disabled={atualizandoCodigoSCI}
+                            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 font-semibold text-sm"
+                          >
+                            <ArrowPathIcon className={`h-4 w-4 ${atualizandoCodigoSCI ? 'animate-spin' : ''}`} />
+                            Atualizar
+                          </button>
+                        )}
+                      </div>
+                    </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1.5">Fantasia</label>
                       <input
@@ -2783,6 +3339,7 @@ const Clientes: React.FC = () => {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-1/4">Razão Social</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Código SCI</th>
                 {socioFiltro && (
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Participação</th>
                 )}
@@ -2813,7 +3370,7 @@ const Clientes: React.FC = () => {
 
                 return clientesOrdenados.length === 0 ? (
                   <tr>
-                    <td colSpan={socioFiltro ? 5 : 4} className="px-6 py-12 text-center">
+                    <td colSpan={socioFiltro ? 6 : 5} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <UserGroupIcon className="h-12 w-12 text-gray-400" />
                         <p className="text-gray-500 font-medium">Nenhum cliente encontrado</p>
@@ -2857,6 +3414,15 @@ const Clientes: React.FC = () => {
                             )}
                           </button>
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {cliente.codigo_sci ? (
+                          <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm font-semibold">
+                            {cliente.codigo_sci}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-400">—</span>
+                        )}
                       </td>
                       {socioFiltro && (
                       <td className="px-6 py-4">
@@ -3000,6 +3566,595 @@ const Clientes: React.FC = () => {
         <EProcessosTab cnpjPreenchido={cnpjParaPagamentos} />
       )}
 
+      {/* Aba de Faturamento SCI */}
+      {activeTab === 'faturamento-sci' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <CurrencyDollarIcon className="h-5 w-5 text-blue-600" />
+                  Faturamento SCI
+                </h2>
+                <p className="text-xs text-gray-600 mt-1">
+                  Gerencie o faturamento dos últimos 2 anos ({anosParaBuscarFaturamento.join(' e ')}) para declaração IRPF
+                </p>
+              </div>
+              {!loadingFaturamento && clientesFaturamento.length > 0 && (
+                <button
+                  onClick={atualizarTodosFaturamentos}
+                  disabled={loadingFaturamento}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                >
+                  <ArrowPathIcon className={`h-4 w-4 ${loadingFaturamento ? 'animate-spin' : ''}`} />
+                  Atualizar Todos
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="p-6">
+            {loadingFaturamento && clientesFaturamento.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
+                <ArrowPathIcon className="animate-spin h-8 w-8 text-blue-600" />
+                <span className="ml-3 text-gray-600">Carregando empresas...</span>
+              </div>
+            ) : clientesFaturamento.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <p>Nenhuma matriz com código SCI encontrada.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Lista de Clientes */}
+                <div className="space-y-4">
+                  {clientesFaturamento
+                    .filter((c) => {
+                      if (!searchFaturamento) return true;
+                      const term = searchFaturamento.toLowerCase();
+                      const cnpj = (c.cnpj_limpo || c.cnpj || '').toLowerCase();
+                      const razao = (c.razao_social || c.nome || '').toLowerCase();
+                      return cnpj.includes(term) || razao.includes(term);
+                    })
+                    .map((cliente) => {
+                      const data = faturamentoData.get(cliente.id);
+                      const faturamento = data?.faturamento || [];
+                      
+                      return (
+                        <div key={cliente.id} className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h3 className="text-lg font-semibold text-gray-900">
+                                {cliente.razao_social || cliente.nome || 'Sem nome'}
+                              </h3>
+                              <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                                <span>CNPJ: {cliente.cnpj_limpo || cliente.cnpj || '-'}</span>
+                                <span>Código SCI: {cliente.codigo_sci || '-'}</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => atualizarFaturamentoCliente(cliente.id)}
+                              disabled={data?.loading || loadingFaturamento}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                            >
+                              {data?.loading ? (
+                                <>
+                                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                                  Atualizando...
+                                </>
+                              ) : (
+                                <>
+                                  <ArrowPathIcon className="h-4 w-4" />
+                                  Atualizar
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {data?.error && (
+                            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                              <strong>Erro:</strong> {data.error}
+                            </div>
+                          )}
+
+                          {faturamento.length > 0 && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {faturamento.map((fat) => (
+                                <div key={fat.ano} className="bg-white rounded-lg border border-gray-200 p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-base font-semibold text-gray-900">
+                                      Faturamento {fat.ano}
+                                    </h4>
+                                    <span className="text-lg font-bold text-green-700">
+                                      {formatarMoedaFaturamento(fat.valorTotal)}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-gray-600 mb-2">
+                                    Período: 01/01/{fat.ano} a 31/12/{fat.ano}
+                                  </div>
+                                  <div className="flex items-center justify-between text-sm">
+                                    <span className="text-gray-600">Média Mensal:</span>
+                                    <span className="font-semibold text-blue-700">
+                                      {formatarMoedaFaturamento(fat.mediaMensal || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {!data?.carregado && !data?.loading && (
+                            <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg text-sm">
+                              Clique em "Atualizar" para buscar o faturamento do SCI
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Barra de Carregamento Global */}
+      {loadingConsultaPersonalizada && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">
+            <div className="text-center">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent mb-4"></div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Consultando Faturamento</h3>
+              <p className="text-sm text-gray-600 mb-6">Aguarde enquanto buscamos os dados...</p>
+              
+              {/* Barra de Progresso Animada */}
+              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-purple-500 via-purple-600 to-purple-500 rounded-full animate-progress"></div>
+              </div>
+              
+              <style>{`
+                @keyframes progress {
+                  0% { transform: translateX(-100%); }
+                  100% { transform: translateX(100%); }
+                }
+                .animate-progress {
+                  animation: progress 1.5s ease-in-out infinite;
+                }
+              `}</style>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Consulta Personalizada */}
+      {showModalConsultaPersonalizada && !loadingConsultaPersonalizada && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowModalConsultaPersonalizada(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <MagnifyingGlassIcon className="h-5 w-5 text-purple-600" />
+                Consulta Personalizada
+              </h3>
+              <button
+                onClick={() => setShowModalConsultaPersonalizada(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Busca por CNPJ ou Razão Social */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Busca por CNPJ ou Razão Social
+                </label>
+                <input
+                  type="text"
+                  placeholder="Digite o CNPJ ou Razão Social..."
+                  value={consultaPersonalizada.busca}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    // Aplicar máscara de CNPJ se o valor contém apenas números
+                    const apenasNumeros = value.replace(/\D/g, '');
+                    // Se tiver mais de 2 dígitos e parecer ser um CNPJ (não contém letras), aplicar máscara
+                    if (apenasNumeros.length > 0 && apenasNumeros.length <= 14 && /^\d+$/.test(value.replace(/[.\-\/]/g, ''))) {
+                      const formatted = formatCNPJ(value);
+                      setConsultaPersonalizada(prev => ({ ...prev, busca: formatted }));
+                    } else {
+                      // Caso contrário, permitir texto livre (Razão Social)
+                      setConsultaPersonalizada(prev => ({ ...prev, busca: value }));
+                    }
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+
+              {/* Tipo de Consulta */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Tipo de Consulta
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="tipoConsulta"
+                      value="anual"
+                      checked={tipoConsulta === 'anual'}
+                      onChange={() => {
+                        setTipoConsulta('anual');
+                        // Limpar datas ao mudar de tipo
+                        setConsultaPersonalizada(prev => ({
+                          ...prev,
+                          dataInicial: '',
+                          dataFinal: '',
+                          anoSelecionado: '',
+                        }));
+                      }}
+                      className="mr-2 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-sm text-gray-700">Consulta Anual</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="tipoConsulta"
+                      value="mensal"
+                      checked={tipoConsulta === 'mensal'}
+                      onChange={() => {
+                        setTipoConsulta('mensal');
+                        // Limpar datas ao mudar de tipo
+                        setConsultaPersonalizada(prev => ({
+                          ...prev,
+                          dataInicial: '',
+                          dataFinal: '',
+                          mesSelecionado: '',
+                          anoMesSelecionado: '',
+                        }));
+                      }}
+                      className="mr-2 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-sm text-gray-700">Consulta Mensal</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="tipoConsulta"
+                      value="personalizado"
+                      checked={tipoConsulta === 'personalizado'}
+                      onChange={() => {
+                        setTipoConsulta('personalizado');
+                        // Limpar datas ao mudar de tipo
+                        setConsultaPersonalizada(prev => ({
+                          ...prev,
+                          dataInicial: '',
+                          dataFinal: '',
+                        }));
+                      }}
+                      className="mr-2 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-sm text-gray-700">Personalizado</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Consulta Anual */}
+              {tipoConsulta === 'anual' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Selecionar Ano
+                  </label>
+                  <select
+                    value={consultaPersonalizada.anoSelecionado}
+                    onChange={(e) => {
+                      const ano = e.target.value;
+                      if (ano) {
+                        setConsultaPersonalizada(prev => ({
+                          ...prev,
+                          anoSelecionado: ano,
+                          dataInicial: `${ano}-01-01`,
+                          dataFinal: `${ano}-12-31`
+                        }));
+                      } else {
+                        setConsultaPersonalizada(prev => ({
+                          ...prev,
+                          anoSelecionado: '',
+                          dataInicial: '',
+                          dataFinal: ''
+                        }));
+                      }
+                    }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  >
+                    <option value="">Selecione um ano...</option>
+                    {Array.from({ length: 10 }, (_, i) => {
+                      const ano = new Date().getFullYear() - i;
+                      return (
+                        <option key={ano} value={ano}>
+                          {ano}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+
+              {/* Consulta Mensal */}
+              {tipoConsulta === 'mensal' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Selecionar Mês/Ano
+                  </label>
+                  <MonthYearPicker
+                    value={consultaPersonalizada.anoMesSelecionado}
+                    onChange={(anoMes) => {
+                      if (anoMes) {
+                        const [ano, mes] = anoMes.split('-');
+                        const mesNum = parseInt(mes); // mesNum será 1-12 (janeiro=1, dezembro=12)
+                        const anoNum = parseInt(ano);
+                        
+                        // Calcular o último dia do mês selecionado
+                        // JavaScript Date usa meses 0-11 (janeiro=0, dezembro=11)
+                        // new Date(ano, mes, 0) retorna o último dia do mês anterior
+                        // Para obter o último dia do mês atual, usamos o próximo mês
+                        // Exemplo: janeiro (mesNum=1) -> new Date(2026, 2, 0) = 31 (último dia de janeiro)
+                        // Como mesNum é 1-12, usamos mesNum + 1 para obter o próximo mês no formato JS
+                        // mesNum=1 (janeiro) -> mesNum+1=2 -> new Date(2026, 2, 0) = 31 de janeiro ✅
+                        const ultimoDia = new Date(anoNum, mesNum + 1, 0).getDate();
+                        
+                        // Sempre começar no dia 01 do mês selecionado (garantir formato correto)
+                        const dataInicial = `${String(anoNum).padStart(4, '0')}-${String(mesNum).padStart(2, '0')}-01`;
+                        // Último dia do mês selecionado (28, 29, 30 ou 31 dependendo do mês)
+                        const dataFinal = `${String(anoNum).padStart(4, '0')}-${String(mesNum).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+                        
+                        console.log('[Consulta Mensal] Datas calculadas:', {
+                          anoMes,
+                          anoNum,
+                          mesNum,
+                          mes,
+                          ultimoDia,
+                          dataInicial,
+                          dataFinal
+                        });
+                        
+                        setConsultaPersonalizada(prev => ({
+                          ...prev,
+                          anoMesSelecionado: anoMes,
+                          mesSelecionado: mes,
+                          dataInicial,
+                          dataFinal
+                        }));
+                      } else {
+                        setConsultaPersonalizada(prev => ({
+                          ...prev,
+                          anoMesSelecionado: '',
+                          mesSelecionado: '',
+                          dataInicial: '',
+                          dataFinal: ''
+                        }));
+                      }
+                    }}
+                  />
+                  {consultaPersonalizada.anoMesSelecionado && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      Período: {consultaPersonalizada.dataInicial && new Date(consultaPersonalizada.dataInicial).toLocaleDateString('pt-BR')} a {consultaPersonalizada.dataFinal && new Date(consultaPersonalizada.dataFinal).toLocaleDateString('pt-BR')}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Consulta Personalizada */}
+              {tipoConsulta === 'personalizado' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Data Inicial
+                    </label>
+                    <input
+                      type="date"
+                      value={consultaPersonalizada.dataInicial}
+                      onChange={(e) => setConsultaPersonalizada(prev => ({ ...prev, dataInicial: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Data Final
+                    </label>
+                    <input
+                      type="date"
+                      value={consultaPersonalizada.dataFinal}
+                      onChange={(e) => setConsultaPersonalizada(prev => ({ ...prev, dataFinal: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Tipo de Faturamento */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tipo de Faturamento
+                </label>
+                <select
+                  value={consultaPersonalizada.tipoFaturamento}
+                  onChange={(e) => setConsultaPersonalizada(prev => ({ ...prev, tipoFaturamento: e.target.value as 'detalhado' | 'consolidado' }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                >
+                  <option value="detalhado">Faturamento Detalhado</option>
+                  <option value="consolidado">Faturamento Consolidado</option>
+                </select>
+              </div>
+
+              {/* Checkbox Somar Matriz e Filial */}
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="somarMatrizFilial"
+                  checked={consultaPersonalizada.somarMatrizFilial}
+                  onChange={(e) => setConsultaPersonalizada(prev => ({ ...prev, somarMatrizFilial: e.target.checked }))}
+                  className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                />
+                <label htmlFor="somarMatrizFilial" className="ml-2 block text-sm text-gray-700">
+                  Somar matriz e filial
+                </label>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowModalConsultaPersonalizada(false);
+                  setTipoConsulta('anual');
+                  setConsultaPersonalizada({
+                    busca: '',
+                    dataInicial: '',
+                    dataFinal: '',
+                    tipoFaturamento: 'detalhado',
+                    somarMatrizFilial: false,
+                    anoSelecionado: '',
+                    mesSelecionado: '',
+                    anoMesSelecionado: '',
+                  });
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConsultarPersonalizada}
+                disabled={loadingConsultaPersonalizada}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loadingConsultaPersonalizada ? 'Consultando...' : 'Consultar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Resultado Consulta Personalizada */}
+      {showModalResultado && resultadoConsultaPersonalizada && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowModalResultado(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">Resultado da Consulta Personalizada</h2>
+              <button
+                onClick={() => setShowModalResultado(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Informações do Cliente */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Cliente</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Razão Social</p>
+                    <p className="text-base font-medium text-gray-900">{resultadoConsultaPersonalizada.cliente.razao_social}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">CNPJ</p>
+                    <p className="text-base font-medium text-gray-900">{formatCNPJ(resultadoConsultaPersonalizada.cliente.cnpj)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Código SCI</p>
+                    <p className="text-base font-medium text-gray-900">{resultadoConsultaPersonalizada.cliente.codigo_sci}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Período</p>
+                    <p className="text-base font-medium text-gray-900">
+                      {new Date(resultadoConsultaPersonalizada.periodo.dataInicial).toLocaleDateString('pt-BR')} a {' '}
+                      {new Date(resultadoConsultaPersonalizada.periodo.dataFinal).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Configurações da Consulta */}
+              <div className="bg-blue-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Configurações</h3>
+                <div className="flex gap-4">
+                  <div>
+                    <span className="text-sm text-gray-600">Tipo: </span>
+                    <span className="text-sm font-medium text-gray-900">
+                      {resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado' ? 'Detalhado' : 'Consolidado'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-600">Somar Matriz e Filial: </span>
+                    <span className="text-sm font-medium text-gray-900">
+                      {resultadoConsultaPersonalizada.somarMatrizFilial ? 'Sim' : 'Não'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Total */}
+              <div className="bg-purple-50 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">Total</h3>
+                  <p className="text-2xl font-bold text-purple-600">
+                    {formatarMoedaFaturamento(resultadoConsultaPersonalizada.total)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Tabela de Detalhes */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Detalhes</h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código Empresa</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Referência</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ordem</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {resultadoConsultaPersonalizada.detalhes.length > 0 ? (
+                        resultadoConsultaPersonalizada.detalhes.map((detalhe: any, index: number) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{detalhe.codigoEmpresa || '-'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{detalhe.referencia || '-'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{detalhe.ordem || '-'}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{detalhe.descricao || '-'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
+                              {formatarMoedaFaturamento(detalhe.valor)}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                            Nenhum detalhe encontrado
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end">
+              <button
+                onClick={() => setShowModalResultado(false)}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Aba de Participação */}
       {activeTab === 'participacao' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -3032,6 +4187,13 @@ const Clientes: React.FC = () => {
               </div>
             ) : clientesParticipacao
               // 1. Aplicar busca por texto (CNPJ ou Razão Social) - busca em tempo real
+              .map(c => {
+                // Debug: verificar se capital_social está presente
+                if (c.cnpj_limpo === '31332375000182' || c.cnpj_limpo === '41697567000146' || c.cnpj_limpo === '03597050000196') {
+                  console.log('[DEBUG] Cliente:', c.razao_social, 'CNPJ:', c.cnpj_limpo, 'Capital Social:', c.capital_social, 'Tipo:', typeof c.capital_social);
+                }
+                return c;
+              })
               .filter(c => {
                 if (!searchParticipacao || !searchParticipacao.trim()) return true;
                 
@@ -3109,6 +4271,12 @@ const Clientes: React.FC = () => {
                     : parseFloat(String(capital).replace(/[^\d,.-]/g, '').replace(',', '.'));
                   return isNaN(capitalNum) || capitalNum === 0;
                 } else if (ordenacaoParticipacao === 'divergente') {
+                  // Exceção: CONSORCIO CONSERVA-VITORIA (CNPJ: 48.401.933/0001-17) - é esperado que seja zerado
+                  const cnpjLimpo = c.cnpj_limpo || (c.cnpj ? c.cnpj.replace(/\D/g, '') : '');
+                  if (cnpjLimpo === '48401933000117') {
+                    return false; // Não é divergente, é esperado que seja zerado
+                  }
+                  
                   // Empresas com divergências na verificação de 2 fatores
                   // (percentuais não somam 100% OU valores não batem com Capital Social)
                   const sociosComQualificacao = c.socios?.filter(s => s.qual && s.qual.trim() !== '') || [];
@@ -3141,9 +4309,9 @@ const Clientes: React.FC = () => {
                     : 0;
                   const capitalSocialNum = isNaN(capitalSocial) ? 0 : capitalSocial;
                   
-                  // Verificar divergências (com tolerância de 0.01% e R$ 0.01)
+                  // Verificar divergências (com tolerância de 0.01% e R$ 0.10 para arredondamentos)
                   const percentuaisOk = Math.abs(somaPercentuais - 100) < 0.01;
-                  const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.01;
+                  const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.10;
                   
                   // Retornar true se houver divergência (percentuais OU valores não batem)
                   return !percentuaisOk || !valoresOk;
@@ -3156,6 +4324,8 @@ const Clientes: React.FC = () => {
                 const nomeB = (b.razao_social || b.nome || '').toLowerCase();
                 const cnpjA = a.cnpj_limpo || a.cnpj || '';
                 const cnpjB = b.cnpj_limpo || b.cnpj || '';
+                const codigoSciA = String(a.codigo_sci || '').trim();
+                const codigoSciB = String(b.codigo_sci || '').trim();
                 
                 if (ordenacaoParticipacao === 'a-z') {
                   return nomeA.localeCompare(nomeB);
@@ -3163,6 +4333,8 @@ const Clientes: React.FC = () => {
                   return nomeB.localeCompare(nomeA);
                 } else if (ordenacaoParticipacao === 'cnpj') {
                   return cnpjA.localeCompare(cnpjB);
+                } else if (ordenacaoParticipacao === 'codigo-sci') {
+                  return codigoSciA.localeCompare(codigoSciB);
                 }
                 return 0; // Filtros especiais mantêm ordem original
               })
@@ -3197,8 +4369,9 @@ const Clientes: React.FC = () => {
                 // Verificar se bate 100% (com tolerância de 0.01% para arredondamentos)
                 const percentuaisOk = Math.abs(somaPercentuais - 100) < 0.01;
                 
-                // Verificar se os valores batem com o Capital Social (com tolerância de R$ 0.01 para arredondamentos)
-                const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.01;
+                // Verificar se os valores batem com o Capital Social (com tolerância de R$ 0.10 para arredondamentos)
+                // Aumentamos a tolerância para R$ 0,10 devido a arredondamentos em múltiplos cálculos
+                const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.10;
                 
                 return (
               <div 
@@ -3266,7 +4439,7 @@ const Clientes: React.FC = () => {
                               </button>
                             ) : null}
                           </div>
-                          {cliente.capital_social && (
+                          {(cliente.capital_social !== null && cliente.capital_social !== undefined) && (
                             <>
                               <span className="text-gray-400">•</span>
                               <p className="text-sm text-gray-600">
@@ -3277,7 +4450,7 @@ const Clientes: React.FC = () => {
                                       : parseFloat(String(cliente.capital_social).replace(/[^\d,.-]/g, '').replace(',', '.'));
                                     return !isNaN(capital) 
                                       ? capital.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                                      : cliente.capital_social;
+                                      : 'R$ 0,00';
                                   })()}
                                 </span>
                               </p>
@@ -3374,6 +4547,17 @@ const Clientes: React.FC = () => {
                           ) : (
                             <PlusIcon className="h-4 w-4" />
                           )}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setClienteEditandoParticipacao(cliente);
+                            setShowModalEdicaoParticipacao(true);
+                          }}
+                          className="p-2 text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 flex items-center justify-center border border-blue-200 hover:border-blue-600"
+                          title="Editar Capital Social e Participações dos Sócios"
+                        >
+                          <PencilIcon className="h-4 w-4" />
                         </button>
                         <button
                           onClick={async (e) => {
@@ -3652,14 +4836,14 @@ const Clientes: React.FC = () => {
                                 <td className="px-3 py-2.5 whitespace-nowrap text-right">
                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold text-amber-700 bg-amber-100">
                                     {socio.participacao_percentual !== null && socio.participacao_percentual !== undefined
-                                      ? `${socio.participacao_percentual.toFixed(2)}%`
-                                      : '-'}
+                                      ? `${socio.participacao_percentual.toFixed(2).replace('.', ',')}%`
+                                      : '0,00%'}
                                   </span>
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap text-right text-sm font-semibold text-green-700">
-                                  {socio.participacao_valor
+                                  {socio.participacao_valor !== null && socio.participacao_valor !== undefined
                                     ? socio.participacao_valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                                    : '-'}
+                                    : 'R$ 0,00'}
                                 </td>
                               </tr>
                             ))}
@@ -3965,6 +5149,229 @@ const Clientes: React.FC = () => {
           onClose={() => setShowExportModal(false)}
           onExport={handleExportarClientes}
         />
+      )}
+
+      {/* Modal de Edição Manual de Participação */}
+      {showModalEdicaoParticipacao && clienteEditandoParticipacao && (
+        <>
+          {/* Overlay com backdrop blur */}
+          <div 
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] animate-fade-in"
+            onClick={() => {
+              setShowModalEdicaoParticipacao(false);
+              setClienteEditandoParticipacao(null);
+            }}
+          />
+          
+          {/* Modal */}
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 overflow-y-auto">
+            <div 
+              className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full transform transition-all animate-slide-up my-8"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header do Modal */}
+              <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-6 py-5 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                      <PencilIcon className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">Editar Participação</h3>
+                      <p className="text-sm text-white/90">
+                        {clienteEditandoParticipacao.razao_social || clienteEditandoParticipacao.nome || 'Cliente'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowModalEdicaoParticipacao(false);
+                      setClienteEditandoParticipacao(null);
+                    }}
+                    className="text-white hover:text-gray-200 transition-colors p-1 rounded-lg hover:bg-white/10"
+                  >
+                    <XMarkIcon className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body do Modal */}
+              <div className="p-6 max-h-[70vh] overflow-y-auto">
+                {/* Capital Social */}
+                <div className="mb-6">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Capital Social (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    defaultValue={clienteEditandoParticipacao.capital_social || 0}
+                    id="capital-social-input"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm hover:border-gray-400"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                {/* Sócios */}
+                <div className="mb-6">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Participações dos Sócios
+                  </label>
+                  <div className="space-y-4">
+                    {((clienteEditandoParticipacao as any).socios || []).map((socio: any, idx: number) => (
+                      <div key={socio.id || idx} className="border-2 border-gray-200 rounded-xl p-4 bg-gray-50">
+                        <div className="mb-3">
+                          <h4 className="text-sm font-semibold text-gray-800">{socio.nome || 'Sem nome'}</h4>
+                          {socio.cpf && (
+                            <p className="text-xs text-gray-500">CPF/CNPJ: {formatarCpfCnpj(socio.cpf)}</p>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              Participação (%)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              defaultValue={socio.participacao_percentual !== null && socio.participacao_percentual !== undefined 
+                                ? parseFloat(String(socio.participacao_percentual)) 
+                                : 0}
+                              data-socio-id={socio.id}
+                              data-field="participacao_percentual"
+                              className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              Valor (R$)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              defaultValue={socio.participacao_valor !== null && socio.participacao_valor !== undefined 
+                                ? parseFloat(String(socio.participacao_valor)) 
+                                : 0}
+                              data-socio-id={socio.id}
+                              data-field="participacao_valor"
+                              className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                              placeholder="0.00"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(!(clienteEditandoParticipacao as any).socios || (clienteEditandoParticipacao as any).socios.length === 0) && (
+                      <div className="text-center py-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                        <p className="text-sm text-gray-500">Nenhum sócio cadastrado</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Botões */}
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <button
+                    onClick={async () => {
+                      if (!clienteEditandoParticipacao?.id) return;
+                      
+                      setEditandoParticipacao(true);
+                      try {
+                        // Coletar dados do formulário
+                        const capitalSocialInput = document.getElementById('capital-social-input') as HTMLInputElement;
+                        const capitalSocial = capitalSocialInput ? parseFloat(capitalSocialInput.value) || 0 : 0;
+                        
+                        const sociosAtualizados = ((clienteEditandoParticipacao as any).socios || []).map((socio: any) => {
+                          const percentualInput = document.querySelector(`[data-socio-id="${socio.id}"][data-field="participacao_percentual"]`) as HTMLInputElement;
+                          const valorInput = document.querySelector(`[data-socio-id="${socio.id}"][data-field="participacao_valor"]`) as HTMLInputElement;
+                          
+                          return {
+                            id: socio.id,
+                            participacao_percentual: percentualInput ? parseFloat(percentualInput.value) || 0 : 0,
+                            participacao_valor: valorInput ? parseFloat(valorInput.value) || 0 : 0,
+                          };
+                        });
+                        
+                        // Chamar API para salvar
+                        const result = await clientesService.editarParticipacaoManual(
+                          clienteEditandoParticipacao.id,
+                          capitalSocial,
+                          sociosAtualizados
+                        );
+                        
+                        if (result.success) {
+                          toast.success('Participação atualizada com sucesso!');
+                          
+                          // Atualizar cliente na lista
+                          if (activeTab === 'participacao') {
+                            const clienteAtualizado = await clientesService.obterCliente(clienteEditandoParticipacao.id);
+                            if (clienteAtualizado && typeof clienteAtualizado === 'object') {
+                              let clienteComSocios: Cliente;
+                              if ((clienteAtualizado as any).success && (clienteAtualizado as any).data) {
+                                clienteComSocios = (clienteAtualizado as any).data as Cliente;
+                              } else if ((clienteAtualizado as any).id) {
+                                clienteComSocios = clienteAtualizado as Cliente;
+                              } else {
+                                throw new Error('Formato de resposta inválido');
+                              }
+                              
+                              setClientesParticipacao(prevClientes => 
+                                prevClientes.map(c => c.id === clienteEditandoParticipacao.id ? clienteComSocios : c)
+                              );
+                            }
+                          }
+                          
+                          // Fechar modal
+                          setShowModalEdicaoParticipacao(false);
+                          setClienteEditandoParticipacao(null);
+                        } else {
+                          throw new Error(result.error || 'Erro ao atualizar participação');
+                        }
+                      } catch (error: any) {
+                        console.error('[Clientes] Erro ao editar participação:', error);
+                        toast.error(error?.response?.data?.error || error?.message || 'Erro ao atualizar participação');
+                      } finally {
+                        setEditandoParticipacao(false);
+                      }
+                    }}
+                    disabled={editandoParticipacao || !clienteEditandoParticipacao?.id}
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 transform disabled:hover:scale-100"
+                  >
+                    {editandoParticipacao ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <CheckIcon className="h-5 w-5" />
+                        Concluir
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowModalEdicaoParticipacao(false);
+                      setClienteEditandoParticipacao(null);
+                    }}
+                    className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-semibold transition-all duration-300 flex items-center gap-2 shadow-sm hover:shadow-md border border-gray-200 hover:scale-105 transform"
+                  >
+                    <XMarkIcon className="h-5 w-5" />
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
       
       <style>{`

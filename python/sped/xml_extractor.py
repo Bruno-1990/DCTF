@@ -353,3 +353,4 @@ def consolidar_itens_por_cfop_cst(itens: List[ItemNFe]) -> Dict[Tuple[str, str],
 
 
 
+

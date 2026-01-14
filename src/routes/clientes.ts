@@ -38,6 +38,16 @@ router.put('/:id/atualizar-socios-situacao-fiscal', validateParams(clienteSchema
   clienteController.atualizarSociosPorSituacaoFiscal(req, res);
 });
 
+// PUT /api/clientes/:id/editar-participacao-manual - Editar participação manualmente (Capital Social e Sócios)
+router.put('/:id/editar-participacao-manual', validateParams(clienteSchemas.params), (req, res) => {
+  clienteController.editarParticipacaoManual(req, res);
+});
+
+// PUT /api/clientes/:id/atualizar-codigo-sci - Atualizar código SCI do cliente
+router.put('/:id/atualizar-codigo-sci', validateParams(clienteSchemas.params), (req, res) => {
+  clienteController.atualizarCodigoSCI(req, res);
+});
+
 // GET /api/clientes/sem-dctf - Identificar clientes sem DCTF no mês vigente
 // Conforme IN RFB 2.237/2024, 2.267/2025 e 2.248/2025
 router.get('/sem-dctf', (req, res) => {
@@ -92,6 +102,21 @@ router.post('/exportar-personalizado', (req, res) => {
 // POST /api/clientes/import-json - Importar clientes em lote via JSON
 router.post('/import-json', (req, res) => {
   clienteController.importarClientesJson(req, res);
+});
+
+// POST /api/clientes/atualizar-capital-social - Atualizar capital_social usando dados do PDF
+router.post('/atualizar-capital-social', (req, res) => {
+  clienteController.atualizarCapitalSocial(req, res);
+});
+
+// POST /api/clientes/atualizar-socios - Atualizar participacao_percentual e participacao_valor dos sócios
+router.post('/atualizar-socios', (req, res) => {
+  clienteController.atualizarSocios(req, res);
+});
+
+// POST /api/clientes/recalcular-valores-divergentes - Recalcular valores de participação para clientes divergentes
+router.post('/recalcular-valores-divergentes', (req, res) => {
+  clienteController.recalcularValoresDivergentes(req, res);
 });
 
 // PUT /api/clientes/:id - Atualizar cliente

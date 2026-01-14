@@ -162,3 +162,4 @@ async function createSpedV2LegalDocumentsTables() {
 // Executar
 createSpedV2LegalDocumentsTables();
 
+

@@ -166,3 +166,4 @@ if __name__ == "__main__":
         # Modo padrão (query original)
         executar_relatorio_faturamento()
 
+

@@ -4,9 +4,14 @@
  */
 
 import { Request, Response } from 'express';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as path from 'path';
 import { Cliente } from '../models/Cliente';
 import { ApiResponse } from '../types';
 import ExcelJS from 'exceljs';
+
+const execAsync = promisify(exec);
 
 export class ClienteController {
   private clienteModel: Cliente;
@@ -416,6 +421,137 @@ export class ClienteController {
         success: false,
         error: 'Erro interno do servidor',
         message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Atualizar código SCI do cliente
+   * Busca o código SCI no banco SCI e atualiza no MySQL
+   */
+  async atualizarCodigoSCI(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'ID do cliente é obrigatório',
+        });
+        return;
+      }
+
+      // Buscar cliente pelo ID
+      const clienteResult = await this.clienteModel.findById(id);
+      if (!clienteResult.success || !clienteResult.data) {
+        res.status(404).json({
+          success: false,
+          error: 'Cliente não encontrado',
+        });
+        return;
+      }
+
+      const cliente = clienteResult.data as any;
+      const cnpj = cliente.cnpj_limpo || cliente.cnpj;
+
+      if (!cnpj) {
+        res.status(400).json({
+          success: false,
+          error: 'Cliente não possui CNPJ cadastrado',
+        });
+        return;
+      }
+
+      // Normalizar CNPJ (apenas números)
+      const cnpjLimpo = String(cnpj).replace(/\D/g, '');
+      
+      if (cnpjLimpo.length !== 14) {
+        res.status(400).json({
+          success: false,
+          error: 'CNPJ do cliente inválido',
+        });
+        return;
+      }
+
+      // Executar script Python para buscar código SCI
+      const pythonScript = path.join(__dirname, '../../python/buscar_codigo_sci.py');
+      const command = `python "${pythonScript}" "${cnpjLimpo}"`;
+
+      try {
+        const { stdout, stderr } = await execAsync(command, {
+          encoding: 'utf-8',
+          maxBuffer: 10 * 1024 * 1024, // 10MB
+        });
+
+        if (stderr && !stderr.includes('INFO')) {
+          console.error('[Atualizar Código SCI] Python stderr:', stderr);
+        }
+
+        // Parse do resultado JSON
+        const resultado = JSON.parse(stdout);
+
+        if (!resultado.success) {
+          res.status(400).json({
+            success: false,
+            error: resultado.error || 'Erro ao buscar código SCI',
+          });
+          return;
+        }
+
+        const codigoSci = resultado.codigo_sci;
+
+        if (!codigoSci) {
+          res.status(404).json({
+            success: false,
+            error: 'Código SCI não encontrado no banco SCI',
+          });
+          return;
+        }
+
+        // Atualizar código SCI no banco MySQL
+        const updateResult = await this.clienteModel.updateCliente(id, {
+          codigo_sci: codigoSci
+        });
+
+        if (!updateResult.success) {
+          res.status(400).json(updateResult);
+          return;
+        }
+
+        res.json({
+          success: true,
+          data: {
+            codigo_sci: codigoSci,
+            cliente: updateResult.data
+          },
+          message: 'Código SCI atualizado com sucesso',
+        });
+
+      } catch (execError: any) {
+        console.error('[Atualizar Código SCI] Erro ao executar script Python:', execError);
+        
+        // Tentar parsear stderr como JSON
+        try {
+          const erroResultado = JSON.parse(execError.stdout || execError.stderr || '{}');
+          res.status(400).json({
+            success: false,
+            error: erroResultado.error || 'Erro ao buscar código SCI',
+          });
+        } catch {
+          res.status(500).json({
+            success: false,
+            error: 'Erro ao executar busca no banco SCI',
+            message: execError.message || String(execError),
+          });
+        }
+      }
+
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao atualizar código SCI:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error.message || 'Erro desconhecido',
       });
     }
   }
@@ -907,7 +1043,7 @@ export class ClienteController {
         LIMIT 1
       `;
       
-      let extractedDataResults = await executeQuery<any[]>(extractedDataQuery, [downloadId]);
+      let extractedDataResults = await executeQuery<Array<{ socios?: string | any[]; empresa_razao_social?: string }>>(extractedDataQuery, [downloadId]);
       console.log('[Atualizar Sócios] Busca por sitf_download_id:', {
         downloadId,
         resultsCount: extractedDataResults?.length || 0,
@@ -923,7 +1059,7 @@ export class ClienteController {
           ORDER BY created_at DESC
           LIMIT 1
         `;
-        extractedDataResults = await executeQuery<any[]>(extractedDataQuery, [cnpjLimpo]);
+        extractedDataResults = await executeQuery<Array<{ socios?: string | any[]; empresa_razao_social?: string }>>(extractedDataQuery, [cnpjLimpo]);
         console.log('[Atualizar Sócios] Busca por CNPJ:', {
           cnpj: cnpjLimpo,
           resultsCount: extractedDataResults?.length || 0,
@@ -939,7 +1075,7 @@ export class ClienteController {
         return;
       }
 
-      const extractedData = extractedDataResults[0];
+      const extractedData = extractedDataResults[0] as { socios?: string | any[]; empresa_razao_social?: string };
       console.log('[Atualizar Sócios] Dados extraídos encontrados:', {
         hasSocios: !!extractedData.socios,
         sociosType: typeof extractedData.socios,
@@ -951,7 +1087,7 @@ export class ClienteController {
         try {
           socios = typeof extractedData.socios === 'string'
             ? JSON.parse(extractedData.socios)
-            : extractedData.socios;
+            : Array.isArray(extractedData.socios) ? extractedData.socios : [];
           
           console.log('[Atualizar Sócios] Sócios parseados:', {
             count: Array.isArray(socios) ? socios.length : 0,
@@ -1029,6 +1165,120 @@ export class ClienteController {
         success: false,
         error: 'Erro interno do servidor',
         message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Editar participação manualmente (Capital Social e Participações dos Sócios)
+   * PUT /api/clientes/:id/editar-participacao-manual
+   * Body: { capital_social: number, socios: Array<{ id: number; participacao_percentual: number; participacao_valor: number }> }
+   */
+  async editarParticipacaoManual(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { capital_social, socios } = req.body;
+      
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'ID do cliente é obrigatório',
+        });
+        return;
+      }
+
+      // Validar capital_social
+      if (capital_social === undefined || capital_social === null) {
+        res.status(400).json({
+          success: false,
+          error: 'Capital Social é obrigatório',
+        });
+        return;
+      }
+
+      const capitalSocialNum = parseFloat(String(capital_social));
+      if (isNaN(capitalSocialNum) || capitalSocialNum < 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Capital Social deve ser um número válido maior ou igual a zero',
+        });
+        return;
+      }
+
+      // Validar socios
+      if (!Array.isArray(socios)) {
+        res.status(400).json({
+          success: false,
+          error: 'Sócios deve ser um array',
+        });
+        return;
+      }
+
+      // Buscar cliente
+      const clienteResult = await this.clienteModel.findById(id);
+      if (!clienteResult.success || !clienteResult.data) {
+        res.status(404).json({
+          success: false,
+          error: 'Cliente não encontrado',
+        });
+        return;
+      }
+
+      // Atualizar capital social
+      const updateClienteResult = await this.clienteModel.updateCliente(id, {
+        capital_social: capitalSocialNum,
+      });
+
+      if (!updateClienteResult.success) {
+        res.status(400).json({
+          success: false,
+          error: 'Erro ao atualizar capital social',
+          message: updateClienteResult.error,
+        });
+        return;
+      }
+
+      // Atualizar sócios
+      const { executeQuery } = await import('../config/mysql');
+      
+      for (const socio of socios) {
+        if (!socio.id || socio.participacao_percentual === undefined || socio.participacao_valor === undefined) {
+          continue; // Pular sócios inválidos
+        }
+
+        const participacaoPercentual = parseFloat(String(socio.participacao_percentual)) || 0;
+        const participacaoValor = parseFloat(String(socio.participacao_valor)) || 0;
+
+        // Validar porcentagem (0-100)
+        if (participacaoPercentual < 0 || participacaoPercentual > 100) {
+          console.warn(`[Editar Participação] Porcentagem inválida para sócio ${socio.id}: ${participacaoPercentual}`);
+          continue;
+        }
+
+        try {
+          await executeQuery(
+            'UPDATE clientes_socios SET participacao_percentual = ?, participacao_valor = ?, updated_at = NOW() WHERE id = ? AND cliente_id = ?',
+            [participacaoPercentual, participacaoValor, socio.id, id]
+          );
+        } catch (error: any) {
+          console.error(`[Editar Participação] Erro ao atualizar sócio ${socio.id}:`, error);
+          // Continuar atualizando outros sócios mesmo se um falhar
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          clienteId: id,
+          message: 'Participação atualizada com sucesso',
+        },
+      });
+    } catch (error: any) {
+      console.error('[Editar Participação] Erro:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao editar participação',
+        message: error.message,
       });
     }
   }
@@ -1463,5 +1713,488 @@ export class ClienteController {
     }
   }
 
+  /**
+   * Atualizar capital_social usando dados do PDF
+   * POST /api/clientes/atualizar-capital-social
+   * Atualiza capital_social diretamente no banco usando dados do PDF
+   */
+  async atualizarCapitalSocial(req: Request, res: Response): Promise<void> {
+    try {
+      const { dryRun = false } = req.body;
+      
+      console.log('[ClienteController] Iniciando atualização de capital_social...');
+      
+      // Dados do PDF - CNPJ limpo (14 dígitos) -> Capital Social
+      const dadosPDF: Record<string, number> = {
+        "42081159000128": 1000.00,  // A G A P LTDA
+        "13845695000154": 10000.00,  // A.C RAUPP SERVICOS ADMINISTRATIVOS
+        "11318082000133": 80000.00,  // ACAI BRASIL INDUSTRIA E COMERCIO DE ALIMENTOS LTDA
+        "43340265000141": 1000.00,  // ACBL INFORMACOES LTDA
+        "07799121000194": 850000.00,  // ADRIA BRASIL IMPORTACAO E EXPORTACAO LTDA
+        "47306185000120": 20000.00,  // AI PORT CONSULTORIA LTDA
+        "36578434000110": 20000.00,  // ARAME NOBRE INDUSTRIA E COMERCIO LTDA
+        "42532281000173": 200000.00,  // ARAUCARIA SERVICOS LTDA
+        "63231837000161": 1000.00,  // ARCANA DESIGN LTDA
+        "31332375000182": 20000.00,  // ATENTO . GESTAO EM RISCOS E PRODUTIVIDADE LTDA
+        "59160869000146": 50000.00,  // AURORA INFORMATICA COMERCIO IMPORTACAO E EXPORTACAO LTDA
+        "41004473000144": 100000.00,  // AYKO HOLDING E PARTICIPACOES LTDA
+        "10338682000109": 681509.00,  // VITORIA ON-LINE SERVICOS DE INTERNET LTDA
+        "61215139000147": 150000.00,  // VIX LONAS LTDA
+        "37297680000167": 10000.00,  // VIXSELL COMERCIO E SERVICO LTDA
+        "09104418000113": 100000.00,  // VLA TELECOMUNICACOES LTDA
+        "22542368000114": 100000.00,  // VOE TELECOMUNICACOES LTDA
+        "30393954000172": 1000000.00,  // WP COMPANY COMERCIO E SERVICOS TECNOLOGIA LTDA
+        "34263516000140": 10000.00,  // ZAD COMUNICA LTDA
+        "52945020000139": 10000.00,  // ZEGBOX INDUSTRIA E COMERCIO DE EMBALAGENS LTDA
+        "59580750000122": 100000.00,  // ZENA LRF TRADING LTDA
+        "59267356000139": 5000.00,  // ZENITH GESTAO EMPRESARIAL LTDA
+        "24203997000145": 2500.00,  // ZORZAL GESTAO E TECNOLOGIA LTDA
+        "07452963000175": 2500.00,  // ZORZAL TECNOLOGIA E GESTAO LTDA
+      };
+      
+      const { executeQuery, executeTransaction } = await import('../config/mysql');
+      
+      let atualizados = 0;
+      let naoEncontrados: string[] = [];
+      let jaAtualizados: string[] = [];
+      let erros: Array<{ cnpj: string; erro: string }> = [];
+      
+      console.log(`[ClienteController] Processando ${Object.keys(dadosPDF).length} registros...`);
+      
+      for (const [cnpjLimpo, capitalSocial] of Object.entries(dadosPDF)) {
+        try {
+          // Buscar cliente por CNPJ
+          const clientes = await executeQuery<any>(
+            'SELECT id, razao_social, capital_social FROM clientes WHERE cnpj_limpo = ? LIMIT 1',
+            [cnpjLimpo]
+          );
+          
+          if (!clientes || clientes.length === 0) {
+            naoEncontrados.push(cnpjLimpo);
+            console.log(`⚠️  Cliente não encontrado: ${cnpjLimpo}`);
+            continue;
+          }
+          
+          const cliente = clientes[0];
+          const capitalAtual = cliente.capital_social ? parseFloat(String(cliente.capital_social)) : 0;
+          
+          // Verificar se já está atualizado
+          if (Math.abs(capitalAtual - capitalSocial) < 0.01) {
+            jaAtualizados.push(cnpjLimpo);
+            continue;
+          }
+          
+          // Atualizar capital_social
+          if (!dryRun) {
+            await executeQuery(
+              'UPDATE clientes SET capital_social = ? WHERE id = ?',
+              [capitalSocial, cliente.id]
+            );
+          }
+          
+          atualizados++;
+          const capitalFormatado = new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+          }).format(capitalSocial);
+          
+          const status = dryRun ? '🔍 [DRY-RUN]' : '✅';
+          console.log(`${status} [${atualizados}] ${cliente.razao_social.substring(0, 50).padEnd(50)} | CNPJ: ${cnpjLimpo} | Capital: ${capitalFormatado}`);
+          
+        } catch (error: any) {
+          erros.push({ cnpj: cnpjLimpo, erro: error.message });
+          console.error(`❌ Erro ao atualizar ${cnpjLimpo}: ${error.message}`);
+        }
+      }
+      
+      if (!dryRun) {
+        console.log(`\n💾 Alterações commitadas no banco de dados`);
+      } else {
+        console.log(`\n🔍 DRY-RUN: Nenhuma alteração foi feita`);
+      }
+      
+      const relatorio = {
+        atualizados: atualizados,
+        jaAtualizados: jaAtualizados.length,
+        naoEncontrados: naoEncontrados.length,
+        erros: erros.length,
+        detalhes: {
+          naoEncontrados: naoEncontrados.slice(0, 10),
+          erros: erros.slice(0, 5),
+        }
+      };
+      
+      res.json({
+        success: true,
+        message: dryRun 
+          ? 'Simulação de atualização concluída' 
+          : 'Atualização de capital_social executada com sucesso',
+        relatorio,
+        dryRun,
+      });
+      
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao atualizar capital_social:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao executar atualização de capital_social',
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * Atualizar participacao_percentual e participacao_valor dos sócios
+   * POST /api/clientes/atualizar-socios
+   * Atualiza valores e porcentagens dos sócios usando dados do PDF
+   */
+  async atualizarSocios(req: Request, res: Response): Promise<void> {
+    try {
+      const { dryRun = false } = req.body;
+      
+      console.log('[ClienteController] Iniciando atualização de sócios (participação)...');
+      
+      // Dados dos sócios - mesmos dados do script
+      const dadosSocios: Record<string, Array<{
+        nome: string;
+        cpf?: string;
+        participacao_percentual: number;
+        participacao_valor: number;
+      }>> = {
+        "31332375000182": [
+          { nome: "ANA PENHA BORGES LOVATO", cpf: "95276653704", participacao_percentual: 100, participacao_valor: 20000.00 }
+        ],
+        "41697567000146": [
+          { nome: "WILLIAN NASCIMENTO LOVATO", cpf: "14706844703", participacao_percentual: 100, participacao_valor: 50000.00 }
+        ],
+        "03597050000196": [
+          { nome: "EDSON DOS SANTOS", cpf: "98049291715", participacao_percentual: 6.33, participacao_valor: 3165.00 },
+          { nome: "JOAO CARLOS SCARDUA SAADE", cpf: "48925870797", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "HELDER JORGE TELLES DE SA", cpf: "02021319717", participacao_percentual: 6.33, participacao_valor: 3165.00 },
+          { nome: "PAULO DOMINGOS VIANNA GAUDIO", cpf: "71998969720", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "ANA PAULA BARRETO MONTEIRO ROTHEN", cpf: "05540482727", participacao_percentual: 0.53, participacao_valor: 265.00 },
+          { nome: "FERNANDA MONTEIRO LORENZON", cpf: "10597382794", participacao_percentual: 0.53, participacao_valor: 265.00 },
+          { nome: "JANE MARGARIDA NUNES BARRETO E MONTEIRO", cpf: "28260597772", participacao_percentual: 1.56, participacao_valor: 780.00 },
+          { nome: "JONY JONES MOTTA E MOTTA", cpf: "57743924734", participacao_percentual: 3.14, participacao_valor: 1570.00 },
+          { nome: "FRANCIS BARRETO MONTEIRO", cpf: "10710232764", participacao_percentual: 0.53, participacao_valor: 265.00 },
+          { nome: "CARLOS ALBERTO BREGENSK", cpf: "39463397787", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "VICTOR AFFONSO BIASUTTI PIGNATON", cpf: "07434671750", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "JOSE GERALDO MONTEIRO DE MATOS", cpf: "47907800749", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "HELOISA HELENA MANNATO COUTINHO", cpf: "41848020791", participacao_percentual: 12.33, participacao_valor: 6165.00 },
+          { nome: "PEDRO ABAURRE DE VASCONCELLOS", cpf: "12205154770", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "IDELZE MARIA VIEIRA PINTO", cpf: "00296889733", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "FABRICIO HENRIQUE SANTOS SILVA", cpf: "97960381704", participacao_percentual: 8.33, participacao_valor: 4165.00 },
+          { nome: "RICARDO GONCALVES DE ASSIS", cpf: "57498768704", participacao_percentual: 3.13, participacao_valor: 1565.00 },
+          { nome: "JOCIEL MOREIRA HEMERLY", cpf: "57747393768", participacao_percentual: 3.14, participacao_valor: 1570.00 },
+          { nome: "ALBERTO DE SOUZA", cpf: "47907916704", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "CLEONICE TEREZINHA TREVELIN ROSSETTO", cpf: "00514021730", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "JUAREZ JOSE HENRIQUE CAMPOS", cpf: "47475447715", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "JOSE CESAR FELIPE", cpf: "45068259772", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "SONIA MARIA CARDOSO", cpf: "24971316787", participacao_percentual: 3.12, participacao_valor: 1560.00 },
+          { nome: "SILVIO PANTELEAO", cpf: "02276528788", participacao_percentual: 8.35, participacao_valor: 4175.00 },
+          { nome: "JOAO CARLOS CARVALHO DOS SANTOS", cpf: "98897420710", participacao_percentual: 8.33, participacao_valor: 4165.00 }
+        ],
+        "39811708000168": [
+          { nome: "SILVESTRE FRITTOLI COUTINHO FILHO", cpf: "26558777568", participacao_percentual: 2.40, participacao_valor: 9966.55 },
+          { nome: "HERMOLAO VALADAO COUTINHO", cpf: "15002322549", participacao_percentual: 0.60, participacao_valor: 2491.64 },
+          { nome: "MARIA TERESA VALADAO COUTINHO", cpf: "10210296534", participacao_percentual: 1.00, participacao_valor: 4152.73 },
+          { nome: "SILVESTRE FRITTOLI COUTINHO", cpf: "03406920578", participacao_percentual: 1.00, participacao_valor: 4152.73 },
+          { nome: "CARLOS VALADAO COUTINHO", cpf: "33699267504", participacao_percentual: 0.60, participacao_valor: 2491.64 },
+          { nome: "ROBERTO ANTONIO DALA BERNARDINA", cpf: "01078623520", participacao_percentual: 0.60, participacao_valor: 2491.64 },
+          { nome: "DISTRIBUIDORA SILVESTRE LIMITADA", participacao_percentual: 93.80, participacao_valor: 389525.81 }
+        ],
+        "00956216000125": [
+          { nome: "MARCUS TULLIUS BATALHA BARROCA", cpf: "45214964668", participacao_percentual: 50.00, participacao_valor: 1000.00 },
+          { nome: "VALERIA MELO BARROCA", cpf: "85610003687", participacao_percentual: 50.00, participacao_valor: 1000.00 }
+        ],
+        "10338682000109": [
+          { nome: "AYKO TECNOLOGIA LTDA", participacao_percentual: 100.00, participacao_valor: 681509.00 },
+          { nome: "GIUSEPPE KENJI NAGATANI FEITOZA", cpf: "03458486755", participacao_percentual: 0.00, participacao_valor: 0.00 }
+        ]
+      };
+      
+      const { executeQuery } = await import('../config/mysql');
+      
+      // Funções auxiliares
+      const normalizarNome = (nome: string): string => {
+        return nome
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .trim();
+      };
+      
+      const limparCpfCnpj = (cpfCnpj: string | undefined): string => {
+        if (!cpfCnpj) return '';
+        return String(cpfCnpj).replace(/\D/g, '');
+      };
+      
+      let totalAtualizados = 0;
+      let totalNaoEncontrados = 0;
+      let totalErros = 0;
+      const erros: Array<{ cnpj: string; socio: string; erro: string }> = [];
+      
+      console.log(`[ClienteController] Processando ${Object.keys(dadosSocios).length} empresas...`);
+      
+      for (const [cnpjLimpo, socios] of Object.entries(dadosSocios)) {
+        try {
+          // Buscar cliente por CNPJ
+          const clientes = await executeQuery<any>(
+            'SELECT id, razao_social FROM clientes WHERE cnpj_limpo = ? LIMIT 1',
+            [cnpjLimpo]
+          );
+          
+          if (!clientes || clientes.length === 0) {
+            totalNaoEncontrados++;
+            continue;
+          }
+          
+          const cliente = clientes[0];
+          
+          // Buscar sócios existentes do cliente
+          const sociosExistentes = await executeQuery<any>(
+            'SELECT id, nome, cpf, participacao_percentual, participacao_valor FROM clientes_socios WHERE cliente_id = ?',
+            [cliente.id]
+          );
+          
+          if (!sociosExistentes || sociosExistentes.length === 0) {
+            totalNaoEncontrados++;
+            continue;
+          }
+          
+          // Para cada sócio nos dados fornecidos, tentar encontrar e atualizar
+          for (const socioDados of socios) {
+            try {
+              const nomeNormalizado = normalizarNome(socioDados.nome);
+              const cpfLimpo = limparCpfCnpj(socioDados.cpf);
+              
+              // Tentar encontrar sócio por nome (normalizado) ou CPF
+              let socioEncontrado = sociosExistentes.find((s: any) => {
+                const nomeExistenteNormalizado = normalizarNome(s.nome || '');
+                const cpfExistente = limparCpfCnpj(s.cpf);
+                
+                // Match por CPF (se ambos tiverem)
+                if (cpfLimpo && cpfExistente && cpfLimpo === cpfExistente) {
+                  return true;
+                }
+                
+                // Match por nome normalizado
+                if (nomeNormalizado === nomeExistenteNormalizado) {
+                  return true;
+                }
+                
+                // Match parcial por palavras-chave
+                const palavrasDados = nomeNormalizado.split(/\s+/).filter(p => p.length > 2);
+                const palavrasExistente = nomeExistenteNormalizado.split(/\s+/).filter(p => p.length > 2);
+                if (palavrasDados.length > 0 && palavrasExistente.length > 0) {
+                  const todasPalavrasPresentes = palavrasDados.every(p => 
+                    palavrasExistente.some(pe => pe.includes(p) || p.includes(pe))
+                  );
+                  if (todasPalavrasPresentes && palavrasDados.length >= 2) {
+                    return true;
+                  }
+                }
+                
+                return false;
+              });
+              
+              if (socioEncontrado) {
+                // Verificar se precisa atualizar
+                const percentualAtual = socioEncontrado.participacao_percentual ? parseFloat(String(socioEncontrado.participacao_percentual)) : null;
+                const valorAtual = socioEncontrado.participacao_valor ? parseFloat(String(socioEncontrado.participacao_valor)) : null;
+                
+                const precisaAtualizar = 
+                  Math.abs((percentualAtual || 0) - socioDados.participacao_percentual) > 0.01 ||
+                  Math.abs((valorAtual || 0) - socioDados.participacao_valor) > 0.01;
+                
+                if (!precisaAtualizar) {
+                  continue;
+                }
+                
+                // Atualizar sócio
+                if (!dryRun) {
+                  await executeQuery(
+                    'UPDATE clientes_socios SET participacao_percentual = ?, participacao_valor = ? WHERE id = ?',
+                    [socioDados.participacao_percentual, socioDados.participacao_valor, socioEncontrado.id]
+                  );
+                }
+                
+                totalAtualizados++;
+              } else {
+                totalNaoEncontrados++;
+              }
+            } catch (error: any) {
+              totalErros++;
+              erros.push({ cnpj: cnpjLimpo, socio: socioDados.nome, erro: error.message });
+            }
+          }
+        } catch (error: any) {
+          totalErros++;
+          erros.push({ cnpj: cnpjLimpo, socio: 'N/A', erro: error.message });
+        }
+      }
+      
+      const relatorio = {
+        totalProcessados: Object.keys(dadosSocios).length,
+        atualizados: totalAtualizados,
+        naoEncontrados: totalNaoEncontrados,
+        erros: totalErros,
+        detalhesErros: erros,
+        dryRun: dryRun,
+      };
+
+      res.json({
+        success: true,
+        message: dryRun 
+          ? 'Simulação de atualização de sócios concluída'
+          : 'Atualização de sócios executada com sucesso',
+        relatorio,
+      });
+
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao atualizar sócios:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao executar atualização de sócios',
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * Recalcular valores de participação para todos os clientes divergentes
+   * POST /api/clientes/recalcular-valores-divergentes
+   * Calcula participacao_valor = (capital_social * participacao_percentual) / 100
+   * para todos os sócios que têm porcentagem mas não têm valor calculado
+   */
+  async recalcularValoresDivergentes(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('[ClienteController] Iniciando recálculo de valores para clientes divergentes...');
+      
+      const { executeQuery } = await import('../config/mysql');
+      
+      // Buscar todos os clientes que têm capital_social e sócios com participacao_percentual
+      const clientesComCapital = await executeQuery<any>(
+        `SELECT DISTINCT c.id, c.razao_social, c.capital_social, c.cnpj_limpo
+         FROM clientes c
+         INNER JOIN clientes_socios cs ON cs.cliente_id = c.id
+         WHERE c.capital_social IS NOT NULL 
+           AND c.capital_social > 0
+           AND cs.participacao_percentual IS NOT NULL
+           AND cs.participacao_percentual > 0
+         ORDER BY c.razao_social`
+      );
+      
+      if (!clientesComCapital || clientesComCapital.length === 0) {
+        res.json({
+          success: true,
+          message: 'Nenhum cliente encontrado com capital social e sócios com porcentagem',
+          relatorio: {
+            totalProcessados: 0,
+            atualizados: 0,
+            erros: 0
+          }
+        });
+        return;
+      }
+      
+      let totalAtualizados = 0;
+      let totalErros = 0;
+      const erros: Array<{ cliente: string; erro: string }> = [];
+      
+      console.log(`[ClienteController] Processando ${clientesComCapital.length} clientes...`);
+      
+      for (const cliente of clientesComCapital) {
+        try {
+          // Normalizar capital social
+          let capitalSocialNum = 0;
+          if (cliente.capital_social) {
+            if (typeof cliente.capital_social === 'number') {
+              capitalSocialNum = isNaN(cliente.capital_social) ? 0 : cliente.capital_social;
+            } else {
+              const str = String(cliente.capital_social).trim();
+              const temVirgulaDecimal = /,\d{1,2}$/.test(str);
+              const strLimpa = temVirgulaDecimal
+                ? str.replace(/\./g, '').replace(',', '.')
+                : str.replace(/[^\d.-]/g, '');
+              capitalSocialNum = parseFloat(strLimpa) || 0;
+            }
+          }
+          
+          if (capitalSocialNum === 0) {
+            continue; // Pular se capital social for zero
+          }
+          
+          // Buscar sócios deste cliente que têm porcentagem
+          const socios = await executeQuery<any>(
+            `SELECT id, nome, participacao_percentual, participacao_valor
+             FROM clientes_socios
+             WHERE cliente_id = ? 
+               AND participacao_percentual IS NOT NULL
+               AND participacao_percentual > 0`,
+            [cliente.id]
+          );
+          
+          if (!socios || socios.length === 0) {
+            continue;
+          }
+          
+          // Recalcular valores para cada sócio
+          for (const socio of socios) {
+            try {
+              const percentual = parseFloat(String(socio.participacao_percentual));
+              if (isNaN(percentual) || percentual <= 0) {
+                continue;
+              }
+              
+              // Calcular novo valor: Capital Social × Porcentagem / 100
+              // Arredondar para 2 casas decimais para evitar problemas de precisão
+              const novoValor = Math.round((capitalSocialNum * percentual) / 100 * 100) / 100;
+              
+              // Verificar se precisa atualizar
+              const valorAtual = socio.participacao_valor ? parseFloat(String(socio.participacao_valor)) : null;
+              const precisaAtualizar = valorAtual === null || Math.abs(valorAtual - novoValor) > 0.01;
+              
+              if (precisaAtualizar) {
+                await executeQuery(
+                  'UPDATE clientes_socios SET participacao_valor = ? WHERE id = ?',
+                  [novoValor, socio.id]
+                );
+                totalAtualizados++;
+                console.log(`[ClienteController] ✅ Atualizado sócio ${socio.nome}: ${percentual}% de R$ ${capitalSocialNum.toFixed(2)} = R$ ${novoValor.toFixed(2)}`);
+              }
+            } catch (error: any) {
+              totalErros++;
+              erros.push({ cliente: cliente.razao_social, erro: `Sócio ${socio.nome}: ${error.message}` });
+            }
+          }
+        } catch (error: any) {
+          totalErros++;
+          erros.push({ cliente: cliente.razao_social || cliente.cnpj_limpo, erro: error.message });
+        }
+      }
+      
+      const relatorio = {
+        totalProcessados: clientesComCapital.length,
+        atualizados: totalAtualizados,
+        erros: totalErros,
+        detalhesErros: erros.slice(0, 10), // Limitar a 10 erros no relatório
+      };
+
+      res.json({
+        success: true,
+        message: `Recálculo concluído! ${totalAtualizados} valores de participação atualizados.`,
+        relatorio,
+      });
+
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao recalcular valores divergentes:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao executar recálculo de valores',
+        message: error.message,
+      });
+    }
+  }
 }
 
