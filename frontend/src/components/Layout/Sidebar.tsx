@@ -23,6 +23,8 @@ const navigation = [
   { name: 'SCI - Banco de Horas', href: '/sci/banco-horas', icon: ClockIcon },
   { name: 'SCI - Gerador SQL', href: '/sci/gerador-sql', icon: CodeBracketIcon },
   { name: 'SPED Validação', href: '/sped', icon: DocumentCheckIcon },
+  { name: 'SPED Validação v2.0', href: '/sped/v2', icon: DocumentCheckIcon },
+  { name: 'IRPF 2025', href: '/irpf-2025', icon: ChartBarIcon },
 ];
 
 interface SidebarProps {

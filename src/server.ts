@@ -29,6 +29,8 @@ import hostDadosRoutes from './routes/host-dados';
 import sciRoutes from './routes/sci';
 import spedRoutes from './routes/sped';
 import spedV2KnowledgeRoutes from './routes/sped-v2-knowledge';
+import spedV2Routes from './routes/sped-v2';
+import irpfRoutes from './routes/irpf';
 
 class Server {
   private app: express.Application;
@@ -45,6 +47,7 @@ class Server {
     this.setupRoutes();
     this.setupErrorHandling();
     this.setupWebSocket();
+    this.setupScheduler();
   }
 
   private setupMiddleware(): void {
@@ -175,6 +178,8 @@ class Server {
     
     this.app.use('/api/sped', spedRoutes);
     this.app.use('/api/sped/v2/knowledge', spedV2KnowledgeRoutes);
+    this.app.use('/api/sped/v2', spedV2Routes);
+    this.app.use('/api/irpf', irpfRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {
@@ -199,6 +204,19 @@ class Server {
     WebSocketGateway.initialize(this.httpServer, {
       corsOrigin: process.env['FRONTEND_URL'] || 'http://localhost:5173',
     });
+  }
+
+  private setupScheduler(): void {
+    // Inicializar scheduler de atualização noturna do cache IRPF
+    import('./services/IrpfScheduler')
+      .then(({ IrpfScheduler }) => {
+        const scheduler = new IrpfScheduler();
+        scheduler.start();
+        console.log('[Server] IRPF Scheduler inicializado.');
+      })
+      .catch((error) => {
+        console.error('[Server] Erro ao inicializar IRPF Scheduler:', error);
+      });
   }
 
     public start(): void {

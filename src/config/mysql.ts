@@ -76,8 +76,11 @@ export const executeQuery = async <T = any>(
   try {
     const [rows] = await mysqlPool.execute(query, params);
     return rows as T[];
-  } catch (error) {
-    console.error('Erro ao executar query:', error);
+  } catch (error: any) {
+    // Não logar erros de coluna duplicada (migration comum)
+    if (error.code !== 'ER_DUP_FIELDNAME' && !error.message?.includes('Duplicate column name')) {
+      console.error('Erro ao executar query:', error);
+    }
     throw error;
   }
 };

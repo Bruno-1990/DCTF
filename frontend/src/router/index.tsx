@@ -15,6 +15,8 @@ import SituacaoFiscal from '../pages/SituacaoFiscal';
 import BancoHoras from '../pages/BancoHoras';
 import GeradorSQL from '../pages/GeradorSQL';
 import SpedValidacao from '../pages/SpedValidacao';
+import SpedValidacaoV2 from '../pages/SpedValidacaoV2';
+import Irpf2025 from '../pages/Irpf2025';
 
 const router = createBrowserRouter([
   {
@@ -77,6 +79,14 @@ const router = createBrowserRouter([
       {
         path: 'sped',
         element: <SpedValidacao />,
+      },
+      {
+        path: 'sped/v2',
+        element: <SpedValidacaoV2 />,
+      },
+      {
+        path: 'irpf-2025',
+        element: <Irpf2025 />,
       },
     ],
   },
