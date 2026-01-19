@@ -1,0 +1,456 @@
+import React, { useState, useMemo } from 'react';
+import {
+  FunnelIcon,
+  MagnifyingGlassIcon,
+  XCircleIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+} from '@heroicons/react/24/outline';
+import EvidenceDrawer from './EvidenceDrawer';
+import type { EvidenciaXML, EvidenciaSPED, EvidenciaComparacao } from './EvidenceDrawer';
+import type { DivergenciaClassificada } from './ClassificationView';
+
+// Helper function for conditional classNames
+const classNames = (...classes: (string | boolean | undefined)[]): string => {
+  return classes.filter(Boolean).join(' ');
+};
+
+interface Step4ResultsViewProps {
+  divergencias: DivergenciaClassificada[];
+  onVerEvidencias?: (divergencia: DivergenciaClassificada) => void;
+}
+
+const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
+  divergencias,
+  onVerEvidencias,
+}) => {
+  const [sidebarAberto, setSidebarAberto] = useState<boolean>(true);
+  const [filtros, setFiltros] = useState({
+    classificacao: 'todos',
+    impacto: 'todos',
+    nao_conciliado: false,
+    cfop: '',
+    cst: '',
+    st: false,
+    ajustes: false,
+  });
+  const [busca, setBusca] = useState<string>('');
+  const [ordenacao, setOrdenacao] = useState<'impacto' | 'score' | 'diferenca'>('impacto');
+  const [divergenciaSelecionada, setDivergenciaSelecionada] = useState<DivergenciaClassificada | null>(null);
+  const [mostrarEvidencias, setMostrarEvidencias] = useState<boolean>(false);
+
+  const divergenciasFiltradas = useMemo(() => {
+    let filtradas = [...divergencias];
+
+    // Filtros
+    if (filtros.classificacao !== 'todos') {
+      filtradas = filtradas.filter((d) => d.classificacao === filtros.classificacao);
+    }
+    if (filtros.impacto !== 'todos') {
+      filtradas = filtradas.filter((d) => d.impacto === filtros.impacto);
+    }
+    if (filtros.nao_conciliado) {
+      filtradas = filtradas.filter((d) => !d.chave_nfe);
+    }
+    if (filtros.cfop) {
+      filtradas = filtradas.filter((d) => d.tipo.toLowerCase().includes(filtros.cfop.toLowerCase()));
+    }
+    if (filtros.cst) {
+      filtradas = filtradas.filter((d) => d.tipo.toLowerCase().includes(filtros.cst.toLowerCase()));
+    }
+    if (filtros.st) {
+      filtradas = filtradas.filter((d) => d.tipo.toLowerCase().includes('st'));
+    }
+    if (filtros.ajustes) {
+      filtradas = filtradas.filter((d) => d.tipo.toLowerCase().includes('ajuste'));
+    }
+
+    // Busca
+    if (busca) {
+      const buscaLower = busca.toLowerCase();
+      filtradas = filtradas.filter(
+        (d) =>
+          d.campo.toLowerCase().includes(buscaLower) ||
+          d.tipo.toLowerCase().includes(buscaLower) ||
+          d.explicacao?.toLowerCase().includes(buscaLower)
+      );
+    }
+
+    // Ordenação
+    filtradas.sort((a, b) => {
+      if (ordenacao === 'impacto') {
+        const ordemImpacto = { alto: 3, medio: 2, baixo: 1, nenhum: 0 };
+        return ordemImpacto[b.impacto] - ordemImpacto[a.impacto];
+      } else if (ordenacao === 'score') {
+        return b.score_confianca - a.score_confianca;
+      } else {
+        return Math.abs(b.diferenca) - Math.abs(a.diferenca);
+      }
+    });
+
+    return filtradas;
+  }, [divergencias, filtros, busca, ordenacao]);
+
+  const handleVerEvidencias = (divergencia: DivergenciaClassificada) => {
+    setDivergenciaSelecionada(divergencia);
+    setMostrarEvidencias(true);
+  };
+
+  const getClassificacaoIcon = (classificacao: string) => {
+    switch (classificacao) {
+      case 'ERRO':
+        return <XCircleIcon className="h-5 w-5 text-red-500" />;
+      case 'REVISAR':
+        return <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />;
+      case 'LEGÍTIMO':
+        return <CheckCircleIcon className="h-5 w-5 text-green-500" />;
+    }
+  };
+
+  const getClassificacaoBadge = (classificacao: string) => {
+    const classes = {
+      ERRO: 'bg-red-100 text-red-800',
+      REVISAR: 'bg-yellow-100 text-yellow-800',
+      LEGÍTIMO: 'bg-green-100 text-green-800',
+    };
+
+    return (
+      <span
+        className={classNames(
+          'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+          classes[classificacao as keyof typeof classes] || 'bg-gray-100 text-gray-800'
+        )}
+      >
+        {getClassificacaoIcon(classificacao)}
+        <span className="ml-1">{classificacao}</span>
+      </span>
+    );
+  };
+
+  const getImpactoBadge = (impacto: string) => {
+    const classes = {
+      alto: 'bg-red-100 text-red-800',
+      medio: 'bg-yellow-100 text-yellow-800',
+      baixo: 'bg-blue-100 text-blue-800',
+      nenhum: 'bg-gray-100 text-gray-800',
+    };
+
+    return (
+      <span
+        className={classNames(
+          'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+          classes[impacto as keyof typeof classes] || 'bg-gray-100 text-gray-800'
+        )}
+      >
+        {impacto.charAt(0).toUpperCase() + impacto.slice(1)}
+      </span>
+    );
+  };
+
+  const formatarValor = (valor: number): string => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(valor);
+  };
+
+  // Preparar evidências para o drawer
+  const evidenciasXML: EvidenciaXML[] = divergenciaSelecionada
+    ? [
+        {
+          chave_nfe: divergenciaSelecionada.chave_nfe || '',
+          tipo: divergenciaSelecionada.tipo,
+          campo: divergenciaSelecionada.campo,
+          valor: divergenciaSelecionada.valor_xml || 0,
+          descricao: `Valor XML para ${divergenciaSelecionada.campo}`,
+        },
+      ]
+    : [];
+
+  const evidenciasSPED: EvidenciaSPED[] = divergenciaSelecionada
+    ? [
+        {
+          registro: 'C170',
+          tipo: divergenciaSelecionada.tipo,
+          campo: divergenciaSelecionada.campo,
+          valor: divergenciaSelecionada.valor_sped || 0,
+          descricao: `Valor SPED para ${divergenciaSelecionada.campo}`,
+        },
+      ]
+    : [];
+
+  const comparacao: EvidenciaComparacao | undefined = divergenciaSelecionada
+    ? {
+        campo: divergenciaSelecionada.campo,
+        valor_xml: divergenciaSelecionada.valor_xml,
+        valor_sped: divergenciaSelecionada.valor_sped,
+        diferenca: divergenciaSelecionada.diferenca,
+        regra_aplicada: divergenciaSelecionada.explicacao,
+        explicacao: divergenciaSelecionada.explicacao,
+        classificacao: divergenciaSelecionada.classificacao,
+      }
+    : undefined;
+
+  return (
+    <div className="flex h-full">
+      {/* Sidebar de Filtros */}
+      {sidebarAberto && (
+        <div className="w-64 bg-white border-r border-gray-200 p-4 overflow-y-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
+              <FunnelIcon className="h-5 w-5 text-gray-500" />
+              Filtros
+            </h3>
+            <button
+              onClick={() => setSidebarAberto(false)}
+              className="text-gray-400 hover:text-gray-600"
+              aria-label="Fechar filtros"
+            >
+              <XCircleIcon className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="space-y-4 mt-4">
+            {/* Classificação */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Classificação</label>
+              <select
+                value={filtros.classificacao}
+                onChange={(e) => setFiltros({ ...filtros, classificacao: e.target.value })}
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="todos">Todos</option>
+                <option value="ERRO">ERRO</option>
+                <option value="REVISAR">REVISAR</option>
+                <option value="LEGÍTIMO">LEGÍTIMO</option>
+              </select>
+            </div>
+
+            {/* Impacto */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Impacto</label>
+              <select
+                value={filtros.impacto}
+                onChange={(e) => setFiltros({ ...filtros, impacto: e.target.value })}
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="todos">Todos</option>
+                <option value="alto">Alto</option>
+                <option value="medio">Médio</option>
+                <option value="baixo">Baixo</option>
+                <option value="nenhum">Nenhum</option>
+              </select>
+            </div>
+
+            {/* Checkboxes */}
+            <div className="space-y-2">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={filtros.nao_conciliado}
+                  onChange={(e) => setFiltros({ ...filtros, nao_conciliado: e.target.checked })}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="ml-2 text-sm text-gray-700">Não conciliado</span>
+              </label>
+
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={filtros.st}
+                  onChange={(e) => setFiltros({ ...filtros, st: e.target.checked })}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="ml-2 text-sm text-gray-700">Substituição Tributária</span>
+              </label>
+
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={filtros.ajustes}
+                  onChange={(e) => setFiltros({ ...filtros, ajustes: e.target.checked })}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="ml-2 text-sm text-gray-700">Com ajustes</span>
+              </label>
+            </div>
+
+            {/* CFOP/CST */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">CFOP</label>
+              <input
+                type="text"
+                value={filtros.cfop}
+                onChange={(e) => setFiltros({ ...filtros, cfop: e.target.value })}
+                placeholder="Ex: 5101"
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">CST</label>
+              <input
+                type="text"
+                value={filtros.cst}
+                onChange={(e) => setFiltros({ ...filtros, cst: e.target.value })}
+                placeholder="Ex: 00"
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conteúdo Principal */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-6">
+          {/* Header com busca e ordenação */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4 gap-4">
+              <h2 className="text-2xl font-bold text-gray-900 flex-1 min-w-0">
+                <span className="block truncate">Resultados da Validação</span>
+              </h2>
+              {!sidebarAberto && (
+                <button
+                  onClick={() => setSidebarAberto(true)}
+                  className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                  aria-label="Abrir filtros"
+                >
+                  <FunnelIcon className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Busca */}
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar divergências..."
+                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  aria-label="Buscar divergências"
+                />
+              </div>
+
+              {/* Ordenação */}
+              <div>
+                <select
+                  value={ordenacao}
+                  onChange={(e) => setOrdenacao(e.target.value as any)}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  aria-label="Ordenar resultados"
+                >
+                  <option value="impacto">Impacto (Alto primeiro)</option>
+                  <option value="score">Score de Confiança</option>
+                  <option value="diferenca">Diferença (Maior primeiro)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Cards de Divergências */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {divergenciasFiltradas.map((div) => (
+              <div
+                key={div.id}
+                className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
+              >
+                {/* Cabeçalho */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-2">
+                    {getClassificacaoIcon(div.classificacao)}
+                    <span className="text-sm font-medium text-gray-900">{div.campo}</span>
+                  </div>
+                  {getClassificacaoBadge(div.classificacao)}
+                </div>
+
+                {/* Corpo */}
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">Diferença</div>
+                    <div className="text-lg font-bold text-gray-900">{formatarValor(div.diferenca)}</div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">Score de Confiança</div>
+                    <div className="flex items-center space-x-2">
+                      <div className="flex-1 bg-gray-200 rounded-full h-2">
+                        <div
+                          className={classNames(
+                            'h-2 rounded-full',
+                            div.score_confianca >= 80 && 'bg-red-500',
+                            div.score_confianca >= 50 && div.score_confianca < 80 && 'bg-yellow-500',
+                            div.score_confianca < 50 && 'bg-green-500'
+                          )}
+                          style={{ width: `${div.score_confianca}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-gray-900">
+                        {div.score_confianca.toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">Impacto</div>
+                    {getImpactoBadge(div.impacto)}
+                  </div>
+
+                  {div.explicacao && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="text-xs text-gray-500 mb-1">Explicação</div>
+                      <p className="text-xs text-gray-700 line-clamp-2">{div.explicacao}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Rodapé */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <button
+                    onClick={() => handleVerEvidencias(div)}
+                    className="w-full text-sm text-indigo-600 hover:text-indigo-900 font-medium"
+                  >
+                    Ver evidências
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {divergenciasFiltradas.length === 0 && (
+            <div className="bg-white rounded-lg shadow p-12 text-center">
+              <p className="text-sm text-gray-500">
+                Nenhuma divergência encontrada com os filtros aplicados
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Evidence Drawer */}
+      {mostrarEvidencias && divergenciaSelecionada && (
+        <EvidenceDrawer
+          isOpen={mostrarEvidencias}
+          onClose={() => {
+            setMostrarEvidencias(false);
+            setDivergenciaSelecionada(null);
+          }}
+          evidencias_xml={evidenciasXML}
+          evidencias_sped={evidenciasSPED}
+          comparacao={comparacao}
+          chave_nfe={divergenciaSelecionada.chave_nfe}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Step4ResultsView;
+
