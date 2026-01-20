@@ -5120,18 +5120,16 @@ const Clientes: React.FC = () => {
                           {gruposCNAE.map((grupo) => {
                             const isSelected = gruposSelecionados.includes(grupo.nome);
                             return (
-                              <div
+                              <label
                                 key={grupo.nome}
                                 className={`flex items-center space-x-3 px-3 py-2.5 rounded-md mb-1 cursor-pointer transition-colors ${
                                   isSelected ? 'bg-purple-50 border border-purple-200' : 'hover:bg-gray-50'
                                 }`}
-                                onClick={() => handleGrupoChange(grupo.nome)}
                               >
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
-                                  onChange={() => {}}
-                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={() => handleGrupoChange(grupo.nome)}
                                   className="w-5 h-5 rounded border-2 border-gray-400 bg-white text-purple-600 focus:ring-purple-500 focus:ring-2 cursor-pointer flex-shrink-0"
                                   style={{
                                     accentColor: '#9333ea',
@@ -5150,7 +5148,7 @@ const Clientes: React.FC = () => {
                                     ({grupo.cnaes.length} CNAE{grupo.cnaes.length !== 1 ? 's' : ''})
                                   </span>
                                 </span>
-                              </div>
+                              </label>
                             );
                           })}
                         </div>
