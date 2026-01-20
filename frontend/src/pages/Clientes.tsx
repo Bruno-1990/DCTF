@@ -5126,24 +5126,25 @@ const Clientes: React.FC = () => {
                 Buscar por Grupo de Atividades
               </label>
               
-              {/* Selectbox */}
-              <div className="relative grupo-dropdown-container">
-                <button
-                  type="button"
-                  onClick={() => setGrupoDropdownAberto(!grupoDropdownAberto)}
-                  disabled={loadingGrupos}
-                  className="w-full px-4 py-3 pl-12 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-lg text-left bg-white disabled:bg-gray-100 disabled:cursor-not-allowed hover:border-gray-400 transition-colors"
-                >
-                  <span className={gruposSelecionados.length > 0 ? 'text-gray-900' : 'text-gray-500'}>
-                    {loadingGrupos 
-                      ? 'Carregando grupos...' 
-                      : gruposSelecionados.length > 0
-                        ? `${gruposSelecionados.length} grupo${gruposSelecionados.length > 1 ? 's' : ''} selecionado${gruposSelecionados.length > 1 ? 's' : ''}`
-                        : 'Selecione um ou mais grupos de atividades'}
-                  </span>
-                </button>
-                <FunnelIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
-                <ChevronDownIcon className={`absolute right-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none transition-transform ${grupoDropdownAberto ? 'rotate-180' : ''}`} />
+              <div className="flex gap-4">
+                {/* Selectbox */}
+                <div className="flex-1 relative grupo-dropdown-container">
+                  <button
+                    type="button"
+                    onClick={() => setGrupoDropdownAberto(!grupoDropdownAberto)}
+                    disabled={loadingGrupos}
+                    className="w-full px-4 py-3 pl-12 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-lg text-left bg-white disabled:bg-gray-100 disabled:cursor-not-allowed hover:border-gray-400 transition-colors"
+                  >
+                    <span className={gruposSelecionados.length > 0 ? 'text-gray-900' : 'text-gray-500'}>
+                      {loadingGrupos 
+                        ? 'Carregando grupos...' 
+                        : gruposSelecionados.length > 0
+                          ? `${gruposSelecionados.length} grupo${gruposSelecionados.length > 1 ? 's' : ''} selecionado${gruposSelecionados.length > 1 ? 's' : ''}`
+                          : 'Selecione um ou mais grupos de atividades'}
+                    </span>
+                  </button>
+                  <FunnelIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
+                  <ChevronDownIcon className={`absolute right-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none transition-transform ${grupoDropdownAberto ? 'rotate-180' : ''}`} />
                 
                 {grupoDropdownAberto && (
                   <>
@@ -5236,81 +5237,17 @@ const Clientes: React.FC = () => {
                     </div>
                   </>
                 )}
-              </div>
-              
-              {/* Radio buttons e botão buscar - aparecem ABAIXO quando há seleções */}
-              {gruposSelecionados.length > 0 && (
-                <div className="mt-4 space-y-4">
-                  {/* Radio buttons de modo de busca - apenas quando múltiplos grupos */}
-                  {gruposSelecionados.length > 1 && (
-                    <div className="p-5 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm font-semibold text-gray-700 mb-3">
-                        Como buscar nos grupos selecionados?
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {/* Opção OR - Qualquer um */}
-                        <label
-                          className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                            modoBuscaGrupos === 'OR'
-                              ? 'border-blue-500 bg-blue-50 shadow-sm'
-                              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="modoBusca"
-                            checked={modoBuscaGrupos === 'OR'}
-                            onChange={() => setModoBuscaGrupos('OR')}
-                            className="mt-0.5 w-5 h-5 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-900 mb-1">
-                              Clientes com QUALQUER UM dos CNAEs
-                            </div>
-                            <div className="text-xs text-gray-600">
-                              Retorna clientes que tenham CNAE de pelo menos um dos grupos selecionados
-                            </div>
-                          </div>
-                        </label>
-
-                        {/* Opção AND - Todos */}
-                        <label
-                          className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                            modoBuscaGrupos === 'AND'
-                              ? 'border-purple-500 bg-purple-50 shadow-sm'
-                              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="modoBusca"
-                            checked={modoBuscaGrupos === 'AND'}
-                            onChange={() => setModoBuscaGrupos('AND')}
-                            className="mt-0.5 w-5 h-5 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                          />
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-900 mb-1">
-                              Clientes com TODOS os CNAEs
-                            </div>
-                            <div className="text-xs text-gray-600">
-                              Retorna apenas clientes que tenham CNAEs de todos os grupos selecionados
-                            </div>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Botão Buscar */}
-                  <div className="flex justify-end">
-                    <button
-                      onClick={handleBuscarPorGrupo}
-                      disabled={loadingCNAE || gruposSelecionados.length === 0}
-                      className="px-8 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 font-medium text-lg"
-                    >
-                      {loadingCNAE ? (
-                        <>
+                </div>
+                
+                {/* Botão Buscar ao lado */}
+                <div className="flex items-end">
+                  <button
+                    onClick={handleBuscarPorGrupo}
+                    disabled={loadingCNAE || gruposSelecionados.length === 0}
+                    className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    {loadingCNAE ? (
+                      <>
                         <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -5326,6 +5263,66 @@ const Clientes: React.FC = () => {
                   </button>
                 </div>
               </div>
+              
+              {/* Radio buttons de modo de busca - aparecem ABAIXO quando múltiplos grupos */}
+              {gruposSelecionados.length > 1 && (
+                <div className="mt-4 p-5 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="text-sm font-semibold text-gray-700 mb-3">
+                    Como buscar nos grupos selecionados?
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Opção OR - Qualquer um */}
+                    <label
+                      className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        modoBuscaGrupos === 'OR'
+                          ? 'border-blue-500 bg-blue-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="modoBusca"
+                        checked={modoBuscaGrupos === 'OR'}
+                        onChange={() => setModoBuscaGrupos('OR')}
+                        className="mt-0.5 w-5 h-5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900 mb-1">
+                          Clientes com QUALQUER UM dos CNAEs
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Retorna clientes que tenham CNAE de pelo menos um dos grupos selecionados
+                        </div>
+                      </div>
+                    </label>
+
+                    {/* Opção AND - Todos */}
+                    <label
+                      className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        modoBuscaGrupos === 'AND'
+                          ? 'border-purple-500 bg-purple-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="modoBusca"
+                        checked={modoBuscaGrupos === 'AND'}
+                        onChange={() => setModoBuscaGrupos('AND')}
+                        className="mt-0.5 w-5 h-5 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900 mb-1">
+                          Clientes com TODOS os CNAEs
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Retorna apenas clientes que tenham CNAEs de todos os grupos selecionados
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
               )}
             </div>
 
