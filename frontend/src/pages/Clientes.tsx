@@ -5116,10 +5116,23 @@ const Clientes: React.FC = () => {
                           scrollbarWidth: 'thin',
                           scrollbarColor: '#9333ea #f3f4f6'
                         }}
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <div className="py-2 px-3">
-                          <div className="text-xs text-gray-500 mb-2 font-medium uppercase">
-                            Selecione múltiplos grupos
+                          <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
+                            <div className="text-xs text-gray-500 font-medium uppercase">
+                              Selecione múltiplos grupos
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setGrupoDropdownAberto(false);
+                              }}
+                              className="text-xs text-purple-600 hover:text-purple-700 font-medium px-2 py-1 rounded hover:bg-purple-50"
+                            >
+                              Fechar ✕
+                            </button>
                           </div>
                           {gruposCNAE.map((grupo) => {
                             const isSelected = gruposSelecionados.includes(grupo.nome);
@@ -5129,11 +5142,15 @@ const Clientes: React.FC = () => {
                                 className={`flex items-center space-x-3 px-3 py-2.5 rounded-md mb-1 cursor-pointer transition-colors ${
                                   isSelected ? 'bg-purple-50 border border-purple-200' : 'hover:bg-gray-50'
                                 }`}
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
-                                  onChange={() => handleGrupoChange(grupo.nome)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleGrupoChange(grupo.nome);
+                                  }}
                                   className="w-5 h-5 rounded border-2 border-gray-400 bg-white text-purple-600 focus:ring-purple-500 focus:ring-2 cursor-pointer flex-shrink-0"
                                   style={{
                                     accentColor: '#9333ea',
