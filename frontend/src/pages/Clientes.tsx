@@ -5151,66 +5151,63 @@ const Clientes: React.FC = () => {
                   )}
                 </div>
                 
-                {/* Toggle de modo de busca - aparece apenas quando múltiplos grupos estão selecionados */}
+                {/* Radio buttons de modo de busca - aparece apenas quando múltiplos grupos estão selecionados */}
                 {gruposSelecionados.length > 1 && (
-                  <div className="mt-4 mb-3 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-gray-200">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-shrink-0 mt-1">
-                        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-sm font-semibold text-gray-700">Modo de busca:</span>
-                          <button
-                            type="button"
-                            onClick={() => setModoBuscaGrupos(modoBuscaGrupos === 'OR' ? 'AND' : 'OR')}
-                            className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all font-semibold text-sm shadow-sm hover:shadow-md ${
-                              modoBuscaGrupos === 'OR' 
-                                ? 'border-blue-500 bg-blue-100 text-blue-800 hover:bg-blue-200' 
-                                : 'border-purple-500 bg-purple-100 text-purple-800 hover:bg-purple-200'
-                            }`}
-                          >
-                            {modoBuscaGrupos === 'OR' ? (
-                              <>
-                                <span className="text-lg">∪</span>
-                                <span>QUALQUER UM</span>
-                                <span className="text-xs opacity-75">(OU)</span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="text-lg">∩</span>
-                                <span>TODOS</span>
-                                <span className="text-xs opacity-75">(E)</span>
-                              </>
-                            )}
-                          </button>
+                  <div className="mt-4 mb-4 p-5 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="text-sm font-semibold text-gray-700 mb-3">
+                      Como buscar nos grupos selecionados?
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {/* Opção OR - Qualquer um */}
+                      <label
+                        className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                          modoBuscaGrupos === 'OR'
+                            ? 'border-blue-500 bg-blue-50 shadow-sm'
+                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="modoBusca"
+                          checked={modoBuscaGrupos === 'OR'}
+                          onChange={() => setModoBuscaGrupos('OR')}
+                          className="mt-0.5 w-5 h-5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <div className="font-semibold text-gray-900 mb-1">
+                            Clientes com QUALQUER UM dos CNAEs
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            Retorna clientes que tenham CNAE de pelo menos um dos grupos selecionados
+                          </div>
                         </div>
-                        <div className={`text-xs leading-relaxed ${
-                          modoBuscaGrupos === 'OR' ? 'text-blue-700' : 'text-purple-700'
-                        }`}>
-                          {modoBuscaGrupos === 'OR' ? (
-                            <div className="flex items-start gap-2">
-                              <span className="font-bold text-blue-600">∪</span>
-                              <div>
-                                <span className="font-semibold">Busca ampla:</span> Retorna clientes que tenham CNAE de <span className="font-bold">pelo menos um</span> dos grupos selecionados.
-                                <br />
-                                <span className="italic text-blue-600 mt-1 block">Exemplo: Se selecionar "Comércio" e "Serviços", retorna clientes que tenham CNAE de Comércio OU Serviços (ou ambos).</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-start gap-2">
-                              <span className="font-bold text-purple-600">∩</span>
-                              <div>
-                                <span className="font-semibold">Busca restrita:</span> Retorna <span className="font-bold">apenas</span> clientes que tenham CNAEs de <span className="font-bold">todos</span> os grupos selecionados simultaneamente.
-                                <br />
-                                <span className="italic text-purple-600 mt-1 block">Exemplo: Se selecionar "Comércio" e "Serviços", retorna apenas clientes que tenham CNAE de Comércio E Serviços ao mesmo tempo.</span>
-                              </div>
-                            </div>
-                          )}
+                      </label>
+
+                      {/* Opção AND - Todos */}
+                      <label
+                        className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                          modoBuscaGrupos === 'AND'
+                            ? 'border-purple-500 bg-purple-50 shadow-sm'
+                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="modoBusca"
+                          checked={modoBuscaGrupos === 'AND'}
+                          onChange={() => setModoBuscaGrupos('AND')}
+                          className="mt-0.5 w-5 h-5 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <div className="font-semibold text-gray-900 mb-1">
+                            Clientes com TODOS os CNAEs
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            Retorna apenas clientes que tenham CNAEs de todos os grupos selecionados
+                          </div>
                         </div>
-                      </div>
+                      </label>
                     </div>
                   </div>
                 )}
