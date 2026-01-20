@@ -762,8 +762,8 @@ const Clientes: React.FC = () => {
       const link = document.createElement('a');
       link.href = url;
       const dataExportacao = new Date().toISOString().split('T')[0];
-      const nomeArquivo = grupoSelecionado
-        ? `cnae_${grupoSelecionado.replace(/\s+/g, '_').toLowerCase()}_${dataExportacao}.xlsx`
+      const nomeArquivo = gruposSelecionados.length > 0
+        ? `cnae_${gruposSelecionados.join('_').replace(/\s+/g, '_').toLowerCase()}_${dataExportacao}.xlsx`
         : cnae
           ? `cnae_${cnae.replace(/\D/g, '')}_${dataExportacao}.xlsx`
           : `cnae_busca_${dataExportacao}.xlsx`;
@@ -5355,8 +5355,8 @@ const Clientes: React.FC = () => {
                     <BuildingOfficeIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                     <p className="text-lg font-medium text-gray-600 mb-2">Nenhum cliente encontrado</p>
                     <p className="text-sm text-gray-500">
-                      {grupoSelecionado 
-                        ? `Nenhum cliente possui CNAE do grupo "${grupoSelecionado}"`
+                      {gruposSelecionados.length > 0
+                        ? `Nenhum cliente possui CNAE dos grupos selecionados`
                         : 'Nenhum cliente encontrado com este CNAE'}
                     </p>
                   </div>
@@ -5394,9 +5394,9 @@ const Clientes: React.FC = () => {
                               // Busca por CNAE - passar apenas os dígitos (2 primeiros)
                               const cnaeLimpo = cnae.replace(/[.\-\/]/g, '');
                               termoBusca = cnaeLimpo.substring(0, 2);
-                            } else if (grupoSelecionado) {
-                              // Busca por grupo - passar o nome do grupo
-                              termoBusca = grupoSelecionado;
+                            } else if (gruposSelecionados.length > 0) {
+                              // Busca por grupos - passar os nomes dos grupos
+                              termoBusca = gruposSelecionados.join(', ');
                             }
                             handleViewCliente(cliente, termoBusca);
                           }}
