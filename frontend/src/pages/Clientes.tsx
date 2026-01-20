@@ -5066,70 +5066,103 @@ const Clientes: React.FC = () => {
           <div className="p-6">
             {/* Busca por Grupo */}
             <div className="mb-6">
-              <label htmlFor="grupoCNAE" className="block text-sm font-medium text-gray-700 mb-3">
-                Buscar por Grupo de Atividades (Selecione múltiplos)
+              <label htmlFor="grupoCNAE" className="block text-sm font-medium text-gray-700 mb-2">
+                Buscar por Grupo de Atividades
               </label>
-              
-              {loadingGrupos ? (
-                <div className="flex items-center justify-center py-8 border border-gray-200 rounded-lg bg-gray-50">
-                  <svg className="animate-spin h-6 w-6 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <span className="ml-3 text-gray-600">Carregando grupos...</span>
-                </div>
-              ) : (
-                <>
-                  <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg bg-white mb-4">
-                    {gruposCNAE.map((grupo) => {
-                      const isSelected = gruposSelecionados.includes(grupo.nome);
-                      return (
-                        <div
-                          key={grupo.nome}
-                          className={`flex items-center space-x-3 px-4 py-3 border-b border-gray-100 last:border-b-0 ${
-                            isSelected ? 'bg-purple-50' : 'bg-white hover:bg-gray-50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleGrupoChange(grupo.nome)}
-                            className="w-5 h-5 rounded border-2 border-gray-400 bg-white text-purple-600 focus:ring-purple-500 focus:ring-2 cursor-pointer flex-shrink-0"
-                            style={{
-                              accentColor: '#9333ea',
-                              minWidth: '20px',
-                              minHeight: '20px'
-                            }}
-                            aria-label={`Selecionar grupo ${grupo.nome}`}
-                          />
-                          <span
-                            className={`text-sm font-medium flex-1 cursor-pointer ${
-                              isSelected ? 'text-purple-900' : 'text-gray-700'
-                            }`}
-                            onClick={() => handleGrupoChange(grupo.nome)}
-                          >
-                            {grupo.nome}
-                            <span className="text-xs text-gray-500 ml-2 font-normal">
-                              ({grupo.cnaes.length} CNAE{grupo.cnaes.length !== 1 ? 's' : ''})
-                            </span>
-                          </span>
+              <div className="flex gap-4">
+                <div className="flex-1 relative grupo-dropdown-container">
+                  <button
+                    type="button"
+                    onClick={() => setGrupoDropdownAberto(!grupoDropdownAberto)}
+                    disabled={loadingGrupos}
+                    className="w-full px-4 py-3 pl-12 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-lg text-left bg-white disabled:bg-gray-100 disabled:cursor-not-allowed hover:border-gray-400 transition-colors"
+                  >
+                    <span className={gruposSelecionados.length > 0 ? 'text-gray-900' : 'text-gray-500'}>
+                      {loadingGrupos 
+                        ? 'Carregando grupos...' 
+                        : gruposSelecionados.length > 0
+                          ? `${gruposSelecionados.length} grupo${gruposSelecionados.length > 1 ? 's' : ''} selecionado${gruposSelecionados.length > 1 ? 's' : ''}`
+                          : 'Selecione um ou mais grupos de atividades'}
+                    </span>
+                  </button>
+                  <FunnelIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
+                  <ChevronDownIcon className={`absolute right-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none transition-transform ${grupoDropdownAberto ? 'rotate-180' : ''}`} />
+                  
+                  {grupoDropdownAberto && (
+                    <>
+                      <style>{`
+                        .grupo-dropdown-scroll::-webkit-scrollbar {
+                          width: 8px;
+                        }
+                        .grupo-dropdown-scroll::-webkit-scrollbar-track {
+                          background: #f3f4f6;
+                          border-radius: 4px;
+                        }
+                        .grupo-dropdown-scroll::-webkit-scrollbar-thumb {
+                          background: #9333ea;
+                          border-radius: 4px;
+                        }
+                        .grupo-dropdown-scroll::-webkit-scrollbar-thumb:hover {
+                          background: #7e22ce;
+                        }
+                      `}</style>
+                      <div 
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-80 overflow-y-auto grupo-dropdown-scroll" 
+                        style={{
+                          scrollbarWidth: 'thin',
+                          scrollbarColor: '#9333ea #f3f4f6'
+                        }}
+                      >
+                        <div className="py-2 px-3">
+                          <div className="text-xs text-gray-500 mb-2 font-medium uppercase">
+                            Selecione múltiplos grupos
+                          </div>
+                          {gruposCNAE.map((grupo) => {
+                            const isSelected = gruposSelecionados.includes(grupo.nome);
+                            return (
+                              <div
+                                key={grupo.nome}
+                                className={`flex items-center space-x-3 px-3 py-2.5 rounded-md mb-1 cursor-pointer transition-colors ${
+                                  isSelected ? 'bg-purple-50 border border-purple-200' : 'hover:bg-gray-50'
+                                }`}
+                                onClick={() => handleGrupoChange(grupo.nome)}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {}}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-5 h-5 rounded border-2 border-gray-400 bg-white text-purple-600 focus:ring-purple-500 focus:ring-2 cursor-pointer flex-shrink-0"
+                                  style={{
+                                    accentColor: '#9333ea',
+                                    minWidth: '20px',
+                                    minHeight: '20px'
+                                  }}
+                                  aria-label={`Selecionar grupo ${grupo.nome}`}
+                                />
+                                <span
+                                  className={`text-sm font-medium flex-1 ${
+                                    isSelected ? 'text-purple-900' : 'text-gray-700'
+                                  }`}
+                                >
+                                  {grupo.nome}
+                                  <span className="text-xs text-gray-500 ml-2 font-normal">
+                                    ({grupo.cnaes.length} CNAE{grupo.cnaes.length !== 1 ? 's' : ''})
+                                  </span>
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                  
-                  {gruposSelecionados.length > 0 && (
-                    <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
-                      <div className="text-sm text-purple-700 font-medium">
-                        {gruposSelecionados.length} grupo(s) selecionado(s): {gruposSelecionados.join(', ')}
                       </div>
-                    </div>
+                    </>
                   )}
-                  
+                </div>
+                <div className="flex items-end">
                   <button
                     onClick={handleBuscarPorGrupo}
                     disabled={loadingCNAE || gruposSelecionados.length === 0}
-                    className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                   >
                     {loadingCNAE ? (
                       <>
@@ -5142,12 +5175,12 @@ const Clientes: React.FC = () => {
                     ) : (
                       <>
                         <MagnifyingGlassIcon className="h-5 w-5" />
-                        Buscar ({gruposSelecionados.length} grupo{gruposSelecionados.length !== 1 ? 's' : ''})
+                        Buscar
                       </>
                     )}
                   </button>
-                </>
-              )}
+                </div>
+              </div>
               {gruposSelecionados.length > 0 && (() => {
                 const todosOsCnaes = gruposSelecionados.flatMap(nomeGrupo => {
                   const grupo = gruposCNAE.find(g => g.nome === nomeGrupo);
