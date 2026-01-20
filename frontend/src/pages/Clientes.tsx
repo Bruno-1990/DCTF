@@ -273,6 +273,8 @@ const Clientes: React.FC = () => {
   
   // Aba CNAE
   const [cnae, setCnae] = useState('');
+  const [cnaesSelecionados, setCnaesSelecionados] = useState<string[]>([]); // Tags de CNAEs
+  const [modoBuscaCNAEs, setModoBuscaCNAEs] = useState<'OR' | 'AND'>('OR'); // Modo para CNAEs individuais
   const [clientesCNAE, setClientesCNAE] = useState<Cliente[]>([]);
   const [loadingCNAE, setLoadingCNAE] = useState(false);
   const [buscouCNAE, setBuscouCNAE] = useState(false);
@@ -437,14 +439,20 @@ const Clientes: React.FC = () => {
   };
 
   const handleBuscarCNAE = async () => {
-    if (!cnae.trim()) {
-      toast.error('Por favor, informe um código CNAE');
-      return;
+    // Adicionar CNAE do input às tags se houver
+    if (cnae.trim()) {
+      adicionarCNAETag();
+      // Aguardar um tick para o estado atualizar
+      await new Promise(resolve => setTimeout(resolve, 10));
     }
-
-    const cnaeLimpo = limparCNAE(cnae);
-    if (cnaeLimpo.length < 2) {
-      toast.error('O código CNAE deve ter pelo menos 2 dígitos');
+    
+    // Pegar CNAEs após possível adição
+    const cnaesParaBuscar = cnae.trim() && !cnaesSelecionados.includes(cnae.trim()) 
+      ? [...cnaesSelecionados, cnae.trim()] 
+      : cnaesSelecionados;
+    
+    if (cnaesParaBuscar.length === 0) {
+      toast.error('Por favor, adicione pelo menos um código CNAE');
       return;
     }
 
@@ -452,21 +460,31 @@ const Clientes: React.FC = () => {
     setBuscouCNAE(true);
 
     try {
-      const response = await clientesService.buscarPorCNAE(cnae);
+      // Usar API combinada com CNAEs e modo OR/AND
+      const response = await clientesService.buscarPorMultiplosCNAEsEGrupos({
+        cnaes: cnaesParaBuscar.map(c => c.replace(/[.\-\/]/g, '')),
+        grupos: [],
+        mode: modoBuscaCNAEs
+      });
       
       if (response.success && response.data) {
         setClientesCNAE(Array.isArray(response.data) ? response.data : []);
         if (response.total === 0) {
-          toast.info('Nenhum cliente encontrado com este CNAE');
+          const modoTexto = modoBuscaCNAEs === 'OR' ? 'qualquer um dos' : 'todos os';
+          toast.info(`Nenhum cliente encontrado com ${modoTexto} CNAEs selecionados`);
         } else {
-          toast.success(`${response.total} cliente(s) encontrado(s)`);
+          const cnaesText = cnaesParaBuscar.length > 1 
+            ? `${cnaesParaBuscar.length} CNAEs` 
+            : `CNAE ${cnaesParaBuscar[0]}`;
+          const modoTexto = modoBuscaCNAEs === 'OR' ? 'com qualquer um dos' : 'com todos os';
+          toast.success(`${response.total} cliente(s) encontrado(s) ${modoTexto} ${cnaesText}`);
         }
       } else {
         setClientesCNAE([]);
         toast.error(response.error || 'Erro ao buscar clientes');
       }
     } catch (error: any) {
-      console.error('Erro ao buscar por CNAE:', error);
+      console.error('Erro ao buscar por CNAEs:', error);
       setClientesCNAE([]);
       toast.error('Erro ao buscar clientes por CNAE');
     } finally {
@@ -478,7 +496,41 @@ const Clientes: React.FC = () => {
     const valor = e.target.value;
     const cnaeFormatado = aplicarMascaraCNAE(valor);
     setCnae(cnaeFormatado);
-    setGruposSelecionados([]); // Limpar grupos quando digitar CNAE
+  };
+
+  // Adicionar CNAE como tag
+  const adicionarCNAETag = () => {
+    if (!cnae.trim()) return;
+    
+    const cnaeLimpo = cnae.replace(/[.\-\/]/g, '');
+    if (cnaeLimpo.length < 2) {
+      toast.error('CNAE deve ter pelo menos 2 dígitos');
+      return;
+    }
+    
+    // Evitar duplicatas
+    if (cnaesSelecionados.includes(cnae.trim())) {
+      toast.info('Este CNAE já foi adicionado');
+      setCnae('');
+      return;
+    }
+    
+    setCnaesSelecionados(prev => [...prev, cnae.trim()]);
+    setCnae('');
+    setGruposSelecionados([]); // Limpar grupos quando adicionar CNAE
+  };
+
+  // Remover CNAE tag
+  const removerCNAETag = (cnaeParaRemover: string) => {
+    setCnaesSelecionados(prev => prev.filter(c => c !== cnaeParaRemover));
+  };
+
+  // Handler para teclas no input de CNAE
+  const handleCnaeKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
+      e.preventDefault();
+      adicionarCNAETag();
+    }
   };
 
   const handleBuscarPorGrupo = async () => {
@@ -5321,33 +5373,55 @@ const Clientes: React.FC = () => {
               <div className="flex-1 border-t border-gray-300"></div>
             </div>
 
-            {/* Campo de Busca por Código */}
+            {/* Campo de Busca por Código com Tags */}
             <div className="mb-6">
               <label htmlFor="cnae" className="block text-sm font-medium text-gray-700 mb-2">
                 Buscar por Código CNAE
               </label>
               <div className="flex gap-4">
-                <div className="flex-1 relative">
-                  <input
-                    id="cnae"
-                    type="text"
-                    value={cnae}
-                    onChange={handleCnaeChange}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        handleBuscarCNAE();
-                      }
-                    }}
-                    placeholder="Ex: 6201-5/00"
-                    maxLength={9}
-                    className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-lg"
-                  />
-                  <DocumentTextIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <div className="flex-1">
+                  {/* Container de tags + input */}
+                  <div className="min-h-[48px] px-4 py-2 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-purple-500 focus-within:border-purple-500 flex flex-wrap items-center gap-2 bg-white">
+                    <DocumentTextIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                    
+                    {/* Tags de CNAEs */}
+                    {cnaesSelecionados.map((cnaeTag, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium border border-purple-300"
+                      >
+                        {cnaeTag}
+                        <button
+                          type="button"
+                          onClick={() => removerCNAETag(cnaeTag)}
+                          className="hover:bg-purple-200 rounded-full p-0.5 transition-colors"
+                          aria-label={`Remover CNAE ${cnaeTag}`}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      </span>
+                    ))}
+                    
+                    {/* Input para adicionar CNAE */}
+                    <input
+                      id="cnae"
+                      type="text"
+                      value={cnae}
+                      onChange={handleCnaeChange}
+                      onKeyDown={handleCnaeKeyPress}
+                      onBlur={adicionarCNAETag}
+                      placeholder={cnaesSelecionados.length === 0 ? "Ex: 6201-5/00 (Enter, Tab ou vírgula para adicionar)" : "Adicione mais..."}
+                      maxLength={9}
+                      className="flex-1 min-w-[200px] outline-none text-lg bg-transparent"
+                    />
+                  </div>
                 </div>
                 <div className="flex items-end">
                   <button
                     onClick={handleBuscarCNAE}
-                    disabled={loadingCNAE || !cnae.trim()}
+                    disabled={loadingCNAE || (cnaesSelecionados.length === 0 && !cnae.trim())}
                     className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                   >
                     {loadingCNAE ? (
@@ -5368,8 +5442,69 @@ const Clientes: React.FC = () => {
                 </div>
               </div>
               <p className="mt-2 text-sm text-gray-500">
-                Digite pelo menos 2 dígitos para buscar. Formato: XXXX-X/XX (ex: 6201-5/00)
+                Pressione Enter, Tab ou vírgula para adicionar cada CNAE. Formato: XXXX-X/XX (ex: 6201-5/00)
               </p>
+              
+              {/* Radio buttons para modo de busca - aparece quando múltiplos CNAEs */}
+              {cnaesSelecionados.length > 1 && (
+                <div className="mt-4 p-5 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="text-sm font-semibold text-gray-700 mb-3">
+                    Como buscar nos CNAEs selecionados?
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {/* Opção OR - Qualquer um */}
+                    <label
+                      className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        modoBuscaCNAEs === 'OR'
+                          ? 'border-blue-500 bg-blue-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="modoBuscaCNAEs"
+                        checked={modoBuscaCNAEs === 'OR'}
+                        onChange={() => setModoBuscaCNAEs('OR')}
+                        className="mt-0.5 w-5 h-5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900 mb-1">
+                          Clientes com QUALQUER UM dos CNAEs
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Retorna clientes que tenham pelo menos um dos CNAEs selecionados
+                        </div>
+                      </div>
+                    </label>
+
+                    {/* Opção AND - Todos */}
+                    <label
+                      className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        modoBuscaCNAEs === 'AND'
+                          ? 'border-purple-500 bg-purple-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="modoBuscaCNAEs"
+                        checked={modoBuscaCNAEs === 'AND'}
+                        onChange={() => setModoBuscaCNAEs('AND')}
+                        className="mt-0.5 w-5 h-5 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900 mb-1">
+                          Clientes com TODOS os CNAEs
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Retorna apenas clientes que tenham todos os CNAEs selecionados
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Resultados */}
