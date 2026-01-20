@@ -5125,62 +5125,81 @@ const Clientes: React.FC = () => {
               <label htmlFor="grupoCNAE" className="block text-sm font-medium text-gray-700 mb-2">
                 Buscar por Grupo de Atividades
               </label>
-              <div className="flex gap-4">
-                <div className="flex-1 relative grupo-dropdown-container">
-                  <button
-                    type="button"
-                    onClick={() => setGrupoDropdownAberto(!grupoDropdownAberto)}
-                    disabled={loadingGrupos}
-                    className="w-full px-4 py-3 pl-12 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-lg text-left bg-white disabled:bg-gray-100 disabled:cursor-not-allowed hover:border-gray-400 transition-colors"
-                  >
-                    <span className={gruposSelecionados.length > 0 ? 'text-gray-900' : 'text-gray-500'}>
-                      {loadingGrupos 
-                        ? 'Carregando grupos...' 
-                        : gruposSelecionados.length > 0
-                          ? `${gruposSelecionados.length} grupo${gruposSelecionados.length > 1 ? 's' : ''} selecionado${gruposSelecionados.length > 1 ? 's' : ''}`
-                          : 'Selecione um ou mais grupos de atividades'}
-                    </span>
-                  </button>
-                  <FunnelIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
-                  <ChevronDownIcon className={`absolute right-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none transition-transform ${grupoDropdownAberto ? 'rotate-180' : ''}`} />
-                  
-                  {grupoDropdownAberto && (
-                    <>
-                      <style>{`
-                        .grupo-dropdown-scroll::-webkit-scrollbar {
-                          width: 8px;
+              
+              {/* Selectbox */}
+              <div className="relative grupo-dropdown-container">
+                <button
+                  type="button"
+                  onClick={() => setGrupoDropdownAberto(!grupoDropdownAberto)}
+                  disabled={loadingGrupos}
+                  className="w-full px-4 py-3 pl-12 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-lg text-left bg-white disabled:bg-gray-100 disabled:cursor-not-allowed hover:border-gray-400 transition-colors"
+                >
+                  <span className={gruposSelecionados.length > 0 ? 'text-gray-900' : 'text-gray-500'}>
+                    {loadingGrupos 
+                      ? 'Carregando grupos...' 
+                      : gruposSelecionados.length > 0
+                        ? `${gruposSelecionados.length} grupo${gruposSelecionados.length > 1 ? 's' : ''} selecionado${gruposSelecionados.length > 1 ? 's' : ''}`
+                        : 'Selecione um ou mais grupos de atividades'}
+                  </span>
+                </button>
+                <FunnelIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
+                <ChevronDownIcon className={`absolute right-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none transition-transform ${grupoDropdownAberto ? 'rotate-180' : ''}`} />
+                
+                {grupoDropdownAberto && (
+                  <>
+                    <style>{`
+                      .grupo-dropdown-scroll::-webkit-scrollbar {
+                        width: 8px;
+                      }
+                      .grupo-dropdown-scroll::-webkit-scrollbar-track {
+                        background: #f3f4f6;
+                        border-radius: 4px;
+                      }
+                      .grupo-dropdown-scroll::-webkit-scrollbar-thumb {
+                        background: #9333ea;
+                        border-radius: 4px;
+                      }
+                      .grupo-dropdown-scroll::-webkit-scrollbar-thumb:hover {
+                        background: #7e22ce;
+                      }
+                      .grupo-grid {
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 0.5rem;
+                      }
+                      @media (max-width: 1024px) {
+                        .grupo-grid {
+                          grid-template-columns: repeat(2, 1fr);
                         }
-                        .grupo-dropdown-scroll::-webkit-scrollbar-track {
-                          background: #f3f4f6;
-                          border-radius: 4px;
+                      }
+                      @media (max-width: 640px) {
+                        .grupo-grid {
+                          grid-template-columns: 1fr;
                         }
-                        .grupo-dropdown-scroll::-webkit-scrollbar-thumb {
-                          background: #9333ea;
-                          border-radius: 4px;
-                        }
-                        .grupo-dropdown-scroll::-webkit-scrollbar-thumb:hover {
-                          background: #7e22ce;
-                        }
-                      `}</style>
-                      <div 
-                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-80 overflow-y-auto grupo-dropdown-scroll" 
-                        style={{
-                          scrollbarWidth: 'thin',
-                          scrollbarColor: '#9333ea #f3f4f6'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="py-2 px-3">
-                          <div className="text-xs text-gray-500 mb-3 pb-2 border-b border-gray-200 font-medium uppercase">
-                            Selecione múltiplos grupos (clique em "Buscar" para aplicar)
-                          </div>
+                      }
+                    `}</style>
+                    <div 
+                      className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto grupo-dropdown-scroll" 
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: '#9333ea #f3f4f6'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="py-3 px-4">
+                        <div className="text-xs text-gray-500 mb-3 pb-2 border-b border-gray-200 font-medium uppercase">
+                          Selecione múltiplos grupos (clique em "Buscar" para aplicar)
+                        </div>
+                        
+                        {/* Grid de 3 colunas */}
+                        <div className="grupo-grid">
                           {gruposCNAE.map((grupo) => {
                             const isSelected = gruposSelecionados.includes(grupo.nome);
                             return (
                               <label
                                 key={grupo.nome}
-                                className={`flex items-center space-x-3 px-3 py-2.5 rounded-md mb-1 cursor-pointer transition-colors ${
-                                  isSelected ? 'bg-purple-50 border border-purple-200' : 'hover:bg-gray-50'
+                                className={`flex items-center space-x-2 px-3 py-2.5 rounded-md cursor-pointer transition-colors ${
+                                  isSelected ? 'bg-purple-50 border border-purple-200' : 'hover:bg-gray-50 border border-transparent'
                                 }`}
                                 onClick={(e) => e.stopPropagation()}
                               >
@@ -5191,11 +5210,11 @@ const Clientes: React.FC = () => {
                                     e.stopPropagation();
                                     handleGrupoChange(grupo.nome);
                                   }}
-                                  className="w-5 h-5 rounded border-2 border-gray-400 bg-white text-purple-600 focus:ring-purple-500 focus:ring-2 cursor-pointer flex-shrink-0"
+                                  className="w-4 h-4 rounded border-2 border-gray-400 bg-white text-purple-600 focus:ring-purple-500 focus:ring-2 cursor-pointer flex-shrink-0"
                                   style={{
                                     accentColor: '#9333ea',
-                                    minWidth: '20px',
-                                    minHeight: '20px'
+                                    minWidth: '16px',
+                                    minHeight: '16px'
                                   }}
                                   aria-label={`Selecionar grupo ${grupo.nome}`}
                                 />
@@ -5205,7 +5224,7 @@ const Clientes: React.FC = () => {
                                   }`}
                                 >
                                   {grupo.nome}
-                                  <span className="text-xs text-gray-500 ml-2 font-normal">
+                                  <span className="text-xs text-gray-500 ml-1 font-normal block">
                                     ({grupo.cnaes.length} CNAE{grupo.cnaes.length !== 1 ? 's' : ''})
                                   </span>
                                 </span>
@@ -5214,79 +5233,84 @@ const Clientes: React.FC = () => {
                           })}
                         </div>
                       </div>
-                    </>
-                  )}
-                </div>
-                
-                {/* Radio buttons de modo de busca - aparece apenas quando múltiplos grupos estão selecionados */}
-                {gruposSelecionados.length > 1 && (
-                  <div className="mt-4 mb-4 p-5 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="text-sm font-semibold text-gray-700 mb-3">
-                      Como buscar nos grupos selecionados?
                     </div>
-                    
-                    <div className="space-y-3">
-                      {/* Opção OR - Qualquer um */}
-                      <label
-                        className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                          modoBuscaGrupos === 'OR'
-                            ? 'border-blue-500 bg-blue-50 shadow-sm'
-                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="modoBusca"
-                          checked={modoBuscaGrupos === 'OR'}
-                          onChange={() => setModoBuscaGrupos('OR')}
-                          className="mt-0.5 w-5 h-5 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                        />
-                        <div className="flex-1">
-                          <div className="font-semibold text-gray-900 mb-1">
-                            Clientes com QUALQUER UM dos CNAEs
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            Retorna clientes que tenham CNAE de pelo menos um dos grupos selecionados
-                          </div>
-                        </div>
-                      </label>
-
-                      {/* Opção AND - Todos */}
-                      <label
-                        className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                          modoBuscaGrupos === 'AND'
-                            ? 'border-purple-500 bg-purple-50 shadow-sm'
-                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="modoBusca"
-                          checked={modoBuscaGrupos === 'AND'}
-                          onChange={() => setModoBuscaGrupos('AND')}
-                          className="mt-0.5 w-5 h-5 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                        />
-                        <div className="flex-1">
-                          <div className="font-semibold text-gray-900 mb-1">
-                            Clientes com TODOS os CNAEs
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            Retorna apenas clientes que tenham CNAEs de todos os grupos selecionados
-                          </div>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
+                  </>
                 )}
-                
-                <div className="flex items-end">
-                  <button
-                    onClick={handleBuscarPorGrupo}
-                    disabled={loadingCNAE || gruposSelecionados.length === 0}
-                    className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                  >
-                    {loadingCNAE ? (
-                      <>
+              </div>
+              
+              {/* Radio buttons e botão buscar - aparecem ABAIXO quando há seleções */}
+              {gruposSelecionados.length > 0 && (
+                <div className="mt-4 space-y-4">
+                  {/* Radio buttons de modo de busca - apenas quando múltiplos grupos */}
+                  {gruposSelecionados.length > 1 && (
+                    <div className="p-5 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="text-sm font-semibold text-gray-700 mb-3">
+                        Como buscar nos grupos selecionados?
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Opção OR - Qualquer um */}
+                        <label
+                          className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                            modoBuscaGrupos === 'OR'
+                              ? 'border-blue-500 bg-blue-50 shadow-sm'
+                              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="modoBusca"
+                            checked={modoBuscaGrupos === 'OR'}
+                            onChange={() => setModoBuscaGrupos('OR')}
+                            className="mt-0.5 w-5 h-5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <div className="flex-1">
+                            <div className="font-semibold text-gray-900 mb-1">
+                              Clientes com QUALQUER UM dos CNAEs
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              Retorna clientes que tenham CNAE de pelo menos um dos grupos selecionados
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* Opção AND - Todos */}
+                        <label
+                          className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                            modoBuscaGrupos === 'AND'
+                              ? 'border-purple-500 bg-purple-50 shadow-sm'
+                              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="modoBusca"
+                            checked={modoBuscaGrupos === 'AND'}
+                            onChange={() => setModoBuscaGrupos('AND')}
+                            className="mt-0.5 w-5 h-5 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                          />
+                          <div className="flex-1">
+                            <div className="font-semibold text-gray-900 mb-1">
+                              Clientes com TODOS os CNAEs
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              Retorna apenas clientes que tenham CNAEs de todos os grupos selecionados
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Botão Buscar */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleBuscarPorGrupo}
+                      disabled={loadingCNAE || gruposSelecionados.length === 0}
+                      className="px-8 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 font-medium text-lg"
+                    >
+                      {loadingCNAE ? (
+                        <>
                         <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
