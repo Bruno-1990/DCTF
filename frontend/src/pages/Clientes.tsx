@@ -5326,6 +5326,7 @@ const Clientes: React.FC = () => {
                   </button>
                 </div>
               </div>
+              )}
             </div>
 
             <div className="mb-6 flex items-center gap-4">
