@@ -5326,69 +5326,6 @@ const Clientes: React.FC = () => {
                   </button>
                 </div>
               </div>
-              {gruposSelecionados.length > 0 && (() => {
-                const todosOsCnaes = gruposSelecionados.flatMap(nomeGrupo => {
-                  const grupo = gruposCNAE.find(g => g.nome === nomeGrupo);
-                  return grupo ? grupo.cnaes : [];
-                });
-                
-                // Ordenar CNAEs por código em ordem crescente
-                const cnaesOrdenados = [...todosOsCnaes].sort((a, b) => {
-                  // Remover formatação e comparar numericamente
-                  const codigoA = String(a.codigo).replace(/\D/g, '');
-                  const codigoB = String(b.codigo).replace(/\D/g, '');
-                  return codigoA.localeCompare(codigoB, undefined, { numeric: true, sensitivity: 'base' });
-                });
-                
-                return (
-                  <div className="mt-2 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs text-gray-600">
-                        <span className="font-semibold">Grupos selecionados ({gruposSelecionados.length}):</span> {gruposSelecionados.join(', ')}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setCnaesExpandidos(!cnaesExpandidos)}
-                        className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium transition-colors"
-                      >
-                        {cnaesExpandidos ? (
-                          <>
-                            <ChevronUpIcon className="h-4 w-4" />
-                            Ocultar CNAEs
-                          </>
-                        ) : (
-                          <>
-                            <ChevronDownIcon className="h-4 w-4" />
-                            Ver CNAEs ({cnaesOrdenados.length})
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    {cnaesExpandidos && (
-                      <div>
-                        <p className="text-xs font-semibold text-gray-700 mb-3">
-                          CNAEs incluídos nesta busca ({cnaesOrdenados.length}):
-                        </p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-                          {cnaesOrdenados.map((cnaeItem, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-start gap-2 px-3 py-2 bg-white border border-purple-300 rounded-md shadow-sm hover:shadow-md transition-shadow"
-                            >
-                              <span className="text-xs font-bold text-purple-700 flex-shrink-0 min-w-[70px]">
-                                {formatarCNAE(cnaeItem.codigo)}
-                              </span>
-                              <span className="text-xs text-gray-600 flex-1" title={cnaeItem.descricao}>
-                                {cnaeItem.descricao}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
             </div>
 
             <div className="mb-6 flex items-center gap-4">
