@@ -5180,24 +5180,65 @@ const Clientes: React.FC = () => {
                 
                 {/* Toggle de modo de busca - aparece apenas quando múltiplos grupos estão selecionados */}
                 {gruposSelecionados.length > 1 && (
-                  <div className="flex items-center justify-center gap-2 py-3">
-                    <span className="text-sm text-gray-600 font-medium">Buscar clientes com CNAEs de:</span>
-                    <button
-                      type="button"
-                      onClick={() => setModoBuscaGrupos(modoBuscaGrupos === 'OR' ? 'AND' : 'OR')}
-                      className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all ${
-                        modoBuscaGrupos === 'OR' 
-                          ? 'border-blue-500 bg-blue-50 text-blue-700' 
-                          : 'border-purple-500 bg-purple-50 text-purple-700'
-                      }`}
-                    >
-                      <span className="font-semibold">
-                        {modoBuscaGrupos === 'OR' ? '🔵 Qualquer um dos grupos' : '🟣 Todos os grupos'}
-                      </span>
-                      <span className="text-xs opacity-75">
-                        {modoBuscaGrupos === 'OR' ? '(OU)' : '(E)'}
-                      </span>
-                    </button>
+                  <div className="mt-4 mb-3 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-gray-200">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 mt-1">
+                        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="text-sm font-semibold text-gray-700">Modo de busca:</span>
+                          <button
+                            type="button"
+                            onClick={() => setModoBuscaGrupos(modoBuscaGrupos === 'OR' ? 'AND' : 'OR')}
+                            className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all font-semibold text-sm shadow-sm hover:shadow-md ${
+                              modoBuscaGrupos === 'OR' 
+                                ? 'border-blue-500 bg-blue-100 text-blue-800 hover:bg-blue-200' 
+                                : 'border-purple-500 bg-purple-100 text-purple-800 hover:bg-purple-200'
+                            }`}
+                          >
+                            {modoBuscaGrupos === 'OR' ? (
+                              <>
+                                <span className="text-lg">∪</span>
+                                <span>QUALQUER UM</span>
+                                <span className="text-xs opacity-75">(OU)</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-lg">∩</span>
+                                <span>TODOS</span>
+                                <span className="text-xs opacity-75">(E)</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className={`text-xs leading-relaxed ${
+                          modoBuscaGrupos === 'OR' ? 'text-blue-700' : 'text-purple-700'
+                        }`}>
+                          {modoBuscaGrupos === 'OR' ? (
+                            <div className="flex items-start gap-2">
+                              <span className="font-bold text-blue-600">∪</span>
+                              <div>
+                                <span className="font-semibold">Busca ampla:</span> Retorna clientes que tenham CNAE de <span className="font-bold">pelo menos um</span> dos grupos selecionados.
+                                <br />
+                                <span className="italic text-blue-600 mt-1 block">Exemplo: Se selecionar "Comércio" e "Serviços", retorna clientes que tenham CNAE de Comércio OU Serviços (ou ambos).</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-start gap-2">
+                              <span className="font-bold text-purple-600">∩</span>
+                              <div>
+                                <span className="font-semibold">Busca restrita:</span> Retorna <span className="font-bold">apenas</span> clientes que tenham CNAEs de <span className="font-bold">todos</span> os grupos selecionados simultaneamente.
+                                <br />
+                                <span className="italic text-purple-600 mt-1 block">Exemplo: Se selecionar "Comércio" e "Serviços", retorna apenas clientes que tenham CNAE de Comércio E Serviços ao mesmo tempo.</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
                 
