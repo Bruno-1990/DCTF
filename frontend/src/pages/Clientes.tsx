@@ -559,7 +559,22 @@ const Clientes: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  // Dropdown só fecha ao clicar no botão "Buscar" - removido closeOnClickOutside
+  // Fechar dropdown ao clicar fora ou no botão "Buscar"
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (grupoDropdownAberto && !target.closest('.grupo-dropdown-container')) {
+        setGrupoDropdownAberto(false);
+      }
+    };
+
+    if (grupoDropdownAberto) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [grupoDropdownAberto]);
 
   // Função para exportar resultados da busca CNAE
   const handleExportarCNAE = async () => {
