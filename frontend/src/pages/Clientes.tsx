@@ -501,7 +501,7 @@ const Clientes: React.FC = () => {
         if (response.total === 0) {
           toast.info('Nenhum cliente encontrado nos grupos selecionados');
         } else {
-          const grupos Text = gruposSelecionados.length > 1 
+          const gruposText = gruposSelecionados.length > 1 
             ? `${gruposSelecionados.length} grupos` 
             : `grupo "${gruposSelecionados[0]}"`;
           toast.success(`${response.total} cliente(s) encontrado(s) em ${gruposText}`);
