@@ -109,6 +109,37 @@ export const clientesService = {
     return response.data; // { success, data: Cliente }
   },
 
+  async buscarPorCNAE(cnae: string) {
+    // Manter formatação do CNAE (XXXX-X/XX)
+    const cnaeFormatado = String(cnae || '').trim();
+    const response = await api.get(`/clientes/cnae/${encodeURIComponent(cnaeFormatado)}`);
+    return response.data; // { success, data: Cliente[], total: number }
+  },
+
+  async buscarGruposCNAE() {
+    const response = await api.get('/clientes/cnae-grupos');
+    return response.data; // { success, data: Array<{ nome: string, palavrasChave: string[], cnaes: Array<{ codigo: string, descricao: string }> }>, total: number }
+  },
+
+  async buscarPorGrupoCNAE(grupo: string) {
+    const response = await api.get(`/clientes/cnae-grupo/${encodeURIComponent(grupo)}`);
+    return response.data; // { success, data: Cliente[], total: number, grupo: string }
+  },
+
+  async buscarPorMultiplosCNAEsEGrupos(criterios: { cnaes?: string[]; grupos?: string[]; mode?: 'OR' | 'AND' }) {
+    // Garantir que arrays vazios sejam enviados como arrays vazios, não undefined
+    const payload = {
+      cnaes: criterios.cnaes && criterios.cnaes.length > 0 ? criterios.cnaes : [],
+      grupos: criterios.grupos && criterios.grupos.length > 0 ? criterios.grupos : [],
+      mode: criterios.mode || 'OR', // Padrão é OR (qualquer um)
+    };
+    
+    console.log('[clientesService] Enviando busca com critérios:', payload);
+    
+    const response = await api.post('/clientes/cnae-busca', payload);
+    return response.data; // { success, data: Cliente[], total: number, criterios: { cnaes, grupos, totalCodigosCNAE } }
+  },
+
   async atualizarTodosReceitaWS() {
     const response = await api.post('/clientes/atualizar-todos-receita-ws');
     return response.data; // { success, data: { total, sucessos, erros, resultados } }

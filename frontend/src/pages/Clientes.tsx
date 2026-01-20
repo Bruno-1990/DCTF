@@ -278,6 +278,7 @@ const Clientes: React.FC = () => {
   const [buscouCNAE, setBuscouCNAE] = useState(false);
   const [gruposCNAE, setGruposCNAE] = useState<Array<{ nome: string; palavrasChave: string[]; cnaes: Array<{ codigo: string; descricao: string }> }>>([]);
   const [gruposSelecionados, setGruposSelecionados] = useState<string[]>([]);
+  const [modoBuscaGrupos, setModoBuscaGrupos] = useState<'OR' | 'AND'>('OR'); // OR = qualquer um | AND = todos
   const [loadingGrupos, setLoadingGrupos] = useState(false);
   const [cnaesExpandidos, setCnaesExpandidos] = useState(false);
   const [clienteModalCNAE, setClienteModalCNAE] = useState<Cliente | null>(null);
@@ -493,18 +494,21 @@ const Clientes: React.FC = () => {
     try {
       const response = await clientesService.buscarPorMultiplosCNAEsEGrupos({
         cnaes: [],
-        grupos: gruposSelecionados
+        grupos: gruposSelecionados,
+        mode: modoBuscaGrupos
       });
       
       if (response.success && response.data) {
         setClientesCNAE(Array.isArray(response.data) ? response.data : []);
         if (response.total === 0) {
-          toast.info('Nenhum cliente encontrado nos grupos selecionados');
+          const modoTexto = modoBuscaGrupos === 'OR' ? 'qualquer um dos' : 'todos os';
+          toast.info(`Nenhum cliente encontrado com CNAEs de ${modoTexto} grupos selecionados`);
         } else {
           const gruposText = gruposSelecionados.length > 1 
             ? `${gruposSelecionados.length} grupos` 
             : `grupo "${gruposSelecionados[0]}"`;
-          toast.success(`${response.total} cliente(s) encontrado(s) em ${gruposText}`);
+          const modoTexto = modoBuscaGrupos === 'OR' ? 'em qualquer um dos' : 'em todos os';
+          toast.success(`${response.total} cliente(s) encontrado(s) ${modoTexto} ${gruposText}`);
         }
       } else {
         setClientesCNAE([]);
@@ -5156,6 +5160,30 @@ const Clientes: React.FC = () => {
                     </>
                   )}
                 </div>
+                
+                {/* Toggle de modo de busca - aparece apenas quando múltiplos grupos estão selecionados */}
+                {gruposSelecionados.length > 1 && (
+                  <div className="flex items-center justify-center gap-2 py-3">
+                    <span className="text-sm text-gray-600 font-medium">Buscar clientes com CNAEs de:</span>
+                    <button
+                      type="button"
+                      onClick={() => setModoBuscaGrupos(modoBuscaGrupos === 'OR' ? 'AND' : 'OR')}
+                      className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all ${
+                        modoBuscaGrupos === 'OR' 
+                          ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                          : 'border-purple-500 bg-purple-50 text-purple-700'
+                      }`}
+                    >
+                      <span className="font-semibold">
+                        {modoBuscaGrupos === 'OR' ? '🔵 Qualquer um dos grupos' : '🟣 Todos os grupos'}
+                      </span>
+                      <span className="text-xs opacity-75">
+                        {modoBuscaGrupos === 'OR' ? '(OU)' : '(E)'}
+                      </span>
+                    </button>
+                  </div>
+                )}
+                
                 <div className="flex items-end">
                   <button
                     onClick={handleBuscarPorGrupo}

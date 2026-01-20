@@ -326,6 +326,778 @@ export class ClienteController {
   }
 
   /**
+   * Buscar clientes por CNAE (principal ou secundário)
+   * GET /api/clientes/cnae/:cnae
+   */
+  async buscarPorCNAE(req: Request, res: Response): Promise<void> {
+    try {
+      const { cnae } = req.params;
+
+      if (!cnae) {
+        res.status(400).json({
+          success: false,
+          error: 'CNAE é obrigatório',
+        });
+        return;
+      }
+
+      // Limpar CNAE (remover formatação, manter apenas números)
+      const cnaeLimpo = String(cnae).replace(/\D/g, '');
+
+      // Validar mínimo de 2 dígitos
+      if (cnaeLimpo.length < 2) {
+        res.status(400).json({
+          success: false,
+          error: 'Código CNAE deve ter pelo menos 2 dígitos',
+        });
+        return;
+      }
+
+      // Buscar todos os clientes
+      const result = await this.clienteModel.findAll();
+
+      if (!result.success || !result.data) {
+        res.status(400).json(result);
+        return;
+      }
+
+      // Filtrar clientes que têm o CNAE (principal ou secundário)
+      const clientesFiltrados = (result.data || []).filter((cliente: any) => {
+        // Normalizar CNAE buscado (remover formatação)
+        const cnaeBuscadoNormalizado = cnaeLimpo.replace(/[^\d]/g, '');
+        
+        // Verificar CNAE principal
+        const cnaePrincipal = cliente.atividade_principal_code;
+        if (cnaePrincipal) {
+          const cnaePrincipalNormalizado = String(cnaePrincipal).replace(/[^\d]/g, '');
+          // Comparar códigos normalizados (apenas números)
+          if (cnaePrincipalNormalizado === cnaeBuscadoNormalizado || 
+              cnaePrincipalNormalizado.startsWith(cnaeBuscadoNormalizado) ||
+              cnaeBuscadoNormalizado.startsWith(cnaePrincipalNormalizado)) {
+            return true;
+          }
+        }
+
+        // Verificar atividades secundárias
+        let atividadesSecundarias: any[] = [];
+        try {
+          const valor = cliente.atividades_secundarias;
+          if (typeof valor === 'string') {
+            atividadesSecundarias = JSON.parse(valor);
+          } else if (Array.isArray(valor)) {
+            atividadesSecundarias = valor;
+          }
+        } catch {
+          // Ignorar erros de parsing
+        }
+
+        // Verificar se alguma atividade secundária corresponde
+        for (const atividade of atividadesSecundarias) {
+          if (atividade && atividade.code) {
+            const cnaeSecundarioNormalizado = String(atividade.code).replace(/[^\d]/g, '');
+            if (cnaeSecundarioNormalizado === cnaeBuscadoNormalizado ||
+                cnaeSecundarioNormalizado.startsWith(cnaeBuscadoNormalizado) ||
+                cnaeBuscadoNormalizado.startsWith(cnaeSecundarioNormalizado)) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      });
+
+      // Ordenar por razão social
+      clientesFiltrados.sort((a: any, b: any) => {
+        const nomeA = (a.razao_social || a.nome || '').toLowerCase().trim();
+        const nomeB = (b.razao_social || b.nome || '').toLowerCase().trim();
+        return nomeA.localeCompare(nomeB, 'pt-BR', { sensitivity: 'base' });
+      });
+
+      // Carregar sócios para cada cliente
+      try {
+        for (const cliente of clientesFiltrados) {
+          if (cliente?.id) {
+            const sociosResult = await this.clienteModel.listarSocios(cliente.id);
+            if (sociosResult.success) {
+              (cliente as any).socios = sociosResult.data || [];
+            }
+          }
+        }
+      } catch (sociosErr) {
+        console.warn('[ClienteController] Erro ao carregar sócios (não crítico):', sociosErr);
+      }
+
+      res.json({
+        success: true,
+        data: clientesFiltrados,
+        total: clientesFiltrados.length,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Função auxiliar para buscar grupos de CNAEs (retorna dados sem enviar resposta)
+   */
+  private async obterGruposCNAE(): Promise<Array<{ nome: string; palavrasChave: string[]; cnaes: Array<{ codigo: string; descricao: string }> }>> {
+    try {
+      // Buscar todos os clientes
+      const result = await this.clienteModel.findAll();
+
+      if (!result.success || !result.data) {
+        return [];
+      }
+
+      // Coletar todos os CNAEs únicos (código + descrição)
+      const cnaesMap = new Map<string, { codigo: string; descricao: string; tipo: 'principal' | 'secundario' }>();
+
+      for (const cliente of result.data || []) {
+        // CNAE Principal
+        if ((cliente as any).atividade_principal_code && (cliente as any).atividade_principal_text) {
+          const codigo = String((cliente as any).atividade_principal_code).trim();
+          const descricao = String((cliente as any).atividade_principal_text).trim();
+          if (codigo && descricao) {
+            cnaesMap.set(codigo, { codigo, descricao, tipo: 'principal' });
+          }
+        }
+
+        // CNAEs Secundários
+        let atividadesSecundarias: any[] = [];
+        try {
+          const valor = (cliente as any).atividades_secundarias;
+          if (typeof valor === 'string') {
+            atividadesSecundarias = JSON.parse(valor);
+          } else if (Array.isArray(valor)) {
+            atividadesSecundarias = valor;
+          }
+        } catch {
+          // Ignorar erros de parsing
+        }
+
+        for (const atividade of atividadesSecundarias) {
+          if (atividade && atividade.code && atividade.text) {
+            const codigo = String(atividade.code).trim();
+            const descricao = String(atividade.text).trim();
+            if (codigo && descricao) {
+              // Se já existe, manter o tipo 'principal' se for, senão marcar como secundário
+              const existente = cnaesMap.get(codigo);
+              if (!existente || existente.tipo === 'secundario') {
+                cnaesMap.set(codigo, { codigo, descricao, tipo: 'secundario' });
+              }
+            }
+          }
+        }
+      }
+
+      // Converter para array
+      const todosCNAEs = Array.from(cnaesMap.values());
+
+      // Definir grupos por palavras-chave comuns
+      const grupos: Record<string, { nome: string; palavrasChave: string[]; cnaes: Array<{ codigo: string; descricao: string }> }> = {};
+
+      // Função para normalizar texto (remover acentos, lowercase)
+      const normalizarTexto = (texto: string): string => {
+        return texto
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .trim();
+      };
+
+      // Função para verificar se um CNAE pertence a um grupo (busca mais precisa)
+      const pertenceAoGrupo = (descricao: string, palavrasChave: string[], grupoNome?: string): boolean => {
+        if (!descricao) return false;
+        const descricaoNormalizada = normalizarTexto(descricao);
+        
+        // Lógica especial para "Aluguel e Locação" - mais restritiva
+        if (grupoNome === 'Aluguel e Locação') {
+          // Verificar se a descrição contém termos relacionados a aluguel/locação
+          // mas excluir termos que podem causar falsos positivos
+          const termosAluguel = ['aluguel', 'locação', 'locacao', 'arrendamento', 'leasing', 'locar', 'alugar'];
+          const termosExcluir = ['venda', 'compra', 'comercialização', 'construção', 'construcao'];
+          
+          // Verificar se contém algum termo de aluguel
+          const temTermoAluguel = termosAluguel.some(termo => {
+            const regex = new RegExp(`\\b${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            return regex.test(descricaoNormalizada);
+          });
+          
+          // Se não tem termo de aluguel, não pertence
+          if (!temTermoAluguel) return false;
+          
+          // Se tem termo de aluguel mas também tem termo de exclusão, verificar contexto
+          const temTermoExclusao = termosExcluir.some(termo => {
+            const regex = new RegExp(`\\b${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            return regex.test(descricaoNormalizada);
+          });
+          
+          // Se tem termo de exclusão, verificar se é realmente sobre aluguel
+          // Exemplo: "Compra e venda de imóveis" não deve ser incluído
+          // Mas "Aluguel de imóveis próprios" deve ser incluído
+          if (temTermoExclusao) {
+            // Se a descrição começa com "aluguel" ou "locação", é válido mesmo com exclusão
+            if (descricaoNormalizada.startsWith('aluguel') || 
+                descricaoNormalizada.startsWith('locação') ||
+                descricaoNormalizada.startsWith('locacao')) {
+              return true;
+            }
+            
+            // Caso contrário, verificar se não é sobre compra/venda
+            if (descricaoNormalizada.includes('compra') && !descricaoNormalizada.includes('aluguel')) {
+              return false;
+            }
+          }
+          
+          return true;
+        }
+        
+        // Para outros grupos, usar busca normal com word boundaries
+        return palavrasChave.some(palavra => {
+          const palavraNormalizada = normalizarTexto(palavra);
+          
+          // Criar regex para buscar a palavra como palavra completa (word boundary)
+          // Isso evita matches parciais indesejados
+          const regex = new RegExp(`\\b${palavraNormalizada.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+          
+          // Verificar se a palavra aparece na descrição
+          if (regex.test(descricaoNormalizada)) {
+            return true;
+          }
+          
+          // Também verificar se a palavra aparece no início ou fim da descrição
+          // (caso não tenha word boundary antes/depois)
+          if (descricaoNormalizada.startsWith(palavraNormalizada + ' ') ||
+              descricaoNormalizada.endsWith(' ' + palavraNormalizada) ||
+              descricaoNormalizada === palavraNormalizada) {
+            return true;
+          }
+          
+          return false;
+        });
+      };
+
+      // Definir grupos com suas palavras-chave
+      const gruposDefinidos: Array<{ nome: string; palavrasChave: string[] }> = [
+        { nome: 'Aluguel e Locação', palavrasChave: ['aluguel', 'locação', 'locacao', 'arrendamento', 'leasing', 'locar', 'alugar'] },
+        { nome: 'Comércio', palavrasChave: ['comércio', 'comercio', 'venda', 'comercialização'] },
+        { nome: 'Serviços', palavrasChave: ['serviço', 'servico', 'prestação', 'prestacao'] },
+        { nome: 'Indústria', palavrasChave: ['indústria', 'industria', 'fabricação', 'fabricacao', 'produção', 'producao'] },
+        { nome: 'Construção', palavrasChave: ['construção', 'construcao', 'obra', 'edificação', 'edificacao'] },
+        { nome: 'Transporte', palavrasChave: ['transporte', 'frete', 'logística', 'logistica'] },
+        { nome: 'Tecnologia', palavrasChave: ['tecnologia', 'informática', 'informatica', 'software', 'sistema', 'desenvolvimento'] },
+        { nome: 'Saúde', palavrasChave: ['saúde', 'saude', 'médico', 'medico', 'hospital', 'clínica', 'clinica'] },
+        { nome: 'Educação', palavrasChave: ['educação', 'educacao', 'ensino', 'escola', 'curso', 'academia'] },
+        { nome: 'Alimentação', palavrasChave: ['alimentação', 'alimentacao', 'restaurante', 'lanchonete', 'bar', 'bebida'] },
+        { nome: 'Imobiliária', palavrasChave: ['imobiliária', 'imobiliaria', 'imóvel', 'imovel', 'corretagem'] },
+        { nome: 'Consultoria', palavrasChave: ['consultoria', 'consultor', 'assessoria', 'assessor'] },
+        { nome: 'Publicidade', palavrasChave: ['publicidade', 'propaganda', 'marketing', 'comunicação', 'comunicacao'] },
+        { nome: 'Limpeza', palavrasChave: ['limpeza', 'higienização', 'higienizacao', 'conservação', 'conservacao'] },
+        { nome: 'Segurança', palavrasChave: ['segurança', 'seguranca', 'vigilância', 'vigilancia', 'proteção', 'protecao'] },
+      ];
+
+      // Agrupar CNAEs
+      for (const grupoDef of gruposDefinidos) {
+        const cnaesDoGrupo = todosCNAEs
+          .filter(cnae => pertenceAoGrupo(cnae.descricao, grupoDef.palavrasChave, grupoDef.nome))
+          .map(cnae => ({ codigo: cnae.codigo, descricao: cnae.descricao }));
+
+        if (cnaesDoGrupo.length > 0) {
+          grupos[grupoDef.nome] = {
+            nome: grupoDef.nome,
+            palavrasChave: grupoDef.palavrasChave,
+            cnaes: cnaesDoGrupo,
+          };
+        }
+      }
+
+      // Converter para array e ordenar por nome
+      const gruposArray = Object.values(grupos).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+      return gruposArray;
+    } catch (error) {
+      console.error('[ClienteController] Erro ao obter grupos CNAE:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Buscar grupos de CNAEs agrupados por palavras-chave
+   * GET /api/clientes/cnae-grupos
+   */
+  async buscarGruposCNAE(_req: Request, res: Response): Promise<void> {
+    try {
+      const gruposArray = await this.obterGruposCNAE();
+      res.json({
+        success: true,
+        data: gruposArray,
+        total: gruposArray.length,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Buscar clientes por grupo de CNAE
+   * GET /api/clientes/cnae-grupo/:grupo
+   */
+  async buscarPorGrupoCNAE(req: Request, res: Response): Promise<void> {
+    try {
+      const { grupo } = req.params;
+
+      if (!grupo) {
+        res.status(400).json({
+          success: false,
+          error: 'Nome do grupo é obrigatório',
+        });
+        return;
+      }
+
+      // Buscar os grupos CNAE para obter a lista de códigos CNAE do grupo
+      const gruposArray = await this.obterGruposCNAE();
+
+      // Encontrar o grupo selecionado
+      const grupoSelecionado = gruposArray.find((g) => g.nome === grupo);
+      if (!grupoSelecionado || !grupoSelecionado.cnaes || grupoSelecionado.cnaes.length === 0) {
+        res.json({
+          success: true,
+          data: [],
+          total: 0,
+          grupo: grupo,
+        });
+        return;
+      }
+
+      // Criar um Set com os códigos CNAE do grupo (normalizados para comparação)
+      const normalizarCodigoCNAE = (codigo: string | number | null | undefined): string => {
+        if (!codigo) return '';
+        // Converter para string e remover todos os caracteres não numéricos
+        // Formato pode ser: "4637-1/99", "46.37-1-99", "4637199", "4637-1-99", etc.
+        // CNAE tem 7 dígitos: XXXX-X/XX ou XXXX-X-XX
+        let codigoStr = String(codigo).trim();
+        
+        // Remover todos os caracteres não numéricos
+        codigoStr = codigoStr.replace(/\D/g, '');
+        
+        // Se tiver menos de 7 dígitos, pode estar incompleto - retornar como está
+        // Se tiver mais de 7 dígitos, pegar apenas os primeiros 7
+        if (codigoStr.length > 7) {
+          codigoStr = codigoStr.substring(0, 7);
+        }
+        
+        return codigoStr;
+      };
+
+      // Normalizar e criar Set com códigos do grupo
+      const codigosCNAEGrupo = new Set<string>();
+      for (const cnae of grupoSelecionado.cnaes) {
+        const codigoNormalizado = normalizarCodigoCNAE(cnae.codigo);
+        if (codigoNormalizado) {
+          codigosCNAEGrupo.add(codigoNormalizado);
+        }
+      }
+
+      console.log(`[buscarPorGrupoCNAE] Grupo: ${grupo}, Códigos CNAE do grupo (${codigosCNAEGrupo.size}):`, Array.from(codigosCNAEGrupo));
+
+      // Buscar todos os clientes
+      const result = await this.clienteModel.findAll();
+
+      if (!result.success || !result.data) {
+        res.status(400).json(result);
+        return;
+      }
+
+      // Filtrar clientes que têm CNAE do grupo (verificando por código, não por descrição)
+      const clientesFiltrados = (result.data || []).filter((cliente: any) => {
+        let temCNAEDoGrupo = false;
+        const codigosCliente: string[] = [];
+
+        // Verificar CNAE principal pelo código
+        const cnaePrincipalCode = (cliente as any).atividade_principal_code;
+        if (cnaePrincipalCode) {
+          const codigoNormalizado = normalizarCodigoCNAE(String(cnaePrincipalCode));
+          codigosCliente.push(`Principal: ${codigoNormalizado} (original: ${cnaePrincipalCode})`);
+          if (codigosCNAEGrupo.has(codigoNormalizado)) {
+            temCNAEDoGrupo = true;
+          }
+        }
+
+        // Verificar atividades secundárias pelo código
+        let atividadesSecundarias: any[] = [];
+        try {
+          const valor = (cliente as any).atividades_secundarias;
+          if (typeof valor === 'string') {
+            atividadesSecundarias = JSON.parse(valor);
+          } else if (Array.isArray(valor)) {
+            atividadesSecundarias = valor;
+          }
+        } catch {
+          // Ignorar erros de parsing
+        }
+
+        for (const atividade of atividadesSecundarias) {
+          if (atividade && atividade.code) {
+            const codigoNormalizado = normalizarCodigoCNAE(String(atividade.code));
+            codigosCliente.push(`Secundário: ${codigoNormalizado} (original: ${atividade.code})`);
+            if (codigosCNAEGrupo.has(codigoNormalizado)) {
+              temCNAEDoGrupo = true;
+            }
+          }
+        }
+
+        // Log apenas para clientes que estão sendo incluídos incorretamente
+        if (temCNAEDoGrupo && (cliente as any).razao_social?.includes('ACAI')) {
+          console.log(`[buscarPorGrupoCNAE] Cliente incluído: ${(cliente as any).razao_social}`);
+          console.log(`[buscarPorGrupoCNAE] Códigos do cliente:`, codigosCliente);
+        }
+
+        return temCNAEDoGrupo;
+      });
+
+      // Ordenar por razão social
+      clientesFiltrados.sort((a: any, b: any) => {
+        const nomeA = (a.razao_social || a.nome || '').toLowerCase().trim();
+        const nomeB = (b.razao_social || b.nome || '').toLowerCase().trim();
+        return nomeA.localeCompare(nomeB, 'pt-BR', { sensitivity: 'base' });
+      });
+
+      // Carregar sócios para cada cliente
+      try {
+        for (const cliente of clientesFiltrados) {
+          if (cliente?.id) {
+            const sociosResult = await this.clienteModel.listarSocios(cliente.id);
+            if (sociosResult.success) {
+              (cliente as any).socios = sociosResult.data || [];
+            }
+          }
+        }
+      } catch (sociosErr) {
+        console.warn('[ClienteController] Erro ao carregar sócios (não crítico):', sociosErr);
+      }
+
+      res.json({
+        success: true,
+        data: clientesFiltrados,
+        total: clientesFiltrados.length,
+        grupo: grupo,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Buscar clientes por múltiplos CNAEs e/ou grupos
+   * POST /api/clientes/cnae-busca
+   * Body: { cnaes?: string[], grupos?: string[] }
+   */
+  async buscarPorMultiplosCNAEsEGrupos(req: Request, res: Response): Promise<void> {
+    try {
+      // Garantir que temos arrays válidos (mesmo que vazios)
+      const cnaes = Array.isArray(req.body.cnaes) ? req.body.cnaes : (req.body.cnaes ? [req.body.cnaes] : []);
+      const grupos = Array.isArray(req.body.grupos) ? req.body.grupos : (req.body.grupos ? [req.body.grupos] : []);
+      const mode = req.body.mode && ['OR', 'AND'].includes(req.body.mode) ? req.body.mode : 'OR';
+
+      console.log('[buscarPorMultiplosCNAEsEGrupos] Recebido:', {
+        cnaes: cnaes,
+        grupos: grupos,
+        mode: mode,
+        cnaesLength: cnaes.length,
+        gruposLength: grupos.length
+      });
+
+      // Validar que pelo menos um critério foi fornecido
+      if (cnaes.length === 0 && grupos.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'É necessário informar pelo menos um CNAE ou um grupo',
+        });
+        return;
+      }
+
+      // Normalizar códigos CNAE
+      const normalizarCodigoCNAE = (codigo: string | number | null | undefined): string => {
+        if (!codigo) return '';
+        let codigoStr = String(codigo).trim();
+        codigoStr = codigoStr.replace(/\D/g, '');
+        if (codigoStr.length > 7) {
+          codigoStr = codigoStr.substring(0, 7);
+        }
+        return codigoStr;
+      };
+
+      // Coletar todos os códigos CNAE dos grupos selecionados
+      // Para modo AND, precisamos manter os CNAEs separados por grupo
+      const codigosCNAEGrupos = new Set<string>();
+      const cnaePorGrupo = new Map<string, Set<string>>(); // Para modo AND
+      
+      if (grupos && grupos.length > 0) {
+        const gruposArray = await this.obterGruposCNAE();
+        console.log(`[buscarPorMultiplosCNAEsEGrupos] Grupos solicitados: ${grupos.join(', ')}`);
+        console.log(`[buscarPorMultiplosCNAEsEGrupos] Grupos disponíveis no sistema: ${gruposArray.length}`);
+        console.log(`[buscarPorMultiplosCNAEsEGrupos] Nomes dos grupos disponíveis:`, gruposArray.map(g => g.nome).slice(0, 10));
+        
+        for (const grupoNome of grupos) {
+          // Buscar grupo (case-insensitive para maior flexibilidade)
+          const grupoSelecionado = gruposArray.find((g) => 
+            g.nome.toLowerCase().trim() === grupoNome.toLowerCase().trim()
+          );
+          
+          if (grupoSelecionado && grupoSelecionado.cnaes && grupoSelecionado.cnaes.length > 0) {
+            console.log(`[buscarPorMultiplosCNAEsEGrupos] ✅ Grupo "${grupoNome}" encontrado com ${grupoSelecionado.cnaes.length} CNAEs`);
+            let cnaesAdicionados = 0;
+            const cnaesDoGrupo = new Set<string>();
+            
+            for (const cnae of grupoSelecionado.cnaes) {
+              if (cnae && cnae.codigo) {
+                const codigoNormalizado = normalizarCodigoCNAE(cnae.codigo);
+                if (codigoNormalizado && codigoNormalizado.length >= 2) {
+                  codigosCNAEGrupos.add(codigoNormalizado);
+                  cnaesDoGrupo.add(codigoNormalizado);
+                  cnaesAdicionados++;
+                }
+              }
+            }
+            
+            // Armazenar CNAEs por grupo (para modo AND)
+            if (cnaesDoGrupo.size > 0) {
+              cnaePorGrupo.set(grupoNome, cnaesDoGrupo);
+            }
+            
+            console.log(`[buscarPorMultiplosCNAEsEGrupos] ✅ ${cnaesAdicionados} CNAEs válidos adicionados do grupo "${grupoNome}"`);
+          } else {
+            console.warn(`[buscarPorMultiplosCNAEsEGrupos] ⚠️ Grupo "${grupoNome}" não encontrado ou sem CNAEs`);
+            if (grupoSelecionado) {
+              console.warn(`[buscarPorMultiplosCNAEsEGrupos] Grupo encontrado mas sem CNAEs:`, {
+                nome: grupoSelecionado.nome,
+                cnaesCount: grupoSelecionado.cnaes?.length || 0
+              });
+            }
+          }
+        }
+        console.log(`[buscarPorMultiplosCNAEsEGrupos] ✅ Total de CNAEs únicos coletados dos grupos: ${codigosCNAEGrupos.size}`);
+        console.log(`[buscarPorMultiplosCNAEsEGrupos] ✅ Modo de busca: ${mode}`);
+      }
+
+      // Normalizar CNAEs individuais fornecidos
+      const codigosCNAEIndividuais = new Set<string>();
+      if (cnaes && Array.isArray(cnaes)) {
+        console.log(`[buscarPorMultiplosCNAEsEGrupos] Processando ${cnaes.length} CNAEs individuais:`, cnaes);
+        for (const cnae of cnaes) {
+          const codigoNormalizado = normalizarCodigoCNAE(cnae);
+          if (codigoNormalizado && codigoNormalizado.length >= 2) {
+            codigosCNAEIndividuais.add(codigoNormalizado);
+          } else {
+            console.warn(`[buscarPorMultiplosCNAEsEGrupos] CNAE inválido ignorado: ${cnae} -> ${codigoNormalizado}`);
+          }
+        }
+        console.log(`[buscarPorMultiplosCNAEsEGrupos] Total de CNAEs individuais válidos: ${codigosCNAEIndividuais.size}`);
+      }
+
+      // Combinar todos os códigos CNAE (grupos + individuais)
+      const todosCodigosCNAE = new Set<string>();
+      codigosCNAEGrupos.forEach(codigo => todosCodigosCNAE.add(codigo));
+      codigosCNAEIndividuais.forEach(codigo => todosCodigosCNAE.add(codigo));
+
+      console.log('[buscarPorMultiplosCNAEsEGrupos] Critérios de busca:', {
+        grupos: grupos,
+        gruposCNAEs: Array.from(codigosCNAEGrupos).slice(0, 10),
+        cnaesIndividuais: Array.from(codigosCNAEIndividuais),
+        totalCodigos: todosCodigosCNAE.size,
+        todosCodigos: Array.from(todosCodigosCNAE).slice(0, 20)
+      });
+
+      if (todosCodigosCNAE.size === 0) {
+        res.json({
+          success: true,
+          data: [],
+          total: 0,
+        });
+        return;
+      }
+
+      // Buscar todos os clientes
+      const result = await this.clienteModel.findAll();
+
+      if (!result.success || !result.data) {
+        res.status(400).json(result);
+        return;
+      }
+
+      console.log(`[buscarPorMultiplosCNAEsEGrupos] Total de clientes para filtrar: ${(result.data || []).length}`);
+
+      // Função auxiliar para verificar se um CNAE corresponde a algum dos buscados
+      const correspondeAoCriterio = (codigoCliente: string): boolean => {
+        if (!codigoCliente || codigoCliente.length < 2) return false;
+        
+        // Verificar correspondência exata ou parcial
+        for (const codigoBuscado of todosCodigosCNAE) {
+          if (!codigoBuscado || codigoBuscado.length < 2) continue;
+          
+          // Correspondência exata (mais comum e preciso)
+          if (codigoCliente === codigoBuscado) {
+            return true;
+          }
+          
+          // Correspondência parcial: 
+          // - Se o código buscado é prefixo do código do cliente (ex: buscar "46" encontra "4637199")
+          // - Se o código do cliente é prefixo do código buscado (ex: buscar "4637199" encontra "4637")
+          // Isso permite busca por códigos parciais
+          if (codigoCliente.length >= codigoBuscado.length) {
+            // Código do cliente é maior ou igual - verificar se começa com o buscado
+            if (codigoCliente.startsWith(codigoBuscado)) {
+              return true;
+            }
+          } else {
+            // Código buscado é maior - verificar se começa com o código do cliente
+            if (codigoBuscado.startsWith(codigoCliente)) {
+              return true;
+            }
+          }
+        }
+        
+        return false;
+      };
+
+      // Filtrar clientes baseado no modo de busca
+      const clientesFiltrados = (result.data || []).filter((cliente: any) => {
+        // Coletar todos os CNAEs do cliente (principal + secundários)
+        const cnaesDoCliente = new Set<string>();
+        
+        // CNAE principal
+        const cnaePrincipalCode = cliente.atividade_principal_code;
+        if (cnaePrincipalCode) {
+          const codigoNormalizado = normalizarCodigoCNAE(String(cnaePrincipalCode));
+          if (codigoNormalizado && codigoNormalizado.length >= 2) {
+            cnaesDoCliente.add(codigoNormalizado);
+          }
+        }
+
+        // Atividades secundárias
+        let atividadesSecundarias: any[] = [];
+        try {
+          const valor = cliente.atividades_secundarias;
+          if (typeof valor === 'string') {
+            atividadesSecundarias = JSON.parse(valor);
+          } else if (Array.isArray(valor)) {
+            atividadesSecundarias = valor;
+          }
+        } catch {
+          // Ignorar erros de parsing
+        }
+
+        for (const atividade of atividadesSecundarias) {
+          if (atividade && atividade.code) {
+            const codigoNormalizado = normalizarCodigoCNAE(String(atividade.code));
+            if (codigoNormalizado && codigoNormalizado.length >= 2) {
+              cnaesDoCliente.add(codigoNormalizado);
+            }
+          }
+        }
+
+        // Modo OR (padrão): cliente tem QUALQUER UM dos CNAEs
+        if (mode === 'OR') {
+          for (const cnaeCliente of cnaesDoCliente) {
+            if (correspondeAoCriterio(cnaeCliente)) {
+              return true;
+            }
+          }
+          return false;
+        }
+        
+        // Modo AND: cliente tem CNAEs de TODOS os grupos
+        if (mode === 'AND' && cnaePorGrupo.size > 0) {
+          // Verificar se o cliente tem pelo menos um CNAE de cada grupo
+          for (const [nomeGrupo, cnaesDoGrupo] of cnaePorGrupo.entries()) {
+            let temCnaeDoGrupo = false;
+            
+            for (const cnaeCliente of cnaesDoCliente) {
+              // Verificar se este CNAE do cliente corresponde a algum CNAE do grupo
+              for (const cnaeGrupo of cnaesDoGrupo) {
+                if (cnaeCliente === cnaeGrupo || 
+                    cnaeCliente.startsWith(cnaeGrupo) || 
+                    cnaeGrupo.startsWith(cnaeCliente)) {
+                  temCnaeDoGrupo = true;
+                  break;
+                }
+              }
+              if (temCnaeDoGrupo) break;
+            }
+            
+            // Se não tem CNAE de algum grupo, não passa no filtro
+            if (!temCnaeDoGrupo) {
+              return false;
+            }
+          }
+          
+          // Passou por todos os grupos - tem CNAE de todos
+          return true;
+        }
+
+        return false;
+      });
+
+      console.log(`[buscarPorMultiplosCNAEsEGrupos] Clientes filtrados: ${clientesFiltrados.length}`);
+
+      // Remover duplicatas (caso um cliente tenha múltiplos CNAEs que correspondem)
+      const clientesUnicos = Array.from(
+        new Map(clientesFiltrados.map((cliente: any) => [cliente.id, cliente])).values()
+      );
+
+      // Ordenar por razão social
+      clientesUnicos.sort((a: any, b: any) => {
+        const nomeA = (a.razao_social || a.nome || '').toLowerCase().trim();
+        const nomeB = (b.razao_social || b.nome || '').toLowerCase().trim();
+        return nomeA.localeCompare(nomeB, 'pt-BR', { sensitivity: 'base' });
+      });
+
+      // Carregar sócios para cada cliente
+      try {
+        for (const cliente of clientesUnicos) {
+          if (cliente?.id) {
+            const sociosResult = await this.clienteModel.listarSocios(cliente.id);
+            if (sociosResult.success) {
+              (cliente as any).socios = sociosResult.data || [];
+            }
+          }
+        }
+      } catch (sociosErr) {
+        console.warn('[ClienteController] Erro ao carregar sócios (não crítico):', sociosErr);
+      }
+
+      res.json({
+        success: true,
+        data: clientesUnicos,
+        total: clientesUnicos.length,
+        criterios: {
+          cnaes: Array.from(codigosCNAEIndividuais),
+          grupos: grupos || [],
+          totalCodigosCNAE: todosCodigosCNAE.size,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
    * Obter cliente por ID
    */
   async obterCliente(req: Request, res: Response): Promise<void> {
