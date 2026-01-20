@@ -534,10 +534,7 @@ const Clientes: React.FC = () => {
         return [...prev, grupo];
       }
     });
-    setCnae(''); // Limpar campo CNAE quando selecionar grupo
-    setClientesCNAE([]);
-    setBuscouCNAE(false);
-    setGrupoDropdownAberto(false);
+    // Não limpar resultados nem fechar dropdown - permite seleção múltipla
   };
 
   // Carregar grupos quando abrir a aba CNAE
