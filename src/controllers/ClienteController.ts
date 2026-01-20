@@ -1018,33 +1018,56 @@ export class ClienteController {
           return false;
         }
         
-        // Modo AND: cliente tem CNAEs de TODOS os grupos
-        if (mode === 'AND' && cnaePorGrupo.size > 0) {
-          // Verificar se o cliente tem pelo menos um CNAE de cada grupo
-          for (const [nomeGrupo, cnaesDoGrupo] of cnaePorGrupo.entries()) {
-            let temCnaeDoGrupo = false;
-            
-            for (const cnaeCliente of cnaesDoCliente) {
-              // Verificar se este CNAE do cliente corresponde a algum CNAE do grupo
-              for (const cnaeGrupo of cnaesDoGrupo) {
-                if (cnaeCliente === cnaeGrupo || 
-                    cnaeCliente.startsWith(cnaeGrupo) || 
-                    cnaeGrupo.startsWith(cnaeCliente)) {
-                  temCnaeDoGrupo = true;
+        // Modo AND: cliente tem TODOS os CNAEs/grupos buscados
+        if (mode === 'AND') {
+          // Caso 1: Busca por grupos - verificar se tem CNAE de cada grupo
+          if (cnaePorGrupo.size > 0) {
+            for (const [nomeGrupo, cnaesDoGrupo] of cnaePorGrupo.entries()) {
+              let temCnaeDoGrupo = false;
+              
+              for (const cnaeCliente of cnaesDoCliente) {
+                for (const cnaeGrupo of cnaesDoGrupo) {
+                  if (cnaeCliente === cnaeGrupo || 
+                      cnaeCliente.startsWith(cnaeGrupo) || 
+                      cnaeGrupo.startsWith(cnaeCliente)) {
+                    temCnaeDoGrupo = true;
+                    break;
+                  }
+                }
+                if (temCnaeDoGrupo) break;
+              }
+              
+              if (!temCnaeDoGrupo) {
+                return false;
+              }
+            }
+            return true;
+          }
+          
+          // Caso 2: Busca por CNAEs individuais - verificar se tem TODOS os CNAEs
+          if (todosCodigosCNAE.size > 0) {
+            for (const cnaeBuscado of todosCodigosCNAE) {
+              let temEsteCnae = false;
+              
+              for (const cnaeCliente of cnaesDoCliente) {
+                // Verificar correspondência
+                if (cnaeCliente === cnaeBuscado || 
+                    cnaeCliente.startsWith(cnaeBuscado) || 
+                    cnaeBuscado.startsWith(cnaeCliente)) {
+                  temEsteCnae = true;
                   break;
                 }
               }
-              if (temCnaeDoGrupo) break;
+              
+              // Se não tem este CNAE, não passa no filtro
+              if (!temEsteCnae) {
+                return false;
+              }
             }
             
-            // Se não tem CNAE de algum grupo, não passa no filtro
-            if (!temCnaeDoGrupo) {
-              return false;
-            }
+            // Passou por todos os CNAEs - tem todos
+            return true;
           }
-          
-          // Passou por todos os grupos - tem CNAE de todos
-          return true;
         }
 
         return false;
