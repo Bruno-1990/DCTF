@@ -487,6 +487,9 @@ const Clientes: React.FC = () => {
       return;
     }
 
+    // Fechar o dropdown ao buscar
+    setGrupoDropdownAberto(false);
+
     setLoadingCNAE(true);
     setBuscouCNAE(true);
     setCnae(''); // Limpar campo CNAE quando buscar por grupo
@@ -559,22 +562,7 @@ const Clientes: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  // Fechar dropdown ao clicar fora
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (grupoDropdownAberto && !target.closest('.grupo-dropdown-container')) {
-        setGrupoDropdownAberto(false);
-      }
-    };
-
-    if (grupoDropdownAberto) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }
-  }, [grupoDropdownAberto]);
+  // Dropdown só fecha ao clicar no botão "Buscar" - removido closeOnClickOutside
 
   // Função para exportar resultados da busca CNAE
   const handleExportarCNAE = async () => {
@@ -5119,20 +5107,8 @@ const Clientes: React.FC = () => {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="py-2 px-3">
-                          <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
-                            <div className="text-xs text-gray-500 font-medium uppercase">
-                              Selecione múltiplos grupos
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setGrupoDropdownAberto(false);
-                              }}
-                              className="text-xs text-purple-600 hover:text-purple-700 font-medium px-2 py-1 rounded hover:bg-purple-50"
-                            >
-                              Fechar ✕
-                            </button>
+                          <div className="text-xs text-gray-500 mb-3 pb-2 border-b border-gray-200 font-medium uppercase">
+                            Selecione múltiplos grupos (clique em "Buscar" para aplicar)
                           </div>
                           {gruposCNAE.map((grupo) => {
                             const isSelected = gruposSelecionados.includes(grupo.nome);
