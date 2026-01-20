@@ -17,10 +17,13 @@ import {
   ArrowLeftIcon,
   ArrowPathIcon,
   ArrowUpIcon,
+  ArrowRightIcon,
   FunnelIcon,
   ChevronDownIcon,
+  ChevronUpIcon,
   ShareIcon,
   DocumentArrowDownIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import type { AxiosError } from 'axios';
@@ -32,6 +35,8 @@ import { useToast } from '../hooks/useToast';
 import { irpfService, type FaturamentoAnual } from '../services/irpf';
 import { CurrencyDollarIcon, CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
+import ExcelJS from 'exceljs';
+import jsPDF from 'jspdf';
 
 // Componente moderno de seleção de Mês/Ano
 const MonthYearPicker: React.FC<{
@@ -258,7 +263,7 @@ const Clientes: React.FC = () => {
   const [clientesParticipacao, setClientesParticipacao] = useState<Cliente[]>([]);
   // Aba Faturamento SCI
   const [clientesFaturamento, setClientesFaturamento] = useState<Cliente[]>([]);
-  const [faturamentoData, setFaturamentoData] = useState<Map<string, { faturamento: FaturamentoAnual[]; loading: boolean; carregado: boolean; error?: string }>>(new Map());
+  const [faturamentoData, setFaturamentoData] = useState<Map<string, { faturamento: FaturamentoAnual[]; loading: boolean; carregado: boolean; error?: string; ultimaAtualizacao?: string | null }>>(new Map());
   const [loadingFaturamento, setLoadingFaturamento] = useState(false);
   const [searchFaturamento, setSearchFaturamento] = useState('');
   const carregandoFaturamentoRef = useRef(false);
@@ -266,6 +271,24 @@ const Clientes: React.FC = () => {
   const anoAtualFaturamento = new Date().getFullYear();
   const anosParaBuscarFaturamento = [anoAtualFaturamento - 2, anoAtualFaturamento - 1];
   
+  // Aba CNAE
+  const [cnae, setCnae] = useState('');
+  const [clientesCNAE, setClientesCNAE] = useState<Cliente[]>([]);
+  const [loadingCNAE, setLoadingCNAE] = useState(false);
+  const [buscouCNAE, setBuscouCNAE] = useState(false);
+  const [gruposCNAE, setGruposCNAE] = useState<Array<{ nome: string; palavrasChave: string[]; cnaes: Array<{ codigo: string; descricao: string }> }>>([]);
+  const [gruposSelecionados, setGruposSelecionados] = useState<string[]>([]);
+  const [loadingGrupos, setLoadingGrupos] = useState(false);
+  const [cnaesExpandidos, setCnaesExpandidos] = useState(false);
+  const [clienteModalCNAE, setClienteModalCNAE] = useState<Cliente | null>(null);
+  const [exportandoCNAE, setExportandoCNAE] = useState(false);
+  const [grupoDropdownAberto, setGrupoDropdownAberto] = useState(false);
+
+  // Modal de CNAEs e Atividades
+  const [showModalCNAEAtividades, setShowModalCNAEAtividades] = useState(false);
+  const [clienteModalCNAEAtividades, setClienteModalCNAEAtividades] = useState<Cliente | null>(null);
+  const [filtroCNAEModal, setFiltroCNAEModal] = useState<string>('');
+
   // Modal Consulta Personalizada
   const [showModalConsultaPersonalizada, setShowModalConsultaPersonalizada] = useState(false);
   const [tipoConsulta, setTipoConsulta] = useState<'anual' | 'mensal' | 'personalizado'>('anual');
@@ -279,6 +302,20 @@ const Clientes: React.FC = () => {
     anoSelecionado: '',
     mesSelecionado: '',
     anoMesSelecionado: '',
+  });
+
+  // Modal Detalhes Faturamento
+  const [showModalDetalhesFaturamento, setShowModalDetalhesFaturamento] = useState(false);
+  const [detalhesFaturamento, setDetalhesFaturamento] = useState<{
+    cliente: Cliente | null;
+    ano: number;
+    dados: any[];
+    loading: boolean;
+  }>({
+    cliente: null,
+    ano: 0,
+    dados: [],
+    loading: false,
   });
   const [loadingConsultaPersonalizada, setLoadingConsultaPersonalizada] = useState(false);
   const [resultadoConsultaPersonalizada, setResultadoConsultaPersonalizada] = useState<any>(null);
@@ -298,7 +335,7 @@ const Clientes: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'pagamentos' | 'e-processos'>(() => {
+  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'pagamentos' | 'e-processos' | 'cnae'>(() => {
     // Inicializar pela URL/localStorage para evitar 1º render na aba errada (que dispara várias requisições/toasts)
     const params = new URLSearchParams(window.location.search);
     const tabFromQuery = params.get('tab');
@@ -309,6 +346,7 @@ const Clientes: React.FC = () => {
     if (tab === 'lancamentos') return 'lancamentos';
     if (tab === 'e-processos') return 'e-processos';
     if (tab === 'participacao') return 'participacao';
+    if (tab === 'cnae') return 'cnae';
     return 'clientes';
   });
   const [cnpjParaPagamentos, setCnpjParaPagamentos] = useState<string | undefined>(undefined);
@@ -374,8 +412,383 @@ const Clientes: React.FC = () => {
     return valor;
   };
 
+  // Funções para CNAE
+  const aplicarMascaraCNAE = (valor: string): string => {
+    const numeros = valor.replace(/\D/g, '');
+    if (numeros.length <= 4) {
+      return numeros;
+    } else if (numeros.length <= 5) {
+      return `${numeros.slice(0, 4)}-${numeros.slice(4)}`;
+    } else {
+      return `${numeros.slice(0, 4)}-${numeros.slice(4, 5)}/${numeros.slice(5, 7)}`;
+    }
+  };
+
+  const limparCNAE = (valor: string): string => {
+    return valor.replace(/\D/g, '');
+  };
+
+  const formatarCNAE = (cnae: string | undefined): string => {
+    if (!cnae) return '';
+    const limpo = String(cnae).replace(/\D/g, '');
+    if (limpo.length < 5) return cnae;
+    return limpo.replace(/^(\d{4})(\d{1})(\d{2})$/, '$1-$2/$3');
+  };
+
+  const handleBuscarCNAE = async () => {
+    if (!cnae.trim()) {
+      toast.error('Por favor, informe um código CNAE');
+      return;
+    }
+
+    const cnaeLimpo = limparCNAE(cnae);
+    if (cnaeLimpo.length < 2) {
+      toast.error('O código CNAE deve ter pelo menos 2 dígitos');
+      return;
+    }
+
+    setLoadingCNAE(true);
+    setBuscouCNAE(true);
+
+    try {
+      const response = await clientesService.buscarPorCNAE(cnae);
+      
+      if (response.success && response.data) {
+        setClientesCNAE(Array.isArray(response.data) ? response.data : []);
+        if (response.total === 0) {
+          toast.info('Nenhum cliente encontrado com este CNAE');
+        } else {
+          toast.success(`${response.total} cliente(s) encontrado(s)`);
+        }
+      } else {
+        setClientesCNAE([]);
+        toast.error(response.error || 'Erro ao buscar clientes');
+      }
+    } catch (error: any) {
+      console.error('Erro ao buscar por CNAE:', error);
+      setClientesCNAE([]);
+      toast.error('Erro ao buscar clientes por CNAE');
+    } finally {
+      setLoadingCNAE(false);
+    }
+  };
+
+  const handleCnaeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const valor = e.target.value;
+    const cnaeFormatado = aplicarMascaraCNAE(valor);
+    setCnae(cnaeFormatado);
+    setGruposSelecionados([]); // Limpar grupos quando digitar CNAE
+  };
+
+  const handleBuscarPorGrupo = async () => {
+    if (gruposSelecionados.length === 0) {
+      toast.error('Por favor, selecione pelo menos um grupo');
+      return;
+    }
+
+    setLoadingCNAE(true);
+    setBuscouCNAE(true);
+    setCnae(''); // Limpar campo CNAE quando buscar por grupo
+
+    try {
+      const response = await clientesService.buscarPorMultiplosCNAEsEGrupos({
+        cnaes: [],
+        grupos: gruposSelecionados
+      });
+      
+      if (response.success && response.data) {
+        setClientesCNAE(Array.isArray(response.data) ? response.data : []);
+        if (response.total === 0) {
+          toast.info('Nenhum cliente encontrado nos grupos selecionados');
+        } else {
+          const grupos Text = gruposSelecionados.length > 1 
+            ? `${gruposSelecionados.length} grupos` 
+            : `grupo "${gruposSelecionados[0]}"`;
+          toast.success(`${response.total} cliente(s) encontrado(s) em ${gruposText}`);
+        }
+      } else {
+        setClientesCNAE([]);
+        toast.error(response.error || 'Erro ao buscar clientes');
+      }
+    } catch (error: any) {
+      console.error('Erro ao buscar por grupos CNAE:', error);
+      setClientesCNAE([]);
+      toast.error('Erro ao buscar clientes por grupos CNAE');
+    } finally {
+      setLoadingCNAE(false);
+    }
+  };
+
+  const handleGrupoChange = (grupo: string) => {
+    setGruposSelecionados(prev => {
+      if (prev.includes(grupo)) {
+        return prev.filter(g => g !== grupo);
+      } else {
+        return [...prev, grupo];
+      }
+    });
+    setCnae(''); // Limpar campo CNAE quando selecionar grupo
+    setClientesCNAE([]);
+    setBuscouCNAE(false);
+    setGrupoDropdownAberto(false);
+  };
+
+  // Carregar grupos quando abrir a aba CNAE
+  useEffect(() => {
+    if (activeTab === 'cnae' && gruposCNAE.length === 0 && !loadingGrupos) {
+      const carregarGrupos = async () => {
+        setLoadingGrupos(true);
+        try {
+          const response = await clientesService.buscarGruposCNAE();
+          if (response.success && response.data) {
+            setGruposCNAE(Array.isArray(response.data) ? response.data : []);
+          }
+        } catch (error) {
+          console.error('Erro ao carregar grupos CNAE:', error);
+          toast.error('Erro ao carregar grupos de CNAE');
+        } finally {
+          setLoadingGrupos(false);
+        }
+      };
+      carregarGrupos();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (grupoDropdownAberto && !target.closest('.grupo-dropdown-container')) {
+        setGrupoDropdownAberto(false);
+      }
+    };
+
+    if (grupoDropdownAberto) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [grupoDropdownAberto]);
+
+  // Função para exportar resultados da busca CNAE
+  const handleExportarCNAE = async () => {
+    if (exportandoCNAE || clientesCNAE.length === 0) return;
+    
+    setExportandoCNAE(true);
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Clientes CNAE', {
+        views: [{ 
+          state: 'frozen', 
+          ySplit: 1,
+          showGridLines: false
+        }],
+      });
+
+      // Calcular número máximo de atividades secundárias
+      let maxAtividadesSecundarias = 0;
+      clientesCNAE.forEach((cliente) => {
+        let atividadesSecundarias: any[] = [];
+        try {
+          const valor = (cliente as any).atividades_secundarias;
+          if (typeof valor === 'string') {
+            atividadesSecundarias = JSON.parse(valor);
+          } else if (Array.isArray(valor)) {
+            atividadesSecundarias = valor;
+          }
+        } catch {
+          // Ignorar erros de parsing
+        }
+        if (atividadesSecundarias.length > maxAtividadesSecundarias) {
+          maxAtividadesSecundarias = atividadesSecundarias.length;
+        }
+      });
+
+      // Cabeçalhos - CÓDIGO SCI como primeira coluna
+      const headers = [
+        'CÓDIGO SCI',
+        'CNPJ',
+        'RAZÃO SOCIAL',
+        'NOME FANTASIA',
+        'E-MAIL',
+        'TELEFONE',
+        'ENDEREÇO',
+        'REGIME TRIBUTÁRIO',
+        'CNAE PRINCIPAL',
+        'DESCRIÇÃO CNAE PRINCIPAL',
+        'QUANTIDADE ATIVIDADES SECUNDÁRIAS',
+      ];
+
+      // Adicionar colunas dinâmicas para cada atividade secundária
+      for (let i = 1; i <= maxAtividadesSecundarias; i++) {
+        headers.push(`ATIVIDADE SECUNDÁRIA ${i}`);
+      }
+
+      // Adicionar cabeçalhos na linha 1
+      const headerRow = sheet.addRow(headers);
+      headerRow.height = 30;
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF9333EA' }, // Roxo
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: 'FFFFFFFF' },
+          size: 12,
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: 'center',
+          wrapText: false,
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        };
+      });
+
+      // Processar dados
+      const dataRows: any[][] = [];
+      
+      clientesCNAE.forEach((cliente) => {
+        // Processar atividades secundárias
+        let atividadesSecundarias: any[] = [];
+        try {
+          const valor = (cliente as any).atividades_secundarias;
+          if (typeof valor === 'string') {
+            atividadesSecundarias = JSON.parse(valor);
+          } else if (Array.isArray(valor)) {
+            atividadesSecundarias = valor;
+          }
+        } catch {
+          // Ignorar erros de parsing
+        }
+
+        // Formatar cada atividade secundária individualmente
+        const atividadesFormatadas: string[] = [];
+        atividadesSecundarias.forEach((atividade: any) => {
+          const codigo = formatarCNAE(atividade.code || atividade.codigo || '');
+          const descricao = atividade.text || atividade.descricao || atividade.texto || '';
+          atividadesFormatadas.push(`${codigo} - ${descricao}`);
+        });
+
+        const cnaePrincipal = formatarCNAE((cliente as any).atividade_principal_code);
+        const cnaePrincipalText = (cliente as any).atividade_principal_text || '';
+
+        // Construir linha: CÓDIGO SCI como primeira coluna
+        const row: any[] = [
+          (cliente as any).codigo_sci || '-',
+          formatarCpfCnpj(cliente.cnpj_limpo || (cliente as any).cnpj),
+          cliente.razao_social || cliente.nome || 'N/A',
+          (cliente as any).fantasia || '-',
+          (cliente as any).email || '-',
+          (cliente as any).telefone || '-',
+          (cliente as any).endereco || '-',
+          (cliente as any).regime_tributario || '-',
+          cnaePrincipal || '-',
+          cnaePrincipalText || '-',
+          atividadesSecundarias.length || 0,
+        ];
+
+        // Adicionar cada atividade secundária em uma coluna separada
+        for (let i = 0; i < maxAtividadesSecundarias; i++) {
+          row.push(atividadesFormatadas[i] || '-');
+        }
+
+        dataRows.push(row);
+      });
+
+      // Adicionar dados
+      dataRows.forEach((row) => {
+        const dataRow = sheet.addRow(row);
+        dataRow.height = 20;
+        dataRow.eachCell((cell, colNumber) => {
+          // Colunas centralizadas:
+          // - CÓDIGO SCI = coluna 1
+          // - REGIME TRIBUTÁRIO = coluna 8
+          // - QUANTIDADE ATIVIDADES SECUNDÁRIAS = coluna 11
+          const isCentralizado = colNumber === 1 || colNumber === 8 || colNumber === 11;
+          // Colunas de atividades secundárias começam após QUANTIDADE ATIVIDADES SECUNDÁRIAS (coluna 12)
+          const isAtividadeSecundaria = colNumber > 11;
+          
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: isCentralizado ? 'center' : 'left',
+            wrapText: false,
+          };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+        });
+      });
+
+      // Ajustar largura das colunas
+      const columnWidths: { width: number }[] = [
+        { width: 15 }, // CÓDIGO SCI (primeira coluna, centralizado)
+        { width: 18 }, // CNPJ
+        { width: 40 }, // RAZÃO SOCIAL
+        { width: 30 }, // NOME FANTASIA
+        { width: 30 }, // E-MAIL
+        { width: 18 }, // TELEFONE
+        { width: 50 }, // ENDEREÇO
+        { width: 20 }, // REGIME TRIBUTÁRIO (centralizado)
+        { width: 15 }, // CNAE PRINCIPAL
+        { width: 50 }, // DESCRIÇÃO CNAE PRINCIPAL
+        { width: 20 }, // QUANTIDADE ATIVIDADES SECUNDÁRIAS (centralizado)
+      ];
+
+      // Adicionar largura para cada coluna de atividade secundária
+      for (let i = 0; i < maxAtividadesSecundarias; i++) {
+        columnWidths.push({ width: 50 }); // ATIVIDADE SECUNDÁRIA N
+      }
+
+      sheet.columns = columnWidths;
+
+      // Gerar arquivo
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dataExportacao = new Date().toISOString().split('T')[0];
+      const nomeArquivo = grupoSelecionado
+        ? `cnae_${grupoSelecionado.replace(/\s+/g, '_').toLowerCase()}_${dataExportacao}.xlsx`
+        : cnae
+          ? `cnae_${cnae.replace(/\D/g, '')}_${dataExportacao}.xlsx`
+          : `cnae_busca_${dataExportacao}.xlsx`;
+      link.download = nomeArquivo;
+      document.body.appendChild(link);
+      link.click();
+      // Aguardar um pouco antes de remover para garantir que o download iniciou
+      setTimeout(() => {
+        if (link && link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+        window.URL.revokeObjectURL(url);
+      }, 100);
+      
+      toast.success(`Planilha exportada com sucesso! ${clientesCNAE.length} cliente(s) exportado(s).`);
+    } catch (error: any) {
+      console.error('Erro ao exportar CNAE:', error);
+      toast.error('Erro ao exportar dados: ' + (error.message || 'Erro desconhecido'));
+    } finally {
+      setExportandoCNAE(false);
+    }
+  };
+
   // Função para mudar de aba e atualizar URL
-  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'pagamentos' | 'e-processos') => {
+  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'pagamentos' | 'e-processos' | 'cnae') => {
     setActiveTab(tab);
     // Atualizar URL sem recarregar a página
     const params = new URLSearchParams(location.search);
@@ -473,6 +886,7 @@ const Clientes: React.FC = () => {
       | 'lancamentos'
       | 'pagamentos'
       | 'e-processos'
+      | 'cnae'
       | null;
 
     const tab = (tabFromQuery as any) || tabFromStorage || 'clientes';
@@ -481,16 +895,17 @@ const Clientes: React.FC = () => {
     else if (tab === 'e-processos') setActiveTab('e-processos');
     else if (tab === 'participacao') setActiveTab('participacao');
     else if (tab === 'faturamento-sci') setActiveTab('faturamento-sci');
+    else if (tab === 'cnae') setActiveTab('cnae');
     else setActiveTab('clientes');
     
-    // Detectar CNPJ na query string para pagamentos, e-processos, lançamentos e clientes
+    // Detectar CNPJ na query string para pagamentos, e-processos, lançamentos, clientes e faturamento-sci
     const cnpjFromQuery = params.get('cnpj');
     if (cnpjFromQuery) {
       const cnpjLimpo = cnpjFromQuery.replace(/\D/g, '');
       if (cnpjLimpo.length === 14) {
         if (tab === 'pagamentos' || tab === 'e-processos') {
           setCnpjParaPagamentos(cnpjLimpo);
-        } else if (tab === 'lancamentos' || tab === 'clientes') {
+        } else if (tab === 'lancamentos' || tab === 'clientes' || tab === 'faturamento-sci') {
           // Preencher o campo de busca com o CNPJ formatado
           const cnpjFormatado = cnpjLimpo
             .replace(/(\d{2})(\d)/, '$1.$2')
@@ -498,6 +913,10 @@ const Clientes: React.FC = () => {
             .replace(/(\d{3})(\d)/, '$1/$2')
             .replace(/(\d{4})(\d)/, '$1-$2');
           setSearch(cnpjFormatado);
+          // Se for faturamento-sci, também preencher o campo de busca específico
+          if (tab === 'faturamento-sci') {
+            setSearchFaturamento(cnpjFormatado);
+          }
         }
       }
     }
@@ -557,7 +976,10 @@ const Clientes: React.FC = () => {
         textArea.focus();
         textArea.select();
         document.execCommand('copy');
-        document.body.removeChild(textArea);
+        // Verificar se o elemento ainda existe antes de remover
+        if (textArea && textArea.parentNode) {
+          textArea.parentNode.removeChild(textArea);
+        }
       }
       
       setCopiedLink(clienteId);
@@ -1099,7 +1521,8 @@ const Clientes: React.FC = () => {
           try {
             const promises = apenasMatrizesComSCI.map(async (cliente) => {
               try {
-                const faturamento = await irpfService.buscarApenasCache(cliente.id, anosParaBuscarFaturamento);
+                const resultado = await irpfService.buscarApenasCache(cliente.id, anosParaBuscarFaturamento);
+                const faturamento = resultado.data;
                 
                 // Garantir que sempre temos os 2 anos, preenchendo com zeros se necessário
                 const faturamentoCompleto = anosParaBuscarFaturamento.map((ano) => {
@@ -1118,6 +1541,7 @@ const Clientes: React.FC = () => {
                     faturamento: faturamentoCompleto,
                     loading: false,
                     carregado: true,
+                    ultimaAtualizacao: resultado.ultimaAtualizacao || null,
                   });
                   return novo;
                 });
@@ -1164,7 +1588,12 @@ const Clientes: React.FC = () => {
     setFaturamentoData((prev) => {
       const novo = new Map(prev);
       const atual = novo.get(clienteId) || { faturamento: [], loading: false, carregado: false };
-      novo.set(clienteId, { ...atual, loading: true });
+      // Manter os dados antigos durante o loading para não zerar os campos
+      novo.set(clienteId, { 
+        faturamento: atual.faturamento || [], // Manter dados antigos
+        loading: true,
+        carregado: atual.carregado // Manter estado de carregado
+      });
       return novo;
     });
     
@@ -1175,27 +1604,126 @@ const Clientes: React.FC = () => {
         return encontrado || { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
       });
       
-      setFaturamentoData((prev) => {
-        const novo = new Map(prev);
-        novo.set(clienteId, { faturamento: faturamentoCompleto, loading: false, carregado: true });
-        return novo;
-      });
+      // Buscar a última atualização após atualizar
+      try {
+        const resultadoCache = await irpfService.buscarApenasCache(clienteId, anosParaBuscarFaturamento);
+        setFaturamentoData((prev) => {
+          const novo = new Map(prev);
+          novo.set(clienteId, { 
+            faturamento: faturamentoCompleto, 
+            loading: false, 
+            carregado: true,
+            ultimaAtualizacao: resultadoCache.ultimaAtualizacao || new Date().toISOString(),
+          });
+          return novo;
+        });
+      } catch {
+        // Se falhar ao buscar última atualização, usar data atual
+        setFaturamentoData((prev) => {
+          const novo = new Map(prev);
+          novo.set(clienteId, { 
+            faturamento: faturamentoCompleto, 
+            loading: false, 
+            carregado: true,
+            ultimaAtualizacao: new Date().toISOString(),
+          });
+          return novo;
+        });
+      }
       
       toast.success(`Faturamento atualizado para ${cliente.razao_social || cliente.nome}`, 3000);
     } catch (error: any) {
       console.error(`Erro ao atualizar faturamento para ${clienteId}:`, error);
       setFaturamentoData((prev) => {
         const novo = new Map(prev);
+        const atual = novo.get(clienteId) || { faturamento: [], loading: false, carregado: false };
+        // Manter os dados antigos mesmo em caso de erro para não zerar os campos
         novo.set(clienteId, { 
-          faturamento: [], 
+          faturamento: atual.faturamento || [], // Manter dados antigos
           loading: false, 
-          carregado: false,
+          carregado: atual.carregado, // Manter estado anterior
           error: error.message || 'Erro ao atualizar faturamento'
         });
         return novo;
       });
       toast.error(`Erro ao atualizar faturamento: ${error?.message || 'Erro desconhecido'}`);
     }
+  };
+
+  // Função para exibir detalhes do faturamento
+  const exibirDetalhesFaturamento = async (clienteId: string, ano: number) => {
+    console.log(`[Faturamento] === INÍCIO exibirDetalhesFaturamento ===`);
+    console.log(`[Faturamento] clienteId: ${clienteId}, ano: ${ano}`);
+    console.log(`[Faturamento] clientesFaturamento.length: ${clientesFaturamento.length}`);
+    
+    const cliente = clientesFaturamento.find(c => c.id === clienteId);
+    if (!cliente) {
+      console.error(`[Faturamento] Cliente não encontrado: ${clienteId}`);
+      toast.error('Cliente não encontrado');
+      return;
+    }
+
+    console.log(`[Faturamento] Cliente encontrado: ${cliente.razao_social || cliente.nome}`);
+    console.log(`[Faturamento] Abrindo modal...`);
+    
+    // Abrir modal imediatamente
+    setShowModalDetalhesFaturamento(true);
+    setDetalhesFaturamento({
+      cliente,
+      ano,
+      dados: [],
+      loading: true,
+    });
+
+    try {
+      console.log(`[Faturamento] Buscando dados detalhados do cache...`);
+      const dados = await irpfService.buscarFaturamentoPorTipo(clienteId, 'detalhado', [ano]);
+      console.log(`[Faturamento] Dados recebidos do serviço:`, dados);
+      console.log(`[Faturamento] Tipo dos dados:`, typeof dados, Array.isArray(dados));
+      
+      let dadosAno = null;
+      if (Array.isArray(dados)) {
+        dadosAno = dados.find((d: any) => d.ano === ano);
+        console.log(`[Faturamento] Dados do ano ${ano}:`, dadosAno);
+      } else if (dados && typeof dados === 'object') {
+        // Se não for array, pode ser um objeto direto
+        dadosAno = dados;
+        console.log(`[Faturamento] Dados recebidos como objeto:`, dadosAno);
+      }
+      
+      if (dadosAno && dadosAno.meses && Array.isArray(dadosAno.meses) && dadosAno.meses.length > 0) {
+        console.log(`[Faturamento] ✅ Encontrados ${dadosAno.meses.length} meses de dados`);
+        console.log(`[Faturamento] Primeiro mês:`, dadosAno.meses[0]);
+        setDetalhesFaturamento({
+          cliente,
+          ano,
+          dados: dadosAno.meses,
+          loading: false,
+        });
+      } else {
+        console.warn(`[Faturamento] ⚠️ Nenhum dado encontrado para o ano ${ano}`);
+        console.warn(`[Faturamento] dadosAno:`, dadosAno);
+        setDetalhesFaturamento({
+          cliente,
+          ano,
+          dados: [],
+          loading: false,
+        });
+        toast.warning('Nenhum dado detalhado encontrado para este período. Os dados podem ainda não ter sido atualizados pelo scheduler. Tente clicar em "Atualizar" primeiro.', 5000);
+      }
+    } catch (error: any) {
+      console.error(`[Faturamento] ❌ Erro ao buscar detalhes:`, error);
+      console.error(`[Faturamento] Stack:`, error.stack);
+      setDetalhesFaturamento({
+        cliente,
+        ano,
+        dados: [],
+        loading: false,
+      });
+      toast.error(`Erro ao buscar detalhes: ${error?.message || 'Erro desconhecido'}`);
+    }
+    
+    console.log(`[Faturamento] === FIM exibirDetalhesFaturamento ===`);
   };
 
   // Função para atualizar todos os faturamentos
@@ -1234,6 +1762,493 @@ const Clientes: React.FC = () => {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(num);
+  };
+
+  // Função para gerar PDF do faturamento
+  const gerarPDFFaturamento = () => {
+    if (!detalhesFaturamento.cliente || detalhesFaturamento.dados.length === 0) {
+      toast.error('Não há dados para gerar o PDF');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('landscape', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 12;
+      let yPos = margin;
+
+      // Paleta de cores moderna e harmoniosa
+      const corPrimaria: [number, number, number] = [139, 92, 246]; // Roxo moderno
+      const corSecundaria: [number, number, number] = [59, 130, 246]; // Azul moderno
+      const corFundoClaro: [number, number, number] = [249, 250, 251]; // Cinza muito claro
+      const corFundoCard: [number, number, number] = [255, 255, 255]; // Branco
+      const corTextoEscuro: [number, number, number] = [17, 24, 39]; // Cinza escuro
+      const corTextoMedio: [number, number, number] = [107, 114, 128]; // Cinza médio
+      const corBorda: [number, number, number] = [229, 231, 235]; // Cinza claro para bordas
+
+      // Header sem gradiente
+      doc.setFillColor(corPrimaria[0], corPrimaria[1], corPrimaria[2]);
+      doc.rect(0, 0, pageWidth, 32, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Faturamento Detalhado', margin, 18);
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Ano ${detalhesFaturamento.ano}`, pageWidth - margin, 18, { align: 'right' });
+      
+      // Linha decorativa abaixo do header
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(0.3);
+      doc.line(margin, 24, pageWidth - margin, 24);
+
+      yPos = 42;
+
+      // Card de Informações do Cliente com background suave
+      const cardInfoY = yPos;
+      doc.setFillColor(corFundoCard[0], corFundoCard[1], corFundoCard[2]);
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.3);
+      doc.rect(margin, cardInfoY - 2, pageWidth - (margin * 2), 30, 'FD');
+      
+      // Título do card
+      doc.setTextColor(corPrimaria[0], corPrimaria[1], corPrimaria[2]);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Informações do Cliente', margin + 3, cardInfoY + 4);
+      
+      // Linha separadora abaixo do título
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.2);
+      doc.line(margin + 3, cardInfoY + 6.5, pageWidth - margin - 3, cardInfoY + 6.5);
+      
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(corTextoEscuro[0], corTextoEscuro[1], corTextoEscuro[2]);
+      
+      const cliente = detalhesFaturamento.cliente;
+      const infoYStart = cardInfoY + 11;
+      let infoY = infoYStart;
+      
+      // Razão Social - linha completa
+      doc.text(`Razão Social:`, margin + 3, infoY);
+      doc.setFont('helvetica', 'bold');
+      const razaoSocial = cliente.razao_social || cliente.nome || '-';
+      doc.text(razaoSocial, margin + 30, infoY, { maxWidth: pageWidth - margin - 33 });
+      doc.setFont('helvetica', 'normal');
+      infoY += 7;
+      
+      // CNPJ e Código SCI - mesma linha
+      doc.text(`CNPJ:`, margin + 3, infoY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(formatCNPJ(cliente.cnpj_limpo || cliente.cnpj || ''), margin + 20, infoY);
+      doc.setFont('helvetica', 'normal');
+      
+      doc.text(`Código SCI:`, pageWidth / 2 + 5, infoY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(String(cliente.codigo_sci || '-'), pageWidth / 2 + 30, infoY);
+      doc.setFont('helvetica', 'normal');
+      infoY += 7;
+      
+      // Período - linha completa
+      doc.text(`Período:`, margin + 3, infoY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`01/01/${detalhesFaturamento.ano} a 31/12/${detalhesFaturamento.ano}`, margin + 22, infoY);
+      doc.setFont('helvetica', 'normal');
+
+      yPos = cardInfoY + 30 + 6;
+
+      // Card de Total do Período com destaque
+      const totalPeriodo = detalhesFaturamento.dados.reduce((sum, d) => sum + (Number(d.faturamento_total) || 0), 0);
+      const totalCardY = yPos;
+      
+      // Background sólido sem gradiente - aumentado para 22mm de altura
+      doc.setFillColor(corPrimaria[0], corPrimaria[1], corPrimaria[2]);
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.3);
+      doc.rect(margin, totalCardY, pageWidth - (margin * 2), 22, 'FD');
+      
+      // Label "Total do Período" - alinhado à esquerda com mais espaço
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Total do Período', margin + 4, totalCardY + 7);
+      
+      // Valor do total - alinhado à esquerda, abaixo do label com mais espaço
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text(formatarMoedaFaturamento(totalPeriodo), margin + 4, totalCardY + 16.5);
+      
+      yPos = totalCardY + 25;
+
+      // Tabela com design moderno
+      const tableY = yPos + 2;
+      
+      // Cabeçalho da tabela com estilo moderno
+      doc.setFillColor(corFundoClaro[0], corFundoClaro[1], corFundoClaro[2]);
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.3);
+      doc.rect(margin, tableY - 5, pageWidth - (margin * 2), 9, 'FD');
+      
+      doc.setTextColor(corTextoEscuro[0], corTextoEscuro[1], corTextoEscuro[2]);
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      
+      const colWidths = [28, 24, 24, 24, 24, 24, 24, 32];
+      const headers = ['Período', 'Vendas Brutas', 'Devoluções', 'Vendas Liquidadas', 'Serviços', 'Outras Receitas', 'Oper. Imob.', 'Faturamento Total'];
+      let xPos = margin + 2;
+      
+      headers.forEach((header, index) => {
+        // Usar maxWidth para permitir quebra de linha automática nos cabeçalhos
+        doc.text(header, xPos, tableY + 1, { maxWidth: colWidths[index] - 2 });
+        xPos += colWidths[index];
+      });
+
+      yPos = tableY + 9;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(corTextoEscuro[0], corTextoEscuro[1], corTextoEscuro[2]);
+
+      // Linha separadora
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.2);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 4;
+
+      // Dados da tabela com linhas alternadas
+      let rowIndex = 0;
+      detalhesFaturamento.dados.forEach((mes: any) => {
+        if (yPos > pageHeight - 25) {
+          doc.addPage();
+          yPos = margin + 10;
+          rowIndex = 0;
+        }
+
+        // Background alternado para linhas
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(corFundoCard[0], corFundoCard[1], corFundoCard[2]);
+        } else {
+          doc.setFillColor(corFundoClaro[0], corFundoClaro[1], corFundoClaro[2]);
+        }
+        doc.rect(margin, yPos - 3.5, pageWidth - (margin * 2), 5.5, 'F');
+
+        xPos = margin + 2;
+        const rowData = [
+          mes.mes_ano || `${mes.mes}/${detalhesFaturamento.ano}`,
+          formatarMoedaFaturamento(Number(mes.vendas_brutas) || 0),
+          formatarMoedaFaturamento(Number(mes.devolucoes_deducoes) || 0),
+          formatarMoedaFaturamento(Number(mes.vendas_liquidadas) || 0),
+          formatarMoedaFaturamento(Number(mes.servicos) || 0),
+          formatarMoedaFaturamento(Number(mes.outras_receitas) || 0),
+          formatarMoedaFaturamento(Number(mes.operacoes_imobiliarias) || 0),
+          formatarMoedaFaturamento(Number(mes.faturamento_total) || 0),
+        ];
+
+        rowData.forEach((data, index) => {
+          if (index === 0) {
+            // Primeira coluna (Período) em negrito
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(corTextoEscuro[0], corTextoEscuro[1], corTextoEscuro[2]);
+          } else if (index === rowData.length - 1) {
+            // Última coluna (Faturamento Total) em negrito e cor destacada
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(corPrimaria[0], corPrimaria[1], corPrimaria[2]);
+          } else {
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(corTextoMedio[0], corTextoMedio[1], corTextoMedio[2]);
+          }
+          
+          doc.text(data, xPos, yPos, { maxWidth: colWidths[index] - 2 });
+          xPos += colWidths[index];
+        });
+
+        // Linha separadora entre linhas
+        doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+        doc.setLineWidth(0.1);
+        doc.line(margin, yPos + 1.5, pageWidth - margin, yPos + 1.5);
+
+        yPos += 6;
+        rowIndex++;
+      });
+
+      // Rodapé elegante
+      const footerY = pageHeight - 8;
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.3);
+      doc.line(margin, footerY - 2, pageWidth - margin, footerY - 2);
+      
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(corTextoMedio[0], corTextoMedio[1], corTextoMedio[2]);
+      doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, margin, footerY);
+      
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Página 1`, pageWidth - margin, footerY, { align: 'right' });
+
+      // Nome do arquivo
+      const nomeArquivo = `Faturamento_${cliente.razao_social?.replace(/[^a-zA-Z0-9]/g, '_') || 'Cliente'}_${detalhesFaturamento.ano}.pdf`;
+      doc.save(nomeArquivo);
+      
+      toast.success('PDF gerado com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao gerar PDF:', error);
+      toast.error(`Erro ao gerar PDF: ${error?.message || 'Erro desconhecido'}`);
+    }
+  };
+
+  // Função para gerar PDF da consulta personalizada
+  const gerarPDFConsultaPersonalizada = () => {
+    if (!resultadoConsultaPersonalizada || !resultadoConsultaPersonalizada.cliente || resultadoConsultaPersonalizada.detalhes.length === 0) {
+      toast.error('Não há dados para gerar o PDF');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('landscape', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 12;
+      let yPos = margin;
+
+      // Paleta de cores moderna e harmoniosa
+      const corPrimaria: [number, number, number] = [139, 92, 246]; // Roxo moderno
+      const corSecundaria: [number, number, number] = [59, 130, 246]; // Azul moderno
+      const corFundoClaro: [number, number, number] = [249, 250, 251]; // Cinza muito claro
+      const corFundoCard: [number, number, number] = [255, 255, 255]; // Branco
+      const corTextoEscuro: [number, number, number] = [17, 24, 39]; // Cinza escuro
+      const corTextoMedio: [number, number, number] = [107, 114, 128]; // Cinza médio
+      const corBorda: [number, number, number] = [229, 231, 235]; // Cinza claro para bordas
+
+      // Header sem gradiente
+      doc.setFillColor(corPrimaria[0], corPrimaria[1], corPrimaria[2]);
+      doc.rect(0, 0, pageWidth, 32, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Faturamento Detalhado', margin, 18);
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const tipoTexto = resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado' ? 'Detalhado' : 'Consolidado';
+      doc.text(`Tipo: ${tipoTexto}`, pageWidth - margin, 18, { align: 'right' });
+      
+      // Linha decorativa abaixo do header
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(0.3);
+      doc.line(margin, 24, pageWidth - margin, 24);
+
+      yPos = 42;
+
+      // Card de Informações do Cliente com background suave
+      const cardInfoY = yPos;
+      doc.setFillColor(corFundoCard[0], corFundoCard[1], corFundoCard[2]);
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.3);
+      doc.rect(margin, cardInfoY - 2, pageWidth - (margin * 2), 30, 'FD');
+      
+      // Título do card
+      doc.setTextColor(corPrimaria[0], corPrimaria[1], corPrimaria[2]);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Informações do Cliente', margin + 3, cardInfoY + 4);
+      
+      // Linha separadora abaixo do título
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.2);
+      doc.line(margin + 3, cardInfoY + 6.5, pageWidth - margin - 3, cardInfoY + 6.5);
+      
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(corTextoEscuro[0], corTextoEscuro[1], corTextoEscuro[2]);
+      
+      const cliente = resultadoConsultaPersonalizada.cliente;
+      const infoYStart = cardInfoY + 11;
+      let infoY = infoYStart;
+      
+      // Razão Social - linha completa
+      doc.text(`Razão Social:`, margin + 3, infoY);
+      doc.setFont('helvetica', 'bold');
+      const razaoSocial = cliente.razao_social || cliente.nome || '-';
+      doc.text(razaoSocial, margin + 30, infoY, { maxWidth: pageWidth - margin - 33 });
+      doc.setFont('helvetica', 'normal');
+      infoY += 7;
+      
+      // CNPJ e Código SCI - mesma linha
+      doc.text(`CNPJ:`, margin + 3, infoY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(formatCNPJ(cliente.cnpj_limpo || cliente.cnpj || ''), margin + 20, infoY);
+      doc.setFont('helvetica', 'normal');
+      
+      doc.text(`Código SCI:`, pageWidth / 2 + 5, infoY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(String(cliente.codigo_sci || '-'), pageWidth / 2 + 30, infoY);
+      doc.setFont('helvetica', 'normal');
+      infoY += 7;
+      
+      // Período - linha completa
+      doc.text(`Período:`, margin + 3, infoY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(
+        formatPeriodoComOffset(
+          resultadoConsultaPersonalizada.periodo.dataInicial,
+          resultadoConsultaPersonalizada.periodo.dataFinal
+        ),
+        margin + 22,
+        infoY
+      );
+      doc.setFont('helvetica', 'normal');
+
+      yPos = cardInfoY + 30 + 6;
+
+      // Card de Total do Período com destaque
+      const totalPeriodo = resultadoConsultaPersonalizada.total;
+      const totalCardY = yPos;
+      
+      // Background sólido sem gradiente - aumentado para 22mm de altura
+      doc.setFillColor(corPrimaria[0], corPrimaria[1], corPrimaria[2]);
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.3);
+      doc.rect(margin, totalCardY, pageWidth - (margin * 2), 22, 'FD');
+      
+      // Label "Total do Período" - alinhado à esquerda com mais espaço
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Total do Período', margin + 4, totalCardY + 7);
+      
+      // Valor do total - alinhado à esquerda, abaixo do label com mais espaço
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text(formatarMoedaFaturamento(totalPeriodo), margin + 4, totalCardY + 16.5);
+      
+      yPos = totalCardY + 25;
+
+      // Tabela com design moderno
+      const tableY = yPos + 2;
+      
+      // Cabeçalho da tabela com estilo moderno
+      doc.setFillColor(corFundoClaro[0], corFundoClaro[1], corFundoClaro[2]);
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.3);
+      doc.rect(margin, tableY - 5, pageWidth - (margin * 2), 9, 'FD');
+      
+      doc.setTextColor(corTextoEscuro[0], corTextoEscuro[1], corTextoEscuro[2]);
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      
+      const isDetalhado = resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado';
+      const colWidths = isDetalhado 
+        ? [28, 24, 24, 24, 24, 24, 24, 32]
+        : [120, 153]; // Para modo consolidado, usar melhor o espaço disponível
+      const headers = isDetalhado
+        ? ['Período', 'Vendas Brutas', 'Devoluções', 'Vendas Liquidadas', 'Serviços', 'Outras Receitas', 'Oper. Imob.', 'Faturamento Total']
+        : ['Período', 'Faturamento Total'];
+      let xPos = margin + 2;
+      
+      headers.forEach((header, index) => {
+        doc.text(header, xPos, tableY + 1, { maxWidth: colWidths[index] - 2 });
+        xPos += colWidths[index];
+      });
+
+      yPos = tableY + 9;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(corTextoEscuro[0], corTextoEscuro[1], corTextoEscuro[2]);
+
+      // Linha separadora
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.2);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 4;
+
+      // Dados da tabela com linhas alternadas
+      let rowIndex = 0;
+      resultadoConsultaPersonalizada.detalhes.forEach((detalhe: any) => {
+        if (yPos > pageHeight - 25) {
+          doc.addPage();
+          yPos = margin + 10;
+          rowIndex = 0;
+        }
+
+        // Background alternado para linhas
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(corFundoCard[0], corFundoCard[1], corFundoCard[2]);
+        } else {
+          doc.setFillColor(corFundoClaro[0], corFundoClaro[1], corFundoClaro[2]);
+        }
+        doc.rect(margin, yPos - 3.5, pageWidth - (margin * 2), 5.5, 'F');
+
+        xPos = margin + 2;
+        const rowData = isDetalhado
+          ? [
+              detalhe.descricao || '-',
+              formatarMoedaFaturamento(Number(detalhe.vendasBrutas) || 0),
+              formatarMoedaFaturamento(Number(detalhe.devolucoesDeducoes) || 0),
+              formatarMoedaFaturamento(Number(detalhe.vendasLiquidadas) || 0),
+              formatarMoedaFaturamento(Number(detalhe.servicos) || 0),
+              formatarMoedaFaturamento(Number(detalhe.outrasReceitas) || 0),
+              formatarMoedaFaturamento(Number(detalhe.operacoesImobiliarias) || 0),
+              formatarMoedaFaturamento(Number(detalhe.faturamentoTotal) || 0),
+            ]
+          : [
+              detalhe.descricao || '-',
+              formatarMoedaFaturamento(Number(detalhe.faturamentoTotal) || 0),
+            ];
+
+        rowData.forEach((data, index) => {
+          if (index === 0) {
+            // Primeira coluna (Período) em negrito
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(corTextoEscuro[0], corTextoEscuro[1], corTextoEscuro[2]);
+          } else if (index === rowData.length - 1) {
+            // Última coluna (Faturamento Total) em negrito e cor destacada
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(corPrimaria[0], corPrimaria[1], corPrimaria[2]);
+          } else {
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(corTextoMedio[0], corTextoMedio[1], corTextoMedio[2]);
+          }
+          
+          doc.text(data, xPos, yPos, { maxWidth: colWidths[index] - 2 });
+          xPos += colWidths[index];
+        });
+
+        // Linha separadora entre linhas
+        doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+        doc.setLineWidth(0.1);
+        doc.line(margin, yPos + 1.5, pageWidth - margin, yPos + 1.5);
+
+        yPos += 6;
+        rowIndex++;
+      });
+
+      // Rodapé elegante
+      const footerY = pageHeight - 8;
+      doc.setDrawColor(corBorda[0], corBorda[1], corBorda[2]);
+      doc.setLineWidth(0.3);
+      doc.line(margin, footerY - 2, pageWidth - margin, footerY - 2);
+      
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(corTextoMedio[0], corTextoMedio[1], corTextoMedio[2]);
+      doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, margin, footerY);
+      
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Página 1`, pageWidth - margin, footerY, { align: 'right' });
+
+      // Nome do arquivo
+      const nomeArquivo = `Faturamento_${cliente.razao_social?.replace(/[^a-zA-Z0-9]/g, '_') || 'Cliente'}_${resultadoConsultaPersonalizada.periodo.dataInicial}_${resultadoConsultaPersonalizada.periodo.dataFinal}.pdf`;
+      doc.save(nomeArquivo);
+      
+      toast.success('PDF gerado com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao gerar PDF:', error);
+      toast.error(`Erro ao gerar PDF: ${error?.message || 'Erro desconhecido'}`);
+    }
   };
 
   // Função para executar consulta personalizada
@@ -1288,7 +2303,7 @@ const Clientes: React.FC = () => {
       setResultadoConsultaPersonalizada(resultado);
 
       setShowModalConsultaPersonalizada(false);
-      setShowModalResultado(true);
+      // Não usar modal, exibir diretamente na página
       toast.success('Consulta realizada com sucesso!', 3000);
     } catch (error: any) {
       console.error('[Frontend] Erro na consulta personalizada:', error);
@@ -1366,28 +2381,102 @@ const Clientes: React.FC = () => {
     }
   };
 
-  const handleViewCliente = async (cliente: Cliente) => {
+  const handleViewCliente = async (cliente: Cliente, termoBusca?: string) => {
     try {
+      console.log('[Clientes] handleViewCliente chamado para:', cliente.id, cliente.razao_social || cliente.nome);
+      
       // Buscar dados completos do cliente com sócios
       const resp = await clientesService.obterCliente(cliente.id!);
+      let clienteCompleto: Cliente;
+      
       // O backend retorna { success, data: Cliente } ou diretamente Cliente
       if (resp && typeof resp === 'object') {
         if ((resp as any).success && (resp as any).data) {
-          setVisualizandoCliente((resp as any).data);
+          clienteCompleto = (resp as any).data;
         } else if ((resp as any).id) {
           // Se retornar diretamente o Cliente (sem wrapper)
-          setVisualizandoCliente(resp as Cliente);
+          clienteCompleto = resp as Cliente;
         } else {
           // Fallback: usar os dados já carregados
-          setVisualizandoCliente(cliente);
+          clienteCompleto = cliente;
         }
       } else {
         // Fallback: usar os dados já carregados
-        setVisualizandoCliente(cliente);
+        clienteCompleto = cliente;
       }
-    } catch {
+      
+      console.log('[Clientes] Cliente completo obtido:', clienteCompleto);
+      console.log('[Clientes] Abrindo modal de CNAEs e Atividades');
+      
+      // Abrir modal de CNAEs e Atividades primeiro
+      // Atualizar ambos os estados juntos
+      setClienteModalCNAEAtividades(clienteCompleto);
+      setShowModalCNAEAtividades(true);
+      
+      // Sempre deixar o campo de filtro vazio ao abrir o modal
+      setFiltroCNAEModal('');
+      
+      console.log('[Clientes] Estados atualizados:', {
+        showModalCNAEAtividades: true,
+        clienteModalCNAEAtividades: clienteCompleto
+      });
+    } catch (error) {
+      console.error('[Clientes] Erro ao buscar cliente completo:', error);
       // Fallback: usar os dados já carregados
-      setVisualizandoCliente(cliente);
+      setClienteModalCNAEAtividades(cliente);
+      setShowModalCNAEAtividades(true);
+    }
+  };
+
+  const handleVerMaisCliente = async () => {
+    if (!clienteModalCNAEAtividades?.id) return;
+    
+    try {
+      // Salvar referência do cliente antes de limpar estados
+      const clienteParaEditar = clienteModalCNAEAtividades;
+      
+      // Fechar modal de CNAEs primeiro
+      setShowModalCNAEAtividades(false);
+      setClienteModalCNAEAtividades(null);
+      setFiltroCNAEModal('');
+      
+      // Mudar para a aba Cadastro se não estiver nela
+      if (activeTab !== 'clientes') {
+        setActiveTab('clientes');
+        // Atualizar URL sem recarregar
+        const params = new URLSearchParams(location.search);
+        params.delete('tab');
+        navigate({ search: params.toString() }, { replace: true });
+        localStorage.setItem('clientes_active_tab', 'clientes');
+        // Aguardar a mudança de aba antes de abrir o formulário
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
+      // Buscar cliente completo do banco
+      const clienteCompleto = await clientesService.getById(clienteParaEditar.id);
+      
+      // Abrir o formulário de edição do cliente
+      setEditingCliente(clienteCompleto);
+      const cnpjLimpo = clienteCompleto.cnpj_limpo || (clienteCompleto.cnpj ? clienteCompleto.cnpj.replace(/\D/g, '') : '');
+      setFormData({
+        ...clienteCompleto,
+        razao_social: clienteCompleto.razao_social || clienteCompleto.nome,
+        cnpj_limpo: cnpjLimpo,
+        cnpj: formatCNPJ(cnpjLimpo),
+      });
+      
+      // Exibir dados cadastrais automaticamente se o cliente tiver dados da ReceitaWS
+      const hasReceitaWSData = !!(clienteCompleto as any).fantasia || !!(clienteCompleto as any).situacao_cadastral || !!(clienteCompleto as any).receita_ws_status;
+      setMostrarCadastroCompleto(hasReceitaWSData);
+      setShowForm(true);
+      
+      // Scroll suave para o topo do formulário
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 100);
+    } catch (error) {
+      console.error('[Clientes] Erro ao abrir cadastro do cliente:', error);
+      toast.error('Erro ao abrir cadastro do cliente');
     }
   };
 
@@ -1583,8 +2672,13 @@ const Clientes: React.FC = () => {
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      // Aguardar um pouco antes de remover para garantir que o download iniciou
+      setTimeout(() => {
+        if (link && link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+        window.URL.revokeObjectURL(url);
+      }, 100);
 
       toast.success('Relatório exportado com sucesso!', 3000);
       setShowExportModal(false);
@@ -1683,7 +2777,10 @@ const Clientes: React.FC = () => {
         textArea.focus();
         textArea.select();
         document.execCommand('copy');
-        document.body.removeChild(textArea);
+        // Verificar se o elemento ainda existe antes de remover
+        if (textArea && textArea.parentNode) {
+          textArea.parentNode.removeChild(textArea);
+        }
       }
       setCopiedCnpj(cnpj);
       setTimeout(() => {
@@ -1711,6 +2808,79 @@ const Clientes: React.FC = () => {
       return d.toLocaleDateString('pt-BR');
     } catch {
       return String(value);
+    }
+  };
+
+  const formatDateTime = (value?: string | Date | null) => {
+    if (!value) return '—';
+    try {
+      let date: Date;
+      const valueStr = typeof value === 'string' ? value : '';
+      
+      if (value instanceof Date) {
+        date = value;
+      } else if (typeof value === 'string') {
+        // Verificar se já tem timezone
+        const hasTimezone = valueStr.includes('Z') || valueStr.includes('+') || (valueStr.includes('-') && valueStr.length > 19);
+        
+        if (!hasTimezone) {
+          // MySQL TIMESTAMP sem timezone
+          // Assumir que o servidor retorna no horário local (Brasil GMT-3)
+          // Formato: 'YYYY-MM-DD HH:MM:SS' ou 'YYYY-MM-DDTHH:MM:SS'
+          // Não adicionar 'Z' - tratar como horário local do servidor
+          const normalizedValue = valueStr.includes('T') ? valueStr : valueStr.replace(' ', 'T');
+          date = new Date(normalizedValue);
+        } else {
+          // Já tem timezone - se for UTC (Z), precisamos converter
+          date = new Date(valueStr);
+        }
+      } else {
+        date = new Date(value);
+      }
+      
+      if (Number.isNaN(date.getTime())) return '—';
+      
+      // Se a string original tinha 'Z' (UTC), converter para Brasília
+      // Caso contrário, assumir que já está no horário correto e apenas formatar
+      if (valueStr.includes('Z')) {
+        // Converter UTC para horário de Brasília
+        return date.toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'America/Sao_Paulo',
+        });
+      } else {
+        // Já está no horário local do servidor (Brasil) - apenas formatar
+        return date.toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+      }
+    } catch {
+      return '—';
+    }
+  };
+
+  // Função para adicionar +1 dia à data e formatar período
+  const formatPeriodoComOffset = (dataInicial: string, dataFinal: string) => {
+    if (!dataInicial || !dataFinal) return '—';
+    try {
+      const dataIni = new Date(dataInicial);
+      const dataFim = new Date(dataFinal);
+      
+      // Adicionar +1 dia a cada data
+      dataIni.setDate(dataIni.getDate() + 1);
+      dataFim.setDate(dataFim.getDate() + 1);
+      
+      return `${dataIni.toLocaleDateString('pt-BR')} a ${dataFim.toLocaleDateString('pt-BR')}`;
+    } catch {
+      return `${dataInicial} a ${dataFinal}`;
     }
   };
 
@@ -2080,9 +3250,268 @@ const Clientes: React.FC = () => {
                 <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
               )}
             </button>
+            <button
+              type="button"
+              onClick={() => handleTabChange('cnae')}
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+                activeTab === 'cnae'
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+              }`}
+            >
+              CNAE
+              {activeTab === 'cnae' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Modal de CNAEs e Atividades - Apenas na aba CNAE */}
+      {activeTab === 'cnae' && showModalCNAEAtividades && clienteModalCNAEAtividades && (
+        <div 
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4" 
+          style={{ zIndex: 9999, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowModalCNAEAtividades(false);
+              setClienteModalCNAEAtividades(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    {clienteModalCNAEAtividades.razao_social || clienteModalCNAEAtividades.nome || 'Cliente'}
+                  </h2>
+                  <p className="text-sm text-blue-100 mt-1">
+                    CNPJ: {clienteModalCNAEAtividades.cnpj_limpo || clienteModalCNAEAtividades.cnpj || '—'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowModalCNAEAtividades(false);
+                    setClienteModalCNAEAtividades(null);
+                    setFiltroCNAEModal('');
+                  }}
+                  className="p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div 
+              className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100" 
+              style={{ 
+                maxHeight: 'calc(90vh - 240px)',
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#9CA3AF #F3F4F6'
+              }}
+            >
+              {(() => {
+                // Função para verificar se uma atividade corresponde ao filtro
+                const correspondeAoFiltro = (codigo: string, descricao: string): boolean => {
+                  if (!filtroCNAEModal.trim()) return true;
+                  
+                  let filtro = filtroCNAEModal.trim().toLowerCase();
+                  
+                  // Se o filtro contém espaços (nome composto), usar apenas a primeira palavra
+                  if (filtro.includes(' ')) {
+                    filtro = filtro.split(' ')[0];
+                  }
+                  
+                  const codigoStr = String(codigo || '').replace(/[.\-\/]/g, '');
+                  const descricaoStr = String(descricao || '').toLowerCase();
+                  
+                  // Verificar se o filtro corresponde aos 2 primeiros dígitos do código
+                  if (filtro.length >= 2 && /^\d+$/.test(filtro)) {
+                    const doisPrimeirosDigitos = codigoStr.substring(0, 2);
+                    if (doisPrimeirosDigitos === filtro) {
+                      return true;
+                    }
+                  }
+                  
+                  // Verificar se o filtro (primeira palavra) está na descrição
+                  if (descricaoStr.includes(filtro)) {
+                    return true;
+                  }
+                  
+                  return false;
+                };
+
+                // Atividade principal sempre é exibida (não precisa de filtro)
+                const atividadePrincipalFiltrada = clienteModalCNAEAtividades.atividade_principal_code;
+
+                // Filtrar atividades secundárias
+                let atividadesSecundariasFiltradas: any[] = [];
+                if (clienteModalCNAEAtividades.atividades_secundarias) {
+                  let atividadesSecundarias: any[] = [];
+                  try {
+                    const valor = clienteModalCNAEAtividades.atividades_secundarias;
+                    if (typeof valor === 'string') {
+                      atividadesSecundarias = JSON.parse(valor);
+                    } else if (Array.isArray(valor)) {
+                      atividadesSecundarias = valor;
+                    }
+                  } catch {
+                    // Ignorar erros de parsing
+                  }
+
+                  atividadesSecundariasFiltradas = atividadesSecundarias.filter((atividade: any) => {
+                    const codigo = atividade.code || atividade.codigo || '';
+                    const descricao = atividade.text || atividade.descricao || atividade.texto || '';
+                    return correspondeAoFiltro(codigo, descricao);
+                  });
+                }
+
+                const temResultados = atividadePrincipalFiltrada || atividadesSecundariasFiltradas.length > 0;
+
+                return (
+                  <>
+                    {/* Atividade Principal */}
+                    {atividadePrincipalFiltrada && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <BuildingOfficeIcon className="h-5 w-5 text-blue-600" />
+                    Atividade Principal
+                  </h3>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-blue-600 text-white">
+                          {clienteModalCNAEAtividades.atividade_principal_code}
+                        </span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-700">
+                          {clienteModalCNAEAtividades.atividade_principal_text || '—'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                    )}
+
+                    {/* Atividades Secundárias */}
+                    {clienteModalCNAEAtividades.atividades_secundarias && (
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <BuildingOfficeIcon className="h-5 w-5 text-purple-600" />
+                            Atividades Secundárias
+                            <span className="text-sm font-normal text-gray-500">
+                              ({atividadesSecundariasFiltradas.length}
+                              {filtroCNAEModal && clienteModalCNAEAtividades.atividades_secundarias && 
+                               Array.isArray(clienteModalCNAEAtividades.atividades_secundarias) &&
+                               ` de ${clienteModalCNAEAtividades.atividades_secundarias.length}`}
+                              )
+                            </span>
+                          </h3>
+                        </div>
+                        
+                        {/* Campo de busca dentro da seção de Atividades Secundárias */}
+                        <div className="mb-3 flex items-center gap-2">
+                          <div className="flex-1 flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg bg-white">
+                            <MagnifyingGlassIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            <input
+                              type="text"
+                              value={filtroCNAEModal}
+                              onChange={(e) => setFiltroCNAEModal(e.target.value)}
+                              placeholder="Buscar por nome ou 2 primeiros dígitos (ex: 77 ou Aluguel)"
+                              className="flex-1 text-sm focus:outline-none"
+                            />
+                            {filtroCNAEModal && (
+                              <button
+                                onClick={() => setFiltroCNAEModal('')}
+                                className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                                title="Limpar filtro"
+                              >
+                                <XMarkIcon className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {atividadesSecundariasFiltradas.length > 0 ? (
+                          <div 
+                            className="space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-purple-500 scrollbar-track-purple-100" 
+                            style={{ 
+                              maxHeight: '400px',
+                              scrollbarWidth: 'thin',
+                              scrollbarColor: '#9333EA #F3F4F6'
+                            }}
+                          >
+                            {atividadesSecundariasFiltradas.map((atividade: any, index: number) => (
+                              <div key={index} className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="flex-shrink-0">
+                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-purple-600 text-white">
+                                      {atividade.code || atividade.codigo || '—'}
+                                    </span>
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-sm text-gray-700">
+                                      {atividade.text || atividade.descricao || atividade.texto || '—'}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : filtroCNAEModal ? (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                            <p className="text-sm text-gray-600">
+                              Nenhuma atividade secundária encontrada com o filtro "{filtroCNAEModal}"
+                            </p>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {/* Mensagem se não houver atividades */}
+                    {!clienteModalCNAEAtividades.atividade_principal_code && 
+                     !clienteModalCNAEAtividades.atividades_secundarias && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+                        <BuildingOfficeIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                        <p className="text-gray-500">Nenhuma atividade cadastrada para este cliente</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowModalCNAEAtividades(false);
+                  setClienteModalCNAEAtividades(null);
+                  setFiltroCNAEModal('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={handleVerMaisCliente}
+                className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg font-semibold"
+              >
+                Ver Mais
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Visualização Detalhada do Cliente */}
       {visualizandoCliente && (
@@ -2223,14 +3652,53 @@ const Clientes: React.FC = () => {
                     {displayCNPJ(visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj || '')}
                   </div>
                 </div>
-                {visualizandoCliente.codigo_sci && (
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Código SCI</label>
-                    <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900 font-semibold text-blue-600">
-                      {visualizandoCliente.codigo_sci}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">Código SCI</label>
+                  <div className="flex gap-2">
+                    <div className={`flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white ${
+                      visualizandoCliente.codigo_sci 
+                        ? 'text-gray-900 font-semibold text-blue-600' 
+                        : 'text-gray-400 italic'
+                    }`}>
+                      {visualizandoCliente.codigo_sci || 'Não cadastrado'}
                     </div>
+                    {visualizandoCliente?.id && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!visualizandoCliente?.id) return;
+                          
+                            setAtualizandoCodigoSCI(true);
+                            try {
+                              const result = await clientesService.atualizarCodigoSCI(visualizandoCliente.id);
+                              if (result.success && result.data) {
+                                // Atualizar apenas o codigo_sci no estado atual, preservando todos os outros campos
+                                setVisualizandoCliente({
+                                  ...visualizandoCliente,
+                                  codigo_sci: result.data.codigo_sci || result.data.cliente?.codigo_sci
+                                });
+                                // Recarregar a lista de clientes em background
+                                loadClientes().catch(err => console.error('[Clientes] Erro ao recarregar lista:', err));
+                                toast.success(result.message || 'Código SCI atualizado com sucesso');
+                              } else {
+                                toast.error(result.error || 'Erro ao atualizar código SCI');
+                              }
+                            } catch (error: any) {
+                              console.error('[Clientes] Erro ao atualizar código SCI:', error);
+                              toast.error(error.response?.data?.error || error.message || 'Erro ao atualizar código SCI');
+                            } finally {
+                              setAtualizandoCodigoSCI(false);
+                            }
+                        }}
+                        disabled={atualizandoCodigoSCI}
+                        className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 font-semibold text-sm"
+                      >
+                        <ArrowPathIcon className={`h-4 w-4 ${atualizandoCodigoSCI ? 'animate-spin' : ''}`} />
+                        Atualizar
+                      </button>
+                    )}
                   </div>
-                )}
+                </div>
                 {(visualizandoCliente as any).fantasia && (
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Fantasia</label>
@@ -2511,8 +3979,8 @@ const Clientes: React.FC = () => {
         </>
       )}
 
-      {/* Barra de Busca e Ações - Não exibir nas abas de Pagamentos e E-Processos, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
-      {activeTab !== 'pagamentos' && activeTab !== 'e-processos' && !showForm && !visualizandoCliente && (
+      {/* Barra de Busca e Ações - Não exibir nas abas de Pagamentos, E-Processos e CNAE, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
+      {activeTab !== 'pagamentos' && activeTab !== 'e-processos' && activeTab !== 'cnae' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div className={`flex-1 ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
@@ -2975,7 +4443,11 @@ const Clientes: React.FC = () => {
                               try {
                                 const result = await clientesService.atualizarCodigoSCI(editingCliente.id);
                                 if (result.success && result.data) {
-                                  setFormData({ ...formData, codigo_sci: result.data.codigo_sci } as any);
+                                  // Atualizar apenas o codigo_sci no formData, preservando todos os outros campos
+                                  setFormData({ 
+                                    ...formData, 
+                                    codigo_sci: result.data.codigo_sci || result.data.cliente?.codigo_sci 
+                                  } as any);
                                   toast.success(result.message || 'Código SCI atualizado com sucesso');
                                 } else {
                                   toast.error(result.error || 'Erro ao atualizar código SCI');
@@ -3391,7 +4863,15 @@ const Clientes: React.FC = () => {
                         <div className="flex items-center gap-2 min-w-0">
                           <BuildingOfficeIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />
                           <button
-                            onClick={() => handleViewCliente(cliente)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              // Comportamento padrão: abrir detalhes do cliente
+                              const params = new URLSearchParams(location.search);
+                              params.set('clienteId', cliente.id!);
+                              navigate({ search: params.toString() }, { replace: true });
+                              setVisualizandoCliente(cliente);
+                            }}
                             className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline transition-colors cursor-pointer text-left truncate min-w-0 flex-1"
                             title={cliente.razao_social || cliente.nome || '-'}
                           >
@@ -3452,12 +4932,12 @@ const Clientes: React.FC = () => {
                           </button>
                           <button
                             onClick={() => {
-                              navigate(`/clientes?tab=pagamentos&cnpj=${cnpjValue}`);
+                              navigate(`/clientes?tab=faturamento-sci&cnpj=${cnpjValue}`);
                             }}
                             className="px-3 py-1.5 text-xs font-semibold text-purple-600 hover:text-white hover:bg-purple-600 rounded-lg transition-all duration-300 border-2 border-purple-300 hover:border-purple-600"
-                            title="Ver Pagamentos"
+                            title="Ver Faturamento SCI"
                           >
-                            Pag
+                            Fat
                           </button>
                           <button
                             onClick={() => {
@@ -3566,34 +5046,647 @@ const Clientes: React.FC = () => {
         <EProcessosTab cnpjPreenchido={cnpjParaPagamentos} />
       )}
 
-      {/* Aba de Faturamento SCI */}
-      {activeTab === 'faturamento-sci' && (
+      {/* Aba de CNAE */}
+      {activeTab === 'cnae' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <CurrencyDollarIcon className="h-5 w-5 text-blue-600" />
-                  Faturamento SCI
+                  <DocumentTextIcon className="h-5 w-5 text-purple-600" />
+                  Busca por CNAE
                 </h2>
                 <p className="text-xs text-gray-600 mt-1">
-                  Gerencie o faturamento dos últimos 2 anos ({anosParaBuscarFaturamento.join(' e ')}) para declaração IRPF
+                  Encontre clientes pela atividade principal ou secundária
                 </p>
               </div>
-              {!loadingFaturamento && clientesFaturamento.length > 0 && (
-                <button
-                  onClick={atualizarTodosFaturamentos}
-                  disabled={loadingFaturamento}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                >
-                  <ArrowPathIcon className={`h-4 w-4 ${loadingFaturamento ? 'animate-spin' : ''}`} />
-                  Atualizar Todos
-                </button>
-              )}
             </div>
           </div>
 
           <div className="p-6">
+            {/* Busca por Grupo */}
+            <div className="mb-6">
+              <label htmlFor="grupoCNAE" className="block text-sm font-medium text-gray-700 mb-3">
+                Buscar por Grupo de Atividades (Selecione múltiplos)
+              </label>
+              
+              {loadingGrupos ? (
+                <div className="flex items-center justify-center py-8 border border-gray-200 rounded-lg bg-gray-50">
+                  <svg className="animate-spin h-6 w-6 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="ml-3 text-gray-600">Carregando grupos...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg bg-white mb-4">
+                    {gruposCNAE.map((grupo) => {
+                      const isSelected = gruposSelecionados.includes(grupo.nome);
+                      return (
+                        <div
+                          key={grupo.nome}
+                          className={`flex items-center space-x-3 px-4 py-3 border-b border-gray-100 last:border-b-0 ${
+                            isSelected ? 'bg-purple-50' : 'bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleGrupoChange(grupo.nome)}
+                            className="w-5 h-5 rounded border-2 border-gray-400 bg-white text-purple-600 focus:ring-purple-500 focus:ring-2 cursor-pointer flex-shrink-0"
+                            style={{
+                              accentColor: '#9333ea',
+                              minWidth: '20px',
+                              minHeight: '20px'
+                            }}
+                            aria-label={`Selecionar grupo ${grupo.nome}`}
+                          />
+                          <span
+                            className={`text-sm font-medium flex-1 cursor-pointer ${
+                              isSelected ? 'text-purple-900' : 'text-gray-700'
+                            }`}
+                            onClick={() => handleGrupoChange(grupo.nome)}
+                          >
+                            {grupo.nome}
+                            <span className="text-xs text-gray-500 ml-2 font-normal">
+                              ({grupo.cnaes.length} CNAE{grupo.cnaes.length !== 1 ? 's' : ''})
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {gruposSelecionados.length > 0 && (
+                    <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                      <div className="text-sm text-purple-700 font-medium">
+                        {gruposSelecionados.length} grupo(s) selecionado(s): {gruposSelecionados.join(', ')}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <button
+                    onClick={handleBuscarPorGrupo}
+                    disabled={loadingCNAE || gruposSelecionados.length === 0}
+                    className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    {loadingCNAE ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Buscando...
+                      </>
+                    ) : (
+                      <>
+                        <MagnifyingGlassIcon className="h-5 w-5" />
+                        Buscar ({gruposSelecionados.length} grupo{gruposSelecionados.length !== 1 ? 's' : ''})
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+              {gruposSelecionados.length > 0 && (() => {
+                const todosOsCnaes = gruposSelecionados.flatMap(nomeGrupo => {
+                  const grupo = gruposCNAE.find(g => g.nome === nomeGrupo);
+                  return grupo ? grupo.cnaes : [];
+                });
+                
+                // Ordenar CNAEs por código em ordem crescente
+                const cnaesOrdenados = [...todosOsCnaes].sort((a, b) => {
+                  // Remover formatação e comparar numericamente
+                  const codigoA = String(a.codigo).replace(/\D/g, '');
+                  const codigoB = String(b.codigo).replace(/\D/g, '');
+                  return codigoA.localeCompare(codigoB, undefined, { numeric: true, sensitivity: 'base' });
+                });
+                
+                return (
+                  <div className="mt-2 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-gray-600">
+                        <span className="font-semibold">Grupos selecionados ({gruposSelecionados.length}):</span> {gruposSelecionados.join(', ')}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setCnaesExpandidos(!cnaesExpandidos)}
+                        className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium transition-colors"
+                      >
+                        {cnaesExpandidos ? (
+                          <>
+                            <ChevronUpIcon className="h-4 w-4" />
+                            Ocultar CNAEs
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDownIcon className="h-4 w-4" />
+                            Ver CNAEs ({cnaesOrdenados.length})
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    {cnaesExpandidos && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-700 mb-3">
+                          CNAEs incluídos nesta busca ({cnaesOrdenados.length}):
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                          {cnaesOrdenados.map((cnaeItem, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-start gap-2 px-3 py-2 bg-white border border-purple-300 rounded-md shadow-sm hover:shadow-md transition-shadow"
+                            >
+                              <span className="text-xs font-bold text-purple-700 flex-shrink-0 min-w-[70px]">
+                                {formatarCNAE(cnaeItem.codigo)}
+                              </span>
+                              <span className="text-xs text-gray-600 flex-1" title={cnaeItem.descricao}>
+                                {cnaeItem.descricao}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="mb-6 flex items-center gap-4">
+              <div className="flex-1 border-t border-gray-300"></div>
+              <span className="text-sm text-gray-500 font-medium">OU</span>
+              <div className="flex-1 border-t border-gray-300"></div>
+            </div>
+
+            {/* Campo de Busca por Código */}
+            <div className="mb-6">
+              <label htmlFor="cnae" className="block text-sm font-medium text-gray-700 mb-2">
+                Buscar por Código CNAE
+              </label>
+              <div className="flex gap-4">
+                <div className="flex-1 relative">
+                  <input
+                    id="cnae"
+                    type="text"
+                    value={cnae}
+                    onChange={handleCnaeChange}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleBuscarCNAE();
+                      }
+                    }}
+                    placeholder="Ex: 6201-5/00"
+                    maxLength={9}
+                    className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-lg"
+                  />
+                  <DocumentTextIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={handleBuscarCNAE}
+                    disabled={loadingCNAE || !cnae.trim()}
+                    className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    {loadingCNAE ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Buscando...
+                      </>
+                    ) : (
+                      <>
+                        <MagnifyingGlassIcon className="h-5 w-5" />
+                        Buscar
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 text-sm text-gray-500">
+                Digite pelo menos 2 dígitos para buscar. Formato: XXXX-X/XX (ex: 6201-5/00)
+              </p>
+            </div>
+
+            {/* Resultados */}
+            {buscouCNAE && (
+              <div className="border-t border-gray-200 pt-6">
+                <div className="mb-6 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                      <BuildingOfficeIcon className="h-6 w-6 text-purple-600" />
+                      Resultados
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {clientesCNAE.length} {clientesCNAE.length === 1 ? 'cliente encontrado' : 'clientes encontrados'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {clientesCNAE.length > 0 && (
+                      <div className="flex items-center gap-2 px-4 py-2 bg-purple-100 rounded-lg">
+                        <span className="text-sm font-semibold text-purple-700">
+                          {clientesCNAE.length}
+                        </span>
+                      </div>
+                    )}
+                    {clientesCNAE.length > 0 && (
+                      <button
+                        onClick={handleExportarCNAE}
+                        disabled={exportandoCNAE}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg font-medium"
+                        title="Exportar resultados para Excel"
+                      >
+                        {exportandoCNAE ? (
+                          <>
+                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Exportando...
+                          </>
+                        ) : (
+                          <>
+                            <DocumentArrowDownIcon className="h-5 w-5" />
+                            Exportar Excel
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {clientesCNAE.length === 0 ? (
+                  <div className="text-center py-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl border-2 border-dashed border-gray-300">
+                    <BuildingOfficeIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                    <p className="text-lg font-medium text-gray-600 mb-2">Nenhum cliente encontrado</p>
+                    <p className="text-sm text-gray-500">
+                      {grupoSelecionado 
+                        ? `Nenhum cliente possui CNAE do grupo "${grupoSelecionado}"`
+                        : 'Nenhum cliente encontrado com este CNAE'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {clientesCNAE.map((cliente, index) => {
+                      let atividadesSecundarias: any[] = [];
+                      try {
+                        const valor = (cliente as any).atividades_secundarias;
+                        if (typeof valor === 'string') {
+                          atividadesSecundarias = JSON.parse(valor);
+                        } else if (Array.isArray(valor)) {
+                          atividadesSecundarias = valor;
+                        }
+                      } catch {
+                        // Ignorar erros de parsing
+                      }
+
+                      const cnaePrincipal = formatarCNAE((cliente as any).atividade_principal_code);
+                      const cnaePrincipalText = (cliente as any).atividade_principal_text;
+
+                      return (
+                        <div
+                          key={cliente.id}
+                          className="group bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-lg hover:border-purple-300 transition-all duration-300 cursor-pointer overflow-hidden"
+                          style={{
+                            animation: `fadeInUp 0.4s ease-out ${index * 0.03}s both`
+                          }}
+                          onClick={() => {
+                            // Passar o termo de busca (CNAE ou grupo) para o modal
+                            // Se foi busca por CNAE, passar o código (apenas números)
+                            // Se foi busca por grupo, passar o nome do grupo
+                            let termoBusca = '';
+                            if (cnae.trim()) {
+                              // Busca por CNAE - passar apenas os dígitos (2 primeiros)
+                              const cnaeLimpo = cnae.replace(/[.\-\/]/g, '');
+                              termoBusca = cnaeLimpo.substring(0, 2);
+                            } else if (grupoSelecionado) {
+                              // Busca por grupo - passar o nome do grupo
+                              termoBusca = grupoSelecionado;
+                            }
+                            handleViewCliente(cliente, termoBusca);
+                          }}
+                        >
+                          <div className="flex items-center gap-4 p-5">
+                            {/* Ícone/Logo */}
+                            <div className="flex-shrink-0">
+                              <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow">
+                                <BuildingOfficeIcon className="h-7 w-7 text-white" />
+                              </div>
+                            </div>
+
+                            {/* Informações Principais */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-4 mb-2">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="text-lg font-bold text-gray-900 truncate group-hover:text-purple-600 transition-colors">
+                                    {cliente.razao_social || cliente.nome || 'N/A'}
+                                  </h4>
+                                  {(cliente as any).fantasia && (
+                                    <p className="text-sm text-gray-500 truncate mt-0.5">
+                                      {(cliente as any).fantasia}
+                                    </p>
+                                  )}
+                                </div>
+                                <ArrowRightIcon className="h-5 w-5 text-gray-400 group-hover:text-purple-600 group-hover:translate-x-1 transition-all duration-300 flex-shrink-0" />
+                              </div>
+
+                              {/* Informações em Linha */}
+                              <div className="flex flex-wrap items-center gap-4 mt-3">
+                                {/* CNPJ */}
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-lg">
+                                    <DocumentTextIcon className="h-4 w-4 text-gray-600" />
+                                    <span className="text-sm font-semibold text-gray-700">
+                                      {formatarCpfCnpj(cliente.cnpj_limpo || (cliente as any).cnpj)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* CNAE Principal */}
+                                {cnaePrincipal && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-500 font-medium">CNAE Principal:</span>
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 border border-purple-200 rounded-lg">
+                                      <span className="text-sm font-bold text-purple-700">
+                                        {cnaePrincipal}
+                                      </span>
+                                    </div>
+                                    {cnaePrincipalText && (
+                                      <span className="text-xs text-gray-600 max-w-xs truncate" title={cnaePrincipalText}>
+                                        {cnaePrincipalText}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Atividades Secundárias */}
+                                {atividadesSecundarias.length > 0 && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-500 font-medium">Secundárias:</span>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {atividadesSecundarias.slice(0, 2).map((atividade: any, idx: number) => (
+                                        <div
+                                          key={idx}
+                                          className="inline-flex items-center px-2 py-0.5 bg-indigo-50 border border-indigo-200 rounded-md"
+                                        >
+                                          <span className="text-xs font-semibold text-indigo-700">
+                                            {formatarCNAE(atividade.code)}
+                                          </span>
+                                        </div>
+                                      ))}
+                                      {atividadesSecundarias.length > 2 && (
+                                        <div className="inline-flex items-center px-2 py-0.5 bg-gray-100 border border-gray-300 rounded-md">
+                                          <span className="text-xs font-medium text-gray-600">
+                                            +{atividadesSecundarias.length - 2}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Barra de Progresso no Hover */}
+                          <div className="h-1 bg-gray-100 overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 w-0 group-hover:w-full transition-all duration-500"></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Aba de Faturamento SCI */}
+      {activeTab === 'faturamento-sci' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {/* Resultado da Consulta Personalizada - Exibido na própria página */}
+          {resultadoConsultaPersonalizada ? (
+            <div className="bg-gradient-to-br from-purple-50 via-white to-blue-50 rounded-lg">
+              {/* Header com botão voltar e download */}
+              <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-3 rounded-t-lg shadow-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setResultadoConsultaPersonalizada(null);
+                      }}
+                      className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                      </svg>
+                    </button>
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <h2 className="text-base font-bold">Resultado da Consulta</h2>
+                        <p className="text-purple-100 text-xs mt-0.5">Faturamento {resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado' ? 'Detalhado' : 'Consolidado'}</p>
+                      </div>
+                      <div className="h-6 w-px bg-white/30"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-purple-100 text-xs">Tipo:</span>
+                        <span className="px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-xs font-semibold">
+                          {resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado' ? 'Detalhado' : 'Consolidado'}
+                        </span>
+                        {resultadoConsultaPersonalizada.somarMatrizFilial && (
+                          <>
+                            <span className="text-purple-100 text-xs">•</span>
+                            <span className="text-purple-100 text-xs">Somar Matriz e Filial: Sim</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={gerarPDFConsultaPersonalizada}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg transition-colors text-sm font-medium"
+                    title="Baixar PDF"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span>Baixar PDF</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-3">
+                {/* Card de Informações do Cliente */}
+                  <div className="bg-white rounded-lg shadow-md p-4 border border-gray-100">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      Informações do Cliente
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3">
+                        <p className="text-xs font-medium text-purple-600 uppercase tracking-wide mb-1">Razão Social</p>
+                        <p className="text-sm font-semibold text-gray-900 leading-tight">{resultadoConsultaPersonalizada.cliente.razao_social}</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3">
+                        <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">CNPJ</p>
+                        <p className="text-sm font-semibold text-gray-900">{formatCNPJ(resultadoConsultaPersonalizada.cliente.cnpj)}</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3">
+                        <p className="text-xs font-medium text-green-600 uppercase tracking-wide mb-1">Código SCI</p>
+                        <p className="text-sm font-semibold text-gray-900">{resultadoConsultaPersonalizada.cliente.codigo_sci}</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3">
+                        <p className="text-xs font-medium text-orange-600 uppercase tracking-wide mb-1">Período</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {formatPeriodoComOffset(
+                            resultadoConsultaPersonalizada.periodo.dataInicial,
+                            resultadoConsultaPersonalizada.periodo.dataFinal
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                {/* Card de Total */}
+                <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg shadow-lg p-4 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-purple-100 text-xs font-medium mb-1">Total do Período</p>
+                      <h3 className="text-2xl font-bold">{formatarMoedaFaturamento(resultadoConsultaPersonalizada.total)}</h3>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tabela de Detalhes */}
+                <div className="bg-white rounded-lg shadow-md border border-gray-100 overflow-hidden">
+                  <div className="px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Detalhes do Faturamento
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Período</th>
+                          {resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado' && (
+                            <>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Vendas Brutas</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Devoluções</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Vendas Liquidadas</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Serviços</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Outras Receitas</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Operações Imobiliárias</th>
+                            </>
+                          )}
+                          <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Faturamento Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {resultadoConsultaPersonalizada.detalhes.length > 0 ? (
+                          resultadoConsultaPersonalizada.detalhes.map((detalhe: any, index: number) => (
+                            <tr 
+                              key={index} 
+                              className={`transition-colors hover:bg-gray-50 ${
+                                detalhe.descricao === 'Total do Período' 
+                                  ? 'bg-gradient-to-r from-purple-50 to-blue-50 font-semibold border-t-2 border-purple-300' 
+                                  : 'bg-white'
+                              }`}
+                            >
+                              <td className="px-4 py-2.5 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {detalhe.descricao || '-'}
+                              </td>
+                              {resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado' && (
+                                <>
+                                  <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                    {formatarMoedaFaturamento(detalhe.vendasBrutas || 0)}
+                                  </td>
+                                  <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                    {formatarMoedaFaturamento(detalhe.devolucoesDeducoes || 0)}
+                                  </td>
+                                  <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                    {formatarMoedaFaturamento(detalhe.vendasLiquidadas || 0)}
+                                  </td>
+                                  <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                    {formatarMoedaFaturamento(detalhe.servicos || 0)}
+                                  </td>
+                                  <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                    {formatarMoedaFaturamento(detalhe.outrasReceitas || 0)}
+                                  </td>
+                                  <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                    {formatarMoedaFaturamento(detalhe.operacoesImobiliarias || 0)}
+                                  </td>
+                                </>
+                              )}
+                              <td className={`px-4 py-2.5 whitespace-nowrap text-sm text-right ${
+                                detalhe.descricao === 'Total do Período' 
+                                  ? 'font-bold text-purple-700 text-base' 
+                                  : 'font-semibold text-gray-900'
+                              }`}>
+                                {formatarMoedaFaturamento(detalhe.faturamentoTotal || detalhe.valor || 0)}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado' ? 8 : 2} className="px-4 py-8 text-center">
+                              <div className="flex flex-col items-center justify-center text-gray-400">
+                                <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <p className="text-xs">Nenhum detalhe encontrado</p>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                      <CurrencyDollarIcon className="h-5 w-5 text-blue-600" />
+                      Faturamento SCI
+                    </h2>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Gerencie o faturamento dos últimos 2 anos ({anosParaBuscarFaturamento.join(' e ')}) para declaração IRPF
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {!loadingFaturamento && clientesFaturamento.length > 0 && (
+                      <button
+                        onClick={atualizarTodosFaturamentos}
+                        disabled={loadingFaturamento}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                      >
+                        <ArrowPathIcon className={`h-4 w-4 ${loadingFaturamento ? 'animate-spin' : ''}`} />
+                        Atualizar Todos
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6">
             {loadingFaturamento && clientesFaturamento.length === 0 ? (
               <div className="flex items-center justify-center py-12">
                 <ArrowPathIcon className="animate-spin h-8 w-8 text-blue-600" />
@@ -3610,10 +5703,15 @@ const Clientes: React.FC = () => {
                   {clientesFaturamento
                     .filter((c) => {
                       if (!searchFaturamento) return true;
-                      const term = searchFaturamento.toLowerCase();
-                      const cnpj = (c.cnpj_limpo || c.cnpj || '').toLowerCase();
+                      // Remove formatação do termo de busca para comparar apenas números
+                      const termLimpo = searchFaturamento.replace(/\D/g, '').toLowerCase();
+                      const termOriginal = searchFaturamento.toLowerCase();
+                      // CNPJ do cliente sem formatação
+                      const cnpjLimpo = (c.cnpj_limpo || (c.cnpj ? c.cnpj.replace(/\D/g, '') : '')).toLowerCase();
+                      // Razão social para busca por nome
                       const razao = (c.razao_social || c.nome || '').toLowerCase();
-                      return cnpj.includes(term) || razao.includes(term);
+                      // Busca por CNPJ (sem formatação) ou por razão social
+                      return (termLimpo && cnpjLimpo.includes(termLimpo)) || razao.includes(termOriginal);
                     })
                     .map((cliente) => {
                       const data = faturamentoData.get(cliente.id);
@@ -3627,27 +5725,54 @@ const Clientes: React.FC = () => {
                                 {cliente.razao_social || cliente.nome || 'Sem nome'}
                               </h3>
                               <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
-                                <span>CNPJ: {cliente.cnpj_limpo || cliente.cnpj || '-'}</span>
+                                <div className="flex items-center gap-2">
+                                  <span>CNPJ: {(() => {
+                                    const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
+                                    const cnpjKey = cnpjValue.replace(/\D/g, '');
+                                    const cnpjFormatado = cnpjValue ? formatCNPJ(cnpjKey) : '-';
+                                    return cnpjFormatado;
+                                  })()}</span>
+                                  {(() => {
+                                    const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
+                                    const cnpjKey = cnpjValue.replace(/\D/g, '');
+                                    if (!cnpjKey) return null;
+                                    return (
+                                      <button
+                                        onClick={() => copyToClipboard(cnpjKey, cnpjKey)}
+                                        className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                        title="Copiar CNPJ"
+                                      >
+                                        {copiedCnpj === cnpjKey ? (
+                                          <ClipboardDocumentCheckIcon className="h-4 w-4 text-green-600" />
+                                        ) : (
+                                          <ClipboardDocumentIcon className="h-4 w-4 text-gray-500" />
+                                        )}
+                                      </button>
+                                    );
+                                  })()}
+                                </div>
                                 <span>Código SCI: {cliente.codigo_sci || '-'}</span>
                               </div>
                             </div>
-                            <button
-                              onClick={() => atualizarFaturamentoCliente(cliente.id)}
-                              disabled={data?.loading || loadingFaturamento}
-                              className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                            >
-                              {data?.loading ? (
-                                <>
-                                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                                  Atualizando...
-                                </>
-                              ) : (
-                                <>
-                                  <ArrowPathIcon className="h-4 w-4" />
-                                  Atualizar
-                                </>
+                            <div className="flex items-center gap-3">
+                              {data?.ultimaAtualizacao && (
+                                <div className="text-xs text-gray-500">
+                                  <span className="text-gray-400">Última atualização:</span>{' '}
+                                  <span className="font-medium">{formatDateTime(data.ultimaAtualizacao)}</span>
+                                </div>
                               )}
-                            </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  atualizarFaturamentoCliente(cliente.id);
+                                }}
+                                disabled={data?.loading || loadingFaturamento}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                title="Atualizar faturamento"
+                              >
+                                <ArrowPathIcon className={`h-5 w-5 ${data?.loading ? 'animate-spin' : ''}`} />
+                              </button>
+                            </div>
                           </div>
 
                           {data?.error && (
@@ -3659,7 +5784,11 @@ const Clientes: React.FC = () => {
                           {faturamento.length > 0 && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               {faturamento.map((fat) => (
-                                <div key={fat.ano} className="bg-white rounded-lg border border-gray-200 p-4">
+                                <div 
+                                  key={fat.ano} 
+                                  onClick={() => exibirDetalhesFaturamento(cliente.id, fat.ano)}
+                                  className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-purple-400 hover:shadow-md transition-all duration-200"
+                                >
                                   <div className="flex items-center justify-between mb-3">
                                     <h4 className="text-base font-semibold text-gray-900">
                                       Faturamento {fat.ano}
@@ -3669,12 +5798,21 @@ const Clientes: React.FC = () => {
                                     </span>
                                   </div>
                                   <div className="text-xs text-gray-600 mb-2">
-                                    Período: 01/01/{fat.ano} a 31/12/{fat.ano}
+                                    Período: 02/01/{fat.ano} a 01/01/{fat.ano + 1}
                                   </div>
                                   <div className="flex items-center justify-between text-sm">
                                     <span className="text-gray-600">Média Mensal:</span>
                                     <span className="font-semibold text-blue-700">
                                       {formatarMoedaFaturamento(fat.mediaMensal || 0)}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 pt-3 border-t border-gray-100">
+                                    <span className="text-xs text-purple-600 font-medium flex items-center gap-1">
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                      </svg>
+                                      Clique para ver detalhes
                                     </span>
                                   </div>
                                 </div>
@@ -3693,7 +5831,9 @@ const Clientes: React.FC = () => {
                 </div>
               </div>
             )}
-          </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -3721,6 +5861,183 @@ const Clientes: React.FC = () => {
                 }
               `}</style>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Detalhes Faturamento */}
+      {showModalDetalhesFaturamento && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" 
+          onClick={() => {
+            console.log('[Faturamento] Fechando modal');
+            setShowModalDetalhesFaturamento(false);
+          }}
+        >
+          <div className="bg-gradient-to-br from-purple-50 via-white to-blue-50 rounded-lg max-w-7xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {detalhesFaturamento.loading ? (
+              <div className="p-6">
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent"></div>
+                  <span className="ml-4 text-gray-600">Carregando detalhes...</span>
+                </div>
+              </div>
+            ) : detalhesFaturamento.dados.length === 0 ? (
+              <div className="p-6">
+                <div className="text-center py-12">
+                  <p className="text-gray-500">Nenhum dado detalhado disponível para este período.</p>
+                </div>
+              </div>
+            ) : detalhesFaturamento.cliente ? (
+              <div>
+                {/* Header com botão voltar */}
+                <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-3 rounded-t-lg shadow-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setShowModalDetalhesFaturamento(false)}
+                        className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                      </button>
+                      <div className="flex items-center gap-4">
+                        <div>
+                          <h2 className="text-base font-bold">Resultado da Consulta</h2>
+                          <p className="text-purple-100 text-xs mt-0.5">Faturamento Detalhado - {detalhesFaturamento.ano}</p>
+                        </div>
+                        <div className="h-6 w-px bg-white/30"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-purple-100 text-xs">Tipo:</span>
+                          <span className="px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-xs font-semibold">
+                            Detalhado
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={gerarPDFFaturamento}
+                      className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg transition-all duration-200 text-sm font-medium"
+                      title="Baixar PDF do faturamento"
+                    >
+                      <DocumentArrowDownIcon className="h-4 w-4" />
+                      Baixar PDF
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-3">
+                  {/* Card de Informações do Cliente */}
+                  <div className="bg-white rounded-lg shadow-md p-4 border border-gray-100">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      Informações do Cliente
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3">
+                        <p className="text-xs font-medium text-purple-600 uppercase tracking-wide mb-1">Razão Social</p>
+                        <p className="text-sm font-semibold text-gray-900 leading-tight">{detalhesFaturamento.cliente.razao_social || detalhesFaturamento.cliente.nome}</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3">
+                        <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">CNPJ</p>
+                        <p className="text-sm font-semibold text-gray-900">{formatCNPJ(detalhesFaturamento.cliente.cnpj_limpo || detalhesFaturamento.cliente.cnpj || '')}</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3">
+                        <p className="text-xs font-medium text-green-600 uppercase tracking-wide mb-1">Código SCI</p>
+                        <p className="text-sm font-semibold text-gray-900">{detalhesFaturamento.cliente.codigo_sci || '-'}</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3">
+                        <p className="text-xs font-medium text-orange-600 uppercase tracking-wide mb-1">Período</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          01/01/{detalhesFaturamento.ano} a 31/12/{detalhesFaturamento.ano}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card de Total */}
+                  <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg shadow-lg p-4 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-purple-100 text-xs font-medium mb-1">Total do Período</p>
+                        <h3 className="text-2xl font-bold">{formatarMoedaFaturamento(
+                          detalhesFaturamento.dados.reduce((sum, d) => sum + (Number(d.faturamento_total) || 0), 0)
+                        )}</h3>
+                      </div>
+                      <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tabela de Detalhes */}
+                  <div className="bg-white rounded-lg shadow-md border border-gray-100 overflow-hidden">
+                    <div className="px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
+                      <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Detalhes do Faturamento
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Período</th>
+                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Vendas Brutas</th>
+                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Devoluções</th>
+                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Vendas Liquidadas</th>
+                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Serviços</th>
+                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Outras Receitas</th>
+                            <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Operações Imobiliárias</th>
+                            <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Faturamento Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {detalhesFaturamento.dados.map((mes: any, index: number) => (
+                            <tr 
+                              key={index} 
+                              className="transition-colors hover:bg-gray-50 bg-white"
+                            >
+                              <td className="px-4 py-2.5 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {mes.mes_ano || `${mes.mes}/${detalhesFaturamento.ano}`}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                {formatarMoedaFaturamento(Number(mes.vendas_brutas) || 0)}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                {formatarMoedaFaturamento(Number(mes.devolucoes_deducoes) || 0)}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                {formatarMoedaFaturamento(Number(mes.vendas_liquidadas) || 0)}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                {formatarMoedaFaturamento(Number(mes.servicos) || 0)}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                {formatarMoedaFaturamento(Number(mes.outras_receitas) || 0)}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-700 text-right">
+                                {formatarMoedaFaturamento(Number(mes.operacoes_imobiliarias) || 0)}
+                              </td>
+                              <td className={`px-4 py-2.5 whitespace-nowrap text-sm text-right font-semibold text-gray-900`}>
+                                {formatarMoedaFaturamento(Number(mes.faturamento_total) || 0)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
@@ -3937,7 +6254,10 @@ const Clientes: React.FC = () => {
                   />
                   {consultaPersonalizada.anoMesSelecionado && (
                     <p className="mt-2 text-sm text-gray-600">
-                      Período: {consultaPersonalizada.dataInicial && new Date(consultaPersonalizada.dataInicial).toLocaleDateString('pt-BR')} a {consultaPersonalizada.dataFinal && new Date(consultaPersonalizada.dataFinal).toLocaleDateString('pt-BR')}
+                      Período: {formatPeriodoComOffset(
+                        consultaPersonalizada.dataInicial,
+                        consultaPersonalizada.dataFinal
+                      )}
                     </p>
                   )}
                 </div>
@@ -4033,127 +6353,7 @@ const Clientes: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Resultado Consulta Personalizada */}
-      {showModalResultado && resultadoConsultaPersonalizada && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowModalResultado(false)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">Resultado da Consulta Personalizada</h2>
-              <button
-                onClick={() => setShowModalResultado(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <XMarkIcon className="h-6 w-6" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* Informações do Cliente */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Cliente</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-600">Razão Social</p>
-                    <p className="text-base font-medium text-gray-900">{resultadoConsultaPersonalizada.cliente.razao_social}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">CNPJ</p>
-                    <p className="text-base font-medium text-gray-900">{formatCNPJ(resultadoConsultaPersonalizada.cliente.cnpj)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Código SCI</p>
-                    <p className="text-base font-medium text-gray-900">{resultadoConsultaPersonalizada.cliente.codigo_sci}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Período</p>
-                    <p className="text-base font-medium text-gray-900">
-                      {new Date(resultadoConsultaPersonalizada.periodo.dataInicial).toLocaleDateString('pt-BR')} a {' '}
-                      {new Date(resultadoConsultaPersonalizada.periodo.dataFinal).toLocaleDateString('pt-BR')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Configurações da Consulta */}
-              <div className="bg-blue-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Configurações</h3>
-                <div className="flex gap-4">
-                  <div>
-                    <span className="text-sm text-gray-600">Tipo: </span>
-                    <span className="text-sm font-medium text-gray-900">
-                      {resultadoConsultaPersonalizada.tipoFaturamento === 'detalhado' ? 'Detalhado' : 'Consolidado'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-sm text-gray-600">Somar Matriz e Filial: </span>
-                    <span className="text-sm font-medium text-gray-900">
-                      {resultadoConsultaPersonalizada.somarMatrizFilial ? 'Sim' : 'Não'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Total */}
-              <div className="bg-purple-50 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">Total</h3>
-                  <p className="text-2xl font-bold text-purple-600">
-                    {formatarMoedaFaturamento(resultadoConsultaPersonalizada.total)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Tabela de Detalhes */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Detalhes</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código Empresa</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Referência</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ordem</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {resultadoConsultaPersonalizada.detalhes.length > 0 ? (
-                        resultadoConsultaPersonalizada.detalhes.map((detalhe: any, index: number) => (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{detalhe.codigoEmpresa || '-'}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{detalhe.referencia || '-'}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{detalhe.ordem || '-'}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{detalhe.descricao || '-'}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
-                              {formatarMoedaFaturamento(detalhe.valor)}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
-                            Nenhum detalhe encontrado
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end">
-              <button
-                onClick={() => setShowModalResultado(false)}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal removido - resultado agora é exibido diretamente na página dentro da aba Faturamento SCI */}
 
       {/* Aba de Participação */}
       {activeTab === 'participacao' && (
@@ -5401,6 +7601,16 @@ const Clientes: React.FC = () => {
           to { 
             opacity: 0;
             transform: translateY(20px) scale(0.95);
+          }
+        }
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
           }
         }
         .animate-fade-in {
