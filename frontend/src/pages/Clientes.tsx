@@ -5121,14 +5121,14 @@ const Clientes: React.FC = () => {
 
           <div className="p-6">
             {/* Busca por Grupo */}
-            <div className="mb-6">
+            <div className="mb-6" style={{ overflow: 'visible' }}>
               <label htmlFor="grupoCNAE" className="block text-sm font-medium text-gray-700 mb-2">
                 Buscar por Grupo de Atividades
               </label>
               
-              <div className="flex gap-4">
+              <div className="flex gap-4" style={{ overflow: 'visible' }}>
                 {/* Selectbox */}
-                <div className="flex-1 relative grupo-dropdown-container">
+                <div className="flex-1 relative grupo-dropdown-container" style={{ overflow: 'visible' }}>
                   <button
                     type="button"
                     onClick={() => setGrupoDropdownAberto(!grupoDropdownAberto)}
@@ -5180,10 +5180,11 @@ const Clientes: React.FC = () => {
                       }
                     `}</style>
                     <div 
-                      className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto grupo-dropdown-scroll" 
+                      className="absolute w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto grupo-dropdown-scroll" 
                       style={{
                         scrollbarWidth: 'thin',
-                        scrollbarColor: '#9333ea #f3f4f6'
+                        scrollbarColor: '#9333ea #f3f4f6',
+                        zIndex: 9999
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
