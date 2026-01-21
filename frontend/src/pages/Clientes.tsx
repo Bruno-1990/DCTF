@@ -5104,7 +5104,7 @@ const Clientes: React.FC = () => {
 
       {/* Aba de CNAE */}
       {activeTab === 'cnae' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200" style={{ overflow: 'visible' }}>
           <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
             <div className="flex items-center justify-between">
               <div>
@@ -5119,7 +5119,7 @@ const Clientes: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-6">
+          <div className="p-6" style={{ overflow: 'visible' }}>
             {/* Busca por Grupo */}
             <div className="mb-6" style={{ overflow: 'visible' }}>
               <label htmlFor="grupoCNAE" className="block text-sm font-medium text-gray-700 mb-2">
