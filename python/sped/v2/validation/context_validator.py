@@ -95,6 +95,8 @@ class ContextValidator:
         Essas regras são baseadas em conhecimento fiscal consolidado.
         """
         from .legitimacao_matrix import MatrizLegitimacao
+        from .regras_segmento import RegrasPorSegmento
+        
         matriz = MatrizLegitimacao()
         
         cfop = contexto.get('cfop')
