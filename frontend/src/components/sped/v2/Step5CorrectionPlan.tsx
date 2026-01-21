@@ -59,16 +59,34 @@ export interface PlanoCorrecoes {
 type PerfilExecucao = 'SEGURO' | 'INTERMEDIARIO' | 'AVANCADO';
 
 interface Step5CorrectionPlanProps {
-  plano: PlanoCorrecoes;
+  divergencias: any[];
+  onNext?: () => void;
+  onBack?: () => void;
+  plano?: PlanoCorrecoes;
   onAplicarCorrecoes?: (correcoesSelecionadas: Correcao[], perfil: PerfilExecucao) => void;
   onVisualizarEvidencias?: (correcao: Correcao) => void;
 }
 
 const Step5CorrectionPlan: React.FC<Step5CorrectionPlanProps> = ({
+  divergencias,
+  onNext,
+  onBack,
   plano,
   onAplicarCorrecoes,
   onVisualizarEvidencias,
 }) => {
+  // Se não recebeu plano, criar um mock a partir das divergências
+  const planoAtual = plano || {
+    correcoes: [],
+    totais_por_tipo: {},
+    itens_bloqueados: [],
+    impacto_total: 0,
+    impacto_bloqueadas: 0,
+    total_correcoes: 0,
+    total_erro: 0,
+    total_revisar: 0,
+    total_legitimo: 0,
+  };
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
   const [filtroClassificacao, setFiltroClassificacao] = useState<string>('todos');
   const [filtroBusca, setFiltroBusca] = useState<string>('');
@@ -79,7 +97,7 @@ const Step5CorrectionPlan: React.FC<Step5CorrectionPlanProps> = ({
 
   // Filtrar correções baseado nos filtros
   const correcoesFiltradas = useMemo(() => {
-    let filtradas = [...plano.correcoes];
+    let filtradas = [...planoAtual.correcoes];
 
     // Filtrar por tipo
     if (filtroTipo !== 'todos') {
@@ -119,7 +137,7 @@ const Step5CorrectionPlan: React.FC<Step5CorrectionPlanProps> = ({
     // AVANÇADO inclui todas exceto LEGÍTIMO (já filtrado acima)
 
     return filtradas;
-  }, [plano.correcoes, filtroTipo, filtroClassificacao, filtroBusca, incluirRevisar, perfilExecucao]);
+  }, [planoAtual.correcoes, filtroTipo, filtroClassificacao, filtroBusca, incluirRevisar, perfilExecucao]);
 
   // Agrupar correções
   const correcoesAgrupadas = useMemo(() => {
@@ -248,9 +266,9 @@ const Step5CorrectionPlan: React.FC<Step5CorrectionPlanProps> = ({
   };
 
   const tiposUnicos = useMemo(() => {
-    const tipos = new Set(plano.correcoes.map((c) => c.tipo));
+    const tipos = new Set(planoAtual.correcoes.map((c) => c.tipo));
     return Array.from(tipos);
-  }, [plano.correcoes]);
+  }, [planoAtual.correcoes]);
 
   return (
     <div className="space-y-6">

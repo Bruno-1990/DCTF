@@ -327,7 +327,14 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4 gap-4">
               <h2 className="text-2xl font-bold text-gray-900 flex-1 min-w-0">
-                <span className="block truncate">Resultados da Validação</span>
+                <span className="block truncate">
+                  Resultados da Validação
+                  {divergencias.length > 0 && (
+                    <span className="ml-3 text-lg font-normal text-gray-600">
+                      ({divergenciasFiltradas.length} de {divergencias.length})
+                    </span>
+                  )}
+                </span>
               </h2>
               {!sidebarAberto && (
                 <button
