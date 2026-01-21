@@ -127,18 +127,20 @@ export class SpedV2KnowledgeController {
   }
 
   /**
-   * Gerar regra consultando documentos
+   * Gerar regra consultando documentos via sistema híbrido (RAG + Banco)
    * POST /api/sped/v2/knowledge/generate-rule
-   * Body: { rule_description (obrigatório), periodo (opcional), n_context_chunks (opcional) }
+   * Body: { rule_description (obrigatório), periodo (opcional), n_context_chunks (opcional), categoria (opcional), tipo (opcional) }
    */
   async generateRule(req: Request, res: Response): Promise<void> {
     try {
-      const { rule_description, periodo, n_context_chunks } = req.body;
+      const { rule_description, periodo, n_context_chunks, categoria, tipo } = req.body;
       
       const filters = {
         rule_description: rule_description as string,
         periodo: periodo as string | undefined,
         n_context_chunks: n_context_chunks ? parseInt(n_context_chunks as string, 10) : undefined,
+        categoria: categoria as string | undefined,
+        tipo: tipo as string | undefined,
       };
       
       const result = await this.service.generateRule(filters);

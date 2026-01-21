@@ -80,7 +80,8 @@ async function migrateReceitaPagamentos() {
       throw new Error(`Erro ao buscar dados do Supabase: ${response.status} - ${errorText}`);
     }
 
-    const supabaseData: SupabasePagamento[] = await response.json();
+    const jsonData = await response.json();
+    const supabaseData: SupabasePagamento[] = Array.isArray(jsonData) ? jsonData : [];
     console.log(`✅ Encontrados ${supabaseData.length} registros no Supabase\n`);
 
     if (supabaseData.length === 0) {
@@ -102,6 +103,7 @@ async function migrateReceitaPagamentos() {
 
       // Preparar dados para inserção
       console.log('📝 Preparando dados para inserção...');
+      const { ReceitaPagamentoModel } = await import('../models/ReceitaPagamento');
       const pagamentosModel = new ReceitaPagamentoModel();
       
       let inserted = 0;

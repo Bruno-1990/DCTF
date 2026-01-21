@@ -167,3 +167,9 @@ if __name__ == "__main__":
         executar_relatorio_faturamento()
 
 
+
+
+
+
+
+

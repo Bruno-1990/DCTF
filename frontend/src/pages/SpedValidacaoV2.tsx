@@ -13,7 +13,7 @@ import InternalValidationView from '../components/sped/v2/InternalValidationView
 import MatchingView from '../components/sped/v2/MatchingView';
 import ClassificationView from '../components/sped/v2/ClassificationView';
 import { spedV2Service } from '../services/sped-v2';
-import type { SpedV2Status } from '../services/sped-v2';
+import type { SpedV2Status, SpedV2ValidationRequest } from '../services/sped-v2';
 import type { DivergenciaClassificada } from '../components/sped/v2/ClassificationView';
 import { clientesService } from '../services';
 
@@ -141,12 +141,23 @@ const SpedValidacaoV2: React.FC = () => {
       }
   };
 
-  const handleStep2Next = (profile: ClientProfileData) => {
+  const handleStep2Next = async (profile: ClientProfileData) => {
     setClientProfile(profile);
-    setCurrentStep(3);
-    // Iniciar validação
+    // Iniciar validação com perfil fiscal ANTES de mudar de step
     if (uploadedFiles.sped) {
-      iniciarValidacao(uploadedFiles.sped, uploadedFiles.xmls);
+      try {
+        // Iniciar validação primeiro
+        await iniciarValidacao(uploadedFiles.sped, uploadedFiles.xmls, profile);
+        // Só mudar de step após iniciar a validação
+        setCurrentStep(3);
+      } catch (error: any) {
+        console.error('[SpedValidacaoV2] Erro ao iniciar validação:', error);
+        setError(error.message || 'Erro ao iniciar validação');
+        // Não mudar de step se houver erro
+      }
+    } else {
+      // Se não tiver arquivos, apenas mudar de step
+      setCurrentStep(3);
     }
   };
 
@@ -157,37 +168,30 @@ const SpedValidacaoV2: React.FC = () => {
     return `${year}-${month}`;
   };
 
-  const iniciarValidacao = async (spedFile: File, xmlFiles: File[]) => {
+  const iniciarValidacao = async (spedFile: File, xmlFiles: File[], profile?: ClientProfileData) => {
     try {
       setError(null);
-      const id = await spedV2Service.validar(spedFile, xmlFiles);
+      
+      // Preparar perfil fiscal para validação
+      const perfilFiscal = profile ? {
+        segmento: profile.segmento || undefined,
+        regime: profile.regime_tributario || undefined,
+        operaST: profile.opera_st || false,
+        regimeEspecial: profile.regime_especial || false,
+        operaInterestadualDIFAL: profile.opera_interestadual || profile.opera_difal || false,
+      } : undefined;
+      
+      const request: SpedV2ValidationRequest = {
+        clienteId: profile?.cliente_id || undefined,
+        competencia: profile?.competencia || undefined,
+        perfilFiscal: perfilFiscal,
+      };
+      
+      const id = await spedV2Service.validar(spedFile, xmlFiles, request);
       setValidationId(id);
       
-      // Polling de status
-      const interval = setInterval(async () => {
-        try {
-          const currentStatus = await spedV2Service.obterStatus(id);
-          if (currentStatus) {
-            setStatus(currentStatus);
-            
-            if (currentStatus.status === 'completed') {
-              clearInterval(interval);
-              // Carregar resultados
-              const resultado = await spedV2Service.obterResultado(id);
-              if (resultado.divergencias) {
-                setDivergencias(resultado.divergencias);
-              }
-              setCurrentStep(4);
-            } else if (currentStatus.status === 'error') {
-              clearInterval(interval);
-              setError(currentStatus.error || 'Erro no processamento');
-            }
-          }
-        } catch (err: any) {
-          console.error('Erro ao obter status:', err);
-          clearInterval(interval);
-        }
-      }, 2000);
+      // O Step3ProcessingPipeline vai gerenciar o polling de status
+      // Não precisamos fazer polling aqui para evitar requisições duplicadas
     } catch (err: any) {
       console.error('Erro ao iniciar validação:', err);
       setError(err.message || 'Erro ao iniciar validação');
@@ -260,6 +264,31 @@ const SpedValidacaoV2: React.FC = () => {
             summaryStats={{}}
             onStatusUpdate={(updatedStatus) => {
               setStatus(updatedStatus);
+              
+              // Quando status for completed, carregar resultados e avançar
+              if (updatedStatus.status === 'completed' && validationId) {
+                spedV2Service.obterResultado(validationId).then((resultado) => {
+                  console.log('[SpedValidacaoV2] 📊 Resultado completo recebido:', resultado);
+                  console.log('[SpedValidacaoV2] 📊 Divergências recebidas:', resultado.divergencias?.length || 0);
+                  
+                  if (resultado.divergencias && Array.isArray(resultado.divergencias)) {
+                    console.log('[SpedValidacaoV2] ✅ Definindo divergências:', resultado.divergencias.length);
+                    setDivergencias(resultado.divergencias);
+                  } else if (resultado.resultado?.validacoes?.divergencias) {
+                    console.log('[SpedValidacaoV2] ✅ Divergências encontradas em resultado.validacoes:', resultado.resultado.validacoes.divergencias.length);
+                    setDivergencias(resultado.resultado.validacoes.divergencias);
+                  } else {
+                    console.warn('[SpedValidacaoV2] ⚠️ Nenhuma divergência encontrada no resultado');
+                    setDivergencias([]);
+                  }
+                  setCurrentStep(4);
+                }).catch((err) => {
+                  console.error('[SpedValidacaoV2] Erro ao obter resultado:', err);
+                  setError(err.message || 'Erro ao obter resultado da validação');
+                });
+              } else if (updatedStatus.status === 'error') {
+                setError(updatedStatus.error || 'Erro no processamento');
+              }
             }}
             onError={(errorMsg) => {
               setError(errorMsg);

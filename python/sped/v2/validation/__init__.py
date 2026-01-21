@@ -1,20 +1,25 @@
 """
-Módulo de Validação Interna da EFD (Camada B)
-Valida consistência interna do SPED: C170→C190→C100→E110/E111
+Módulo de Validação (Camadas B e C)
+- Camada B: Validação interna da EFD
+- Camada C: Validação conceitual XML × EFD
 """
 
-from .efd_internal_validator import (
-    EFDInternalValidator,
-    ValidationResult,
-    ValidationIssue,
-    ValidationSeverity,
-)
+from .xml_efd_validator import XmlEfdValidator, ResultadoValidacao, Divergencia
+from .efd_internal_validator import EFDInternalValidator, ValidationResult, ValidationIssue, ValidationSeverity
+from .totaling_engine import TotalingEngine, ResultadoTotalizacao
+from .legitimacao_matrix import MatrizLegitimacao, ClassificacaoDivergencia, ContextoFiscal
 
 __all__ = [
+    'XmlEfdValidator',
+    'ResultadoValidacao',
+    'Divergencia',
     'EFDInternalValidator',
     'ValidationResult',
     'ValidationIssue',
     'ValidationSeverity',
+    'TotalingEngine',
+    'ResultadoTotalizacao',
+    'MatrizLegitimacao',
+    'ClassificacaoDivergencia',
+    'ContextoFiscal',
 ]
-
-

@@ -48,10 +48,11 @@
   "ts-node": {
     "esm": false,
     "experimentalSpecifierResolution": "node",
-    "transpileOnly": false,
+    "transpileOnly": true,
     "files": true,
     "compilerOptions": {
-      "module": "commonjs"
+      "module": "commonjs",
+      "skipLibCheck": true
     }
   }
 }

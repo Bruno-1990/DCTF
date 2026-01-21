@@ -161,3 +161,9 @@ def normalize_xml_folder(folder_path: Path) -> List[DocumentoFiscal]:
     return normalizer.normalize_folder(folder_path)
 
 
+
+
+
+
+
+

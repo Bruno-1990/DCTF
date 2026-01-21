@@ -16,3 +16,9 @@ Por favor, forneça os valores de Capital Social para os seguintes CNPJs encontr
 
 Após fornecer os valores, atualizarei o script automaticamente.
 
+
+
+
+
+
+

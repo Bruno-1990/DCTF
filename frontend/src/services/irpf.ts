@@ -60,7 +60,7 @@ export const irpfService = {
   async buscarApenasCache(
     clienteId: string,
     anos?: number[]
-  ): Promise<FaturamentoAnual[]> {
+  ): Promise<{ data: FaturamentoAnual[]; ultimaAtualizacao?: string | null }> {
     const response = await api.get(`/irpf/faturamento/${clienteId}/cache`, {
       params: anos ? { anos: anos.join(',') } : undefined,
     });
@@ -69,7 +69,10 @@ export const irpfService = {
       throw new Error(response.data.error || 'Erro ao buscar cache');
     }
 
-    return response.data.data || [];
+    return {
+      data: response.data.data || [],
+      ultimaAtualizacao: response.data.ultimaAtualizacao || null,
+    };
   },
 
   /**
@@ -257,6 +260,37 @@ export const irpfService = {
     );
 
     return resultados;
+  },
+
+  /**
+   * Buscar faturamento detalhado do cache por tipo
+   * @param clienteId ID do cliente
+   * @param tipo Tipo de visualização: 'detalhado' | 'consolidado' | 'mini'
+   * @param anos Anos para buscar
+   */
+  async buscarFaturamentoPorTipo(
+    clienteId: string,
+    tipo: 'detalhado' | 'consolidado' | 'mini',
+    anos?: number[]
+  ): Promise<any> {
+    console.log(`[IRPF Service] Buscando faturamento por tipo: clienteId=${clienteId}, tipo=${tipo}, anos=${anos?.join(',')}`);
+    
+    const params: any = {};
+    if (anos && anos.length > 0) {
+      params.anos = anos.join(',');
+    }
+    
+    const response = await api.get(`/irpf/faturamento/${clienteId}/cache/${tipo}`, { params });
+
+    console.log(`[IRPF Service] Resposta recebida:`, response.data);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Erro ao buscar faturamento do cache');
+    }
+
+    const data = response.data.data || [];
+    console.log(`[IRPF Service] Dados retornados:`, data);
+    return data;
   },
 };
 

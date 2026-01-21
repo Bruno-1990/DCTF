@@ -48,6 +48,25 @@ export interface SpedV2Validation {
   completedAt?: string;
 }
 
+export interface SpedMetadata {
+  cnpj: string | null;
+  razao_social?: string | null;
+  competencia: string | null;
+  regime_tributario: string | null;
+  opera_st: boolean;
+  opera_difal: boolean;
+  opera_fcp: boolean;
+  opera_interestadual: boolean;
+  segmento: string | null;
+  stats?: {
+    total_registros: number;
+    total_c100: number;
+    total_c170: number;
+    cfops: string[];
+    ncms_top_10: string[];
+  };
+}
+
 class SpedV2Service {
   /**
    * Inicia uma nova validação SPED v2.0
@@ -142,6 +161,26 @@ class SpedV2Service {
    */
   async removerValidacao(validationId: string): Promise<void> {
     await axios.delete(`${API_BASE_URL}/api/sped/v2/validacoes/${validationId}`);
+  }
+
+  /**
+   * Extrai metadados do arquivo SPED (CNPJ, competência, regime, etc)
+   */
+  async extrairMetadados(spedFile: File): Promise<SpedMetadata> {
+    const formData = new FormData();
+    formData.append('sped', spedFile);
+
+    const response = await axios.post(
+      `${API_BASE_URL}/api/sped/v2/extract-metadata`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+
+    return response.data.metadata;
   }
 }
 

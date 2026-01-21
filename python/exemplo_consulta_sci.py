@@ -195,3 +195,9 @@ if __name__ == "__main__":
     print("      para criar suas próprias consultas!")
 
 
+
+
+
+
+
+

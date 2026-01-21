@@ -88,10 +88,12 @@ class Server {
       legacyHeaders: false,
       skip: (req) => {
         const p = req.path || '';
-        // Rotas com limiter dedicado
+        // Rotas com limiter dedicado ou que precisam de polling frequente
         if (p.startsWith('/api/situacao-fiscal')) return true;
         if (p.startsWith('/api/receita')) return true;
         if (p.startsWith('/api/receita-pagamentos')) return true;
+        // Rotas de status do SPED v2 precisam de polling frequente
+        if (p.startsWith('/api/sped/v2/status/')) return true;
         return false;
       },
     });

@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dctf-mpc-backend-dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.development
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./src:/app/src
+      - ./dist:/app/dist
+      - ./node_modules:/app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+    networks:
+      - dctf-network
+
+  # Frontend (desenvolvimento com hot-reload)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: dctf-mpc-frontend-dev
+    ports:
+      - "5173:5173"
+    env_file:
+      - frontend/.env.development
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/node_modules:/app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+    networks:
+      - dctf-network
+    depends_on:
+      - backend
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: dctf-mpc-mysql-dev
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: dctf_web
+      MYSQL_USER: dev_user
+      MYSQL_PASSWORD: dev_password
+    volumes:
+      - mysql-data-dev:/var/lib/mysql
+      - ./docs/migrations:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    networks:
+      - dctf-network
+
+networks:
+  dctf-network:
+    driver: bridge
+
+volumes:
+  mysql-data-dev:
+
+
+
+
+
+

@@ -90,3 +90,9 @@ Os logs detalhados são salvos em:
 - `logs/relatorio-regimes-[timestamp].json` - Relatório completo com todos os detalhes
 
 
+
+
+
+
+
+

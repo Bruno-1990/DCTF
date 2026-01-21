@@ -10,7 +10,8 @@ import {
   obterStatus,
   listarValidacoes,
   removerValidacao,
-  obterResultado
+  obterResultado,
+  extrairMetadados
 } from '../controllers/SpedV2ValidationController';
 import { sanitizeData } from '../middleware/validation';
 
@@ -21,7 +22,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB por arquivo
-    files: 10001 // Máximo de 10001 arquivos (1 SPED + até 10000 XMLs)
+    files: 5000 // Máximo de 5000 arquivos (1 SPED + até 4999 XMLs) - suficiente para processar meses completos
   }
 });
 
@@ -54,12 +55,47 @@ router.use(sanitizeData);
  *   "message": "Aguardando processamento..."
  * }
  */
+/**
+ * POST /api/sped/v2/extract-metadata
+ * Extrai metadados do arquivo SPED (CNPJ, competência, regime, etc)
+ */
+router.post(
+  '/extract-metadata',
+  upload.fields([
+    { name: 'sped', maxCount: 1 }
+  ]),
+  extrairMetadados
+);
+
 router.post(
   '/validar',
-  upload.fields([
-    { name: 'sped', maxCount: 1 },
-    { name: 'xmls', maxCount: 10000 }
-  ]),
+  upload.any(), // Usar .any() para aceitar qualquer campo (arquivos e texto)
+  // Middleware para organizar arquivos por tipo e manter formato esperado pelo controller
+  (req: Request, res: Response, next: any) => {
+    const files = req.files as Express.Multer.File[];
+    
+    // Organizar arquivos por tipo (formato esperado pelo controller)
+    const filesByField: { [fieldname: string]: Express.Multer.File[] } = {
+      sped: [],
+      xmls: []
+    };
+    
+    if (files) {
+      files.forEach((file: Express.Multer.File) => {
+        if (file.fieldname === 'sped') {
+          filesByField.sped.push(file);
+        } else if (file.fieldname === 'xmls') {
+          filesByField.xmls.push(file);
+        }
+        // Campos como clienteId, competencia, perfilFiscal não são arquivos
+        // Eles já estão em req.body automaticamente
+      });
+    }
+    
+    // Anexar arquivos organizados ao req no formato esperado
+    req.files = filesByField as any;
+    next();
+  },
   iniciarValidacao
 );
 
@@ -125,5 +161,8 @@ router.get('/validacoes', listarValidacoes);
 router.delete('/validacoes/:validationId', removerValidacao);
 
 export default router;
+
+
+
 
 

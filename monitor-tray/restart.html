@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Serviços Offline - DCTF MPC Monitor</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      width: 100%;
+      max-width: 500px;
+      text-align: center;
+      animation: slideIn 0.3s ease-out;
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.1);
+      }
+    }
+    
+    h2 {
+      color: #dc2626;
+      margin-bottom: 15px;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    
+    .status-list {
+      background: #fef2f2;
+      border: 2px solid #fecaca;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 25px 0;
+      text-align: left;
+    }
+    
+    .status-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #fee2e2;
+    }
+    
+    .status-item:last-child {
+      border-bottom: none;
+    }
+    
+    .status-label {
+      font-weight: 600;
+      color: #7f1d1d;
+    }
+    
+    .status-value {
+      font-weight: 700;
+      color: #dc2626;
+    }
+    
+    .message {
+      color: #7f1d1d;
+      margin: 20px 0;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 15px;
+      margin-top: 30px;
+    }
+    
+    button {
+      flex: 1;
+      padding: 16px 24px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .btn-restart {
+      background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+      color: white;
+      box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
+    }
+    
+    .btn-restart:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(220, 38, 38, 0.6);
+    }
+    
+    .btn-restart:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .btn-cancel {
+      background: #f3f4f6;
+      color: #374151;
+    }
+    
+    .btn-cancel:hover {
+      background: #e5e7eb;
+    }
+    
+    .status-message {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    
+    .status-success {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #6ee7b7;
+    }
+    
+    .status-error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+    }
+    
+    .status-info {
+      background: #dbeafe;
+      color: #1e40af;
+      border: 1px solid #93c5fd;
+    }
+    
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">⚠️</div>
+    <h2>Serviços Offline</h2>
+    
+    <div class="status-list">
+      <div class="status-item">
+        <span class="status-label">Backend:</span>
+        <span class="status-value">🔴 Offline</span>
+      </div>
+      <div class="status-item" id="frontendStatus" style="display: none;">
+        <span class="status-label">Frontend:</span>
+        <span class="status-value">🔴 Offline</span>
+      </div>
+    </div>
+    
+    <p class="message">
+      Ambos os serviços estão offline. Clique no botão abaixo para reiniciá-los automaticamente.
+    </p>
+    
+    <div class="button-group">
+      <button class="btn-cancel" onclick="window.close()">Fechar</button>
+      <button class="btn-restart" id="restartBtn" onclick="handleRestart()">
+        🔄 Reiniciar Serviços
+      </button>
+    </div>
+    
+    <div id="statusMessage" class="status-message"></div>
+  </div>
+  
+  <script>
+    // Verificar se frontend está sendo monitorado
+    (async () => {
+      try {
+        const config = await window.electronAPI.getConfig();
+        if (config.monitorFrontend) {
+          document.getElementById('frontendStatus').style.display = 'flex';
+        }
+      } catch (error) {
+        console.error('Erro ao carregar configuração:', error);
+      }
+    })();
+    
+    async function handleRestart() {
+      const btn = document.getElementById('restartBtn');
+      const statusEl = document.getElementById('statusMessage');
+      
+      // Desabilitar botão e mostrar loading
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span> Reiniciando...';
+      
+      // Mostrar mensagem de status
+      showMessage('⏳ Reiniciando serviços... Aguarde.', 'info');
+      
+      try {
+        const result = await window.electronAPI.restartServices();
+        
+        if (result.success) {
+          showMessage('✅ ' + result.message, 'success');
+          btn.innerHTML = '✅ Reiniciado!';
+          
+          // Fechar janela após 3 segundos
+          setTimeout(() => {
+            window.close();
+          }, 3000);
+        } else {
+          showMessage('❌ ' + result.message, 'error');
+          btn.disabled = false;
+          btn.innerHTML = '🔄 Tentar Novamente';
+        }
+      } catch (error) {
+        showMessage('❌ Erro: ' + error.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Tentar Novamente';
+      }
+    }
+    
+    function showMessage(message, type) {
+      const statusEl = document.getElementById('statusMessage');
+      statusEl.textContent = message;
+      statusEl.className = `status-message status-${type}`;
+      statusEl.style.display = 'block';
+    }
+  </script>
+</body>
+</html>
+

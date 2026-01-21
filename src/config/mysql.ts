@@ -75,7 +75,14 @@ export const executeQuery = async <T = any>(
 ): Promise<T[]> => {
   try {
     const [rows] = await mysqlPool.execute(query, params);
-    return rows as T[];
+    // Para queries DELETE/UPDATE/INSERT, rows pode ser um ResultSetHeader
+    // Para queries SELECT, rows é um array
+    if (Array.isArray(rows)) {
+      return rows as T[];
+    }
+    // Se não é array, pode ser ResultSetHeader (DELETE/UPDATE/INSERT)
+    // Retornar como array vazio ou converter conforme necessário
+    return [] as T[];
   } catch (error: any) {
     // Não logar erros de coluna duplicada (migration comum)
     if (error.code !== 'ER_DUP_FIELDNAME' && !error.message?.includes('Duplicate column name')) {

@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import Layout from '../components/Layout/Layout';
 import Home from '../pages/Home';
 import Clientes from '../pages/Clientes';
+import ClientesCNAE from '../pages/ClientesCNAE';
 import DCTF from '../pages/DCTF';
 import Relatorios from '../pages/Relatorios';
 import ErrorPage from '../pages/ErrorPage';
@@ -16,6 +17,7 @@ import BancoHoras from '../pages/BancoHoras';
 import GeradorSQL from '../pages/GeradorSQL';
 import SpedValidacao from '../pages/SpedValidacao';
 import SpedValidacaoV2 from '../pages/SpedValidacaoV2';
+import SpedKnowledgeBase from '../pages/SpedKnowledgeBase';
 import Irpf2025 from '../pages/Irpf2025';
 
 const router = createBrowserRouter([
@@ -39,6 +41,10 @@ const router = createBrowserRouter([
       {
         path: 'clientes',
         element: <Clientes />,
+      },
+      {
+        path: 'clientes/cnae',
+        element: <ClientesCNAE />,
       },
       {
         path: 'dctf',
@@ -83,6 +89,10 @@ const router = createBrowserRouter([
       {
         path: 'sped/v2',
         element: <SpedValidacaoV2 />,
+      },
+      {
+        path: 'sped/knowledge',
+        element: <SpedKnowledgeBase />,
       },
       {
         path: 'irpf-2026',

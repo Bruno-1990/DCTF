@@ -129,3 +129,9 @@ class DocumentoFiscal:
         }
 
 
+
+
+
+
+
+

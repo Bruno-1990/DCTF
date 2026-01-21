@@ -9,6 +9,14 @@ import os
 import base64
 from pathlib import Path
 
+# Configurar encoding UTF-8 para stdout/stderr
+if sys.stdout.encoding != 'utf-8':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    import io
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 # Adicionar o diretório core ao path
 BASE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -142,25 +150,52 @@ def main():
             for val in row:
                 if val is None:
                     row_data.append(None)
-                elif isinstance(val, (int, float, str, bool)):
+                elif isinstance(val, (int, float, bool)):
                     row_data.append(val)
+                elif isinstance(val, str):
+                    # Garantir que strings são preservadas com encoding UTF-8
+                    row_data.append(val)
+                elif isinstance(val, bytes):
+                    # Se for bytes, decodificar para UTF-8
+                    row_data.append(val.decode('utf-8', errors='replace'))
                 else:
-                    # Converter outros tipos para string
-                    row_data.append(str(val))
+                    # Tratar tipos numéricos do Firebird (Decimal, etc.)
+                    try:
+                        # Tentar converter para float primeiro (preserva números)
+                        if hasattr(val, '__float__'):
+                            float_val = float(val)
+                            # Se for um número inteiro, retornar como int, senão como float
+                            if float_val.is_integer():
+                                row_data.append(int(float_val))
+                            else:
+                                row_data.append(float_val)
+                        else:
+                            # Se não puder converter para número, converter para string
+                            row_data.append(str(val))
+                    except (ValueError, TypeError):
+                        # Se falhar, converter para string
+                        row_data.append(str(val))
             rows.append(row_data)
         
-        print(json.dumps({
+        # Garantir que o JSON preserve caracteres UTF-8
+        output = json.dumps({
             "success": True,
             "columns": colunas,
             "rows": rows,
             "rowCount": len(rows)
-        }, ensure_ascii=False))
+        }, ensure_ascii=False)
+        
+        # Escrever no stdout com encoding UTF-8
+        sys.stdout.buffer.write(output.encode('utf-8'))
+        sys.stdout.buffer.flush()
         
     except Exception as e:
-        print(json.dumps({
+        error_output = json.dumps({
             "success": False,
             "error": str(e)
-        }))
+        }, ensure_ascii=False)
+        sys.stdout.buffer.write(error_output.encode('utf-8'))
+        sys.stdout.buffer.flush()
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ interface GerarRelatorioResult {
   success: boolean;
   filePath?: string;
   arquivoFormatado?: string;
+  relatorioId?: string;
   error?: string;
 }
 

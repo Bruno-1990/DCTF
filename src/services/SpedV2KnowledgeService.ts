@@ -297,12 +297,14 @@ export class SpedV2KnowledgeService {
   }
 
   /**
-   * Gerar regra consultando documentos com contexto RAG
+   * Gerar regra consultando documentos via sistema híbrido (RAG + Banco)
    */
   async generateRule(filters: {
     rule_description: string;
     periodo?: string; // MM/YYYY
     n_context_chunks?: number;
+    categoria?: string;
+    tipo?: string;
   }): Promise<ApiResponse<any>> {
     try {
       // Validar rule_description
@@ -334,14 +336,16 @@ export class SpedV2KnowledgeService {
       // Caminho do script Python
       const pythonScript = path.join(__dirname, '../../../python/sped/v2/knowledge/generate_rule.py');
       
-      // Construir comando
+      // Construir comando com novos parâmetros
       const args = [
         filters.rule_description,
         filters.periodo || '',
-        String(filters.n_context_chunks || 5)
+        String(filters.n_context_chunks || 5),
+        filters.categoria || '',
+        filters.tipo || ''
       ];
       
-      const command = `python "${pythonScript}" "${args[0]}" "${args[1]}" "${args[2]}"`;
+      const command = `python "${pythonScript}" "${args[0]}" "${args[1]}" "${args[2]}" "${args[3]}" "${args[4]}"`;
 
       // Executar script Python
       const { stdout } = await execAsync(command, {

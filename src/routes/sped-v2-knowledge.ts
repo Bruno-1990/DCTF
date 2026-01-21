@@ -40,3 +40,9 @@ router.post('/generate-rule', controller.generateRule.bind(controller));
 export default router;
 
 
+
+
+
+
+
+

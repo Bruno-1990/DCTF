@@ -69,6 +69,26 @@ router.get('/cnpj/:cnpj', (req, res) => {
   clienteController.buscarPorCNPJ(req, res);
 });
 
+// GET /api/clientes/cnae/:cnae - Buscar por CNAE (principal ou secundário)
+router.get('/cnae/:cnae', (req, res) => {
+  clienteController.buscarPorCNAE(req, res);
+});
+
+// GET /api/clientes/cnae-grupos - Buscar grupos de CNAEs
+router.get('/cnae-grupos', (req, res) => {
+  clienteController.buscarGruposCNAE(req, res);
+});
+
+// GET /api/clientes/cnae-grupo/:grupo - Buscar clientes por grupo de CNAE
+router.get('/cnae-grupo/:grupo', (req, res) => {
+  clienteController.buscarPorGrupoCNAE(req, res);
+});
+
+// POST /api/clientes/cnae-busca - Buscar clientes por múltiplos CNAEs e/ou grupos
+router.post('/cnae-busca', (req, res) => {
+  clienteController.buscarPorMultiplosCNAEsEGrupos(req, res);
+});
+
 // GET /api/clientes/:id - Obter cliente por ID (DEVE ser a última rota GET com :id)
 router.get('/:id', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.obterCliente(req, res);

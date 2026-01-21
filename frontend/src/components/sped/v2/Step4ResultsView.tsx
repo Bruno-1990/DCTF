@@ -26,6 +26,15 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
   divergencias,
   onVerEvidencias,
 }) => {
+  // Debug: Log das divergências recebidas
+  React.useEffect(() => {
+    console.log('[Step4ResultsView] 📊 Divergências recebidas:', divergencias);
+    console.log('[Step4ResultsView] 📊 Total de divergências:', divergencias?.length || 0);
+    if (divergencias && divergencias.length > 0) {
+      console.log('[Step4ResultsView] 📊 Primeira divergência:', divergencias[0]);
+    }
+  }, [divergencias]);
+  
   const [sidebarAberto, setSidebarAberto] = useState<boolean>(true);
   const [filtros, setFiltros] = useState({
     classificacao: 'todos',
@@ -42,6 +51,7 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
   const [mostrarEvidencias, setMostrarEvidencias] = useState<boolean>(false);
 
   const divergenciasFiltradas = useMemo(() => {
+    console.log('[Step4ResultsView] 🔍 Aplicando filtros. Total antes:', divergencias.length);
     let filtradas = [...divergencias];
 
     // Filtros
@@ -90,6 +100,7 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
       }
     });
 
+    console.log('[Step4ResultsView] ✅ Total após filtros:', filtradas.length);
     return filtradas;
   }, [divergencias, filtros, busca, ordenacao]);
 
@@ -426,9 +437,45 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
 
           {divergenciasFiltradas.length === 0 && (
             <div className="bg-white rounded-lg shadow p-12 text-center">
-              <p className="text-sm text-gray-500">
-                Nenhuma divergência encontrada com os filtros aplicados
-              </p>
+              {divergencias.length === 0 ? (
+                <>
+                  <p className="text-lg font-medium text-gray-700 mb-2">
+                    Nenhuma divergência encontrada
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    A validação foi concluída, mas não foram identificadas divergências entre os arquivos XML e SPED.
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Debug: Total de divergências recebidas: {divergencias.length}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-medium text-gray-700 mb-2">
+                    Nenhuma divergência encontrada com os filtros aplicados
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Existem {divergencias.length} divergência(s), mas nenhuma corresponde aos filtros selecionados.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setFiltros({
+                        classificacao: 'todos',
+                        impacto: 'todos',
+                        nao_conciliado: false,
+                        cfop: '',
+                        cst: '',
+                        st: false,
+                        ajustes: false,
+                      });
+                      setBusca('');
+                    }}
+                    className="mt-4 px-4 py-2 text-sm text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Limpar todos os filtros
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>

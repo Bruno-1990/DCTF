@@ -271,8 +271,16 @@ export class IrpfFaturamentoCache extends DatabaseService<IrpfFaturamentoCacheDa
         WHERE \`updated_at\` < DATE_SUB(NOW(), INTERVAL ? DAY)
       `;
 
-      const result = await this.executeCustomQuery<any>(sql, [dias]);
-      return { success: true, data: result.data?.affectedRows || 0 };
+      // Para DELETE, precisamos usar a conexão diretamente para obter affectedRows
+      const { getConnection } = await import('../config/mysql');
+      const connection = await getConnection();
+      try {
+        const [result] = await connection.execute(sql, [dias]) as any;
+        const deletedCount = result?.affectedRows || 0;
+        return { success: true, data: deletedCount };
+      } finally {
+        connection.release();
+      }
     } catch (error) {
       return {
         success: false,

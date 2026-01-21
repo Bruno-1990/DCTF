@@ -18,6 +18,11 @@ router.get('/faturamento/:clienteId/cache', (req, res) => {
   irpfController.buscarApenasCache(req, res);
 });
 
+// GET /api/irpf/faturamento/:clienteId/cache/:tipo - Buscar faturamento do cache por tipo (detalhado, consolidado, mini)
+router.get('/faturamento/:clienteId/cache/:tipo', (req, res) => {
+  irpfController.buscarFaturamentoPorTipo(req, res);
+});
+
 // POST /api/irpf/faturamento/:clienteId/atualizar - Forçar atualização do cache
 router.post('/faturamento/:clienteId/atualizar', (req, res) => {
   irpfController.atualizarCache(req, res);

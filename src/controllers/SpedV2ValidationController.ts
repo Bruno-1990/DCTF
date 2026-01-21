@@ -50,6 +50,8 @@ export async function iniciarValidacao(req: Request, res: Response): Promise<voi
 
     // Iniciar validação
     const status = await spedV2ValidationService.iniciarValidacao(request);
+    
+    console.log(`[SpedV2ValidationController] ✅ Validação ${status.validationId} criada com status: ${status.status}`);
 
     res.status(202).json({
       success: true,
@@ -85,6 +87,8 @@ export async function obterStatus(req: Request, res: Response): Promise<void> {
     const status = spedV2ValidationService.getStatus(validationId);
 
     if (!status) {
+      // Log para debug - não é erro crítico, apenas status ainda não criado
+      console.log(`[SpedV2ValidationController] ⚠️ Status não encontrado para ${validationId} (pode estar sendo criado ainda)`);
       res.status(404).json({
         success: false,
         error: 'Validação não encontrada'
@@ -199,10 +203,14 @@ export async function obterResultado(req: Request, res: Response): Promise<void>
       return;
     }
 
+    // Extrair divergências do resultado
+    const divergencias = status.resultado?.validacoes?.divergencias || [];
+    
     res.json({
       success: true,
       validationId: status.validationId,
       resultado: status.resultado,
+      divergencias: divergencias, // Adicionar divergências no nível raiz para compatibilidade
       completedAt: status.completedAt
     });
   } catch (error: any) {
@@ -213,5 +221,40 @@ export async function obterResultado(req: Request, res: Response): Promise<void>
     });
   }
 }
+
+/**
+ * POST /api/sped/v2/extract-metadata
+ * Extrai metadados do arquivo SPED (CNPJ, competência, regime, etc)
+ */
+export async function extrairMetadados(req: Request, res: Response): Promise<void> {
+  try {
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    
+    if (!files || !files.sped || files.sped.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Arquivo SPED é obrigatório'
+      });
+      return;
+    }
+
+    const spedFile = files.sped[0];
+    const metadata = await spedV2ValidationService.extrairMetadadosSped(spedFile.buffer);
+
+    res.json({
+      success: true,
+      metadata
+    });
+  } catch (error: any) {
+    console.error('[SpedV2ValidationController] Erro ao extrair metadados:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Erro ao extrair metadados'
+    });
+  }
+}
+
+
+
 
 

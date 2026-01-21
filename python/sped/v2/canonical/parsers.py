@@ -398,3 +398,9 @@ def parse_efd_c170_to_canonical(efd_path: Path, documento_ref: Optional[Document
     return itens
 
 
+
+
+
+
+
+

@@ -1674,3 +1674,172 @@ def run_all_validations(efd_txt: Path, xml_notes: List[Dict[str, Any]], rules: O
             except Exception:
                 pass
     return out
+
+
+# ---------------------------------------------------------------------------
+# Integração com Sistema de Conhecimento Híbrido (RAG + Banco)
+# ---------------------------------------------------------------------------
+
+def query_knowledge_hybrid(
+    query: str,
+    categoria: Optional[str] = None,
+    tipo: Optional[str] = None,
+    periodo: Optional[str] = None,
+    document_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Consulta o sistema híbrido de conhecimento (RAG + Banco) para obter
+    contexto adicional sobre regras e validações.
+    
+    Esta função é opcional e pode ser usada quando necessário para:
+    - Validar se uma regra específica está correta
+    - Obter contexto adicional sobre uma validação
+    - Consultar referências legais
+    
+    Args:
+        query: Descrição da regra ou validação a consultar
+        categoria: Categoria da regra (opcional)
+        tipo: Tipo da regra (opcional)
+        periodo: Período no formato MM/YYYY (opcional)
+        document_id: ID do documento (opcional)
+    
+    Returns:
+        Dicionário com resultados da consulta híbrida ou None em caso de erro
+    """
+    try:
+        # Importação opcional para não quebrar se o módulo não estiver disponível
+        from pathlib import Path
+        import sys
+        
+        # Adicionar path do módulo de conhecimento
+        knowledge_path = Path(__file__).parent.parent / "v2" / "knowledge"
+        if knowledge_path.exists():
+            sys.path.insert(0, str(knowledge_path.parent.parent.parent))
+            
+            from sped.v2.knowledge.hybrid_query import HybridQueryService
+            
+            # Inicializar serviço
+            service = HybridQueryService(
+                vector_store_path="./data/chroma_db",
+                embedding_model="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+            )
+            
+            # Executar consulta híbrida
+            result = service.query_hybrid(
+                query=query,
+                categoria=categoria,
+                tipo=tipo,
+                periodo=periodo,
+                document_id=document_id,
+                n_rag_results=5,
+                n_structured_rules=10,
+                min_rag_score=0.3
+            )
+            
+            # Retornar resultado formatado
+            return {
+                "success": True,
+                "structured_rules": [
+                    {
+                        "id": r.id,
+                        "rule_type": r.rule_type,
+                        "rule_category": r.rule_category,
+                        "rule_description": r.rule_description,
+                        "rule_condition": r.rule_condition,
+                        "legal_reference": r.legal_reference,
+                        "article_reference": r.article_reference,
+                        "section_reference": r.section_reference,
+                        "vigencia_inicio": r.vigencia_inicio,
+                        "vigencia_fim": r.vigencia_fim
+                    }
+                    for r in result.structured_rules
+                ],
+                "rag_results": [
+                    {
+                        "chunk_id": r.chunk_id,
+                        "chunk_text": r.chunk_text,
+                        "score": r.score,
+                        "document_id": r.document_id,
+                        "section_title": r.section_title,
+                        "article_number": r.article_number
+                    }
+                    for r in result.rag_results
+                ],
+                "confidence_score": result.confidence_score,
+                "confidence_factors": result.confidence_factors,
+                "legal_references": result.legal_references,
+                "is_valid_period": result.is_valid_period,
+                "period_validation_message": result.period_validation_message,
+                "combined_context": result.combined_context
+            }
+        else:
+            return None
+            
+    except ImportError as e:
+        # Sistema de conhecimento não disponível - retornar None silenciosamente
+        return None
+    except Exception as e:
+        # Log do erro mas não quebrar o fluxo
+        import logging
+        logging.warning(f"Erro ao consultar sistema de conhecimento híbrido: {e}")
+        return None
+
+
+def enhance_rules_with_knowledge(
+    rules: Dict[str, Any],
+    periodo: Optional[str] = None,
+    use_hybrid: bool = False
+) -> Dict[str, Any]:
+    """
+    Enriquece regras carregadas com contexto do sistema de conhecimento híbrido.
+    
+    Esta função é opcional e pode ser chamada após load_rules_for_sector()
+    para adicionar contexto adicional das regras estruturadas do banco.
+    
+    Args:
+        rules: Dicionário de regras carregado de YAML
+        periodo: Período no formato MM/YYYY (opcional)
+        use_hybrid: Se True, consulta sistema híbrido (padrão: False para compatibilidade)
+    
+    Returns:
+        Dicionário de regras enriquecido (ou original se use_hybrid=False ou erro)
+    """
+    if not use_hybrid:
+        return rules
+    
+    try:
+        # Tentar consultar regras estruturadas para categorias presentes
+        categories = set()
+        if "rules" in rules:
+            for rule in rules.get("rules", []):
+                if isinstance(rule, dict) and "category" in rule:
+                    categories.add(rule["category"])
+        
+        # Consultar sistema híbrido para cada categoria
+        enhanced_rules = rules.copy()
+        knowledge_context = {}
+        
+        for category in categories:
+            query_result = query_knowledge_hybrid(
+                query=f"regras de validação {category}",
+                categoria=category,
+                periodo=periodo
+            )
+            
+            if query_result and query_result.get("success"):
+                knowledge_context[category] = {
+                    "structured_rules_count": len(query_result.get("structured_rules", [])),
+                    "confidence_score": query_result.get("confidence_score", 0.0),
+                    "legal_references": query_result.get("legal_references", [])
+                }
+        
+        # Adicionar contexto ao dicionário de regras
+        if knowledge_context:
+            enhanced_rules["_knowledge_context"] = knowledge_context
+        
+        return enhanced_rules
+        
+    except Exception as e:
+        import logging
+        logging.warning(f"Erro ao enriquecer regras com conhecimento: {e}")
+        return rules

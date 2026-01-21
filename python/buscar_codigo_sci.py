@@ -37,11 +37,13 @@ def main():
         conn = sci.connect()
         cursor = conn.cursor()
         
-        # Query para buscar código SCI
+        # Query direta na view VWGR_SCI_EMPRESAS que já contém BDCODEMP e BDCNPJEMP
+        # Remove formatação do CNPJ para fazer o match
         sql = """
-        SELECT BDCODEMP, BDCNPJEMP 
+        SELECT FIRST 1 BDCODEMP, BDCNPJEMP 
         FROM VWGR_SCI_EMPRESAS
-        WHERE BDCNPJEMP = ?
+        WHERE REPLACE(REPLACE(REPLACE(BDCNPJEMP, '.', ''), '/', ''), '-', '') = ?
+        ORDER BY BDCODEMP
         """
         
         cursor.execute(sql, (cnpj_limpo,))
@@ -62,7 +64,7 @@ def main():
         else:
             print(json.dumps({
                 'success': False,
-                'error': 'Empresa não encontrada no SCI',
+                'error': f'Empresa não encontrada no SCI. CNPJ buscado: {cnpj_limpo}',
                 'codigo_sci': None
             }))
             sys.exit(1)

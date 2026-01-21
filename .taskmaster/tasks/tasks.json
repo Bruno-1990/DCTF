@@ -1413,7 +1413,7 @@
         "description": "Criar componente para exibir resultados da validação interna da EFD",
         "details": "Componente para exibir resultados da validação interna. Cards de inconsistências encontradas. Evidências SPED lado a lado. Integração com backend.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           5,
           4
@@ -1453,14 +1453,80 @@
         "description": "Implementar confronto conceitual XML vs EFD (não campo a campo)",
         "details": "Criar python/sped/v2/validation/xml_efd_validator.py. Comparação conceitual (não campo a campo). Consideração de contexto (CFOP, CST, finalidade). Detecção de divergências básicas. Integração com modelo canônico.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2,
           7,
           8
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Analisar modelo canônico e estrutura de dados normalizados",
+            "description": "Examinar o modelo canônico e os normalizadores para entender a estrutura de dados XML e EFD normalizados",
+            "details": "Ler python/sped/v2/canonical/ e python/sped/v2/normalization/ para entender estrutura de DocumentoFiscal e ItemFiscal normalizados",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9
+          },
+          {
+            "id": 2,
+            "title": "Criar estrutura base do xml_efd_validator.py",
+            "description": "Criar arquivo python/sped/v2/validation/xml_efd_validator.py com estrutura básica e classes principais",
+            "details": "Criar classe XmlEfdValidator com métodos para comparação conceitual, estrutura de dados para divergências, integração com modelo canônico",
+            "status": "done",
+            "dependencies": [
+              "9.1"
+            ],
+            "parentTaskId": 9
+          },
+          {
+            "id": 3,
+            "title": "Implementar comparação conceitual de documentos",
+            "description": "Criar função que compara documentos XML e EFD de forma conceitual, não campo a campo",
+            "details": "Comparar conceitos fiscais: valores totais, tipos de operação, contexto (CFOP, CST, finalidade). Não comparar campos individuais diretamente",
+            "status": "done",
+            "dependencies": [
+              "9.2"
+            ],
+            "parentTaskId": 9
+          },
+          {
+            "id": 4,
+            "title": "Implementar consideração de contexto (CFOP, CST, finalidade)",
+            "description": "Adicionar lógica que considera contexto fiscal ao fazer comparações: CFOP, CST, finalidade da operação",
+            "details": "Usar CFOP para determinar tipo de operação, CST para contexto tributário, finalidade para ajustar comparações. Regras contextuais",
+            "status": "done",
+            "dependencies": [
+              "9.3"
+            ],
+            "parentTaskId": 9
+          },
+          {
+            "id": 5,
+            "title": "Implementar detecção de divergências básicas",
+            "description": "Criar sistema que detecta divergências básicas entre XML e EFD: valores, quantidades, tipos de operação",
+            "details": "Detectar divergências em: valores totais, quantidades, tipos de ICMS (próprio vs ST vs DIFAL), presença/ausência de itens, operações não registradas",
+            "status": "done",
+            "dependencies": [
+              "9.3"
+            ],
+            "parentTaskId": 9
+          },
+          {
+            "id": 6,
+            "title": "Integrar com modelo canônico e normalizadores",
+            "description": "Integrar o validador com o modelo canônico e os normalizadores existentes",
+            "details": "Usar DocumentoFiscal e ItemFiscal do modelo canônico, receber dados dos normalizadores, garantir compatibilidade com o fluxo existente",
+            "status": "done",
+            "dependencies": [
+              "9.4",
+              "9.5"
+            ],
+            "parentTaskId": 9
+          }
+        ]
       },
       {
         "id": 10,
@@ -1468,7 +1534,7 @@
         "description": "Criar interface para exibir documentos conciliados e divergências encontradas",
         "details": "Componente para exibir documentos conciliados / não conciliados. Cards de divergências encontradas. Indicadores de matching (score, tipo). Filtros básicos. Integração com backend.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           9,
           4
@@ -1482,12 +1548,66 @@
         "description": "Implementar classificador ERRO/REVISAR/LEGÍTIMO com features de contexto",
         "details": "Criar python/sped/v2/classification/matriz_legitimacao.py. Classificador: ERRO / REVISAR / LEGÍTIMO. Features de contexto (CFOP, CST, finalidade, ajustes). Regras de divergência legítima (whitelist). Integração com packs por segmento.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           9
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do classificador e matriz de legitimação",
+            "description": "Criar arquivo python/sped/v2/classification/matriz_legitimacao.py com estrutura básica",
+            "details": "Criar classe MatrizLegitimacao com classificador ERRO/REVISAR/LEGÍTIMO, estrutura de features de contexto, sistema de whitelist",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 11
+          },
+          {
+            "id": 2,
+            "title": "Implementar extração de features de contexto",
+            "description": "Criar sistema que extrai features de contexto: CFOP, CST, finalidade, ajustes",
+            "details": "Extrair features de cada divergência: CFOP do documento/item, CST, finalidade da operação, presença de ajustes, tipo de tributo",
+            "status": "done",
+            "dependencies": [
+              "11.1"
+            ],
+            "parentTaskId": 11
+          },
+          {
+            "id": 3,
+            "title": "Implementar regras de divergência legítima (whitelist)",
+            "description": "Criar sistema de whitelist com regras que identificam divergências legítimas",
+            "details": "Regras baseadas em CFOP, CST, finalidade, tipo de operação. Whitelist configurável por segmento. Regras contextuais",
+            "status": "done",
+            "dependencies": [
+              "11.2"
+            ],
+            "parentTaskId": 11
+          },
+          {
+            "id": 4,
+            "title": "Implementar classificador ERRO/REVISAR/LEGÍTIMO",
+            "description": "Criar lógica de classificação que determina se divergência é ERRO, REVISAR ou LEGÍTIMO",
+            "details": "Usar features de contexto e whitelist para classificar. ERRO: divergências graves. REVISAR: divergências que precisam revisão. LEGÍTIMO: divergências aceitas pela whitelist",
+            "status": "done",
+            "dependencies": [
+              "11.3"
+            ],
+            "parentTaskId": 11
+          },
+          {
+            "id": 5,
+            "title": "Integrar com packs por segmento",
+            "description": "Integrar classificador com sistema de packs por segmento (autopeças, etc.)",
+            "details": "Carregar regras específicas por segmento, aplicar whitelist por segmento, garantir compatibilidade com sistema existente",
+            "status": "done",
+            "dependencies": [
+              "11.4"
+            ],
+            "parentTaskId": 11
+          }
+        ]
       },
       {
         "id": 12,
@@ -1495,12 +1615,55 @@
         "description": "Implementar cálculo de score de confiança (0-100) para cada divergência",
         "details": "Criar python/sped/v2/classification/score_calculator.py. Cálculo de score (0-100). Fatores: match, impacto, ajustes, CFOP, ST. Limiares: 80-100 (ERRO), 50-79 (REVISAR), 0-49 (LEGÍTIMO). Integração com matriz de legitimação.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           11
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do score_calculator.py",
+            "description": "Criar arquivo python/sped/v2/classification/score_calculator.py com estrutura básica",
+            "details": "Criar classe ScoreCalculator com métodos para calcular score de confiança, estrutura de fatores de score, integração com matriz de legitimação",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 12
+          },
+          {
+            "id": 2,
+            "title": "Implementar cálculo de fatores de score",
+            "description": "Implementar cálculo de fatores individuais: match, impacto, ajustes, CFOP, ST",
+            "details": "Calcular cada fator separadamente: qualidade do match, impacto da divergência, presença de ajustes, tipo de CFOP, substituição tributária",
+            "status": "done",
+            "dependencies": [
+              "12.1"
+            ],
+            "parentTaskId": 12
+          },
+          {
+            "id": 3,
+            "title": "Implementar cálculo de score final (0-100)",
+            "description": "Criar função que combina fatores e calcula score final de 0-100",
+            "details": "Combinar fatores com pesos, calcular score final, aplicar limiares: 80-100 (ERRO), 50-79 (REVISAR), 0-49 (LEGÍTIMO)",
+            "status": "done",
+            "dependencies": [
+              "12.2"
+            ],
+            "parentTaskId": 12
+          },
+          {
+            "id": 4,
+            "title": "Integrar com matriz de legitimação",
+            "description": "Integrar score calculator com matriz de legitimação para classificação final",
+            "details": "Usar score para ajustar classificação, integrar com regras de whitelist, garantir consistência entre score e classificação",
+            "status": "done",
+            "dependencies": [
+              "12.3"
+            ],
+            "parentTaskId": 12
+          }
+        ]
       },
       {
         "id": 13,
@@ -1508,12 +1671,66 @@
         "description": "Implementar cadeias de totalização: C170→C190→C100→E110 com tolerâncias",
         "details": "Implementar cadeias de totalização no validador. Cadeia C170 → C190. Cadeia C190 → C100. Cadeia C100 → E110 (impacto). Tolerâncias: linha R$ 0,01, documento R$ 0,05-0,10, período R$ 0,50-2,00.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           11
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Analisar estrutura de registros SPED (C170, C190, C100, E110)",
+            "description": "Examinar como os registros SPED são estruturados e como se relacionam nas cadeias de totalização",
+            "details": "Ler parsers e validators existentes para entender estrutura de C170, C190, C100, E110 e suas relações",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 13
+          },
+          {
+            "id": 2,
+            "title": "Criar estrutura base do motor de totalização",
+            "description": "Criar arquivo python/sped/v2/validation/totaling_engine.py com estrutura básica",
+            "details": "Criar classe TotalingEngine com métodos para cada cadeia de totalização, sistema de tolerâncias configurável",
+            "status": "done",
+            "dependencies": [
+              "13.1"
+            ],
+            "parentTaskId": 13
+          },
+          {
+            "id": 3,
+            "title": "Implementar cadeia C170 → C190",
+            "description": "Implementar validação de totalização C170 agrupado por CFOP/CST deve somar C190",
+            "details": "Agrupar C170 por CFOP/CST, somar valores, comparar com C190 correspondente, aplicar tolerância de linha (R$ 0,01)",
+            "status": "done",
+            "dependencies": [
+              "13.2"
+            ],
+            "parentTaskId": 13
+          },
+          {
+            "id": 4,
+            "title": "Implementar cadeia C190 → C100",
+            "description": "Implementar validação de totalização C190 agrupado por documento deve somar C100",
+            "details": "Agrupar C190 por documento (chave NF-e), somar valores, comparar com C100 correspondente, aplicar tolerância de documento (R$ 0,05-0,10)",
+            "status": "done",
+            "dependencies": [
+              "13.3"
+            ],
+            "parentTaskId": 13
+          },
+          {
+            "id": 5,
+            "title": "Implementar cadeia C100 → E110",
+            "description": "Implementar validação de totalização C100 agrupado por período deve somar E110 (impacto)",
+            "details": "Agrupar C100 por período, somar valores de impacto, comparar com E110 correspondente, aplicar tolerância de período (R$ 0,50-2,00)",
+            "status": "done",
+            "dependencies": [
+              "13.4"
+            ],
+            "parentTaskId": 13
+          }
+        ]
       },
       {
         "id": 14,
@@ -1521,7 +1738,7 @@
         "description": "Criar interface para exibir divergências classificadas com score e impacto",
         "details": "Cards com classificação (ERRO/REVISAR/LEGÍTIMO). Score de confiança visual (barra + número). Impacto (alto/médio/baixo/nenhum). Filtros por classificação e impacto. Ordenação inteligente (impacto alto primeiro).",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           12,
           4
@@ -1535,12 +1752,67 @@
         "description": "Implementar gerador de evidências XML e SPED para exibição lado a lado",
         "details": "Criar python/sped/v2/evidence/evidence_generator.py. Extrair tags XML relevantes (ICMS/ST/FCP). Extrair linhas SPED relevantes (C100/C170/C190/E110/E111). Explicação da regra aplicada. Formatação de dados para exibição.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           12
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do evidence_generator.py",
+            "description": "Criar arquivo python/sped/v2/evidence/evidence_generator.py com estrutura básica",
+            "details": "Criar classe EvidenceGenerator com métodos para extrair evidências XML e SPED, estrutura de dados para evidências formatadas",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 15
+          },
+          {
+            "id": 2,
+            "title": "Implementar extração de tags XML relevantes",
+            "description": "Criar função que extrai tags XML relevantes: ICMS, ICMS ST, FCP, IPI, valores totais",
+            "details": "Extrair tags do XML: ICMS (CST, base cálculo, valor), ICMS ST, FCP, IPI, valores de produtos, totais. Formatar para exibição",
+            "status": "done",
+            "dependencies": [
+              "15.1"
+            ],
+            "parentTaskId": 15
+          },
+          {
+            "id": 3,
+            "title": "Implementar extração de linhas SPED relevantes",
+            "description": "Criar função que extrai linhas SPED relevantes: C100, C170, C190, E110, E111",
+            "details": "Extrair registros SPED: C100 (documento), C170 (itens), C190 (totalização), E110/E111 (apuração). Formatar para exibição",
+            "status": "done",
+            "dependencies": [
+              "15.1"
+            ],
+            "parentTaskId": 15
+          },
+          {
+            "id": 4,
+            "title": "Implementar explicação da regra aplicada",
+            "description": "Criar sistema que gera explicação da regra aplicada para cada evidência",
+            "details": "Explicar qual regra foi aplicada, por que a divergência foi detectada, contexto fiscal, referências legais",
+            "status": "done",
+            "dependencies": [
+              "15.2",
+              "15.3"
+            ],
+            "parentTaskId": 15
+          },
+          {
+            "id": 5,
+            "title": "Implementar formatação de dados para exibição lado a lado",
+            "description": "Criar formatação que permite exibição lado a lado de evidências XML e SPED",
+            "details": "Estrutura de dados que permite comparar XML vs SPED lado a lado, destacar diferenças, formatar valores monetários, incluir metadados",
+            "status": "done",
+            "dependencies": [
+              "15.4"
+            ],
+            "parentTaskId": 15
+          }
+        ]
       },
       {
         "id": 16,
@@ -1548,13 +1820,68 @@
         "description": "Criar componente de evidências lado a lado (3 abas: XML, SPED, Regra)",
         "details": "Criar componente EvidenceDrawer (Drawer/Modal). 3 abas: XML, SPED, Regra. Visualização de tags XML formatadas (syntax highlighting). Visualização de linhas SPED formatadas. Explicação da regra (texto + highlights). Antes/depois visual.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           15,
           4
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do EvidenceDrawer",
+            "description": "Criar componente EvidenceDrawer.tsx com estrutura básica de Drawer/Modal",
+            "details": "Criar componente React com Drawer/Modal, sistema de abas (XML, SPED, Regra), estado de abertura/fechamento, props para evidências",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 16
+          },
+          {
+            "id": 2,
+            "title": "Implementar aba XML com syntax highlighting",
+            "description": "Criar aba XML com visualização formatada de tags XML usando syntax highlighting",
+            "details": "Exibir tags XML formatadas, syntax highlighting, destacar campos relevantes, mostrar valores antes/depois, estrutura hierárquica",
+            "status": "done",
+            "dependencies": [
+              "16.1"
+            ],
+            "parentTaskId": 16
+          },
+          {
+            "id": 3,
+            "title": "Implementar aba SPED com formatação",
+            "description": "Criar aba SPED com visualização formatada de linhas SPED",
+            "details": "Exibir linhas SPED formatadas, destacar campos relevantes, mostrar valores antes/depois, estrutura de registros (C100, C170, C190)",
+            "status": "done",
+            "dependencies": [
+              "16.1"
+            ],
+            "parentTaskId": 16
+          },
+          {
+            "id": 4,
+            "title": "Implementar aba Regra com explicação e highlights",
+            "description": "Criar aba Regra com explicação da regra aplicada e highlights",
+            "details": "Exibir explicação da regra, destacar partes importantes, mostrar referências legais, contexto fiscal, highlights visuais",
+            "status": "done",
+            "dependencies": [
+              "16.1"
+            ],
+            "parentTaskId": 16
+          },
+          {
+            "id": 5,
+            "title": "Implementar visualização antes/depois",
+            "description": "Criar visualização comparativa antes/depois nas abas XML e SPED",
+            "details": "Mostrar valores antes e depois lado a lado, destacar diferenças, indicadores visuais de mudança, cores para valores alterados",
+            "status": "done",
+            "dependencies": [
+              "16.2",
+              "16.3"
+            ],
+            "parentTaskId": 16
+          }
+        ]
       },
       {
         "id": 17,
@@ -1562,12 +1889,78 @@
         "description": "Implementar gerador de plano de correções com antes/depois e impacto",
         "details": "Criar python/sped/v2/corrections/plan_generator.py. Lista de correções (antes/depois, regra, score, impacto). Totais por tipo de correção. Itens bloqueados (REVISAR). Impacto estimado total. JSON estruturado do plano.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           12
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do plan_generator.py",
+            "description": "Criar arquivo python/sped/v2/corrections/plan_generator.py com estrutura básica",
+            "details": "Criar classe PlanGenerator com métodos para gerar plano de correções, estrutura de dados para correções (antes/depois), sistema de impacto",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 17
+          },
+          {
+            "id": 2,
+            "title": "Implementar estrutura de correção (antes/depois, regra, score, impacto)",
+            "description": "Criar dataclass para representar uma correção com valores antes/depois, regra aplicada, score, impacto",
+            "details": "Estrutura com: valor_antes, valor_depois, regra_aplicada, score_confianca, impacto_estimado, tipo_correcao, classificacao",
+            "status": "done",
+            "dependencies": [
+              "17.1"
+            ],
+            "parentTaskId": 17
+          },
+          {
+            "id": 3,
+            "title": "Implementar cálculo de totais por tipo de correção",
+            "description": "Criar função que calcula totais agrupados por tipo de correção",
+            "details": "Agrupar correções por tipo (ICMS, ICMS ST, IPI, valores, etc.), calcular totais de impacto, contar quantidades",
+            "status": "done",
+            "dependencies": [
+              "17.2"
+            ],
+            "parentTaskId": 17
+          },
+          {
+            "id": 4,
+            "title": "Implementar identificação de itens bloqueados (REVISAR)",
+            "description": "Criar sistema que identifica itens bloqueados (classificados como REVISAR)",
+            "details": "Identificar correções classificadas como REVISAR, marcar como bloqueadas, incluir motivo do bloqueio",
+            "status": "done",
+            "dependencies": [
+              "17.2"
+            ],
+            "parentTaskId": 17
+          },
+          {
+            "id": 5,
+            "title": "Implementar cálculo de impacto estimado total",
+            "description": "Criar função que calcula impacto estimado total do plano de correções",
+            "details": "Somar impactos de todas as correções, calcular impacto por tipo, impacto total em valores, impacto em quantidade de itens",
+            "status": "done",
+            "dependencies": [
+              "17.3"
+            ],
+            "parentTaskId": 17
+          },
+          {
+            "id": 6,
+            "title": "Implementar geração de JSON estruturado do plano",
+            "description": "Criar função que gera JSON estruturado completo do plano de correções",
+            "details": "JSON com: lista de correções, totais por tipo, itens bloqueados, impacto total, metadados, formato pronto para frontend",
+            "status": "done",
+            "dependencies": [
+              "17.4",
+              "17.5"
+            ],
+            "parentTaskId": 17
+          }
+        ]
       },
       {
         "id": 18,
@@ -1575,13 +1968,79 @@
         "description": "Criar tela de plano de correções com lista detalhada e perfis de execução",
         "details": "Criar componente Step5CorrectionPlan (CorrectionPlanView). Lista de correções com antes/depois. Filtros e agrupamentos. Perfis de execução (SEGURO/INTERMEDIÁRIO/AVANÇADO). Visualização de totais por tipo. Checkbox para incluir REVISAR.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           17,
           4
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do Step5CorrectionPlan",
+            "description": "Criar componente Step5CorrectionPlan.tsx com estrutura básica",
+            "details": "Criar componente React com lista de correções, estado para filtros, agrupamentos, perfis de execução, checkbox para REVISAR",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 18
+          },
+          {
+            "id": 2,
+            "title": "Implementar lista de correções com antes/depois",
+            "description": "Criar visualização de lista de correções mostrando valores antes e depois",
+            "details": "Tabela/listagem de correções, colunas: campo, valor antes, valor depois, diferença, regra, score, classificação. Destaque visual para diferenças",
+            "status": "done",
+            "dependencies": [
+              "18.1"
+            ],
+            "parentTaskId": 18
+          },
+          {
+            "id": 3,
+            "title": "Implementar filtros e agrupamentos",
+            "description": "Criar sistema de filtros e agrupamentos para correções",
+            "details": "Filtros por tipo, classificação, score. Agrupamentos por tipo de correção, por documento, por regra. Busca textual",
+            "status": "done",
+            "dependencies": [
+              "18.2"
+            ],
+            "parentTaskId": 18
+          },
+          {
+            "id": 4,
+            "title": "Implementar perfis de execução (SEGURO/INTERMEDIÁRIO/AVANÇADO)",
+            "description": "Criar sistema de perfis de execução para aplicar correções",
+            "details": "Perfil SEGURO: apenas ERRO com score alto. INTERMEDIÁRIO: ERRO + REVISAR com score médio. AVANÇADO: todas exceto LEGÍTIMO. Seleção de perfil e preview de impacto",
+            "status": "done",
+            "dependencies": [
+              "18.2"
+            ],
+            "parentTaskId": 18
+          },
+          {
+            "id": 5,
+            "title": "Implementar visualização de totais por tipo",
+            "description": "Criar painel com totais agrupados por tipo de correção",
+            "details": "Cards/painel mostrando totais: quantidade, impacto total, por tipo (ICMS, ICMS ST, IPI, etc.), estatísticas gerais",
+            "status": "done",
+            "dependencies": [
+              "18.2"
+            ],
+            "parentTaskId": 18
+          },
+          {
+            "id": 6,
+            "title": "Implementar checkbox para incluir REVISAR",
+            "description": "Criar checkbox que permite incluir/excluir correções REVISAR do plano",
+            "details": "Checkbox para incluir REVISAR, atualizar lista filtrada, atualizar totais, preview de impacto com/sem REVISAR",
+            "status": "done",
+            "dependencies": [
+              "18.3",
+              "18.4"
+            ],
+            "parentTaskId": 18
+          }
+        ]
       },
       {
         "id": 19,
@@ -1589,13 +2048,78 @@
         "description": "Criar modal de aprovação em 2 níveis com checklists e travas por risco",
         "details": "Criar componente Step6Approval (ApprovalModal). Nível 1: Aprovar plano. Nível 2: Confirmação final (checklists, trava por impacto). Simulação (modo prévia). Validações e bloqueios. Input de confirmação quando impacto alto.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           18,
           4
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do Step6Approval",
+            "description": "Criar componente Step6Approval.tsx com estrutura básica de modal de aprovação",
+            "details": "Criar componente React com modal, sistema de 2 níveis (aprovação e confirmação), estado para checklists, validações",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 19
+          },
+          {
+            "id": 2,
+            "title": "Implementar Nível 1: Aprovar plano",
+            "description": "Criar primeiro nível do modal para aprovar o plano de correções",
+            "details": "Modal mostrando resumo do plano, totais, impacto, botão para aprovar e avançar para nível 2",
+            "status": "done",
+            "dependencies": [
+              "19.1"
+            ],
+            "parentTaskId": 19
+          },
+          {
+            "id": 3,
+            "title": "Implementar Nível 2: Confirmação final com checklists",
+            "description": "Criar segundo nível com checklists de validação e confirmação final",
+            "details": "Checklists: verificar totais, confirmar perfil, revisar correções críticas. Validações antes de confirmar",
+            "status": "done",
+            "dependencies": [
+              "19.2"
+            ],
+            "parentTaskId": 19
+          },
+          {
+            "id": 4,
+            "title": "Implementar travas por risco e impacto",
+            "description": "Criar sistema de travas que bloqueia aprovação baseado em risco e impacto",
+            "details": "Travar se impacto muito alto, se há muitas correções REVISAR, se score baixo. Mostrar avisos e bloqueios",
+            "status": "done",
+            "dependencies": [
+              "19.3"
+            ],
+            "parentTaskId": 19
+          },
+          {
+            "id": 5,
+            "title": "Implementar modo simulação (prévia)",
+            "description": "Criar modo simulação que permite visualizar resultado sem aplicar",
+            "details": "Checkbox para modo simulação, preview de resultado, não aplicar correções, apenas mostrar o que seria feito",
+            "status": "done",
+            "dependencies": [
+              "19.2"
+            ],
+            "parentTaskId": 19
+          },
+          {
+            "id": 6,
+            "title": "Implementar input de confirmação para impacto alto",
+            "description": "Criar input de confirmação obrigatório quando impacto é muito alto",
+            "details": "Input de texto para confirmar (ex: digitar \"CONFIRMAR\"), validação, bloqueio até confirmação correta",
+            "status": "done",
+            "dependencies": [
+              "19.4"
+            ],
+            "parentTaskId": 19
+          }
+        ]
       },
       {
         "id": 20,
@@ -1603,12 +2127,77 @@
         "description": "Implementar aplicação de correções com guardrails e recalculação de totais",
         "details": "Criar python/sped/v2/corrections/corrector.py e guardrails.py. Aplicação de correções (C100, C170, C190). Guardrails (verificar condições antes de corrigir). Recalculação de totais (C190 quando necessário). Validação pós-correção. Geração de SPED corrigido.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           17
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do guardrails.py",
+            "description": "Criar arquivo python/sped/v2/corrections/guardrails.py com sistema de guardrails",
+            "details": "Criar classe Guardrails com métodos para verificar condições antes de aplicar correções, validações de segurança, regras de bloqueio",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 20
+          },
+          {
+            "id": 2,
+            "title": "Criar estrutura base do corrector.py",
+            "description": "Criar arquivo python/sped/v2/corrections/corrector.py com motor de correção",
+            "details": "Criar classe Corrector com métodos para aplicar correções em C100, C170, C190, integração com guardrails, sistema de backup",
+            "status": "done",
+            "dependencies": [
+              "20.1"
+            ],
+            "parentTaskId": 20
+          },
+          {
+            "id": 3,
+            "title": "Implementar aplicação de correções em C100, C170, C190",
+            "description": "Criar funções que aplicam correções nos registros SPED: C100, C170, C190",
+            "details": "Modificar valores nos registros SPED, preservar estrutura, atualizar campos específicos, manter compatibilidade com formato SPED",
+            "status": "done",
+            "dependencies": [
+              "20.2"
+            ],
+            "parentTaskId": 20
+          },
+          {
+            "id": 4,
+            "title": "Implementar recalculação de totais (C190 quando necessário)",
+            "description": "Criar sistema que recalcula totais C190 quando C170 são corrigidos",
+            "details": "Recalcular C190 baseado em C170 corrigidos, agrupar por CFOP/CST, somar valores, atualizar C190 correspondente",
+            "status": "done",
+            "dependencies": [
+              "20.3"
+            ],
+            "parentTaskId": 20
+          },
+          {
+            "id": 5,
+            "title": "Implementar validação pós-correção",
+            "description": "Criar sistema que valida o SPED após aplicação de correções",
+            "details": "Validar cadeias de totalização após correção, verificar consistência, detectar novos problemas, garantir integridade",
+            "status": "done",
+            "dependencies": [
+              "20.4"
+            ],
+            "parentTaskId": 20
+          },
+          {
+            "id": 6,
+            "title": "Implementar geração de SPED corrigido",
+            "description": "Criar função que gera arquivo SPED corrigido a partir das correções aplicadas",
+            "details": "Gerar novo arquivo SPED com correções aplicadas, preservar estrutura original, incluir metadados de correção, validar formato",
+            "status": "done",
+            "dependencies": [
+              "20.5"
+            ],
+            "parentTaskId": 20
+          }
+        ]
       },
       {
         "id": 21,
@@ -1616,12 +2205,66 @@
         "description": "Implementar sistema completo de auditoria com log antes/depois e rollback",
         "details": "Criar tabelas MySQL: sped_v2_audit_log, sped_v2_corrections. Log antes/depois (por campo). Registro de regra aplicada. Registro de usuário. Rollback por lote. Backend: endpoints de auditoria. Frontend: visualização de log.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           20
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar tabelas MySQL de auditoria",
+            "description": "Criar tabelas sped_v2_audit_log e sped_v2_corrections no MySQL",
+            "details": "Criar migration SQL com tabelas: sped_v2_audit_log (log antes/depois, regra, usuário, timestamp) e sped_v2_corrections (correções aplicadas, lote, rollback)",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 21
+          },
+          {
+            "id": 2,
+            "title": "Implementar sistema de log antes/depois",
+            "description": "Criar módulo Python que registra valores antes e depois de cada correção",
+            "details": "Criar python/sped/v2/audit/audit_logger.py com funções para registrar log antes/depois por campo, incluir metadados, timestamp, usuário",
+            "status": "done",
+            "dependencies": [
+              "21.1"
+            ],
+            "parentTaskId": 21
+          },
+          {
+            "id": 3,
+            "title": "Implementar sistema de rollback por lote",
+            "description": "Criar sistema que permite reverter correções por lote",
+            "details": "Criar python/sped/v2/audit/rollback_manager.py com funções para identificar lotes, reverter correções, restaurar valores originais",
+            "status": "done",
+            "dependencies": [
+              "21.2"
+            ],
+            "parentTaskId": 21
+          },
+          {
+            "id": 4,
+            "title": "Criar endpoints de auditoria no backend",
+            "description": "Criar endpoints TypeScript para consultar logs e realizar rollback",
+            "details": "Criar SpedV2AuditController.ts com endpoints: GET /audit/logs, GET /audit/corrections, POST /audit/rollback",
+            "status": "done",
+            "dependencies": [
+              "21.3"
+            ],
+            "parentTaskId": 21
+          },
+          {
+            "id": 5,
+            "title": "Implementar visualização de log no frontend",
+            "description": "Criar componente React para visualizar logs de auditoria",
+            "details": "Criar componente AuditLogView.tsx com tabela de logs, filtros, visualização antes/depois, botão de rollback",
+            "status": "done",
+            "dependencies": [
+              "21.4"
+            ],
+            "parentTaskId": 21
+          }
+        ]
       },
       {
         "id": 22,
@@ -1629,13 +2272,78 @@
         "description": "Criar tela de execução com feedback em tempo real e download do pacote",
         "details": "Criar componente Step7Execution (ExecutionView). Feedback em tempo real (SSE/WebSocket). Eventos: backup, correções aplicadas, itens pulados, validação, download. Log técnico (detalhes expansível). Status visual (estilo build/deploy).",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           20,
           4
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do Step7Execution",
+            "description": "Criar componente Step7Execution.tsx com estrutura básica",
+            "details": "Criar componente React com feedback em tempo real, sistema de eventos, status visual, log técnico expansível",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 22
+          },
+          {
+            "id": 2,
+            "title": "Implementar feedback em tempo real (SSE/WebSocket)",
+            "description": "Criar sistema de feedback em tempo real usando SSE ou WebSocket",
+            "details": "Conectar a SSE/WebSocket, receber eventos em tempo real, atualizar status, fallback para polling se necessário",
+            "status": "done",
+            "dependencies": [
+              "22.1"
+            ],
+            "parentTaskId": 22
+          },
+          {
+            "id": 3,
+            "title": "Implementar eventos: backup, correções, validação, download",
+            "description": "Criar handlers para diferentes tipos de eventos de execução",
+            "details": "Eventos: backup criado, correção aplicada, item pulado, validação iniciada/completa, download disponível. Exibir cada evento com ícone e mensagem",
+            "status": "done",
+            "dependencies": [
+              "22.2"
+            ],
+            "parentTaskId": 22
+          },
+          {
+            "id": 4,
+            "title": "Implementar log técnico expansível",
+            "description": "",
+            "details": "Log técnico com detalhes de cada operação, botão para expandir/recolher, formatação de mensagens, filtros por tipo de evento",
+            "status": "done",
+            "dependencies": [
+              "22.2"
+            ],
+            "parentTaskId": 22
+          },
+          {
+            "id": 5,
+            "title": "Implementar status visual (estilo build/deploy)",
+            "description": "Criar status visual similar a sistemas de build/deploy",
+            "details": "Barra de progresso, indicadores de status (running, success, error), timeline de eventos, animações",
+            "status": "done",
+            "dependencies": [
+              "22.3"
+            ],
+            "parentTaskId": 22
+          },
+          {
+            "id": 6,
+            "title": "Implementar download do pacote corrigido",
+            "description": "Criar funcionalidade de download do arquivo SPED corrigido",
+            "details": "Botão de download quando disponível, indicador de progresso, validação de arquivo, link para download",
+            "status": "done",
+            "dependencies": [
+              "22.4"
+            ],
+            "parentTaskId": 22
+          }
+        ]
       },
       {
         "id": 23,
@@ -1643,7 +2351,7 @@
         "description": "Criar componente de download do pacote completo (SPED, relatório, audit log)",
         "details": "Criar componente DownloadPackage. Downloads: SPED corrigido, Relatório (PDF/HTML/TXT), Audit log (JSON). Opcionais: diff SPED, plano de correções (JSON). Download individual e zip. Visualização de arquivos disponíveis.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           22,
           4
@@ -1657,7 +2365,7 @@
         "description": "Implementar packs por segmento: Comércio, Bebidas, Indústria, E-commerce",
         "details": "Criar python/sped/v2/packs/ com: base.py, comercio.py, bebidas.py, industria.py, ecommerce.py. Pack Comércio: regras, CFOPs típicos, tolerâncias. Pack Bebidas: ST/PMPF/MVA, CEST críticos. Pack Indústria: IPI, insumos, Bloco G. Pack E-commerce: DIFAL/FCP, interestadual. Estrutura modular e plugável.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           11
         ],
@@ -1670,7 +2378,7 @@
         "description": "Criar sistema de cadastro fiscal do cliente e seleção de packs",
         "details": "Criar tabela MySQL: sped_v2_client_profiles. Cadastro fiscal: regime, segmento, CFOPs esperados, flags (ST?, regime especial?, DIFAL?). Interface de configuração. Seleção de pack(s) por validação. Persistência e reutilização.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           24
         ],
@@ -1683,7 +2391,7 @@
         "description": "Criar tela de seleção do cliente e configuração do perfil fiscal",
         "details": "Criar componente Step1ClientProfile. Campos: Cliente (autocomplete), Competência, Segmento, Regime. Flags: Opera ST?, Regime especial?, Interestadual/DIFAL?. Validações e feedback. Integração com cadastro de clientes.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           25
@@ -1697,12 +2405,101 @@
         "description": "Criar tela de upload com validações imediatas e pré-check automático",
         "details": "Criar componente Step2FileUpload. Upload SPED (drag & drop). Upload XML (zip ou múltiplos). Pré-check automático: XML lidos, registros SPED, competências, chave NF-e. Feedback visual e validações. Resumo do lote.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do componente Step2FileUpload",
+            "description": "Criar arquivo frontend/src/components/Step2FileUpload.tsx com estrutura básica do componente React",
+            "details": "Criar componente funcional com TypeScript, props básicas, e estrutura de layout para upload de arquivos",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 27
+          },
+          {
+            "id": 2,
+            "title": "Implementar drag & drop para upload SPED",
+            "description": "Adicionar funcionalidade de drag & drop para upload de arquivo SPED com validação de tipo de arquivo",
+            "details": "Usar biblioteca react-dropzone ou implementação customizada. Validar extensão .txt ou .sped. Feedback visual durante drag.",
+            "status": "done",
+            "dependencies": [
+              "27.1"
+            ],
+            "parentTaskId": 27
+          },
+          {
+            "id": 3,
+            "title": "Implementar upload de XML (zip ou múltiplos)",
+            "description": "Criar interface para upload de XMLs, suportando arquivo ZIP ou múltiplos arquivos XML individuais",
+            "details": "Validação de extensão .xml e .zip. Extração automática de ZIP. Preview de arquivos selecionados.",
+            "status": "done",
+            "dependencies": [
+              "27.1"
+            ],
+            "parentTaskId": 27
+          },
+          {
+            "id": 4,
+            "title": "Implementar pré-check automático de XML lidos",
+            "description": "Criar função que lê e valida XMLs após upload, verificando estrutura e conteúdo básico",
+            "details": "Parser XML, validação de schema básico, contagem de XMLs válidos. Exibir erros de parsing.",
+            "status": "done",
+            "dependencies": [
+              "27.3"
+            ],
+            "parentTaskId": 27
+          },
+          {
+            "id": 5,
+            "title": "Implementar pré-check de registros SPED e competências",
+            "description": "Validar registros SPED carregados e extrair competências (mês/ano) dos arquivos",
+            "details": "Parser SPED básico, extração de registros relevantes, identificação de competências. Validação de formato.",
+            "status": "done",
+            "dependencies": [
+              "27.2"
+            ],
+            "parentTaskId": 27
+          },
+          {
+            "id": 6,
+            "title": "Implementar validação de chave NF-e",
+            "description": "Extrair e validar chaves de NF-e dos XMLs, verificando formato e duplicatas",
+            "details": "Regex para chave NF-e (44 dígitos), validação de formato, detecção de duplicatas. Lista de chaves encontradas.",
+            "status": "done",
+            "dependencies": [
+              "27.3"
+            ],
+            "parentTaskId": 27
+          },
+          {
+            "id": 7,
+            "title": "Implementar feedback visual e validações",
+            "description": "Criar interface visual com indicadores de status, mensagens de erro/sucesso, e validações em tempo real",
+            "details": "Componentes de status (loading, success, error), mensagens contextuais, validação de campos. Animações de feedback.",
+            "status": "done",
+            "dependencies": [
+              "27.1"
+            ],
+            "parentTaskId": 27
+          },
+          {
+            "id": 8,
+            "title": "Criar componente de resumo do lote",
+            "description": "Implementar painel que exibe resumo consolidado do lote após pré-check: total de XMLs, registros SPED, competências, etc.",
+            "details": "Componente SummaryPanel com estatísticas do lote. Formatação de dados, badges de status. Integração com dados do pré-check.",
+            "status": "done",
+            "dependencies": [
+              "27.4",
+              "27.5",
+              "27.6"
+            ],
+            "parentTaskId": 27
+          }
+        ]
       },
       {
         "id": 28,
@@ -1710,13 +2507,80 @@
         "description": "Criar tela de pipeline de processamento com feedback em tempo real",
         "details": "Criar componente Step3ProcessingPipeline. Pipeline visual com status e contadores. Painel-resumo no topo (sempre visível). Mensagens contextuais. Progresso em tempo real (SSE/WebSocket). Integração com backend.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           3
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Criar estrutura base do componente Step3ProcessingPipeline",
+            "description": "Criar arquivo frontend/src/components/sped/v2/Step3ProcessingPipeline.tsx com estrutura básica",
+            "details": "Componente React + TypeScript, props para receber dados do pipeline, estrutura de layout com painel de resumo fixo no topo",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 28
+          },
+          {
+            "id": 2,
+            "title": "Implementar pipeline visual com status e contadores",
+            "description": "Criar visualização do pipeline com indicadores de status e contadores de progresso para cada etapa",
+            "details": "Exibir cada etapa do pipeline com status (pending/running/completed/error), contadores de itens processados, barras de progresso individuais",
+            "status": "done",
+            "dependencies": [
+              "28.1"
+            ],
+            "parentTaskId": 28
+          },
+          {
+            "id": 3,
+            "title": "Implementar painel de resumo fixo no topo",
+            "description": "Criar painel de resumo que fica sempre visível no topo da tela durante o processamento",
+            "details": "Painel sticky/fixed com estatísticas principais: total processado, sucessos, erros, tempo decorrido. Sempre visível mesmo ao rolar a página",
+            "status": "done",
+            "dependencies": [
+              "28.1"
+            ],
+            "parentTaskId": 28
+          },
+          {
+            "id": 4,
+            "title": "Implementar mensagens contextuais",
+            "description": "Adicionar sistema de mensagens contextuais que aparecem durante o processamento",
+            "details": "Mensagens de status, avisos, erros. Sistema de notificações toast ou mensagens inline. Mensagens contextuais por etapa",
+            "status": "done",
+            "dependencies": [
+              "28.1"
+            ],
+            "parentTaskId": 28
+          },
+          {
+            "id": 5,
+            "title": "Implementar progresso em tempo real via SSE/WebSocket",
+            "description": "Integrar Server-Sent Events ou WebSocket para receber atualizações de progresso em tempo real",
+            "details": "Conexão SSE/WebSocket com backend, atualização automática do estado do pipeline, reconexão automática em caso de queda",
+            "status": "done",
+            "dependencies": [
+              "28.2"
+            ],
+            "parentTaskId": 28
+          },
+          {
+            "id": 6,
+            "title": "Integrar componente com backend e SpedValidacaoV2",
+            "description": "Integrar Step3ProcessingPipeline com a página SpedValidacaoV2 e serviços do backend",
+            "details": "Conectar com SpedV2Service, passar dados do pipeline, integrar com polling de status existente ou substituir por SSE",
+            "status": "done",
+            "dependencies": [
+              "28.3",
+              "28.4",
+              "28.5"
+            ],
+            "parentTaskId": 28
+          }
+        ]
       },
       {
         "id": 29,
@@ -1724,7 +2588,7 @@
         "description": "Criar tela de resultados com cards de divergências e filtros avançados",
         "details": "Criar componente Step4ResultsView. Cards de divergência (cabeçalho, corpo, rodapé). Filtros essenciais (sidebar): classificação, impacto, não conciliado, CFOP/CST, ST, ajustes. Ordenação inteligente. Busca livre. Integração com evidências.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           14,
           16,
@@ -1739,7 +2603,7 @@
         "description": "Criar dashboard para coordenadores gerenciarem múltiplos lotes",
         "details": "Criar componente OperationsDashboard. Fila de processamento (tabela). Métricas gerais (cards). Histórico recente (tabela). Top erros / Top clientes (gráficos/tabelas). Funcionalidades: reprocessar, download em lote, export métricas. Integração com backend.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           3
@@ -1753,7 +2617,7 @@
         "description": "Implementar melhorias finais: performance, UX, documentação, testes",
         "details": "Otimizações de performance. Polimento de UX (acessibilidade, responsividade). Documentação (usuário + técnico). Testes (integração, E2E). Validação de edge cases. Feedback de usuários. Preparação para produção.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           23,
           26,
@@ -1917,12 +2781,113 @@
         "description": "Integrar sistema híbrido no gerador de regras com consulta prévia de documentos legais",
         "details": "Antes de gerar regra: consulta RAG (contexto semântico) + consulta banco (regras estruturadas). Combinação de resultados: priorizar regras estruturadas, complementar com contexto RAG. Geração de regra com referências legais: documento, versão, artigo, seção. Validação de vigência do período. Sistema de confiança: score baseado em match RAG + existência de regra estruturada. Integração com validators.py existente. Modificar python/sped/v2/validation/ para usar sistema de conhecimento.",
         "testStrategy": "Testes de integração, geração de regras com referências, validação de vigência, score de confiança",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           37
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Analisar estrutura atual do gerador de regras e validators.py",
+            "description": "Examinar código existente para entender como as regras são geradas atualmente e onde integrar o sistema RAG + banco",
+            "details": "Ler python/sped/v2/validation/validators.py, identificar pontos de integração, mapear fluxo atual de geração de regras",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 38
+          },
+          {
+            "id": 2,
+            "title": "Criar serviço de consulta híbrida RAG + Banco",
+            "description": "Criar módulo que combina consulta RAG (semântica) com consulta de regras estruturadas do banco",
+            "details": "Criar python/sped/v2/knowledge/hybrid_query.py com função que consulta ambos sistemas e combina resultados priorizando regras estruturadas",
+            "status": "done",
+            "dependencies": [
+              "38.1"
+            ],
+            "parentTaskId": 38
+          },
+          {
+            "id": 3,
+            "title": "Implementar validação de vigência do período",
+            "description": "Criar função que valida se regra/documento está vigente no período especificado",
+            "details": "Verificar vigencia_inicio <= periodo <= vigencia_fim. Retornar erro se fora de vigência. Aplicar em consultas e geração",
+            "status": "done",
+            "dependencies": [
+              "38.2"
+            ],
+            "parentTaskId": 38
+          },
+          {
+            "id": 4,
+            "title": "Modificar validators.py para usar sistema de conhecimento",
+            "description": "Atualizar validators.py para integrar consultas ao sistema de conhecimento híbrido",
+            "details": "Modificar python/sped/v2/validation/validators.py para usar hybrid_query ao invés de consultas diretas. Manter compatibilidade com código existente",
+            "status": "done",
+            "dependencies": [
+              "38.3",
+              "38.4",
+              "38.5"
+            ],
+            "parentTaskId": 38
+          },
+          {
+            "id": 5,
+            "title": "Criar testes de integração e validação",
+            "description": "Criar testes para validar integração RAG + banco, geração de regras com referências, validação de vigência e score de confiança",
+            "details": "Testes unitários para cada componente, testes de integração end-to-end, validação de scores, testes de vigência",
+            "status": "done",
+            "dependencies": [
+              "38.6",
+              "38.7"
+            ],
+            "parentTaskId": 38
+          },
+          {
+            "id": 6,
+            "title": "Criar serviço de consulta híbrida RAG + Banco",
+            "description": "Criar módulo que combina consulta RAG (semântica) com consulta de regras estruturadas do banco",
+            "details": "Criar python/sped/v2/knowledge/hybrid_query.py com função que consulta ambos sistemas e combina resultados priorizando regras estruturadas",
+            "status": "done",
+            "dependencies": [
+              "38.1"
+            ],
+            "parentTaskId": 38
+          },
+          {
+            "id": 7,
+            "title": "Implementar sistema de score de confiança",
+            "description": "Criar função que calcula score de confiança baseado em match RAG + existência de regra estruturada",
+            "details": "Score = (match RAG * peso) + (regra estruturada * peso). Retornar score entre 0-1 com explicação dos fatores",
+            "status": "done",
+            "dependencies": [
+              "38.2"
+            ],
+            "parentTaskId": 38
+          },
+          {
+            "id": 8,
+            "title": "Integrar consulta híbrida no gerador de regras",
+            "description": "Modificar gerador de regras para usar consulta híbrida antes de gerar regra, incluindo contexto RAG e regras estruturadas",
+            "details": "Modificar função de geração de regras para chamar hybrid_query, passar contexto combinado para LLM, incluir referências legais",
+            "status": "done",
+            "dependencies": [
+              "38.2"
+            ],
+            "parentTaskId": 38
+          },
+          {
+            "id": 9,
+            "title": "Implementar geração de regra com referências legais",
+            "description": "Modificar saída do gerador para incluir referências legais: documento, versão, artigo, seção",
+            "details": "Estrutura de referência: {documento, versao, artigo, secao, vigencia_inicio, vigencia_fim}. Incluir no retorno da regra gerada",
+            "status": "done",
+            "dependencies": [
+              "38.4"
+            ],
+            "parentTaskId": 38
+          }
+        ]
       },
       {
         "id": 39,
@@ -1930,7 +2895,7 @@
         "description": "Implementar sistema robusto de versionamento por período com histórico e migração automática",
         "details": "Validação de vigência: checar período (mês/ano) contra vigencia_inicio/vigencia_fim dos documentos. Sistema de histórico: manter versões antigas quando documento é atualizado. Migração automática: quando novo documento é ingerido, marcar versão anterior como vigencia_fim. Consulta inteligente: retornar documento correto para o período consultado. Interface para gerenciar versões e vigências. Criar python/sped/v2/knowledge/versioning.py.",
         "testStrategy": "Testes de validação de vigência, histórico de versões, migração automática, consulta por período",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           32
         ],
@@ -1943,7 +2908,7 @@
         "description": "Criar script para ingestão inicial de todos os documentos da pasta SPED 2.0/DOCS",
         "details": "Script Python: percorrer pasta DOCS, identificar tipo de documento (Guia Prático, Ato COTEPE, Convênio, Portaria, NT), extrair versão e vigência do nome/metadados, processar cada documento (parser + chunking + extração de regras), salvar no banco, indexar no RAG. Log de progresso e erros. Validação de duplicatas (hash). Relatório de ingestão. Criar python/sped/v2/knowledge/ingest_docs.py.",
         "testStrategy": "Testes de ingestão em lote, identificação de tipo, extração de versão, validação de duplicatas",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           33,
           34,
@@ -1958,7 +2923,7 @@
         "description": "Criar interface frontend para consultar documentos legais com busca semântica e visualização",
         "details": "Componente KnowledgeBaseView: busca semântica (input de texto), filtros (período, tipo de documento, categoria), resultados: documentos relevantes, chunks destacados, regras estruturadas, referências legais. Visualização de documentos: PDF viewer ou texto formatado. Exibição de referências: links para artigos, seções. Integração com API de consulta. Interface para administradores gerenciar documentos. Criar frontend/src/pages/SpedKnowledgeBase.tsx.",
         "testStrategy": "Testes de busca semântica, filtros, visualização de documentos, exibição de referências",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           37,
           4
@@ -1972,7 +2937,7 @@
         "description": "Integrar referências legais nas regras geradas com validação de vigência e atualização automática",
         "details": "Cada regra deve incluir: lista de referências (documento, versão, artigo, seção), link para documento original, contexto extraído (chunk relevante). Exibição no frontend: badge de referência, tooltip com detalhes, link para visualizar documento. Validação: checar se referência ainda está vigente no período. Sistema de atualização: quando documento muda, atualizar referências nas regras afetadas. Integração com EvidenceDrawer e regras geradas.",
         "testStrategy": "Testes de inclusão de referências, validação de vigência, atualização automática, exibição no frontend",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           38,
           16
@@ -1986,7 +2951,7 @@
         "description": "Implementar otimizações de performance com cache de embeddings e consultas",
         "details": "Cache de embeddings: evitar regenerar embeddings para documentos já processados. Cache de consultas: cachear resultados de queries RAG frequentes (TTL configurável). Indexação incremental: atualizar apenas chunks novos quando documento é atualizado. Batch processing: processar múltiplos documentos em paralelo. Monitoramento: métricas de performance (tempo de consulta, taxa de cache hit). Limpeza automática de cache antigo. Criar python/sped/v2/knowledge/cache_manager.py.",
         "testStrategy": "Testes de cache de embeddings, cache de consultas, indexação incremental, performance",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           35
         ],
@@ -1996,7 +2961,7 @@
     ],
     "metadata": {
       "created": "2026-01-12T20:51:50.054Z",
-      "updated": "2026-01-13T19:32:13.207Z",
+      "updated": "2026-01-19T15:19:50.917Z",
       "description": "Validação SPED v2.0 - Sistema Robusto de Conferência XML × SPED com arquitetura em 3 camadas, matriz de legitimação e UX profissional"
     }
   }

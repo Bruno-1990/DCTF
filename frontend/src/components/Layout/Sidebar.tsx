@@ -28,6 +28,7 @@ const navigation = [
   { name: 'SCI - Gerador SQL', href: '/sci/gerador-sql', icon: CodeBracketIcon },
   { name: 'SPED Validação', href: '/sped', icon: DocumentCheckIcon },
   { name: 'SPED Validação v2.0', href: '/sped/v2', icon: DocumentCheckIcon },
+  { name: 'Base de Conhecimento SPED', href: '/sped/knowledge', icon: DocumentCheckIcon },
   { name: 'IRPF 2026', href: '/irpf-2026', icon: CurrencyDollarIcon },
 ];
 
@@ -49,8 +50,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, pinned = false, onTogglePin,
   };
 
   return (
-    <aside className="w-64 bg-white">
-      <div className="p-5">
+    <aside className="w-64 bg-white flex flex-col">
+      <div className="p-5 flex-shrink-0">
         <div className="mb-5 flex items-center justify-between">
           <h2 
             className="text-base font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors duration-200 select-none flex-1"
@@ -78,7 +79,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, pinned = false, onTogglePin,
             </button>
           )}
         </div>
-        <nav className="space-y-1.5">
+      </div>
+      {/* Container de navegação com scroll limitado a 8 itens */}
+      <div className="flex-1 overflow-hidden px-5 pb-5 min-h-0 group/nav-container">
+        <nav className="space-y-1.5 overflow-y-auto custom-scrollbar" style={{ 
+          maxHeight: '22.5rem' // Altura para exibir exatamente 8 itens (8 * 2.5rem + 7 * 0.375rem ≈ 22.625rem)
+        }}>
           {navigation.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -171,6 +177,43 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, pinned = false, onTogglePin,
           })}
         </nav>
       </div>
+      <style>{`
+        .custom-scrollbar {
+          scrollbar-width: none; /* Firefox - esconder por padrão */
+          scrollbar-color: transparent transparent;
+        }
+        .group\/nav-container:hover .custom-scrollbar {
+          scrollbar-width: thin; /* Firefox - mostrar no hover */
+          scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 0px; /* Chrome/Safari - esconder por padrão */
+          transition: width 0.3s ease;
+        }
+        .group\/nav-container:hover .custom-scrollbar::-webkit-scrollbar {
+          width: 6px; /* Chrome/Safari - mostrar no hover */
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: transparent; /* Esconder por padrão */
+          border-radius: 10px;
+          transition: background 0.3s ease;
+        }
+        .group\/nav-container:hover .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: linear-gradient(180deg, rgba(59, 130, 246, 0.3) 0%, rgba(99, 102, 241, 0.3) 100%);
+        }
+        .group\/nav-container:hover .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(180deg, rgba(59, 130, 246, 0.6) 0%, rgba(99, 102, 241, 0.6) 100%);
+        }
+        .custom-scrollbar {
+          /* Suavizar a rolagem */
+          scroll-behavior: smooth;
+          -webkit-overflow-scrolling: touch;
+        }
+      `}</style>
     </aside>
   );
 };

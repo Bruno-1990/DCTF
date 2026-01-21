@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { geradorSQLService } from '../services/geradorSQL';
 import { useToast } from '../hooks/useToast';
+import { ArrowPathIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
 
 interface ObjetoEncontrado {
   object: string;
@@ -21,6 +22,9 @@ interface ObjetoEncontrado {
 
 const GeradorSQL: React.FC = () => {
   const { success, error: showError } = useToast();
+  const [abaAtiva, setAbaAtiva] = useState<'catalogo' | 'sql-direto'>('catalogo');
+  
+  // Estados para busca no catálogo
   const [busca, setBusca] = useState('');
   const [area, setArea] = useState('');
   const [tipo, setTipo] = useState<'VIEW' | 'TABLE' | ''>('');
@@ -33,17 +37,14 @@ const GeradorSQL: React.FC = () => {
   const [resultadosSQL, setResultadosSQL] = useState<any[]>([]);
   const [colunasSQL, setColunasSQL] = useState<string[]>([]);
   const [rowCountSQL, setRowCountSQL] = useState(0);
-  const [filtrosAbertos, setFiltrosAbertos] = useState<{ [key: string]: boolean }>({});
-  const [filtrosPorObjeto, setFiltrosPorObjeto] = useState<{ [key: string]: { codEmpresa?: string; dataInicio?: string; dataFim?: string } }>({});
   
-  // Estados para consulta personalizada de centro de custo
-  const [abaAtiva, setAbaAtiva] = useState<'busca' | 'consulta-personalizada'>('busca');
-  const [codCC, setCodCC] = useState('');
-  const [codCol, setCodCol] = useState('');
-  const [nomeCol, setNomeCol] = useState('');
-  const [viewEspecifica, setViewEspecifica] = useState('');
-  const [resultadosConsultaPersonalizada, setResultadosConsultaPersonalizada] = useState<any[]>([]);
-  const [loadingConsultaPersonalizada, setLoadingConsultaPersonalizada] = useState(false);
+  // Estados para consulta SQL direta
+  const [sqlDireto, setSqlDireto] = useState('');
+  const [loadingSQLDireto, setLoadingSQLDireto] = useState(false);
+  const [resultadosSQLDireto, setResultadosSQLDireto] = useState<any[]>([]);
+  const [colunasSQLDireto, setColunasSQLDireto] = useState<string[]>([]);
+  const [rowCountSQLDireto, setRowCountSQLDireto] = useState(0);
+  const [copiadoSQL, setCopiadoSQL] = useState(false);
 
   const areasDisponiveis = [
     { value: '', label: 'Todas' },
@@ -70,8 +71,9 @@ const GeradorSQL: React.FC = () => {
     setResultados([]);
     setSqlGerado('');
     setObjetoSelecionado(null);
-    setFiltrosAbertos({});
-    setFiltrosPorObjeto({});
+    setResultadosSQL([]);
+    setColunasSQL([]);
+    setRowCountSQL(0);
 
     try {
       const jsonBusca = {
@@ -99,80 +101,22 @@ const GeradorSQL: React.FC = () => {
   const handleGerarSQL = async (objeto: ObjetoEncontrado) => {
     try {
       setLoading(true);
-      let sql = await geradorSQLService.gerarSQL({
+      const sql = await geradorSQLService.gerarSQL({
         objeto: objeto.object,
         tipo: objeto.type,
         colunas: objeto.metadata.colunas || [],
       });
       
-      // Aplicar filtros se existirem para este objeto
-      sql = aplicarFiltrosAoSQL(sql, objeto.object);
-      
       setSqlGerado(sql);
       setObjetoSelecionado(objeto);
+      setResultadosSQL([]);
+      setColunasSQL([]);
+      setRowCountSQL(0);
       success('SQL gerado com sucesso!');
     } catch (err: any) {
       showError(err.message || 'Erro ao gerar SQL');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleConsultaPersonalizada = async () => {
-    try {
-      setLoadingConsultaPersonalizada(true);
-      const resultado = await geradorSQLService.consultaCentroCusto({
-        cod_cc: codCC || undefined,
-        cod_col: codCol || undefined,
-        nome_col: nomeCol || undefined,
-        view: viewEspecifica || undefined,
-      });
-      
-      setResultadosConsultaPersonalizada(resultado.resultados || []);
-      success(`Consulta realizada com sucesso! ${resultado.total_views} view(s) consultada(s).`);
-    } catch (err: any) {
-      showError(err.message || 'Erro ao realizar consulta personalizada');
-    } finally {
-      setLoadingConsultaPersonalizada(false);
-    }
-  };
-
-  const exportarResultados = () => {
-    // Exportar apenas os nomes dos objetos retornados na busca
-    if (!resultados || resultados.length === 0) {
-      showError('Nenhum resultado para exportar');
-      return;
-    }
-
-    try {
-      // Criar conteúdo do arquivo TXT - apenas os nomes dos objetos
-      let conteudo = '';
-      
-      // Exportar apenas os nomes: VIEW ou TABLE
-      resultados.forEach((obj) => {
-        conteudo += obj.object + '\n';
-      });
-      
-      // Criar blob e fazer download
-      const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      // Nome do arquivo com timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      const nomeArquivo = `objetos_encontrados_${timestamp}.txt`;
-      
-      link.download = nomeArquivo;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      success(`Arquivo ${nomeArquivo} exportado com sucesso! (${resultados.length} objeto(s))`);
-    } catch (err: any) {
-      console.error('Erro ao exportar resultados:', err);
-      showError('Erro ao exportar resultados. Tente novamente.');
     }
   };
 
@@ -183,17 +127,18 @@ const GeradorSQL: React.FC = () => {
     }
 
     try {
-      // Tentar usar a API moderna do Clipboard
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(sqlGerado);
+        setCopiadoSQL(true);
+        setTimeout(() => setCopiadoSQL(false), 2000);
         success('SQL copiado para a área de transferência!');
       } else {
-        // Fallback para método antigo (compatibilidade)
         const textArea = document.createElement('textarea');
         textArea.value = sqlGerado;
         textArea.style.position = 'fixed';
         textArea.style.left = '-999999px';
         textArea.style.top = '-999999px';
+        textArea.style.opacity = '0';
         document.body.appendChild(textArea);
         textArea.focus();
         textArea.select();
@@ -201,6 +146,8 @@ const GeradorSQL: React.FC = () => {
         try {
           const successful = document.execCommand('copy');
           if (successful) {
+            setCopiadoSQL(true);
+            setTimeout(() => setCopiadoSQL(false), 2000);
             success('SQL copiado para a área de transferência!');
           } else {
             showError('Não foi possível copiar o SQL. Tente selecionar e copiar manualmente.');
@@ -208,290 +155,16 @@ const GeradorSQL: React.FC = () => {
         } catch (err) {
           showError('Erro ao copiar SQL. Tente selecionar e copiar manualmente.');
         } finally {
-          document.body.removeChild(textArea);
+          // Verificar se o elemento ainda existe antes de remover
+          if (textArea && textArea.parentNode) {
+            textArea.parentNode.removeChild(textArea);
+          }
         }
       }
     } catch (err: any) {
       console.error('Erro ao copiar SQL:', err);
       showError('Erro ao copiar SQL. Tente selecionar e copiar manualmente.');
     }
-  };
-
-  const toggleFiltros = (objetoNome: string) => {
-    setFiltrosAbertos(prev => ({
-      ...prev,
-      [objetoNome]: !prev[objetoNome]
-    }));
-  };
-
-  const atualizarFiltro = (objetoNome: string, campo: 'codEmpresa' | 'dataInicio' | 'dataFim', valor: string) => {
-    setFiltrosPorObjeto(prev => ({
-      ...prev,
-      [objetoNome]: {
-        ...prev[objetoNome],
-        [campo]: valor
-      }
-    }));
-  };
-
-  const removerFiltros = (objetoNome: string) => {
-    setFiltrosPorObjeto(prev => {
-      const novo = { ...prev };
-      delete novo[objetoNome];
-      return novo;
-    });
-    setFiltrosAbertos(prev => ({
-      ...prev,
-      [objetoNome]: false
-    }));
-  };
-
-  const aplicarFiltrosAoSQL = (sql: string, objetoNome: string): string => {
-    const filtrosObj = filtrosPorObjeto[objetoNome];
-    if (!filtrosObj) {
-      return sql;
-    }
-
-    const condicoes: string[] = [];
-
-    // Obter colunas do objeto selecionado para identificar campos corretos
-    const colunasDisponiveis = objetoSelecionado?.metadata?.colunas || [];
-    const nomesColunas = colunasDisponiveis.map((c: any) => c.nome.toUpperCase());
-    
-    // Também verificar no SQL SELECT para garantir que o campo existe
-    const sqlUpper = sql.toUpperCase();
-    const selectMatch = sql.match(/SELECT\s+(.*?)\s+FROM/i);
-    let camposNoSelect: string[] = [];
-    
-    if (selectMatch) {
-      const selectPart = selectMatch[1];
-      // Se for *, não podemos verificar campos específicos
-      if (selectPart.trim() === '*') {
-        // Se for *, usar apenas as colunas do metadata
-        camposNoSelect = nomesColunas;
-      } else {
-        // Extrair nomes das colunas do SELECT
-        camposNoSelect = selectPart
-          .split(',')
-          .map(c => {
-            // Remover aliases (AS alias) e pegar apenas o nome da coluna
-            const coluna = c.trim().toUpperCase();
-            // Pegar a primeira palavra (nome da coluna antes de espaço ou AS)
-            return coluna.split(/\s+(AS\s+)?/)[0];
-          })
-          .filter(c => c.length > 0);
-      }
-    }
-
-    // Cod Empresa - procurar campo de empresa nas colunas E no SELECT
-    if (filtrosObj.codEmpresa && filtrosObj.codEmpresa.trim()) {
-      const camposEmpresa = ['BDCODEMP', 'CODEMP', 'CODEMPRESA', 'CODEMPREGADO', 'CODEMPRESASALARIO'];
-      const campoEmpresa = camposEmpresa.find(campo => {
-        const campoUpper = campo.toUpperCase();
-        // Verificar se existe nas colunas E no SELECT
-        return nomesColunas.includes(campoUpper) && camposNoSelect.includes(campoUpper);
-      });
-      
-      // Só adiciona filtro se o campo realmente existir nas colunas E no SELECT
-      if (campoEmpresa) {
-        condicoes.push(`${campoEmpresa} = ${filtrosObj.codEmpresa.trim()}`);
-      }
-      // Se não encontrou campo de empresa, não adiciona filtro (evita erro)
-    }
-
-    // Data Inicio - procurar campo de data nas colunas E no SELECT
-    if (filtrosObj.dataInicio && filtrosObj.dataInicio.trim()) {
-      const camposData = ['DATAINICIO', 'BDDATAADMCOL', 'BDDATA', 'DATA', 'DTINICIO', 'DTINICIAL', 'DATAINICIAL'];
-      const campoData = camposData.find(campo => {
-        const campoUpper = campo.toUpperCase();
-        // Verificar se existe nas colunas E no SELECT
-        return nomesColunas.includes(campoUpper) && camposNoSelect.includes(campoUpper);
-      });
-      
-      // Só adiciona filtro se o campo realmente existir nas colunas E no SELECT
-      if (campoData) {
-        condicoes.push(`${campoData} >= '${filtrosObj.dataInicio.trim()}'`);
-      }
-      // Se não encontrou campo de data, não adiciona filtro (evita erro)
-    }
-
-    // Data Fim - usar o mesmo campo de data encontrado para início
-    if (filtrosObj.dataFim && filtrosObj.dataFim.trim()) {
-      // Primeiro, verificar se já encontramos um campo de data para início
-      const camposDataInicio = ['DATAINICIO', 'BDDATAADMCOL', 'BDDATA', 'DATA', 'DTINICIO', 'DTINICIAL', 'DATAINICIAL'];
-      const campoDataInicio = camposDataInicio.find(campo => {
-        const campoUpper = campo.toUpperCase();
-        return nomesColunas.includes(campoUpper) && camposNoSelect.includes(campoUpper);
-      });
-      
-      // Se encontrou campo de data início, usar o mesmo para fim
-      if (campoDataInicio) {
-        condicoes.push(`${campoDataInicio} <= '${filtrosObj.dataFim.trim()}'`);
-      } else {
-        // Se não encontrou, tentar campos específicos de data fim
-        const camposDataFim = ['DATAFIM', 'DTFIM', 'DTFINAL', 'DATAINICIO', 'BDDATAADMCOL', 'BDDATA', 'DATA'];
-        const campoDataFim = camposDataFim.find(campo => {
-          const campoUpper = campo.toUpperCase();
-          return nomesColunas.includes(campoUpper) && camposNoSelect.includes(campoUpper);
-        });
-        
-        if (campoDataFim) {
-          condicoes.push(`${campoDataFim} <= '${filtrosObj.dataFim.trim()}'`);
-        }
-      }
-      // Se não encontrou campo de data, não adiciona filtro (evita erro)
-    }
-
-    if (condicoes.length === 0) {
-      return sql;
-    }
-
-    const whereClause = condicoes.join(' AND ');
-
-    if (sqlUpper.includes('WHERE')) {
-      const whereRegex = /WHERE\s+/i;
-      const whereMatch = sql.match(whereRegex);
-      
-      if (whereMatch) {
-        const whereIndex = whereMatch.index! + whereMatch[0].length;
-        const afterWhere = sql.substring(whereIndex).trim();
-        
-        if (afterWhere && !afterWhere.toUpperCase().trim().startsWith('1=1')) {
-          return sql.substring(0, whereIndex) + `${whereClause} AND ${afterWhere}`;
-        } else {
-          return sql.replace(/WHERE\s+1\s*=\s*1/i, `WHERE ${whereClause}`)
-                   .replace(/WHERE\s*$/i, `WHERE ${whereClause}`);
-        }
-      }
-    }
-    
-    const orderByIndex = sqlUpper.indexOf('ORDER BY');
-    const limitIndex = sqlUpper.indexOf('LIMIT');
-    
-    let insertPosition = sql.length;
-    if (orderByIndex !== -1) {
-      insertPosition = orderByIndex;
-    } else if (limitIndex !== -1) {
-      insertPosition = limitIndex;
-    }
-    
-    const beforeWhere = sql.substring(0, insertPosition).trim();
-    const afterWhere = sql.substring(insertPosition).trim();
-    
-    return `${beforeWhere} WHERE ${whereClause}${afterWhere ? ' ' + afterWhere : ''}`.trim();
-  };
-
-  const aplicarFiltrosAoSQLTexto = (sql: string, filtrosTexto: string): string => {
-    if (!filtrosTexto.trim()) {
-      return sql;
-    }
-
-    // Parse dos filtros - espera formato: campo=valor ou campo operador valor
-    // Exemplos: CNPJ=12345678000190, BDCODEMP=1, BDDATAADMCOL>='2024-01-01'
-    const linhasFiltro = filtrosTexto
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0 && !line.startsWith('--'));
-
-    if (linhasFiltro.length === 0) {
-      return sql;
-    }
-
-    // Construir cláusula WHERE
-    const condicoes: string[] = [];
-
-    for (const linha of linhasFiltro) {
-      // Suporta: campo=valor, campo>=valor, campo<=valor, campo>valor, campo<valor, campo!=valor, campo LIKE valor
-      // Também suporta condições SQL completas (para usuários avançados)
-      
-      // Se já é uma condição SQL completa (contém AND, OR, etc), usar diretamente
-      if (linha.toUpperCase().includes(' AND ') || linha.toUpperCase().includes(' OR ') || linha.toUpperCase().includes('(')) {
-        condicoes.push(linha);
-        continue;
-      }
-
-      // Tentar match com operadores: =, >=, <=, >, <, !=, LIKE, IN
-      const match = linha.match(/^(\w+)\s*(=|>=|<=|>|<|!=|LIKE|IN)\s*(.+)$/i);
-      
-      if (match) {
-        const [, campo, operador, valor] = match;
-        let valorFormatado = valor.trim();
-        
-        // Se não tem aspas e não é número, adicionar aspas simples
-        // Exceto para IN que pode ter lista entre parênteses
-        if (operador.toUpperCase() === 'IN') {
-          // IN já deve ter parênteses
-          if (!valorFormatado.startsWith('(')) {
-            valorFormatado = `(${valorFormatado})`;
-          }
-        } else if (!valorFormatado.match(/^['"].*['"]$/) && !valorFormatado.match(/^\d+(\.\d+)?$/) && !valorFormatado.toUpperCase().startsWith('(')) {
-          // Adicionar aspas simples para strings
-          valorFormatado = `'${valorFormatado.replace(/'/g, "''")}'`;
-        }
-        
-        condicoes.push(`${campo} ${operador} ${valorFormatado}`);
-      } else if (linha.includes('=')) {
-        // Se não matchou o padrão, tentar como campo=valor simples
-        const [campo, ...valorParts] = linha.split('=');
-        const valor = valorParts.join('=').trim();
-        let valorFormatado = valor;
-        
-        // Se valor já tem aspas ou é número, usar como está
-        if (!valor.match(/^['"].*['"]$/) && !valor.match(/^\d+(\.\d+)?$/)) {
-          valorFormatado = `'${valor.replace(/'/g, "''")}'`;
-        }
-        
-        condicoes.push(`${campo.trim()} = ${valorFormatado}`);
-      } else {
-        // Se não tem = e não matchou padrão, adicionar como condição direta (para casos avançados)
-        condicoes.push(linha);
-      }
-    }
-
-    if (condicoes.length === 0) {
-      return sql;
-    }
-
-    // Adicionar condições ao WHERE
-    const sqlUpper = sql.toUpperCase();
-    const whereClause = condicoes.join(' AND ');
-
-    if (sqlUpper.includes('WHERE')) {
-      // Se já tem WHERE, adicionar AND
-      const whereRegex = /WHERE\s+/i;
-      const whereMatch = sql.match(whereRegex);
-      
-      if (whereMatch) {
-        const whereIndex = whereMatch.index! + whereMatch[0].length;
-        const afterWhere = sql.substring(whereIndex).trim();
-        
-        // Verificar se já tem condições após WHERE
-        if (afterWhere && !afterWhere.toUpperCase().trim().startsWith('1=1')) {
-          // Adicionar AND antes das condições existentes
-          return sql.substring(0, whereIndex) + `${whereClause} AND ${afterWhere}`;
-        } else {
-          // Se tem WHERE 1=1 ou WHERE vazio, substituir
-          return sql.replace(/WHERE\s+1\s*=\s*1/i, `WHERE ${whereClause}`)
-                   .replace(/WHERE\s*$/i, `WHERE ${whereClause}`);
-        }
-      }
-    }
-    
-    // Se não tem WHERE, adicionar antes de ORDER BY ou LIMIT
-    const orderByIndex = sqlUpper.indexOf('ORDER BY');
-    const limitIndex = sqlUpper.indexOf('LIMIT');
-    
-    let insertPosition = sql.length;
-    if (orderByIndex !== -1) {
-      insertPosition = orderByIndex;
-    } else if (limitIndex !== -1) {
-      insertPosition = limitIndex;
-    }
-    
-    const beforeWhere = sql.substring(0, insertPosition).trim();
-    const afterWhere = sql.substring(insertPosition).trim();
-    
-    return `${beforeWhere} WHERE ${whereClause}${afterWhere ? ' ' + afterWhere : ''}`.trim();
   };
 
   const handleExecutarSQL = async () => {
@@ -506,11 +179,9 @@ const GeradorSQL: React.FC = () => {
     setRowCountSQL(0);
 
     try {
-      // O SQL já foi gerado com os filtros aplicados, então não precisa aplicar novamente
-      const resultado = await geradorSQLService.executarSQL(sqlGerado, 100);
+      const resultado = await geradorSQLService.executarSQL(sqlGerado, 1000);
       
       if (resultado.rows && resultado.rows.length > 0) {
-        // Usar nomes das colunas retornados pelo backend
         const colunas = resultado.columns && resultado.columns.length > 0
           ? resultado.columns
           : resultado.rows[0].map((_: any, index: number) => `Coluna ${index + 1}`);
@@ -529,6 +200,86 @@ const GeradorSQL: React.FC = () => {
     }
   };
 
+  const exportarResultados = () => {
+    if (!resultados || resultados.length === 0) {
+      showError('Nenhum resultado para exportar');
+      return;
+    }
+
+    try {
+      let conteudo = '';
+      resultados.forEach((obj) => {
+        conteudo += obj.object + '\n';
+      });
+      
+      const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const nomeArquivo = `objetos_encontrados_${timestamp}.txt`;
+      
+      link.download = nomeArquivo;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Aguardar um pouco antes de remover para garantir que o download iniciou
+      setTimeout(() => {
+        // Verificar se o elemento ainda existe antes de remover
+        if (link && link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      success(`Arquivo ${nomeArquivo} exportado com sucesso! (${resultados.length} objeto(s))`);
+    } catch (err: any) {
+      console.error('Erro ao exportar resultados:', err);
+      showError('Erro ao exportar resultados. Tente novamente.');
+    }
+  };
+
+  const handleSQLDireto = async () => {
+    if (!sqlDireto.trim()) {
+      showError('Digite uma consulta SQL');
+      return;
+    }
+
+    setLoadingSQLDireto(true);
+    setResultadosSQLDireto([]);
+    setColunasSQLDireto([]);
+    setRowCountSQLDireto(0);
+
+    try {
+      const resultado = await geradorSQLService.executarSQL(sqlDireto.trim(), 1000);
+      
+      if (resultado.rows && resultado.rows.length > 0) {
+        const colunasResultado = resultado.columns && resultado.columns.length > 0
+          ? resultado.columns
+          : resultado.rows[0].map((_: any, index: number) => `Coluna ${index + 1}`);
+        
+        setColunasSQLDireto(colunasResultado);
+        setResultadosSQLDireto(resultado.rows);
+        setRowCountSQLDireto(resultado.rowCount);
+        success(`${resultado.rowCount} registro(s) encontrado(s)!`);
+      } else {
+        showError('Nenhum resultado encontrado');
+      }
+    } catch (err: any) {
+      showError(err.message || 'Erro ao executar SQL no banco');
+    } finally {
+      setLoadingSQLDireto(false);
+    }
+  };
+
+  const handleKeyPressSQLDireto = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSQLDireto();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -536,7 +287,7 @@ const GeradorSQL: React.FC = () => {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Gerador de SQL - SCI</h1>
           <p className="mt-2 text-sm text-gray-600">
-            Busque tabelas e views no catálogo SCI e gere queries SQL automaticamente
+            Busque tabelas e views no catálogo SCI e gere queries SQL automaticamente, ou execute consultas SQL diretamente
           </p>
         </div>
 
@@ -544,9 +295,9 @@ const GeradorSQL: React.FC = () => {
         <div className="mb-6 border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
             <button
-              onClick={() => setAbaAtiva('busca')}
+              onClick={() => setAbaAtiva('catalogo')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                abaAtiva === 'busca'
+                abaAtiva === 'catalogo'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
@@ -554,166 +305,20 @@ const GeradorSQL: React.FC = () => {
               Busca no Catálogo
             </button>
             <button
-              onClick={() => setAbaAtiva('consulta-personalizada')}
+              onClick={() => setAbaAtiva('sql-direto')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                abaAtiva === 'consulta-personalizada'
+                abaAtiva === 'sql-direto'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              Consulta Personalizada - Centro de Custo
+              Consulta SQL Direta
             </button>
           </nav>
         </div>
 
-        {/* Conteúdo da Aba de Consulta Personalizada */}
-        {abaAtiva === 'consulta-personalizada' && (
-          <div className="space-y-6">
-            {/* Formulário de Consulta */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                Consulta Personalizada - Centro de Custo e Colaborador
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Código Centro de Custo
-                  </label>
-                  <input
-                    type="text"
-                    value={codCC}
-                    onChange={(e) => setCodCC(e.target.value)}
-                    placeholder="Ex: 4, 5, 16"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Código Colaborador
-                  </label>
-                  <input
-                    type="text"
-                    value={codCol}
-                    onChange={(e) => setCodCol(e.target.value)}
-                    placeholder="Ex: 147119, 147121"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nome Colaborador (busca parcial)
-                  </label>
-                  <input
-                    type="text"
-                    value={nomeCol}
-                    onChange={(e) => setNomeCol(e.target.value)}
-                    placeholder="Ex: ALESSANDRA"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    View Específica (opcional)
-                  </label>
-                  <select
-                    value={viewEspecifica}
-                    onChange={(e) => setViewEspecifica(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Todas as views</option>
-                    <option value="VW_VRH_SISQUAL_COL_CENTROCUSTO">VW_VRH_SISQUAL_COL_CENTROCUSTO</option>
-                    <option value="VW_VRH_BASE_TCUSTOM_GPS_PGTO">VW_VRH_BASE_TCUSTOM_GPS_PGTO</option>
-                    <option value="VW_VRH_BASE_TCUSTOM_GPS">VW_VRH_BASE_TCUSTOM_GPS</option>
-                    <option value="VW_TOMADORES_REF_ATU">VW_TOMADORES_REF_ATU</option>
-                    <option value="VW_VRHF_EMP_TPROVISAOFERIAS_CC">VW_VRHF_EMP_TPROVISAOFERIAS_CC</option>
-                    <option value="VW_VRHF_EMP_TPROVISAO13_CC">VW_VRHF_EMP_TPROVISAO13_CC</option>
-                    <option value="VW_VRHF_EMP_TPREPFN_ATU">VW_VRHF_EMP_TPREPFN_ATU</option>
-                    <option value="VW_VRHF_EMP_TPREPFN">VW_VRHF_EMP_TPREPFN</option>
-                    <option value="VW_TOMADORES_REF">VW_TOMADORES_REF</option>
-                    <option value="VW_VRHF_FGTSSEFIP">VW_VRHF_FGTSSEFIP</option>
-                  </select>
-                </div>
-              </div>
-              <div className="mt-4">
-                <button
-                  onClick={handleConsultaPersonalizada}
-                  disabled={loadingConsultaPersonalizada}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loadingConsultaPersonalizada ? 'Consultando...' : 'Consultar'}
-                </button>
-              </div>
-            </div>
-
-            {/* Resultados da Consulta Personalizada */}
-            {resultadosConsultaPersonalizada.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-xl font-semibold text-gray-900">
-                    Resultados da Consulta Personalizada
-                  </h2>
-                </div>
-                <div className="p-6 space-y-6">
-                  {resultadosConsultaPersonalizada.map((resultado, idx) => (
-                    <div key={idx} className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="font-semibold text-gray-900 mb-2">
-                        {resultado.view}
-                        {resultado.erro && (
-                          <span className="ml-2 text-red-600 text-sm">(Erro: {resultado.erro})</span>
-                        )}
-                      </h3>
-                      {resultado.campos && (
-                        <div className="text-sm text-gray-600 mb-3">
-                          <p><strong>Campos encontrados:</strong></p>
-                          <ul className="list-disc list-inside ml-2">
-                            {resultado.campos.cod_cc && <li>Cód. Centro de Custo: {resultado.campos.cod_cc}</li>}
-                            {resultado.campos.desc_cc && <li>Desc. Centro de Custo: {resultado.campos.desc_cc}</li>}
-                            {resultado.campos.cod_col && <li>Cód. Colaborador: {resultado.campos.cod_col}</li>}
-                            {resultado.campos.nome_col && <li>Nome Colaborador: {resultado.campos.nome_col}</li>}
-                          </ul>
-                        </div>
-                      )}
-                      {resultado.resultados && resultado.resultados.length > 0 && (
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                {resultado.colunas?.map((col: string, colIdx: number) => (
-                                  <th key={colIdx} className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                    {col}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                              {resultado.resultados.slice(0, 20).map((row: any[], rowIdx: number) => (
-                                <tr key={rowIdx} className="hover:bg-gray-50">
-                                  {row.map((cell: any, cellIdx: number) => (
-                                    <td key={cellIdx} className="px-4 py-2 text-sm text-gray-900">
-                                      {cell || <span className="text-gray-400 italic">NULL</span>}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {resultado.total > 20 && (
-                            <p className="mt-2 text-sm text-gray-600">
-                              Mostrando 20 de {resultado.total} registros
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Conteúdo da Aba de Busca Normal */}
-        {abaAtiva === 'busca' && (
+        {/* Conteúdo da Aba de Busca no Catálogo */}
+        {abaAtiva === 'catalogo' && (
           <>
         {/* Formulário de Busca */}
         <div className="bg-white rounded-lg shadow mb-6">
@@ -814,11 +419,18 @@ const GeradorSQL: React.FC = () => {
               <button
                 onClick={handleBuscar}
                 disabled={loading || !busca.trim()}
-                className={`px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors ${
+                className={`px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center gap-2 ${
                   loading || !busca.trim() ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
-                {loading ? 'Buscando...' : 'Buscar'}
+                {loading ? (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    Buscando...
+                  </>
+                ) : (
+                  'Buscar'
+                )}
               </button>
             </div>
           </div>
@@ -885,65 +497,8 @@ const GeradorSQL: React.FC = () => {
                             {obj.metadata.colunas.length > 5 && ` (+${obj.metadata.colunas.length - 5} mais)`}
                           </p>
                         )}
-                        
-                        {/* Formulário de Filtros */}
-                        {filtrosAbertos[obj.object] && (
-                          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                            <div className="flex justify-between items-center mb-3">
-                              <h4 className="text-sm font-semibold text-gray-700">Filtros</h4>
-                              <button
-                                onClick={() => removerFiltros(obj.object)}
-                                className="text-xs text-red-600 hover:text-red-800"
-                              >
-                                Remover Filtros
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
-                                  Cód. Empresa
-                                </label>
-                                <input
-                                  type="number"
-                                  value={filtrosPorObjeto[obj.object]?.codEmpresa || ''}
-                                  onChange={(e) => atualizarFiltro(obj.object, 'codEmpresa', e.target.value)}
-                                  placeholder="Ex: 1"
-                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
-                                  Data Início
-                                </label>
-                                <input
-                                  type="date"
-                                  value={filtrosPorObjeto[obj.object]?.dataInicio || ''}
-                                  onChange={(e) => atualizarFiltro(obj.object, 'dataInicio', e.target.value)}
-                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
-                                  Data Fim
-                                </label>
-                                <input
-                                  type="date"
-                                  value={filtrosPorObjeto[obj.object]?.dataFim || ''}
-                                  onChange={(e) => atualizarFiltro(obj.object, 'dataFim', e.target.value)}
-                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        )}
                       </div>
                       <div className="flex flex-col gap-2">
-                        <button
-                          onClick={() => toggleFiltros(obj.object)}
-                          className="ml-4 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {filtrosAbertos[obj.object] ? 'Ocultar Filtros' : 'Add Filtro'}
-                        </button>
                         <button
                           onClick={() => handleGerarSQL(obj)}
                           disabled={loading}
@@ -987,11 +542,18 @@ const GeradorSQL: React.FC = () => {
                   <button
                     onClick={handleExecutarSQL}
                     disabled={executandoSQL}
-                    className={`px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                    className={`px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 ${
                       executandoSQL ? 'animate-pulse' : ''
                     }`}
                   >
-                    {executandoSQL ? 'Executando...' : 'Consultar SQL no Banco'}
+                    {executandoSQL ? (
+                      <>
+                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                        Executando...
+                      </>
+                    ) : (
+                      'Executar SQL'
+                    )}
                   </button>
                   <button
                     onClick={copiarSQL}
@@ -1006,35 +568,36 @@ const GeradorSQL: React.FC = () => {
               </div>
             </div>
             <div className="px-6 py-4">
-              {/* Mostrar filtros aplicados se houver */}
-              {objetoSelecionado && filtrosPorObjeto[objetoSelecionado.object] && (
-                <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-sm font-medium text-blue-900 mb-2">Filtros aplicados:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {filtrosPorObjeto[objetoSelecionado.object].codEmpresa && (
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                        Cód. Empresa: {filtrosPorObjeto[objetoSelecionado.object].codEmpresa}
-                      </span>
-                    )}
-                    {filtrosPorObjeto[objetoSelecionado.object].dataInicio && (
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                        Data Início: {filtrosPorObjeto[objetoSelecionado.object].dataInicio}
-                      </span>
-                    )}
-                    {filtrosPorObjeto[objetoSelecionado.object].dataFim && (
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                        Data Fim: {filtrosPorObjeto[objetoSelecionado.object].dataFim}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* SQL Gerado */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  SQL
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    SQL
+                  </label>
+                  <button
+                    onClick={copiarSQL}
+                    disabled={!sqlGerado || !sqlGerado.trim()}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                      copiadoSQL
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } ${
+                      !sqlGerado || !sqlGerado.trim() ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    title="Copiar SQL"
+                  >
+                    {copiadoSQL ? (
+                      <>
+                        <ClipboardDocumentCheckIcon className="h-4 w-4" />
+                        Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <ClipboardDocumentIcon className="h-4 w-4" />
+                        Copiar SQL
+                      </>
+                    )}
+                  </button>
+                </div>
                 <textarea
                   value={sqlGerado}
                   onChange={(e) => setSqlGerado(e.target.value)}
@@ -1060,7 +623,7 @@ const GeradorSQL: React.FC = () => {
               </div>
             </div>
             <div className="px-6 py-4 overflow-x-auto">
-              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+              <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
@@ -1095,15 +658,131 @@ const GeradorSQL: React.FC = () => {
                 </table>
               </div>
             </div>
-            {resultadosSQL.length >= 100 && (
+            {resultadosSQL.length >= 1000 && (
               <div className="px-6 py-3 bg-yellow-50 border-t border-yellow-200">
                 <p className="text-sm text-yellow-800">
-                  ⚠️ Mostrando apenas os primeiros 100 registros. Ajuste o SQL para ver mais resultados.
+                  ⚠️ Mostrando apenas os primeiros 1000 registros. Ajuste o SQL para ver mais resultados.
                 </p>
               </div>
             )}
           </div>
         )}
+          </>
+        )}
+
+        {/* Conteúdo da Aba de Consulta SQL Direta */}
+        {abaAtiva === 'sql-direto' && (
+          <>
+            {/* Formulário SQL Direto */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">Consulta SQL Direta</h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  ⚠️ Por segurança, apenas consultas SELECT são permitidas. Pressione Ctrl+Enter para executar.
+                </p>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      SQL Query
+                    </label>
+                    <textarea
+                      value={sqlDireto}
+                      onChange={(e) => setSqlDireto(e.target.value)}
+                      onKeyDown={handleKeyPressSQLDireto}
+                      placeholder="Digite sua consulta SQL aqui...&#10;Exemplo: SELECT * FROM VW_VRH_SISQUAL_COL_CENTROCUSTO LIMIT 10"
+                      className="w-full bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm h-48 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleSQLDireto}
+                      disabled={loadingSQLDireto || !sqlDireto.trim()}
+                      className={`px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center gap-2 ${
+                        loadingSQLDireto || !sqlDireto.trim() ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      {loadingSQLDireto ? (
+                        <>
+                          <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                          Executando...
+                        </>
+                      ) : (
+                        'Buscar'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Resultados SQL Direto */}
+            {resultadosSQLDireto.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-xl font-semibold text-gray-900">
+                      Resultados da Consulta
+                    </h2>
+                    <span className="text-sm text-gray-600">
+                      {rowCountSQLDireto} registro(s) encontrado(s)
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <div className="overflow-x-auto max-h-[600px] overflow-y-auto border border-gray-200 rounded-lg">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          {colunasSQLDireto.map((col, index) => (
+                            <th
+                              key={index}
+                              className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200"
+                            >
+                              {col}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {resultadosSQLDireto.map((row, rowIndex) => (
+                          <tr key={rowIndex} className="hover:bg-gray-50">
+                            {row.map((cell: any, cellIndex: number) => (
+                              <td
+                                key={cellIndex}
+                                className="px-4 py-3 whitespace-nowrap text-sm text-gray-900"
+                              >
+                                {cell === null || cell === undefined ? (
+                                  <span className="text-gray-400 italic">NULL</span>
+                                ) : (
+                                  String(cell)
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {resultadosSQLDireto.length >= 1000 && (
+                    <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-sm text-yellow-800">
+                        ⚠️ Mostrando apenas os primeiros 1000 registros. Ajuste o SQL para ver mais resultados.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Mensagem quando não há resultados SQL Direto */}
+            {!loadingSQLDireto && resultadosSQLDireto.length === 0 && sqlDireto.trim() && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
+                <p className="text-gray-500">Nenhum resultado encontrado. Verifique sua consulta SQL.</p>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1112,4 +791,3 @@ const GeradorSQL: React.FC = () => {
 };
 
 export default GeradorSQL;
-

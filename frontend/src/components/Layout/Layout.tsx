@@ -194,20 +194,12 @@ const Layout: React.FC = () => {
             }}
           >
             <div 
-              className="bg-white w-64"
+              className="bg-white w-64 flex flex-col"
               style={{
-                scrollbarWidth: 'none', // Firefox
-                msOverflowStyle: 'none', // IE and Edge
                 maxHeight: 'calc(100vh - 4rem)', // Altura máxima respeitando apenas o header
-                overflowY: 'auto',
                 borderRadius: '0 20px 20px 0', // Quinas arredondadas no conteúdo também
               }}
             >
-              <style>{`
-                div::-webkit-scrollbar {
-                  display: none; /* Chrome, Safari, Opera */
-                }
-              `}</style>
               <Sidebar 
                 onClose={handleCloseSidebar} 
                 pinned={sidebarPinned}

@@ -137,10 +137,20 @@ export class SpedV2ValidationService {
         message: 'Executando validações...'
       });
 
+      console.log(`[SpedV2ValidationService] 🐍 Executando comando Python: ${command}`);
+      
       const { stdout, stderr } = await execAsync(command, {
         cwd: path.join(__dirname, '../../python/sped/v2'),
         maxBuffer: 50 * 1024 * 1024 // 50MB
       });
+
+      // Log stdout e stderr para debug
+      if (stdout) {
+        console.log(`[SpedV2ValidationService] 🐍 Python stdout (últimas 2000 chars):`, stdout.substring(Math.max(0, stdout.length - 2000)));
+      }
+      if (stderr) {
+        console.log(`[SpedV2ValidationService] 🐍 Python stderr:`, stderr);
+      }
 
       // Processar resultado
       const resultadoPath = path.join(validationDir, 'resultado.json');
@@ -149,19 +159,34 @@ export class SpedV2ValidationService {
       if (fs.existsSync(resultadoPath)) {
         const resultadoStr = fs.readFileSync(resultadoPath, 'utf-8');
         resultado = JSON.parse(resultadoStr);
+        console.log(`[SpedV2ValidationService] ✅ Resultado carregado de ${resultadoPath}`);
+        console.log(`[SpedV2ValidationService] Total de divergências: ${resultado.validacoes?.divergencias?.length || 0}`);
       } else {
         // Tentar parsear stdout como JSON
         try {
           resultado = JSON.parse(stdout.trim());
+          console.log(`[SpedV2ValidationService] ✅ Resultado parseado do stdout`);
+          console.log(`[SpedV2ValidationService] Total de divergências: ${resultado.validacoes?.divergencias?.length || 0}`);
         } catch (e) {
-          console.warn(`[SpedV2ValidationService] Não foi possível parsear resultado JSON:`, e);
+          console.warn(`[SpedV2ValidationService] ⚠️ Não foi possível parsear resultado JSON:`, e);
+          console.warn(`[SpedV2ValidationService] stdout (primeiros 500 chars):`, stdout.substring(0, 500));
+          console.warn(`[SpedV2ValidationService] stderr:`, stderr);
         }
+      }
+
+      // Log detalhado do resultado
+      if (resultado.validacoes) {
+        console.log(`[SpedV2ValidationService] 📊 Resumo da validação:`, {
+          total_divergencias: resultado.validacoes.total_divergencias || 0,
+          documentos_validados: resultado.validacoes.documentos_validados || 0,
+          score_concordancia: resultado.validacoes.score_concordancia || 0,
+        });
       }
 
       this.updateStatus(request.validationId, {
         status: 'completed',
         progress: 100,
-        message: 'Validação concluída',
+        message: `Validação concluída: ${resultado.validacoes?.total_divergencias || 0} divergências encontradas`,
         resultado,
         completedAt: new Date()
       });
@@ -232,6 +257,55 @@ export class SpedV2ValidationService {
   getValidationDir(validationId: string): string {
     return path.join(this.tmpDir, validationId);
   }
+
+  /**
+   * Extrai metadados do arquivo SPED (CNPJ, competência, regime, etc)
+   */
+  async extrairMetadadosSped(spedBuffer: Buffer): Promise<any> {
+    // Garantir que o diretório temporário existe
+    if (!fs.existsSync(this.tmpDir)) {
+      fs.mkdirSync(this.tmpDir, { recursive: true });
+    }
+    
+    const tmpFile = path.join(this.tmpDir, `sped_${uuidv4()}.txt`);
+    
+    try {
+      // Salvar buffer em arquivo temporário
+      fs.writeFileSync(tmpFile, spedBuffer);
+      
+      // Executar script Python
+      const pythonScript = path.join(__dirname, '../../python/sped/v2/extract_sped_metadata.py');
+      const { stdout, stderr } = await execAsync(
+        `python "${pythonScript}" "${tmpFile}"`,
+        {
+          cwd: path.join(__dirname, '../../python/sped/v2'),
+          maxBuffer: 10 * 1024 * 1024,
+          encoding: 'utf-8'
+        }
+      );
+      
+      // Log stderr para debug (mesmo com stdout)
+      if (stderr) {
+        console.log('[SpedV2ValidationService] 🐍 Python stderr (DEBUG):', stderr);
+      }
+      
+      if (!stdout) {
+        throw new Error(stderr || 'Nenhuma saída do script Python');
+      }
+      
+      const metadata = JSON.parse(stdout.trim());
+      console.log('[SpedV2ValidationService] ✅ Metadados extraídos do Python:', JSON.stringify(metadata, null, 2));
+      return metadata;
+    } catch (error: any) {
+      console.error('[SpedV2ValidationService] Erro ao extrair metadados:', error);
+      throw new Error(`Erro ao extrair metadados do SPED: ${error.message}`);
+    } finally {
+      // Limpar arquivo temporário
+      if (fs.existsSync(tmpFile)) {
+        fs.unlinkSync(tmpFile);
+      }
+    }
+  }
 }
 
 // Singleton
@@ -243,5 +317,8 @@ export function getSpedV2ValidationService(): SpedV2ValidationService {
   }
   return instance;
 }
+
+
+
 
 

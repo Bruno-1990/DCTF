@@ -51,3 +51,9 @@ if __name__ == '__main__':
     for cnpj in CNPJS_BUSCAR:
         print(f"   - {cnpj}")
 
+
+
+
+
+
+

@@ -20,7 +20,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB por arquivo
-    files: 10001 // Máximo de 10001 arquivos (1 SPED + até 10000 XMLs)
+    files: 5000 // Máximo de 5000 arquivos (1 SPED + até 4999 XMLs) - suficiente para processar meses completos
   }
 });
 

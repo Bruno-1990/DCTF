@@ -23,3 +23,9 @@ COMMENT='Tabela temporária para armazenar CNPJs pendentes de consulta em lote d
 
 
 
+
+
+
+
+
+

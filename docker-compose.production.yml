@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # Backend API (Produção)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: dctf-mpc-backend-prod
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+    restart: always
+    networks:
+      - dctf-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend (Nginx servindo arquivos estáticos)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+    container_name: dctf-mpc-frontend-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: always
+    networks:
+      - dctf-network
+    depends_on:
+      - backend
+
+  # MySQL Database (Produção)
+  mysql:
+    image: mysql:8.0
+    container_name: dctf-mpc-mysql-prod
+    ports:
+      - "3306:3306"
+    env_file:
+      - .env.production
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data-prod:/var/lib/mysql
+      - ./backups:/backups
+    restart: always
+    networks:
+      - dctf-network
+    command: --default-authentication-plugin=mysql_native_password
+
+networks:
+  dctf-network:
+    driver: bridge
+
+volumes:
+  mysql-data-prod:
+
+
+
+
+
+
