@@ -10,6 +10,7 @@ from enum import Enum
 
 from ..canonical.documento_fiscal import DocumentoFiscal
 from ..canonical.item_fiscal import ItemFiscal
+from .regras_segmento import RegrasPorSegmento
 
 
 class ClassificacaoDivergencia(Enum):
@@ -191,6 +192,27 @@ class MatrizLegitimacao:
         # Análise por CFOP
         if contexto.cfop:
             cfop = str(contexto.cfop)
+            cst = str(contexto.cst or contexto.csosn or '')
+            
+            # Validar coerência CFOP × CST × Segmento × Regime
+            is_valid_cfop_cst, msg_cfop_cst = RegrasPorSegmento.validar_cfop_cst(
+                cfop, cst, contexto.segmento, contexto.regime
+            )
+            if not is_valid_cfop_cst:
+                score += 20  # Incoerência CFOP×CST é forte indicador de erro
+                explicacao_parts.append(msg_cfop_cst)
+            
+            # Verificar se é operação especial
+            is_especial, tipo_especial = RegrasPorSegmento.is_operacao_especial(cfop)
+            if is_especial:
+                score -= 20
+                explicacao_parts.append(f"Operação especial ({tipo_especial}): {cfop}")
+                
+                # Operações especiais com ajuste são legítimas
+                if tem_ajuste:
+                    return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
+                else:
+                    return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
             
             # Devolução
             if cfop in self.CFOPS_DEVOLUCAO:
@@ -212,6 +234,13 @@ class MatrizLegitimacao:
             score -= 20
             explicacao_parts.append(f"Nota {self._get_finalidade_nome(contexto.finalidade_nfe)}")
             return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
+        
+        # Ajustar tolerância por segmento
+        tolerancia_segmento = RegrasPorSegmento.get_tolerancia_por_segmento(contexto.segmento)
+        if abs(diferenca) <= tolerancia_segmento:
+            score -= 30
+            explicacao_parts.append(f"Diferença dentro da tolerância do segmento ({tolerancia_segmento})")
+            return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
         
         # Impacto na apuração (E110)
         if abs(diferenca) > Decimal('100.00'):  # Diferença significativa

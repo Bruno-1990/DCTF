@@ -7,6 +7,8 @@ import {
   CheckCircleIcon,
   ArrowUpIcon,
   ArrowDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import EvidenceDrawer from './EvidenceDrawer';
 import type { EvidenciaXML, EvidenciaSPED, EvidenciaComparacao } from './EvidenceDrawer';
@@ -20,11 +22,15 @@ const classNames = (...classes: (string | boolean | undefined)[]): string => {
 interface Step4ResultsViewProps {
   divergencias: DivergenciaClassificada[];
   onVerEvidencias?: (divergencia: DivergenciaClassificada) => void;
+  onNext?: () => void;
+  onBack?: () => void;
 }
 
 const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
   divergencias,
   onVerEvidencias,
+  onNext,
+  onBack,
 }) => {
   // Debug: Log das divergências recebidas
   React.useEffect(() => {
@@ -208,7 +214,7 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
     <div className="flex h-full">
       {/* Sidebar de Filtros */}
       {sidebarAberto && (
-        <div className="w-64 bg-white border-r border-gray-200 p-4 overflow-y-auto">
+        <div className="w-64 bg-white border-r border-gray-200 p-4 overflow-y-auto flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
               <FunnelIcon className="h-5 w-5 text-gray-500" />
@@ -315,8 +321,8 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
       )}
 
       {/* Conteúdo Principal */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-6">
           {/* Header com busca e ordenação */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4 gap-4">
@@ -478,6 +484,33 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
               )}
             </div>
           )}
+        </div>
+
+        {/* Botões de Navegação */}
+        <div className="flex-shrink-0 pt-4 pb-6 px-6 border-t border-gray-200 bg-white flex justify-between items-center">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            <ChevronLeftIcon className="h-5 w-5 mr-2" />
+            Voltar
+          </button>
+        
+        {divergencias.length > 0 && (
+          <button
+            onClick={onNext}
+            className="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            Avançar para Correções
+            <ChevronRightIcon className="h-5 w-5 ml-2" />
+          </button>
+        )}
+        
+        {divergencias.length === 0 && (
+          <div className="text-sm text-gray-500">
+            Nenhuma divergência encontrada. Não é possível avançar para correções.
+          </div>
+        )}
         </div>
       </div>
 

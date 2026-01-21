@@ -4,13 +4,16 @@ Compara documentos XML e EFD de forma conceitual, não campo a campo.
 Considera contexto fiscal (CFOP, CST, finalidade) para detectar divergências.
 """
 
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, TYPE_CHECKING
 from decimal import Decimal
 from dataclasses import dataclass, field
 import logging
 
 from ..canonical.documento_fiscal import DocumentoFiscal
 from ..canonical.item_fiscal import ItemFiscal
+
+if TYPE_CHECKING:
+    from .context_validator import ContextValidator
 
 logger = logging.getLogger(__name__)
 
@@ -77,20 +80,27 @@ class ResultadoValidacao:
 class XmlEfdValidator:
     """Validador conceitual XML × EFD"""
     
-    def __init__(self, tolerancia: Decimal = TOLERANCIA_VALOR):
+    def __init__(
+        self,
+        tolerancia: Decimal = TOLERANCIA_VALOR,
+        context_validator: Optional['ContextValidator'] = None
+    ):
         """
         Inicializa o validador
         
         Args:
             tolerancia: Tolerância para comparações de valores (padrão: 2%)
+            context_validator: Validador de contexto que consulta RAG (opcional)
         """
         self.tolerancia = tolerancia
+        self.context_validator = context_validator
     
     def validar(
         self,
         documentos_xml: List[DocumentoFiscal],
         documentos_efd: List[DocumentoFiscal],
-        matches: Optional[Dict[str, str]] = None
+        matches: Optional[Dict[str, str]] = None,
+        perfil_fiscal: Optional[Dict[str, Any]] = None
     ) -> ResultadoValidacao:
         """
         Valida documentos XML contra EFD de forma conceitual
@@ -99,11 +109,13 @@ class XmlEfdValidator:
             documentos_xml: Lista de documentos XML normalizados
             documentos_efd: Lista de documentos EFD normalizados
             matches: Dicionário {chave_xml: chave_efd} para matching de documentos
+            perfil_fiscal: Perfil fiscal do cliente (segmento, regime, flags)
         
         Returns:
             ResultadoValidacao com divergências encontradas
         """
         resultado = ResultadoValidacao()
+        self.perfil_fiscal = perfil_fiscal or {}  # Armazenar para uso nos métodos
         
         # Criar índice de documentos EFD por chave
         efd_index: Dict[str, DocumentoFiscal] = {}
@@ -171,6 +183,7 @@ class XmlEfdValidator:
     ) -> List[Divergencia]:
         """
         Valida um documento XML contra seu correspondente EFD
+        Extrai contexto fiscal PRIMEIRO e verifica antes de criar divergências
         
         Args:
             doc_xml: Documento XML normalizado
@@ -181,36 +194,83 @@ class XmlEfdValidator:
         """
         divergencias: List[Divergencia] = []
         
-        # 1. Validação conceitual de valores totais
-        divergencias.extend(self._validar_valores_totais(doc_xml, doc_efd))
+        # EXTRAIR CONTEXTO FISCAL PRIMEIRO (conforme roteiro)
+        from .legitimacao_matrix import MatrizLegitimacao
+        matriz = MatrizLegitimacao()
+        perfil = getattr(self, 'perfil_fiscal', None)
+        contexto_fiscal = matriz.extrair_contexto_fiscal(doc_xml, doc_efd, perfil)
+        
+        # Converter contexto para dict para usar no ContextValidator
+        contexto_dict = {
+            'cfop': contexto_fiscal.cfop,
+            'cst': contexto_fiscal.cst,
+            'csosn': contexto_fiscal.csosn,
+            'tem_st': contexto_fiscal.tem_st,
+            'tem_difal': contexto_fiscal.tem_difal,
+            'tem_fcp': contexto_fiscal.tem_fcp,
+            'finalidade_nfe': contexto_fiscal.finalidade_nfe,
+            'tp_nf': contexto_fiscal.tp_nf,
+            'cod_sit': contexto_fiscal.cod_sit,
+            'tem_ajuste_c197': contexto_fiscal.tem_ajuste_c197,
+            'tem_ajuste_e111': contexto_fiscal.tem_ajuste_e111,
+        }
+        
+        # 1. Validação conceitual de valores totais (com verificação de contexto)
+        divergencias.extend(self._validar_valores_totais(doc_xml, doc_efd, contexto_dict))
         
         # 2. Validação de contexto fiscal (CFOP, CST, finalidade)
         divergencias.extend(self._validar_contexto_fiscal(doc_xml, doc_efd))
         
-        # 3. Validação de tipos de tributos
-        divergencias.extend(self._validar_tributos(doc_xml, doc_efd))
+        # 3. Validação de tipos de tributos (com verificação de contexto)
+        divergencias.extend(self._validar_tributos(doc_xml, doc_efd, contexto_dict))
         
-        # 4. Validação conceitual de itens
-        divergencias.extend(self._validar_itens(doc_xml, doc_efd))
+        # 4. Validação conceitual de itens (com verificação de contexto)
+        divergencias.extend(self._validar_itens(doc_xml, doc_efd, contexto_dict))
         
         return divergencias
     
     def _validar_valores_totais(
         self,
         doc_xml: DocumentoFiscal,
-        doc_efd: DocumentoFiscal
+        doc_efd: DocumentoFiscal,
+        contexto_dict: Optional[Dict[str, Any]] = None
     ) -> List[Divergencia]:
-        """Valida valores totais de forma conceitual"""
+        """Valida valores totais de forma conceitual, verificando contexto ANTES"""
         divergencias: List[Divergencia] = []
+        contexto_dict = contexto_dict or {}
+        
+        # Verificar se deve pular validação de valor_total baseado no contexto
+        if self.context_validator:
+            should_skip, reason = self.context_validator.should_skip_validation(
+                'valor_total', contexto_dict
+            )
+            if should_skip:
+                logger.debug(f"Pulando validação de valor_total: {reason}")
+                return divergencias
         
         # Valor total (conceitual: soma de produtos + tributos - descontos)
         valor_total_xml = doc_xml.calcular_valor_total()
         valor_total_efd = doc_efd.calcular_valor_total()
         
-        if not self._valores_concordam(valor_total_xml, valor_total_efd):
+        if not self._valores_concordam(valor_total_xml, valor_total_efd, contexto_dict):
             diferenca = abs(valor_total_xml - valor_total_efd)
             percentual = (diferenca / valor_total_xml * 100) if valor_total_xml > 0 else Decimal('0')
             
+            # CONSULTAR CONTEXT VALIDATOR ANTES DE CRIAR DIVERGÊNCIA
+            is_legitima = False
+            if self.context_validator:
+                is_legitima, explicacao, confidence = self.context_validator.is_divergencia_legitima(
+                    tipo_divergencia='valor',
+                    doc_xml=doc_xml,
+                    doc_efd=doc_efd,
+                    diferenca=diferenca,
+                    contexto_fiscal=contexto_dict
+                )
+                if is_legitima and confidence > 0.5:
+                    logger.debug(f"Divergência de valor_total é legítima: {explicacao}")
+                    return divergencias
+            
+            # Só criar divergência se não for legítima
             divergencias.append(Divergencia(
                 tipo='valor',
                 nivel='documento',
@@ -306,29 +366,68 @@ class XmlEfdValidator:
     def _validar_tributos(
         self,
         doc_xml: DocumentoFiscal,
-        doc_efd: DocumentoFiscal
+        doc_efd: DocumentoFiscal,
+        contexto_dict: Optional[Dict[str, Any]] = None
     ) -> List[Divergencia]:
-        """Valida tipos de tributos de forma conceitual - comparação de valores"""
+        """Valida tipos de tributos de forma conceitual, verificando contexto ANTES"""
         divergencias: List[Divergencia] = []
+        contexto_dict = contexto_dict or {}
         
-        # Comparar ICMS próprio (valor, não apenas presença)
-        if not self._valores_concordam(doc_xml.valor_icms, doc_efd.valor_icms):
-            diferenca = abs(doc_xml.valor_icms - doc_efd.valor_icms)
-            if diferenca > Decimal('0.01'):  # Só reportar se diferença > R$ 0,01
-                percentual = (diferenca / doc_xml.valor_icms * 100) if doc_xml.valor_icms > 0 else Decimal('0')
-                divergencias.append(Divergencia(
-                    tipo='tributo',
-                    nivel='documento',
-                    severidade='alta' if diferenca > Decimal('1.00') else 'media',
-                    descricao=f'Divergência no valor de ICMS próprio: XML={doc_xml.valor_icms}, EFD={doc_efd.valor_icms}',
-                    valor_xml=doc_xml.valor_icms,
-                    valor_efd=doc_efd.valor_icms,
-                    diferenca=diferenca,
-                    percentual_diferenca=percentual,
-                    documento_xml=doc_xml,
-                    documento_efd=doc_efd,
-                    contexto={'tributo': 'ICMS', 'campo': 'valor_icms'}
-                ))
+        # Verificar se deve pular validação de ICMS próprio para operações ST
+        if self.context_validator:
+            should_skip, reason = self.context_validator.should_skip_validation(
+                'icms_proprio', contexto_dict
+            )
+            if should_skip:
+                logger.debug(f"Pulando validação de ICMS próprio: {reason}")
+            else:
+                # Comparar ICMS próprio (valor, não apenas presença)
+                if not self._valores_concordam(doc_xml.valor_icms, doc_efd.valor_icms, contexto_dict):
+                    diferenca = abs(doc_xml.valor_icms - doc_efd.valor_icms)
+                    if diferenca > Decimal('0.01'):  # Só reportar se diferença > R$ 0,01
+                        # CONSULTAR CONTEXT VALIDATOR ANTES DE CRIAR DIVERGÊNCIA
+                        is_legitima = False
+                        if self.context_validator:
+                            is_legitima, explicacao, confidence = self.context_validator.is_divergencia_legitima(
+                                tipo_divergencia='tributo_icms',
+                                doc_xml=doc_xml,
+                                doc_efd=doc_efd,
+                                diferenca=diferenca,
+                                contexto_fiscal=contexto_dict
+                            )
+                            if is_legitima and confidence > 0.5:
+                                logger.debug(f"Divergência de ICMS próprio é legítima: {explicacao}")
+                            else:
+                                percentual = (diferenca / doc_xml.valor_icms * 100) if doc_xml.valor_icms > 0 else Decimal('0')
+                                divergencias.append(Divergencia(
+                                    tipo='tributo',
+                                    nivel='documento',
+                                    severidade='alta' if diferenca > Decimal('1.00') else 'media',
+                                    descricao=f'Divergência no valor de ICMS próprio: XML={doc_xml.valor_icms}, EFD={doc_efd.valor_icms}',
+                                    valor_xml=doc_xml.valor_icms,
+                                    valor_efd=doc_efd.valor_icms,
+                                    diferenca=diferenca,
+                                    percentual_diferenca=percentual,
+                                    documento_xml=doc_xml,
+                                    documento_efd=doc_efd,
+                                    contexto={'tributo': 'ICMS', 'campo': 'valor_icms'}
+                                ))
+                        else:
+                            # Sem context validator, criar divergência normalmente
+                            percentual = (diferenca / doc_xml.valor_icms * 100) if doc_xml.valor_icms > 0 else Decimal('0')
+                            divergencias.append(Divergencia(
+                                tipo='tributo',
+                                nivel='documento',
+                                severidade='alta' if diferenca > Decimal('1.00') else 'media',
+                                descricao=f'Divergência no valor de ICMS próprio: XML={doc_xml.valor_icms}, EFD={doc_efd.valor_icms}',
+                                valor_xml=doc_xml.valor_icms,
+                                valor_efd=doc_efd.valor_icms,
+                                diferenca=diferenca,
+                                percentual_diferenca=percentual,
+                                documento_xml=doc_xml,
+                                documento_efd=doc_efd,
+                                contexto={'tributo': 'ICMS', 'campo': 'valor_icms'}
+                            ))
         
         # Comparar ICMS ST (valor, não apenas presença)
         if not self._valores_concordam(doc_xml.valor_icms_st, doc_efd.valor_icms_st):
@@ -395,10 +494,15 @@ class XmlEfdValidator:
     def _validar_itens(
         self,
         doc_xml: DocumentoFiscal,
-        doc_efd: DocumentoFiscal
+        doc_efd: DocumentoFiscal,
+        contexto_dict: Optional[Dict[str, Any]] = None
     ) -> List[Divergencia]:
-        """Valida itens de forma conceitual - comparação item por item"""
+        """
+        Valida itens de forma conceitual, verificando contexto ANTES de criar divergências.
+        Implementa o princípio do roteiro: verificar contexto antes de apontar erro.
+        """
         divergencias: List[Divergencia] = []
+        contexto_dict = contexto_dict or {}
         
         # Comparar quantidade de itens
         qtd_itens_xml = len(doc_xml.itens)
@@ -415,27 +519,69 @@ class XmlEfdValidator:
                 contexto={'qtd_itens_xml': qtd_itens_xml, 'qtd_itens_efd': qtd_itens_efd}
             ))
         
-        # Comparar valor total dos itens
-        valor_total_itens_xml = doc_xml.get_total_itens()
-        valor_total_itens_efd = doc_efd.get_total_itens()
+        # VERIFICAR CONTEXTO ANTES DE COMPARAR VALOR TOTAL DOS ITENS
+        # (conforme roteiro: não comparar para devoluções, remessas, ST, etc.)
+        should_skip, skip_reason = False, ""
+        if self.context_validator:
+            should_skip, skip_reason = self.context_validator.should_skip_validation(
+                'valor_total_itens', contexto_dict
+            )
         
-        if not self._valores_concordam(valor_total_itens_xml, valor_total_itens_efd):
-            diferenca = abs(valor_total_itens_xml - valor_total_itens_efd)
-            percentual = (diferenca / valor_total_itens_xml * 100) if valor_total_itens_xml > 0 else Decimal('0')
+        if not should_skip:
+            # Comparar valor total dos itens APENAS se não for caso especial
+            valor_total_itens_xml = doc_xml.get_total_itens()
+            valor_total_itens_efd = doc_efd.get_total_itens()
             
-            divergencias.append(Divergencia(
-                tipo='valor',
-                nivel='documento',
-                severidade='alta' if percentual > 5 else 'media' if percentual > 1 else 'baixa',
-                descricao=f'Divergência no valor total dos itens: XML={valor_total_itens_xml}, EFD={valor_total_itens_efd}',
-                valor_xml=valor_total_itens_xml,
-                valor_efd=valor_total_itens_efd,
-                diferenca=diferenca,
-                percentual_diferenca=percentual,
-                documento_xml=doc_xml,
-                documento_efd=doc_efd,
-                contexto={'campo': 'valor_total_itens'}
-            ))
+            if not self._valores_concordam(valor_total_itens_xml, valor_total_itens_efd, contexto_dict):
+                diferenca = abs(valor_total_itens_xml - valor_total_itens_efd)
+                percentual = (diferenca / valor_total_itens_xml * 100) if valor_total_itens_xml > 0 else Decimal('0')
+                
+                # CONSULTAR CONTEXT VALIDATOR ANTES DE CRIAR DIVERGÊNCIA
+                is_legitima = False
+                if self.context_validator:
+                    is_legitima, explicacao, confidence = self.context_validator.is_divergencia_legitima(
+                        tipo_divergencia='valor_total_itens',
+                        doc_xml=doc_xml,
+                        doc_efd=doc_efd,
+                        diferenca=diferenca,
+                        contexto_fiscal=contexto_dict
+                    )
+                    if is_legitima and confidence > 0.5:
+                        logger.debug(f"Divergência de valor_total_itens é legítima: {explicacao}")
+                    else:
+                        # Só criar divergência se diferença for significativa E não for legítima
+                        if diferenca > Decimal('0.10') and percentual > Decimal('1.0'):
+                            divergencias.append(Divergencia(
+                                tipo='valor',
+                                nivel='documento',
+                                severidade='alta' if percentual > 5 else 'media' if percentual > 1 else 'baixa',
+                                descricao=f'Divergência no valor total dos itens: XML={valor_total_itens_xml}, EFD={valor_total_itens_efd}',
+                                valor_xml=valor_total_itens_xml,
+                                valor_efd=valor_total_itens_efd,
+                                diferenca=diferenca,
+                                percentual_diferenca=percentual,
+                                documento_xml=doc_xml,
+                                documento_efd=doc_efd,
+                                contexto={'campo': 'valor_total_itens'}
+                            ))
+                else:
+                    # Sem context validator, criar divergência normalmente (mas com tolerância maior)
+                    if diferenca > Decimal('0.10') and percentual > Decimal('1.0'):
+                        divergencias.append(Divergencia(
+                            tipo='valor',
+                            nivel='documento',
+                            severidade='alta' if percentual > 5 else 'media' if percentual > 1 else 'baixa',
+                            descricao=f'Divergência no valor total dos itens: XML={valor_total_itens_xml}, EFD={valor_total_itens_efd}',
+                            valor_xml=valor_total_itens_xml,
+                            valor_efd=valor_total_itens_efd,
+                            diferenca=diferenca,
+                            percentual_diferenca=percentual,
+                            documento_xml=doc_xml,
+                            documento_efd=doc_efd,
+                            contexto={'campo': 'valor_total_itens'}
+                        ))
+        else:
+            logger.debug(f"Pulando validação de valor_total_itens: {skip_reason}")
         
         # Comparar item por item (se tiverem mesma quantidade)
         if qtd_itens_xml == qtd_itens_efd and qtd_itens_xml > 0:
@@ -536,13 +682,20 @@ class XmlEfdValidator:
         
         return divergencias
     
-    def _valores_concordam(self, valor1: Decimal, valor2: Decimal) -> bool:
+    def _valores_concordam(
+        self,
+        valor1: Decimal,
+        valor2: Decimal,
+        contexto: Optional[Dict[str, Any]] = None
+    ) -> bool:
         """
-        Verifica se dois valores concordam dentro da tolerância
+        Verifica se dois valores concordam dentro da tolerância, considerando contexto fiscal.
+        Implementa tolerâncias do roteiro: 0,01 por linha, 0,05-0,10 por documento.
         
         Args:
             valor1: Primeiro valor
             valor2: Segundo valor
+            contexto: Contexto fiscal (CFOP, ST, devolução, etc.)
         
         Returns:
             True se os valores concordam, False caso contrário
@@ -550,9 +703,23 @@ class XmlEfdValidator:
         if valor1 == Decimal('0') and valor2 == Decimal('0'):
             return True
         
+        # Se um valor é zero e o outro não, verificar contexto
         if valor1 == Decimal('0') or valor2 == Decimal('0'):
+            if contexto:
+                # Se for ST, devolução, remessa: pode ser legítimo
+                if (contexto.get('tem_st') or 
+                    contexto.get('is_devolucao') or 
+                    contexto.get('is_remessa') or
+                    contexto.get('finalidade_nfe') in ('2', '3', '4')):
+                    return True  # Não é divergência nesses casos
+            
+            # Para outros casos, verificar se diferença é muito pequena (arredondamento)
+            diferenca = abs(valor1 - valor2)
+            if diferenca <= Decimal('0.10'):  # Tolerância para arredondamento (conforme roteiro)
+                return True
             return False
         
+        # Calcular diferença percentual
         diferenca_percentual = abs((valor1 - valor2) / valor1)
         return diferenca_percentual <= self.tolerancia
     

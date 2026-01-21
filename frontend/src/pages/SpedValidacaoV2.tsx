@@ -304,6 +304,8 @@ const SpedValidacaoV2: React.FC = () => {
               // Abrir drawer de evidências
               console.log('Ver evidências:', div);
             }}
+            onNext={handleStep4Next}
+            onBack={handleBack}
           />
         );
       case 5:

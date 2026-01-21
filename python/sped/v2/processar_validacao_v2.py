@@ -29,6 +29,7 @@ from sped.v2.validation.xml_efd_validator import XmlEfdValidator, Divergencia
 from sped.v2.validation.legitimacao_matrix import MatrizLegitimacao, ClassificacaoDivergencia
 from sped.v2.validation.totaling_engine import TotalingEngine
 from sped.v2.validation.efd_internal_validator import EFDInternalValidator
+from sped.v2.validation.context_validator import ContextValidator
 
 
 def main():
@@ -221,6 +222,16 @@ def main():
             import traceback
             traceback.print_exc()
         
+        # ========== VALIDAÇÃO DE TOTALIZAÇÃO (CADEIAS C170→C190→C100→E110) ==========
+        # NOTA: TotalingEngine requer parsing específico dos registros SPED.
+        # Por enquanto, esta validação será feita na Camada B (EFDInternalValidator).
+        # A integração completa do TotalingEngine será feita em uma próxima fase
+        # quando tivermos um parser dedicado para C170, C190, C100, E110.
+        print(f"[SPED v2] INFO: Validação de totalização será expandida na próxima fase")
+        divergencias_totalizacao = []
+        # TODO: Implementar parsing de registros SPED para TotalingEngine
+        # quando tivermos parser dedicado para C170, C190, C100, E110
+        
         # ========== CAMADA C: VALIDAÇÃO XML × EFD ==========
         print(f"[SPED v2] [CAMADA C] Executando validação XML × EFD...")
         print(f"[SPED v2] Total de documentos XML: {len(documentos_xml)}")
@@ -236,9 +247,17 @@ def main():
             'operaInterestadualDIFAL': args.opera_interestadual_difal,
         }
         
+        # Criar ContextValidator para consultar RAG antes de criar divergências
+        print(f"[SPED v2] Inicializando ContextValidator (RAG)...")
+        context_validator = ContextValidator(use_rag=True)
+        
         resultado_validacao = None
         try:
-            validator = XmlEfdValidator(tolerancia=Decimal('0.02'))
+            # Passar ContextValidator para o validator
+            validator = XmlEfdValidator(
+                tolerancia=Decimal('0.02'),
+                context_validator=context_validator
+            )
             
             # Criar dicionário de matches para o validator
             matches_dict = {}
@@ -251,9 +270,15 @@ def main():
             resultado_validacao = validator.validar(
                 documentos_xml,
                 documentos_efd,
-                matches_dict
+                matches_dict,
+                perfil_fiscal
             )
             print(f"[SPED v2] OK: Validação base concluída: {len(resultado_validacao.divergencias)} divergências encontradas")
+            
+            # Adicionar divergências de totalização ao resultado
+            if divergencias_totalizacao:
+                resultado_validacao.divergencias.extend(divergencias_totalizacao)
+                print(f"[SPED v2] INFO: Adicionadas {len(divergencias_totalizacao)} divergências de totalização")
             
             # ========== APLICAR MATRIZ DE LEGITIMAÇÃO ==========
             print(f"[SPED v2] Aplicando Matriz de Legitimação...")
@@ -290,8 +315,25 @@ def main():
                 
                 divergencias_classificadas.append(div)
             
-            # Substituir divergências pelas classificadas
-            resultado_validacao.divergencias = divergencias_classificadas
+            # ========== FILTRAR DIVERGÊNCIAS LEGÍTIMAS ==========
+            # Conforme roteiro: não retornar divergências classificadas como LEGÍTIMO
+            print(f"[SPED v2] Filtrando divergências legítimas...")
+            divergencias_filtradas = [
+                div for div in divergencias_classificadas
+                if div.contexto.get('classificacao') != 'LEGÍTIMO'
+            ]
+            
+            # Opcional: também filtrar REVISAR com score muito baixo (< 30)
+            divergencias_filtradas = [
+                div for div in divergencias_filtradas
+                if div.contexto.get('classificacao') != 'REVISAR' or div.contexto.get('score_confianca', 0) >= 30
+            ]
+            
+            # Substituir divergências pelas filtradas
+            resultado_validacao.divergencias = divergencias_filtradas
+            
+            print(f"[SPED v2] INFO: Após filtragem: {len(divergencias_filtradas)} divergências (de {len(divergencias_classificadas)} originais)")
+            print(f"[SPED v2] INFO: {len(divergencias_classificadas) - len(divergencias_filtradas)} divergências legítimas foram filtradas")
             
             # Log detalhado das divergências
             if resultado_validacao.divergencias:
