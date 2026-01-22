@@ -200,4 +200,3 @@ export const AnalysisReport: React.FC<AnalysisReportProps> = ({ divergencias }) 
     </div>
   );
 };
-
