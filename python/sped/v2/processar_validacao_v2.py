@@ -461,13 +461,18 @@ def main():
                 impacto_e110 = validador_e110.calcular_impacto(div, e110_original, perfil_fiscal)
                 
                 # Classificar divergência
+                # Extrair chave NF-e do documento XML
+                chave_nfe = ""
+                if div.documento_xml and hasattr(div.documento_xml, 'chave_acesso'):
+                    chave_nfe = div.documento_xml.chave_acesso or ""
+                
                 classificacao, score_confianca, explicacao, regra_aplicada = matriz.classificar_divergencia(
                     div.tipo,
                     contexto,
                     div.diferenca or Decimal('0'),
                     div.percentual_diferenca or Decimal('0'),
                     contexto.tem_ajuste_c197 or contexto.tem_ajuste_e111,
-                    chave_nfe=div.chave_nfe or div.documento_xml.chave_acesso if div.documento_xml else ""
+                    chave_nfe=chave_nfe
                 )
                 
                 # Ajustar severidade baseada no impacto E110
