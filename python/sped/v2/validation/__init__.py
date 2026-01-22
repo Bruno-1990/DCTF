@@ -16,6 +16,7 @@ from .beneficios_fiscais import (
     IntegradorBeneficioMatriz
 )
 from .monitor_cobertura import MonitorCobertura, CasoNaoCoberto
+from .quality_alerts import QualityAlerts, AlertaQualidade
 
 __all__ = [
     'XmlEfdValidator',
@@ -33,4 +34,6 @@ __all__ = [
     'ContextValidator',
     'MonitorCobertura',
     'CasoNaoCoberto',
+    'QualityAlerts',
+    'AlertaQualidade',
 ]

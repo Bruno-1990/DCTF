@@ -25,12 +25,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from sped.v2.normalization import XMLNormalizer, EFDNormalizer, SPEDParser, RegistroC100, RegistroC170, RegistroC190, RegistroE110
 from sped.v2.matching import DocumentMatcher, ItemMatcher
+from sped.v2.matching.document_family import DocumentFamilyGrouper
 from sped.v2.validation.xml_efd_validator import XmlEfdValidator, Divergencia
 from sped.v2.validation.legitimacao_matrix import MatrizLegitimacao, ClassificacaoDivergencia
 from sped.v2.validation.totaling_engine import TotalingEngine, DivergenciaTotalizacao
 from sped.v2.validation.efd_internal_validator import EFDInternalValidator
 from sped.v2.validation.context_validator import ContextValidator
 from sped.v2.validation.impacto_e110 import ValidadorImpactoE110, ImpactoE110
+from sped.v2.validation.quality_alerts import QualityAlerts
+from sped.v2.config.client_profile import ClientProfile
 
 
 def main():
@@ -199,6 +202,68 @@ def main():
             'total_matched': total_itens_matched,
             'total_nao_matched': total_itens_nao_matched
         }
+        
+        # ========== AGRUPAMENTO DE FAMÍLIAS DE DOCUMENTOS ==========
+        print(f"[SPED v2] Agrupando famílias de documentos (original + complementar + ajuste + devolução)...")
+        familias_documentos = []
+        try:
+            family_grouper = DocumentFamilyGrouper()
+            familias_documentos = family_grouper.agrupar(documentos_xml, documentos_efd)
+            print(f"[SPED v2] OK: {len(familias_documentos)} famílias de documentos identificadas")
+            
+            # Estatísticas
+            familias_com_complementares = len([f for f in familias_documentos if f.tem_complementares])
+            familias_com_ajustes = len([f for f in familias_documentos if f.tem_ajustes])
+            familias_com_devolucoes = len([f for f in familias_documentos if f.tem_devolucoes])
+            
+            resultado['familias_documentos'] = {
+                'total_familias': len(familias_documentos),
+                'com_complementares': familias_com_complementares,
+                'com_ajustes': familias_com_ajustes,
+                'com_devolucoes': familias_com_devolucoes,
+            }
+        except Exception as e:
+            print(f"[SPED v2] ERRO: Erro ao agrupar famílias: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+        
+        # ========== ALERTAS DE QUALIDADE DE INTEGRAÇÃO ==========
+        print(f"[SPED v2] Analisando qualidade de integração...")
+        alertas_qualidade = []
+        try:
+            # Criar perfil do cliente se disponível
+            client_profile = None
+            if args.segmento:
+                client_profile = ClientProfile(
+                    segmento=args.segmento,
+                    regime_tributario=args.regime,
+                    opera_st=args.opera_st,
+                    opera_difal=args.opera_interestadual_difal,
+                    regime_especial=args.regime_especial
+                )
+            
+            quality_alerts = QualityAlerts(client_profile=client_profile)
+            alertas_qualidade = quality_alerts.analisar_documentos(documentos_xml, documentos_efd, matches)
+            
+            if alertas_qualidade:
+                print(f"[SPED v2] ATENCAO: {len(alertas_qualidade)} alertas de qualidade detectados")
+                estatisticas = quality_alerts.get_estatisticas()
+                print(f"  - Por tipo: {estatisticas['por_tipo']}")
+                print(f"  - Por severidade: {estatisticas['por_severidade']}")
+                if estatisticas['chaves_duplicadas'] > 0:
+                    print(f"  - Chaves duplicadas: {estatisticas['chaves_duplicadas']}")
+            else:
+                print(f"[SPED v2] OK: Nenhum alerta de qualidade detectado")
+            
+            resultado['alertas_qualidade'] = {
+                'total': len(alertas_qualidade),
+                'estatisticas': quality_alerts.get_estatisticas(),
+                'alertas': [a.to_dict() for a in alertas_qualidade[:50]]  # Limitar a 50 para não sobrecarregar
+            }
+        except Exception as e:
+            print(f"[SPED v2] ERRO: Erro ao analisar qualidade: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
         
         # ========== CAMADA B: VALIDAÇÃO INTERNA DA EFD ==========
         print(f"[SPED v2] [CAMADA B] Validando consistência interna da EFD...")
