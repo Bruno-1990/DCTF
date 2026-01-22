@@ -99,6 +99,23 @@ class RegrasPorSegmento:
         Returns:
             Tupla (is_valid, mensagem_erro)
         """
+        # Normalizar CST (remover zeros à esquerda)
+        cst_norm = cst.lstrip('0') if cst else ''
+        
+        # ERRO GRAVE: CFOP de saída (5xxx/6xxx) com CST de entrada específicos
+        # CST 010 é "Tributada e com cobrança do ICMS por substituição tributária" - típico de **entrada**
+        # CST 020 e 060 podem ser entrada OU saída (redução de base, ST)
+        if cfop and cfop[0] in ('5', '6'):  # Saída
+            if cst_norm in ('10', '30', '70', '51', '52', '53', '54'):
+                # CSTs que são APENAS de entrada
+                return (False, f"CFOP {cfop} de saída com CST {cst} típico de entrada")
+        
+        # ERRO GRAVE: CFOP de entrada (1xxx/2xxx) com CST de saída pura
+        if cfop and cfop[0] in ('1', '2'):  # Entrada
+            if cst_norm in ('0', '20') and 'DIFAL' not in str(segmento).upper():
+                # CST 000 ou 020 são mais típicos de saída
+                pass  # Não é erro crítico
+        
         # Operações de devolução: CST pode variar
         if cfop in (RegrasPorSegmento.CFOPS_DEVOLUCAO_COMPRA | RegrasPorSegmento.CFOPS_DEVOLUCAO_VENDA):
             return (True, "Devolução: CST pode variar conforme operação original")

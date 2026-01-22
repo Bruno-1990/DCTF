@@ -1,18 +1,18 @@
 {
   "metricas": {
     "total_casos": 12,
-    "acertos": 7,
-    "erros": 5,
-    "precisao_geral": 58.33,
+    "acertos": 12,
+    "erros": 0,
+    "precisao_geral": 100.0,
     "falsos_positivos": 0,
-    "falsos_negativos": 1,
+    "falsos_negativos": 0,
     "taxa_fp": 0.0,
-    "taxa_fn": 8.33,
-    "recall": 0.0,
+    "taxa_fn": 0.0,
+    "recall": 100.0,
     "especificidade": 100.0,
-    "verdadeiros_positivos": 0,
+    "verdadeiros_positivos": 2,
     "verdadeiros_negativos": 10,
-    "score_medio": 36.25
+    "score_medio": 54.17
   },
   "resultados": [
     {
@@ -29,7 +29,7 @@
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
         "score": 100,
         "explicacao": "Sem divergências"
@@ -44,12 +44,12 @@
       "score": 10,
       "detalhes": {
         "contexto": {
-          "cfop": null,
-          "cst": null,
+          "cfop": "5405",
+          "cst": "20",
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
         "score": 10,
         "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
@@ -64,12 +64,12 @@
       "score": 10,
       "detalhes": {
         "contexto": {
-          "cfop": null,
-          "cst": null,
+          "cfop": "5102",
+          "cst": "40",
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
         "score": 10,
         "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
@@ -84,12 +84,12 @@
       "score": 10,
       "detalhes": {
         "contexto": {
-          "cfop": null,
-          "cst": null,
+          "cfop": "5405",
+          "cst": "60",
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
         "score": 10,
         "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
@@ -104,12 +104,12 @@
       "score": 100,
       "detalhes": {
         "contexto": {
-          "cfop": "5102",
+          "cfop": "5405",
           "cst": "60",
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
         "score": 100,
         "explicacao": "Sem divergências"
@@ -119,49 +119,49 @@
       "caso_id": "caso_006_nota_complementar",
       "titulo": "NF-e Complementar (finNFe=2)",
       "esperado": "REVISAR",
-      "obtido": "LEGÍTIMO",
-      "acertou": false,
-      "score": 10,
+      "obtido": "REVISAR",
+      "acertou": true,
+      "score": 50,
       "detalhes": {
         "contexto": {
-          "cfop": null,
-          "cst": null,
+          "cfop": "5102",
+          "cst": "00",
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "2"
         },
-        "score": 10,
-        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+        "score": 50,
+        "explicacao": "Nota complementar"
       }
     },
     {
       "caso_id": "caso_007_devolucao_vendas",
       "titulo": "Devolução de Vendas (CFOP 1201)",
       "esperado": "REVISAR",
-      "obtido": "LEGÍTIMO",
-      "acertou": false,
-      "score": 10,
+      "obtido": "REVISAR",
+      "acertou": true,
+      "score": 20,
       "detalhes": {
         "contexto": {
-          "cfop": null,
-          "cst": null,
+          "cfop": "1201",
+          "cst": "00",
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "4"
         },
-        "score": 10,
-        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+        "score": 20,
+        "explicacao": "Operação especial (devolucao): 1201"
       }
     },
     {
       "caso_id": "caso_008_erro_real_c190_c100",
       "titulo": "ERRO REAL: C190 não totaliza C100",
       "esperado": "ERRO",
-      "obtido": "REVISAR",
-      "acertou": false,
-      "score": 55,
+      "obtido": "ERRO",
+      "acertou": true,
+      "score": 90,
       "detalhes": {
         "contexto": {
           "cfop": null,
@@ -169,30 +169,30 @@
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
-        "score": 55,
-        "explicacao": "Médio impacto na apuração"
+        "score": 90,
+        "explicacao": "Médio impacto na apuração; Sem ajustes que expliquem a divergência"
       }
     },
     {
       "caso_id": "caso_009_difal_interestadual",
       "titulo": "Operação Interestadual com DIFAL",
       "esperado": "REVISAR",
-      "obtido": "LEGÍTIMO",
-      "acertou": false,
-      "score": 10,
+      "obtido": "REVISAR",
+      "acertou": true,
+      "score": 55,
       "detalhes": {
         "contexto": {
-          "cfop": null,
-          "cst": null,
+          "cfop": "6108",
+          "cst": "00",
           "tem_st": false,
-          "tem_difal": false,
+          "tem_difal": true,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
-        "score": 10,
-        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+        "score": 55,
+        "explicacao": "Operação com DIFAL/FCP; Baixo impacto na apuração"
       }
     },
     {
@@ -220,7 +220,7 @@
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
         "score": 10,
         "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
@@ -230,20 +230,20 @@
       "caso_id": "caso_012_erro_cfop_cst_incoerente",
       "titulo": "ERRO: CFOP×CST Incoerente",
       "esperado": "ERRO",
-      "obtido": "LEGÍTIMO",
-      "acertou": false,
-      "score": 10,
+      "obtido": "ERRO",
+      "acertou": true,
+      "score": 95,
       "detalhes": {
         "contexto": {
-          "cfop": null,
-          "cst": null,
+          "cfop": "5102",
+          "cst": "10",
           "tem_st": false,
           "tem_difal": false,
           "tem_ajuste": false,
-          "finalidade_nfe": null
+          "finalidade_nfe": "1"
         },
-        "score": 10,
-        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+        "score": 95,
+        "explicacao": "ERRO GRAVE: CFOP 5102 de saída com CST 10 típico de entrada"
       }
     }
   ]

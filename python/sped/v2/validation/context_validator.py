@@ -109,16 +109,29 @@ class ContextValidator:
         regime = contexto.get('regime')
         
         # Regra 0: Tolerância por segmento
+        # MAS: não aplicar para casos que devem ir para REVISAR (complementar, devolução, DIFAL)
         tolerancia_segmento = RegrasPorSegmento.get_tolerancia_por_segmento(segmento)
-        if diferenca <= tolerancia_segmento:
+        
+        # Casos especiais SEMPRE devem ser classificados (não ignorados por tolerância)
+        casos_especiais = (
+            finalidade_nfe in ('2', '3', '4') or  # Complementar, ajuste, devolução
+            tem_difal or
+            (cfop and cfop in matriz.CFOPS_DEVOLUCAO)
+        )
+        
+        if not casos_especiais and diferenca <= tolerancia_segmento:
             return (True, f"Diferença ({diferenca:.2f}) dentro da tolerância do segmento {segmento or 'padrão'} ({tolerancia_segmento})")
         
         # Regra 0.5: Validar coerência CFOP × CST
         if cfop and cst:
             is_valid, msg = RegrasPorSegmento.validar_cfop_cst(cfop, cst, segmento, regime)
             if not is_valid:
-                # Incoerência CFOP×CST: não é legítima, é erro
+                # Incoerência CFOP×CST: não é legítima, é ERRO GRAVE
+                # Forçar passagem para Matriz para classificar como ERRO
                 return (False, "")
+        
+        # Se só tem CFOP ou CST (mas não ambos), não é erro aqui
+        # Deixa a Matriz decidir
         
         # Regra 0.6: Operações especiais (remessa, bonificação, transferência)
         if cfop:
@@ -158,14 +171,14 @@ class ContextValidator:
                     return (True, f"CFOP {cfop} com CST {cst} permite ICMS zero")
         
         # Regra 4: Nota complementar/ajuste
+        # NÃO é legítima automaticamente - deve ir para classificação (REVISAR)
         if finalidade_nfe in ('2', '3'):  # Complementar ou ajuste
-            return (True, f"Nota {self._get_finalidade_nome(finalidade_nfe)}: deve ser comparada com original")
+            return (False, "")  # Deixa a Matriz classificar como REVISAR
         
-        # Regra 5: DIFAL/FCP - campos podem estar em lugares diferentes
-        if tem_difal and tipo_divergencia == 'tributo':
-            # DIFAL pode gerar campos não intuitivos
-            if diferenca <= Decimal('0.10'):
-                return (True, "Operação DIFAL: pequena diferença pode ser arredondamento")
+        # Regra 5: DIFAL/FCP - SEMPRE deve ser classificado (não ignorado)
+        # DIFAL é complexo e deve sempre ir para REVISAR
+        if tem_difal:
+            return (False, "")  # Deixa a Matriz classificar como REVISAR
         
         # Regra 6: Diferença muito pequena (arredondamento)
         if diferenca <= Decimal('0.10'):

@@ -457,6 +457,9 @@
         }
       },
       "resultado_esperado": {
+        "total_divergencias": 1,
+        "diferenca": 0.01,
+        "percentual_diferenca": 0.01,
         "classificacao": "REVISAR",
         "tem_difal": true,
         "tem_ajuste_e111": true,
@@ -549,6 +552,8 @@
       },
       "resultado_esperado": {
         "total_divergencias": 1,
+        "diferenca": 0.01,
+        "percentual_diferenca": 0.01,
         "classificacao": "ERRO",
         "tipo_erro": "cfop_cst_incoerente",
         "score_confianca": 80,

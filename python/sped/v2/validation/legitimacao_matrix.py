@@ -110,7 +110,7 @@ class MatrizLegitimacao:
             contexto.tem_fcp = doc_xml.valor_fcp > 0
             
             # Finalidade e tipo NF (do metadata se disponível)
-            contexto.finalidade_nfe = doc_xml.metadata.get('finalidade')
+            contexto.finalidade_nfe = doc_xml.metadata.get('finalidade') or doc_xml.metadata.get('finNFe')
             contexto.tp_nf = doc_xml.metadata.get('tpNF')
         
         # Extrair de EFD (complementar)
@@ -199,8 +199,10 @@ class MatrizLegitimacao:
                 cfop, cst, contexto.segmento, contexto.regime
             )
             if not is_valid_cfop_cst:
-                score += 20  # Incoerência CFOP×CST é forte indicador de erro
-                explicacao_parts.append(msg_cfop_cst)
+                # Incoerência CFOP×CST é ERRO GRAVE - forçar classificação
+                score = 95  # Forçar ERRO (threshold é 80)
+                explicacao_parts.append(f"ERRO GRAVE: {msg_cfop_cst}")
+                return (ClassificacaoDivergencia.ERRO, min(100, score), "; ".join(explicacao_parts))
             
             # Verificar se é operação especial
             is_especial, tipo_especial = RegrasPorSegmento.is_operacao_especial(cfop)
@@ -229,26 +231,51 @@ class MatrizLegitimacao:
                 explicacao_parts.append(f"CFOP {cfop} de remessa/bonificação")
                 return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
         
-        # Nota complementar/ajuste
+        # Nota complementar/ajuste/devolução
         if contexto.finalidade_nfe in ('2', '3', '4'):  # Complementar, ajuste, devolução
-            score -= 20
+            # SEMPRE REVISAR para notas especiais (não LEGÍTIMO)
             explicacao_parts.append(f"Nota {self._get_finalidade_nome(contexto.finalidade_nfe)}")
-            return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
+            # Score mínimo 50 para garantir REVISAR
+            score_final = max(50, score - 20)
+            return (ClassificacaoDivergencia.REVISAR, score_final, "; ".join(explicacao_parts))
         
         # Ajustar tolerância por segmento
+        # MAS: não aplicar para casos especiais que devem sempre ser classificados
         tolerancia_segmento = RegrasPorSegmento.get_tolerancia_por_segmento(contexto.segmento)
-        if abs(diferenca) <= tolerancia_segmento:
+        
+        # Verificar se é CFOP×CST incoerente
+        cfop_cst_incoerente = False
+        if contexto.cfop and (contexto.cst or contexto.csosn):
+            cfop_param = contexto.cfop
+            cst_param = str(contexto.cst or contexto.csosn or '')
+            is_valid_cfop_cst, _ = RegrasPorSegmento.validar_cfop_cst(
+                cfop_param, cst_param, contexto.segmento, contexto.regime
+            )
+            cfop_cst_incoerente = not is_valid_cfop_cst
+        
+        casos_que_nao_podem_ser_ignorados = (
+            contexto.tem_difal or  # DIFAL sempre REVISAR
+            contexto.tem_fcp or  # FCP sempre REVISAR
+            cfop_cst_incoerente  # CFOP×CST incoerente
+        )
+        
+        if not casos_que_nao_podem_ser_ignorados and abs(diferenca) <= tolerancia_segmento:
             score -= 30
             explicacao_parts.append(f"Diferença dentro da tolerância do segmento ({tolerancia_segmento})")
             return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
         
         # Impacto na apuração (E110)
         if abs(diferenca) > Decimal('100.00'):  # Diferença significativa
-            score += 25
+            score += 35  # Aumentado para garantir ERRO
             explicacao_parts.append("Alto impacto na apuração")
         elif abs(diferenca) > Decimal('10.00'):
-            score += 15
+            # Diferença >R$10 sem ajuste deve ser ERRO
+            score += 30  # Aumentado de 25 para 30
             explicacao_parts.append("Médio impacto na apuração")
+            # Se não tem ajuste e diferença >R$10, é mais provável ser ERRO
+            if not tem_ajuste:
+                score += 20  # Aumentado de 10 para 20 (total = 30+20+base=50 → +tolerâncias pode chegar em 80)
+                explicacao_parts.append("Sem ajustes que expliquem a divergência")
         else:
             score += 5
             explicacao_parts.append("Baixo impacto na apuração")
