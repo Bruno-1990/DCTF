@@ -34,7 +34,7 @@ def consultar_rag(query: str, top_k: int = 5) -> Dict[str, Any]:
         rag = LegalDocumentRAG()
         
         print(f"[RAG Query] Consultando: {query[:100]}...")
-        resultados = rag.query(query, top_k=top_k)
+        resultados = rag.query_legal_context(query, n_results=top_k)
         
         if not resultados:
             return {
@@ -47,17 +47,16 @@ def consultar_rag(query: str, top_k: int = 5) -> Dict[str, Any]:
         
         # Extrair resposta do primeiro resultado
         primeiro = resultados[0]
-        resposta = primeiro.get('content', '')
+        resposta = primeiro.chunk_text
         
         # Calcular confiança média baseada nos scores
-        scores = [r.get('score', 0) for r in resultados]
+        scores = [r.score for r in resultados]
         confianca_media = int((sum(scores) / len(scores)) * 100) if scores else 0
         
         # Extrair referências únicas
         referencias = []
         for r in resultados:
-            metadata = r.get('metadata', {})
-            fonte = metadata.get('source', 'Desconhecido')
+            fonte = r.metadata.get('source', r.metadata.get('doc_source', 'Desconhecido'))
             if fonte not in referencias:
                 referencias.append(fonte)
         
@@ -68,9 +67,9 @@ def consultar_rag(query: str, top_k: int = 5) -> Dict[str, Any]:
             "referencias": referencias,
             "documentos": [
                 {
-                    "content": r.get('content', ''),
-                    "score": r.get('score', 0),
-                    "metadata": r.get('metadata', {})
+                    "content": r.chunk_text,
+                    "score": r.score,
+                    "metadata": r.metadata
                 }
                 for r in resultados
             ]
@@ -81,7 +80,17 @@ def consultar_rag(query: str, top_k: int = 5) -> Dict[str, Any]:
         return {
             "success": False,
             "error": "RAG não está configurado. Instale as dependências necessárias.",
-            "answer": "Sistema RAG indisponível. Usando regras hardcoded.",
+            "answer": "Sistema RAG indisponível. Usando regras hardcoded. Para instalar: pip install chromadb sentence-transformers",
+            "confianca": 0,
+            "referencias": []
+        }
+    
+    except AttributeError as e:
+        print(f"[RAG Query] ERRO: Método não encontrado - {e}")
+        return {
+            "success": False,
+            "error": f"Erro de atributo: {str(e)}",
+            "answer": "Erro ao consultar RAG. Verifique se o sistema foi inicializado corretamente.",
             "confianca": 0,
             "referencias": []
         }
