@@ -229,9 +229,10 @@ export async function obterResultado(req: Request, res: Response): Promise<void>
  */
 export async function extrairMetadados(req: Request, res: Response): Promise<void> {
   try {
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    // Quando usar upload.any(), req.files é um array
+    const files = req.files as Express.Multer.File[];
     
-    if (!files || !files.sped || files.sped.length === 0) {
+    if (!files || files.length === 0) {
       res.status(400).json({
         success: false,
         error: 'Arquivo SPED é obrigatório'
@@ -239,8 +240,25 @@ export async function extrairMetadados(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const spedFile = files.sped[0];
-    const xmlFiles = files.xmls || [];
+    // Organizar arquivos por campo
+    const filesByField: { [fieldname: string]: Express.Multer.File[] } = {};
+    files.forEach((file: Express.Multer.File) => {
+      if (!filesByField[file.fieldname]) {
+        filesByField[file.fieldname] = [];
+      }
+      filesByField[file.fieldname].push(file);
+    });
+
+    if (!filesByField.sped || filesByField.sped.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Arquivo SPED é obrigatório'
+      });
+      return;
+    }
+
+    const spedFile = filesByField.sped[0];
+    const xmlFiles = filesByField.xmls || [];
     
     // Extrair metadados do SPED
     const metadataSped = await spedV2ValidationService.extrairMetadadosSped(spedFile.buffer);
