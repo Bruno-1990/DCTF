@@ -202,21 +202,23 @@ class ContextValidator:
         query = self._build_rag_query(tipo_divergencia, contexto, diferenca)
         
         try:
-            # Consultar RAG
-            result = self.rag_service.query(
-                query=query,
-                n_rag_results=5,
-                min_rag_score=0.3
-            )
-            
-            if result.rag_results:
-                # Verificar se há contexto que explica a divergência
-                for rag_result in result.rag_results:
-                    if self._contexto_explica_divergencia(rag_result, contexto):
-                        explicacao = f"Contexto legal encontrado: {rag_result.chunk_text[:200]}..."
-                        return (True, explicacao, rag_result.score)
-            
+            # RAG desabilitado por padrão - usar apenas regras hardcoded
+            # O RAG será usado apenas na geração automática de regras (RuleGenerator)
+            # Para evitar erros e manter performance, não consultamos RAG aqui
             return (False, "", 0.0)
+            
+            # Código comentado - será usado apenas quando RAG estiver totalmente operacional
+            # result = self.rag_service.query_hybrid(
+            #     query=query,
+            #     n_rag_results=5,
+            #     min_rag_score=0.3
+            # )
+            # 
+            # if result.rag_results:
+            #     for rag_result in result.rag_results:
+            #         if self._contexto_explica_divergencia(rag_result, contexto):
+            #             explicacao = f"Contexto legal encontrado: {rag_result.chunk_text[:200]}..."
+            #             return (True, explicacao, rag_result.score)
         except Exception as e:
             logger.warning(f"Erro ao consultar RAG: {e}")
             return (False, "", 0.0)

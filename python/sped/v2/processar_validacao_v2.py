@@ -332,8 +332,10 @@ def main():
                 print(f"[SPED v2] Executando validações de totalização...")
                 totaling_engine = TotalingEngine(
                     tolerancia_linha=Decimal('0.01'),
-                    tolerancia_documento=Decimal('0.10'),
-                    tolerancia_periodo=Decimal('2.00')
+                    tolerancia_documento_min=Decimal('0.10'),
+                    tolerancia_documento_max=Decimal('1.00'),
+                    tolerancia_periodo_min=Decimal('2.00'),
+                    tolerancia_periodo_max=Decimal('10.00')
                 )
                 
                 # Validar C170 → C190
@@ -403,7 +405,8 @@ def main():
         
         # Criar ContextValidator para consultar RAG antes de criar divergências
         print(f"[SPED v2] Inicializando ContextValidator (RAG)...")
-        context_validator = ContextValidator(use_rag=True)
+        # RAG desabilitado por padrão - será usado apenas na geração automática de regras
+        context_validator = ContextValidator(use_rag=False)
         
         resultado_validacao = None
         try:
