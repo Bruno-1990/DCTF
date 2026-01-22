@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { DocumentCheckIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import React, { useState } from 'react';
+import { DocumentCheckIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import Step1ClientProfile from '../components/sped/v2/Step1ClientProfile';
 import type { ClientProfileData } from '../components/sped/v2/Step1ClientProfile';
 import Step2FileUpload from '../components/sped/v2/Step2FileUpload';
@@ -9,9 +9,6 @@ import Step5CorrectionPlan from '../components/sped/v2/Step5CorrectionPlan';
 import Step6Approval from '../components/sped/v2/Step6Approval';
 import Step7Execution from '../components/sped/v2/Step7Execution';
 import DownloadPackage from '../components/sped/v2/DownloadPackage';
-import InternalValidationView from '../components/sped/v2/InternalValidationView';
-import MatchingView from '../components/sped/v2/MatchingView';
-import ClassificationView from '../components/sped/v2/ClassificationView';
 import { spedV2Service } from '../services/sped-v2';
 import type { SpedV2Status, SpedV2ValidationRequest } from '../services/sped-v2';
 import type { DivergenciaClassificada } from '../components/sped/v2/ClassificationView';
@@ -44,6 +41,9 @@ const SpedValidacaoV2: React.FC = () => {
   const [loteId, setLoteId] = useState<string | null>(null);
   const [inconsistencias, setInconsistencias] = useState<any[]>([]);
   const [documentosConciliados, setDocumentosConciliados] = useState<any[]>([]);
+  const [planoCorrecoes, setPlanoCorrecoes] = useState<any>(null);
+  const [correcoesSelecionadas, setCorrecoesSelecionadas] = useState<any[]>([]);
+  const [perfilExecucao, setPerfilExecucao] = useState<'SEGURO' | 'INTERMEDIARIO' | 'AVANCADO'>('SEGURO');
 
   const [isExtractingMetadata, setIsExtractingMetadata] = useState(false);
 
@@ -104,7 +104,7 @@ const SpedValidacaoV2: React.FC = () => {
         // Preencher perfil com dados extraídos
         const extractedProfile: ClientProfileData = {
           cliente_id: clienteId,
-          razao_social: metadata.razao_social, // Razão social extraída do SPED para conferência
+          razao_social: metadata.razao_social || undefined, // Converter null para undefined
           competencia: metadata.competencia || getCurrentCompetencia(),
           segmento: metadata.segmento || null,
           regime_tributario: metadata.regime_tributario || null,
@@ -216,7 +216,7 @@ const SpedValidacaoV2: React.FC = () => {
     setLoteId(validationId || 'lote-' + Date.now());
   };
 
-  const handleStep7Complete = (arquivoDownload?: string) => {
+  const handleStep7Complete = (_arquivoDownload?: string) => {
     setCurrentStep(8);
   };
 
@@ -247,7 +247,7 @@ const SpedValidacaoV2: React.FC = () => {
             onFilesSelected={handleStep1FilesSelected}
             onNext={handleStep1Next}
             isLoading={isExtractingMetadata}
-            onPreCheckComplete={(result) => {
+            onPreCheckComplete={(_result) => {
               // Pré-check completo
             }}
           />
@@ -271,13 +271,14 @@ const SpedValidacaoV2: React.FC = () => {
               
               // Quando status for completed, carregar resultados e avançar
               if (updatedStatus.status === 'completed' && validationId) {
-                spedV2Service.obterResultado(validationId).then((resultado) => {
+                spedV2Service.obterResultado(validationId).then((resultado: any) => {
                   console.log('[SpedValidacaoV2] 📊 Resultado completo recebido:', resultado);
-                  console.log('[SpedValidacaoV2] 📊 Divergências recebidas:', resultado.divergencias?.length || 0);
+                  console.log('[SpedValidacaoV2] 📊 Divergências recebidas:', (resultado as any).divergencias?.length || 0);
                   
-                  if (resultado.divergencias && Array.isArray(resultado.divergencias)) {
-                    console.log('[SpedValidacaoV2] ✅ Definindo divergências:', resultado.divergencias.length);
-                    setDivergencias(resultado.divergencias);
+                  // O backend retorna divergencias no nível raiz OU em resultado.validacoes.divergencias
+                  if ((resultado as any).divergencias && Array.isArray((resultado as any).divergencias)) {
+                    console.log('[SpedValidacaoV2] ✅ Definindo divergências:', (resultado as any).divergencias.length);
+                    setDivergencias((resultado as any).divergencias);
                   } else if (resultado.resultado?.validacoes?.divergencias) {
                     console.log('[SpedValidacaoV2] ✅ Divergências encontradas em resultado.validacoes:', resultado.resultado.validacoes.divergencias.length);
                     setDivergencias(resultado.resultado.validacoes.divergencias);
@@ -310,7 +311,7 @@ const SpedValidacaoV2: React.FC = () => {
             }}
             onNext={handleStep4Next}
             onBack={handleBack}
-            validationId={validationId}
+            validationId={validationId || undefined}
           />
         );
       case 5:
@@ -321,18 +322,58 @@ const SpedValidacaoV2: React.FC = () => {
             onBack={handleBack}
             onAplicarCorrecoes={(correcoes, perfil) => {
               console.log('[SpedValidacaoV2] Aplicando correções:', { count: correcoes.length, perfil });
-              // TODO: Implementar lógica de aplicação de correções no backend
-              // Por enquanto, apenas avança para aprovação
+              setCorrecoesSelecionadas(correcoes);
+              setPerfilExecucao(perfil);
+              // Criar plano a partir das correções selecionadas
+              // TODO: Obter plano completo do Step5
+              setPlanoCorrecoes({
+                correcoes: correcoes,
+                totais_por_tipo: {},
+                itens_bloqueados: [],
+                impacto_total: correcoes.reduce((sum, c) => sum + (c.impacto_estimado || 0), 0),
+                impacto_bloqueadas: 0,
+                total_correcoes: correcoes.length,
+                total_erro: correcoes.filter(c => c.classificacao === 'ERRO').length,
+                total_revisar: correcoes.filter(c => c.classificacao === 'REVISAR').length,
+                total_legitimo: correcoes.filter(c => c.classificacao === 'LEGÍTIMO').length,
+              });
+              setCurrentStep(6);
             }}
           />
         );
       case 6:
         return (
-          <Step6Approval
-            onApprove={handleStep6Approve}
-            onReject={handleBack}
-            onBack={handleBack}
-          />
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold mb-4">Aprovação de Correções</h2>
+              <p className="text-gray-600 mb-4">
+                Revise e confirme as correções antes de aplicá-las ao SPED.
+              </p>
+              {planoCorrecoes && correcoesSelecionadas.length > 0 ? (
+                <Step6Approval
+                  isOpen={true}
+                  onClose={handleBack}
+                  plano={planoCorrecoes}
+                  correcoesSelecionadas={correcoesSelecionadas}
+                  perfilExecucao={perfilExecucao}
+                  onConfirmar={(modoSimulacao) => {
+                    console.log('[SpedValidacaoV2] Confirmando correções:', { modoSimulacao });
+                    handleStep6Approve();
+                  }}
+                />
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">Nenhuma correção selecionada.</p>
+                  <button
+                    onClick={handleBack}
+                    className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                  >
+                    Voltar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         );
       case 7:
         return (
