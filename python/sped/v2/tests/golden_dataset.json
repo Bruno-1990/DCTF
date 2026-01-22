@@ -1,0 +1,560 @@
+{
+  "metadata": {
+    "versao": "1.0.0",
+    "data_criacao": "2026-01-22",
+    "descricao": "Golden Dataset para calibração do motor de validação XML × SPED",
+    "objetivo": "Reduzir falsos positivos e garantir detecção de erros reais",
+    "base_legal": "Guia Prático EFD ICMS/IPI + Roteiro de Conferência ES"
+  },
+  "configuracao_geral": {
+    "tolerancia_linha": 0.01,
+    "tolerancia_documento_min": 0.05,
+    "tolerancia_documento_max": 0.10,
+    "tolerancia_periodo": 2.00
+  },
+  "casos_teste": [
+    {
+      "id": "caso_001_icms_normal",
+      "titulo": "NF-e limpa com ICMS normal",
+      "tipo_cenario": "A",
+      "rotulo_esperado": "OK",
+      "classificacao_esperada": null,
+      "descricao": "Operação de saída normal com ICMS integral, sem ST, sem redução",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001231000000001",
+          "numero": "123",
+          "serie": "001",
+          "modelo": "55",
+          "data_emissao": "2024-01-15",
+          "cnpj_emitente": "12345678000190",
+          "cnpj_destinatario": "98765432000100",
+          "uf_emitente": "ES",
+          "uf_destinatario": "ES",
+          "tpNF": "1",
+          "finNFe": "1",
+          "vNF": 1000.00,
+          "vProd": 1000.00,
+          "vBC": 1000.00,
+          "vICMS": 120.00,
+          "itens": [
+            {
+              "nItem": "1",
+              "cfop": "5102",
+              "cst": "00",
+              "vProd": 1000.00,
+              "vBC": 1000.00,
+              "pICMS": 12.00,
+              "vICMS": 120.00
+            }
+          ]
+        },
+        "sped": {
+          "c100": {
+            "chv_nfe": "43240112345678000190550010000001231000000001",
+            "cod_sit": "00",
+            "vl_doc": 1000.00,
+            "vl_merc": 1000.00,
+            "vl_bc_icms": 1000.00,
+            "vl_icms": 120.00,
+            "vl_bc_icms_st": 0.00,
+            "vl_icms_st": 0.00
+          },
+          "c170": [
+            {
+              "num_item": "1",
+              "cfop": "5102",
+              "cst_icms": "00",
+              "vl_item": 1000.00,
+              "vl_bc_icms": 1000.00,
+              "aliq_icms": 12.00,
+              "vl_icms": 120.00
+            }
+          ],
+          "c190": [
+            {
+              "cst_icms": "00",
+              "cfop": "5102",
+              "aliq_icms": 12.00,
+              "vl_opr": 1000.00,
+              "vl_bc_icms": 1000.00,
+              "vl_icms": 120.00,
+              "vl_red_bc": 0.00
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "total_divergencias": 0,
+        "matching_score": 50,
+        "matching_strategy": "CHAVE_NFE",
+        "validacao_c170_c190": "OK",
+        "validacao_c190_c100": "OK",
+        "observacao": "Operação normal sem peculiaridades"
+      }
+    },
+    {
+      "id": "caso_002_reducao_base_cst20",
+      "titulo": "NF-e com Redução de Base (CST 20)",
+      "tipo_cenario": "B",
+      "rotulo_esperado": "LEGITIMO",
+      "classificacao_esperada": "LEGITIMO",
+      "descricao": "Operação com redução de base de cálculo (benefício fiscal), CST 20",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001241000000002",
+          "numero": "124",
+          "serie": "001",
+          "cfop": "5405",
+          "cst": "20",
+          "vNF": 1000.00,
+          "vProd": 1000.00,
+          "vBC": 600.00,
+          "pRedBC": 40.00,
+          "pICMS": 12.00,
+          "vICMS": 72.00
+        },
+        "sped": {
+          "c100": {
+            "vl_doc": 1000.00,
+            "vl_merc": 1000.00,
+            "vl_bc_icms": 600.00,
+            "vl_icms": 72.00
+          },
+          "c190": [
+            {
+              "cst_icms": "020",
+              "cfop": "5405",
+              "aliq_icms": 12.00,
+              "vl_opr": 1000.00,
+              "vl_bc_icms": 600.00,
+              "vl_icms": 72.00,
+              "vl_red_bc": 400.00
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "total_divergencias": 0,
+        "classificacao": "LEGITIMO",
+        "tem_reducao_base": true,
+        "validacao_c190": "OK - VL_RED_BC presente explica a redução",
+        "observacao": "Redução de base é legítima quando VL_RED_BC > 0 no C190"
+      }
+    },
+    {
+      "id": "caso_003_base_zero_icms_zero",
+      "titulo": "NF-e com Base=0 e ICMS=0 (Isenta/NT)",
+      "tipo_cenario": "C",
+      "rotulo_esperado": "LEGITIMO",
+      "classificacao_esperada": "LEGITIMO",
+      "descricao": "Operação isenta ou não tributada, sem base de cálculo nem ICMS",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001251000000003",
+          "cfop": "5102",
+          "cst": "40",
+          "vNF": 1000.00,
+          "vProd": 1000.00,
+          "vBC": 0.00,
+          "vICMS": 0.00,
+          "motivo_desoneracao": "3"
+        },
+        "sped": {
+          "c100": {
+            "vl_doc": 1000.00,
+            "vl_merc": 1000.00,
+            "vl_bc_icms": 0.00,
+            "vl_icms": 0.00
+          },
+          "c190": [
+            {
+              "cst_icms": "040",
+              "cfop": "5102",
+              "vl_opr": 1000.00,
+              "vl_bc_icms": 0.00,
+              "vl_icms": 0.00
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "total_divergencias": 0,
+        "classificacao": "LEGITIMO",
+        "observacao": "CST 40 (isenta) justifica BC=0 e ICMS=0. NÃO é erro."
+      }
+    },
+    {
+      "id": "caso_004_st_cst60",
+      "titulo": "NF-e com Substituição Tributária (CST 60)",
+      "tipo_cenario": "D",
+      "rotulo_esperado": "LEGITIMO",
+      "classificacao_esperada": "LEGITIMO",
+      "descricao": "Operação com ST retido anteriormente, ICMS próprio zero, ST preenchido",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001261000000004",
+          "cfop": "5405",
+          "cst": "60",
+          "vNF": 1000.00,
+          "vProd": 1000.00,
+          "vBC": 0.00,
+          "vICMS": 0.00,
+          "vBCST": 1200.00,
+          "pMVAST": 20.00,
+          "pICMSST": 12.00,
+          "vICMSST": 144.00
+        },
+        "sped": {
+          "c100": {
+            "vl_doc": 1000.00,
+            "vl_bc_icms": 0.00,
+            "vl_icms": 0.00,
+            "vl_bc_icms_st": 1200.00,
+            "vl_icms_st": 144.00
+          },
+          "c190": [
+            {
+              "cst_icms": "060",
+              "cfop": "5405",
+              "vl_opr": 1000.00,
+              "vl_bc_icms": 0.00,
+              "vl_icms": 0.00,
+              "vl_bc_icms_st": 1200.00,
+              "vl_icms_st": 144.00
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "total_divergencias": 0,
+        "classificacao": "LEGITIMO",
+        "tem_st": true,
+        "observacao": "CST 60: ICMS próprio zero é ESPERADO. Validar apenas ST."
+      }
+    },
+    {
+      "id": "caso_005_multi_cst_cfop",
+      "titulo": "NF-e multi-CST/multi-CFOP",
+      "tipo_cenario": "E",
+      "rotulo_esperado": "OK",
+      "classificacao_esperada": null,
+      "descricao": "Mesma NF-e com múltiplos itens, CSTs e CFOPs diferentes",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001271000000005",
+          "vNF": 2000.00,
+          "vProd": 2000.00,
+          "vBC": 1000.00,
+          "vICMS": 120.00,
+          "vBCST": 600.00,
+          "vICMSST": 72.00,
+          "itens": [
+            {
+              "nItem": "1",
+              "cfop": "5102",
+              "cst": "00",
+              "vProd": 1000.00,
+              "vBC": 1000.00,
+              "vICMS": 120.00
+            },
+            {
+              "nItem": "2",
+              "cfop": "5405",
+              "cst": "60",
+              "vProd": 1000.00,
+              "vBC": 0.00,
+              "vICMS": 0.00,
+              "vBCST": 1200.00,
+              "vICMSST": 144.00
+            }
+          ]
+        },
+        "sped": {
+          "c100": {
+            "vl_doc": 2000.00,
+            "vl_merc": 2000.00,
+            "vl_bc_icms": 1000.00,
+            "vl_icms": 120.00,
+            "vl_bc_icms_st": 1200.00,
+            "vl_icms_st": 144.00
+          },
+          "c190": [
+            {
+              "cst_icms": "000",
+              "cfop": "5102",
+              "vl_opr": 1000.00,
+              "vl_bc_icms": 1000.00,
+              "vl_icms": 120.00
+            },
+            {
+              "cst_icms": "060",
+              "cfop": "5405",
+              "vl_opr": 1000.00,
+              "vl_bc_icms": 0.00,
+              "vl_icms": 0.00,
+              "vl_bc_icms_st": 1200.00,
+              "vl_icms_st": 144.00
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "total_divergencias": 0,
+        "validacao_c190": "OK - Múltiplas linhas C190 totalizam corretamente",
+        "observacao": "Agrupamento por CST/CFOP/ALIQ funciona corretamente"
+      }
+    },
+    {
+      "id": "caso_006_nota_complementar",
+      "titulo": "NF-e Complementar (finNFe=2)",
+      "tipo_cenario": "F",
+      "rotulo_esperado": "REVISAR",
+      "classificacao_esperada": "REVISAR",
+      "descricao": "Nota complementar ajustando valor de ICMS da nota original",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001281000000006",
+          "finNFe": "2",
+          "nfref": "43240112345678000190550010000001231000000001",
+          "vNF": 50.00,
+          "vBC": 50.00,
+          "vICMS": 6.00,
+          "cfop": "5102",
+          "cst": "00"
+        },
+        "sped": {
+          "c100_complementar": {
+            "chv_nfe": "43240112345678000190550010000001281000000006",
+            "vl_doc": 50.00,
+            "vl_bc_icms": 50.00,
+            "vl_icms": 6.00
+          }
+        }
+      },
+      "resultado_esperado": {
+        "classificacao": "REVISAR",
+        "deve_agrupar_com_original": true,
+        "valor_total_familia": 1050.00,
+        "observacao": "Complementares devem ser somadas à original para validação total"
+      }
+    },
+    {
+      "id": "caso_007_devolucao_vendas",
+      "titulo": "Devolução de Vendas (CFOP 1201)",
+      "tipo_cenario": "G",
+      "rotulo_esperado": "REVISAR",
+      "classificacao_esperada": "REVISAR",
+      "descricao": "Devolução de venda com ajuste de crédito",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001291000000007",
+          "tpNF": "0",
+          "finNFe": "4",
+          "cfop": "1201",
+          "cst": "00",
+          "vNF": 500.00,
+          "vBC": 500.00,
+          "vICMS": 60.00,
+          "nfref": "43240112345678000190550010000001231000000001"
+        },
+        "sped": {
+          "c100": {
+            "ind_oper": "0",
+            "vl_doc": 500.00,
+            "vl_bc_icms": 500.00,
+            "vl_icms": 60.00
+          },
+          "c197": [
+            {
+              "cod_aj": "ES010001",
+              "descr_compl_aj": "Devolução - estorno de débito",
+              "vl_aj": 60.00
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "classificacao": "REVISAR",
+        "tem_ajuste_c197": true,
+        "observacao": "Devoluções com C197 são legítimas. Ajuste explica diferenças."
+      }
+    },
+    {
+      "id": "caso_008_erro_real_c190_c100",
+      "titulo": "ERRO REAL: C190 não totaliza C100",
+      "tipo_cenario": "ERRO",
+      "rotulo_esperado": "ERRO",
+      "classificacao_esperada": "ERRO",
+      "descricao": "Erro de totalização: soma C190 não bate com C100",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001301000000008",
+          "vNF": 1000.00,
+          "vBC": 1000.00,
+          "vICMS": 120.00
+        },
+        "sped": {
+          "c100": {
+            "vl_doc": 1000.00,
+            "vl_bc_icms": 1000.00,
+            "vl_icms": 120.00
+          },
+          "c190": [
+            {
+              "cst_icms": "000",
+              "cfop": "5102",
+              "vl_opr": 1000.00,
+              "vl_bc_icms": 1000.00,
+              "vl_icms": 100.00
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "total_divergencias": 1,
+        "classificacao": "ERRO",
+        "severidade": "alta",
+        "tipo_divergencia": "totalizacao_c190_para_c100",
+        "diferenca": 20.00,
+        "impacto_e110": true,
+        "observacao": "Divergência de R$ 20 no ICMS sem ajustes que expliquem = ERRO REAL"
+      }
+    },
+    {
+      "id": "caso_009_difal_interestadual",
+      "titulo": "Operação Interestadual com DIFAL",
+      "tipo_cenario": "H",
+      "rotulo_esperado": "REVISAR",
+      "classificacao_esperada": "REVISAR",
+      "descricao": "Venda interestadual para não contribuinte com DIFAL",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001311000000009",
+          "uf_emitente": "ES",
+          "uf_destinatario": "SP",
+          "cfop": "6108",
+          "cst": "00",
+          "vNF": 1000.00,
+          "vBC": 1000.00,
+          "pICMS": 12.00,
+          "vICMS": 120.00,
+          "vICMSUFDest": 50.00,
+          "vICMSUFRemet": 70.00
+        },
+        "sped": {
+          "c100": {
+            "vl_bc_icms": 1000.00,
+            "vl_icms": 120.00
+          },
+          "e111": [
+            {
+              "cod_aj_apur": "ES_DIFAL_001",
+              "descr": "DIFAL - Partilha UF Destino",
+              "vl_aj": 50.00
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "classificacao": "REVISAR",
+        "tem_difal": true,
+        "tem_ajuste_e111": true,
+        "observacao": "DIFAL com E111 explicativo = REVISAR (não ERRO)"
+      }
+    },
+    {
+      "id": "caso_010_cancelada_cod_sit_02",
+      "titulo": "NF-e Cancelada (cod_sit=02)",
+      "tipo_cenario": "I",
+      "rotulo_esperado": "IGNORAR",
+      "classificacao_esperada": null,
+      "descricao": "Nota fiscal cancelada não deve gerar divergência",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001321000000010",
+          "situacao": "Cancelada"
+        },
+        "sped": {
+          "c100": {
+            "chv_nfe": "43240112345678000190550010000001321000000010",
+            "cod_sit": "02"
+          }
+        }
+      },
+      "resultado_esperado": {
+        "deve_processar": false,
+        "observacao": "Documentos cancelados devem ser ignorados na validação"
+      }
+    },
+    {
+      "id": "caso_011_beneficio_compete_es",
+      "titulo": "Benefício Fiscal COMPETE ES (E111)",
+      "tipo_cenario": "J",
+      "rotulo_esperado": "LEGITIMO",
+      "classificacao_esperada": "LEGITIMO",
+      "descricao": "Operação com benefício COMPETE ES reduzindo ICMS devido",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001331000000011",
+          "vNF": 1000.00,
+          "vBC": 1000.00,
+          "vICMS": 120.00
+        },
+        "sped": {
+          "c100": {
+            "vl_bc_icms": 1000.00,
+            "vl_icms": 120.00
+          },
+          "e111": [
+            {
+              "cod_aj_apur": "ES_COMPETE_2024",
+              "descr": "COMPETE ES - Crédito Presumido 5%",
+              "vl_aj": 50.00,
+              "ind_aj": "1"
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "classificacao": "LEGITIMO",
+        "tem_beneficio_fiscal": true,
+        "tem_ajuste_e111": true,
+        "observacao": "Benefício no E111 explica diferença na apuração. Não exigir do XML."
+      }
+    },
+    {
+      "id": "caso_012_erro_cfop_cst_incoerente",
+      "titulo": "ERRO: CFOP×CST Incoerente",
+      "tipo_cenario": "ERRO",
+      "rotulo_esperado": "ERRO",
+      "classificacao_esperada": "ERRO",
+      "descricao": "CFOP de venda (5102) com CST de entrada (010) - incoerência",
+      "evidencias": {
+        "xml": {
+          "chave_nfe": "43240112345678000190550010000001341000000012",
+          "tpNF": "1",
+          "cfop": "5102",
+          "cst": "10",
+          "vNF": 1000.00
+        },
+        "sped": {
+          "c190": [
+            {
+              "cfop": "5102",
+              "cst_icms": "010"
+            }
+          ]
+        }
+      },
+      "resultado_esperado": {
+        "total_divergencias": 1,
+        "classificacao": "ERRO",
+        "tipo_erro": "cfop_cst_incoerente",
+        "score_confianca": 80,
+        "observacao": "CFOP 5xxx (saída) com CST 010 (entrada com ST) é incoerência grave"
+      }
+    }
+  ]
+}
+

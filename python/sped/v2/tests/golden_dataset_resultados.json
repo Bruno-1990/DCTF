@@ -1,0 +1,250 @@
+{
+  "metricas": {
+    "total_casos": 12,
+    "acertos": 7,
+    "erros": 5,
+    "precisao_geral": 58.33,
+    "falsos_positivos": 0,
+    "falsos_negativos": 1,
+    "taxa_fp": 0.0,
+    "taxa_fn": 8.33,
+    "recall": 0.0,
+    "especificidade": 100.0,
+    "verdadeiros_positivos": 0,
+    "verdadeiros_negativos": 10,
+    "score_medio": 36.25
+  },
+  "resultados": [
+    {
+      "caso_id": "caso_001_icms_normal",
+      "titulo": "NF-e limpa com ICMS normal",
+      "esperado": "OK",
+      "obtido": "OK",
+      "acertou": true,
+      "score": 100,
+      "detalhes": {
+        "contexto": {
+          "cfop": "5102",
+          "cst": "00",
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 100,
+        "explicacao": "Sem divergências"
+      }
+    },
+    {
+      "caso_id": "caso_002_reducao_base_cst20",
+      "titulo": "NF-e com Redução de Base (CST 20)",
+      "esperado": "LEGITIMO",
+      "obtido": "LEGÍTIMO",
+      "acertou": true,
+      "score": 10,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 10,
+        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+      }
+    },
+    {
+      "caso_id": "caso_003_base_zero_icms_zero",
+      "titulo": "NF-e com Base=0 e ICMS=0 (Isenta/NT)",
+      "esperado": "LEGITIMO",
+      "obtido": "LEGÍTIMO",
+      "acertou": true,
+      "score": 10,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 10,
+        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+      }
+    },
+    {
+      "caso_id": "caso_004_st_cst60",
+      "titulo": "NF-e com Substituição Tributária (CST 60)",
+      "esperado": "LEGITIMO",
+      "obtido": "LEGÍTIMO",
+      "acertou": true,
+      "score": 10,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 10,
+        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+      }
+    },
+    {
+      "caso_id": "caso_005_multi_cst_cfop",
+      "titulo": "NF-e multi-CST/multi-CFOP",
+      "esperado": "OK",
+      "obtido": "OK",
+      "acertou": true,
+      "score": 100,
+      "detalhes": {
+        "contexto": {
+          "cfop": "5102",
+          "cst": "60",
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 100,
+        "explicacao": "Sem divergências"
+      }
+    },
+    {
+      "caso_id": "caso_006_nota_complementar",
+      "titulo": "NF-e Complementar (finNFe=2)",
+      "esperado": "REVISAR",
+      "obtido": "LEGÍTIMO",
+      "acertou": false,
+      "score": 10,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 10,
+        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+      }
+    },
+    {
+      "caso_id": "caso_007_devolucao_vendas",
+      "titulo": "Devolução de Vendas (CFOP 1201)",
+      "esperado": "REVISAR",
+      "obtido": "LEGÍTIMO",
+      "acertou": false,
+      "score": 10,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 10,
+        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+      }
+    },
+    {
+      "caso_id": "caso_008_erro_real_c190_c100",
+      "titulo": "ERRO REAL: C190 não totaliza C100",
+      "esperado": "ERRO",
+      "obtido": "REVISAR",
+      "acertou": false,
+      "score": 55,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 55,
+        "explicacao": "Médio impacto na apuração"
+      }
+    },
+    {
+      "caso_id": "caso_009_difal_interestadual",
+      "titulo": "Operação Interestadual com DIFAL",
+      "esperado": "REVISAR",
+      "obtido": "LEGÍTIMO",
+      "acertou": false,
+      "score": 10,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 10,
+        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+      }
+    },
+    {
+      "caso_id": "caso_010_cancelada_cod_sit_02",
+      "titulo": "NF-e Cancelada (cod_sit=02)",
+      "esperado": "IGNORAR",
+      "obtido": "IGNORAR",
+      "acertou": true,
+      "score": 100,
+      "detalhes": {
+        "deve_processar": false
+      }
+    },
+    {
+      "caso_id": "caso_011_beneficio_compete_es",
+      "titulo": "Benefício Fiscal COMPETE ES (E111)",
+      "esperado": "LEGITIMO",
+      "obtido": "LEGÍTIMO",
+      "acertou": true,
+      "score": 10,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 10,
+        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+      }
+    },
+    {
+      "caso_id": "caso_012_erro_cfop_cst_incoerente",
+      "titulo": "ERRO: CFOP×CST Incoerente",
+      "esperado": "ERRO",
+      "obtido": "LEGÍTIMO",
+      "acertou": false,
+      "score": 10,
+      "detalhes": {
+        "contexto": {
+          "cfop": null,
+          "cst": null,
+          "tem_st": false,
+          "tem_difal": false,
+          "tem_ajuste": false,
+          "finalidade_nfe": null
+        },
+        "score": 10,
+        "explicacao": "Diferença dentro da tolerância do segmento (0.10)"
+      }
+    }
+  ]
+}
