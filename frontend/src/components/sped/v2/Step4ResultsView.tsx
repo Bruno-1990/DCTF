@@ -13,6 +13,7 @@ import {
 import EvidenceDrawer from './EvidenceDrawer';
 import type { EvidenciaXML, EvidenciaSPED, EvidenciaComparacao } from './EvidenceDrawer';
 import type { DivergenciaClassificada } from './ClassificationView';
+import { AnalysisReport } from './AnalysisReport';
 
 // Helper function for conditional classNames
 const classNames = (...classes: (string | boolean | undefined)[]): string => {
