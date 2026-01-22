@@ -66,7 +66,11 @@ const SpedValidacaoV2: React.FC = () => {
     // Extrair metadados do SPED
       try {
         console.log('[SpedValidacaoV2] ⏳ Iniciando extração de metadados...');
-        const metadata = await spedV2Service.extrairMetadados(uploadedFiles.sped);
+        // Conforme Precheck: enviar XMLs também para detectar flags operacionais
+        const metadata = await spedV2Service.extrairMetadados(
+          uploadedFiles.sped,
+          uploadedFiles.xmls
+        );
         
         console.log('[SpedValidacaoV2] ✅ Metadados recebidos do backend:', {
           cnpj: metadata.cnpj,

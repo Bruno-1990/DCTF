@@ -46,6 +46,16 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
     }
   }, [divergencias]);
   
+  // Debug: Log do banner de regras
+  React.useEffect(() => {
+    console.log('[Step4ResultsView] 🎨 Banner de regras:', {
+      deveMostrar: divergenciasSemRegra.length > 0 && !!validationId,
+      divergenciasSemRegra: divergenciasSemRegra.length,
+      validationId: validationId || 'NÃO DEFINIDO',
+      totalDivergencias: divergencias.length
+    });
+  }, [divergenciasSemRegra, validationId, divergencias.length]);
+  
   const [sidebarAberto, setSidebarAberto] = useState<boolean>(true);
   const [modalRegraAberto, setModalRegraAberto] = useState<boolean>(false);
   const [filtros, setFiltros] = useState({
@@ -119,16 +129,16 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
   // Identificar divergências sem regra (sem regra_aplicada OU score muito baixo)
   // Uma divergência é considerada "sem regra" se:
   // 1. Não tem regra_aplicada definida (não foi classificada por nenhuma regra)
-  // 2. OU tem score muito baixo (< 20) indicando classificação incerta
+  // 2. OU tem score muito baixo (< 30) indicando classificação incerta
   const divergenciasSemRegra = useMemo(() => {
-    return divergencias.filter(
+    const semRegra = divergencias.filter(
       d => {
         const temRegraAplicada = d.contexto?.regra_aplicada;
         const scoreConfianca = d.contexto?.score_confianca || 0;
         const temClassificacao = d.contexto?.classificacao;
         
-        // Se tem regra aplicada e score >= 20, está coberta
-        if (temRegraAplicada && scoreConfianca >= 20) {
+        // Se tem regra aplicada explícita, está coberta
+        if (temRegraAplicada && temRegraAplicada.trim() !== '') {
           return false;
         }
         
@@ -141,6 +151,20 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
         return true;
       }
     );
+    
+    // Debug: Log das divergências sem regra
+    console.log('[Step4ResultsView] 🔍 Divergências sem regra:', {
+      total: divergencias.length,
+      semRegra: semRegra.length,
+      exemplos: semRegra.slice(0, 3).map(d => ({
+        tipo: d.tipo,
+        classificacao: d.contexto?.classificacao,
+        regra_aplicada: d.contexto?.regra_aplicada,
+        score: d.contexto?.score_confianca
+      }))
+    });
+    
+    return semRegra;
   }, [divergencias]);
 
   const handleVerEvidencias = (divergencia: DivergenciaClassificada) => {

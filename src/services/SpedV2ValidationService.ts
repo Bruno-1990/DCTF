@@ -306,6 +306,67 @@ export class SpedV2ValidationService {
       }
     }
   }
+
+  /**
+   * Extrai flags operacionais dos XMLs (ST, DIFAL, FCP, Interestadual)
+   * Conforme Precheck: detectar ocorrência operacional dos XMLs
+   */
+  async extrairFlagsXMLs(xmlBuffers: Buffer[]): Promise<any> {
+    // Garantir que o diretório temporário existe
+    if (!fs.existsSync(this.tmpDir)) {
+      fs.mkdirSync(this.tmpDir, { recursive: true });
+    }
+    
+    const tmpDir = path.join(this.tmpDir, `xmls_${uuidv4()}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    
+    try {
+      // Salvar XMLs em diretório temporário
+      xmlBuffers.forEach((xmlBuffer, index) => {
+        const xmlPath = path.join(tmpDir, `xml_${index}.xml`);
+        fs.writeFileSync(xmlPath, xmlBuffer);
+      });
+      
+      // Executar script Python
+      const pythonScript = path.join(__dirname, '../../python/sped/v2/extract_xml_flags.py');
+      const { stdout, stderr } = await execAsync(
+        `python "${pythonScript}" "${tmpDir}"`,
+        {
+          cwd: path.join(__dirname, '../../python/sped/v2'),
+          maxBuffer: 10 * 1024 * 1024,
+          encoding: 'utf-8'
+        }
+      );
+      
+      // Log stderr para debug
+      if (stderr) {
+        console.log('[SpedV2ValidationService] 🐍 Python stderr (flags XML):', stderr);
+      }
+      
+      if (!stdout) {
+        throw new Error(stderr || 'Nenhuma saída do script Python');
+      }
+      
+      const flags = JSON.parse(stdout.trim());
+      console.log('[SpedV2ValidationService] ✅ Flags XML extraídos:', JSON.stringify(flags, null, 2));
+      return flags;
+    } catch (error: any) {
+      console.error('[SpedV2ValidationService] Erro ao extrair flags XML:', error);
+      // Retornar flags padrão em caso de erro (não bloquear)
+      return {
+        opera_st: false,
+        opera_difal: false,
+        opera_fcp: false,
+        opera_interestadual: false,
+        total_xmls: 0,
+      };
+    } finally {
+      // Limpar diretório temporário
+      if (fs.existsSync(tmpDir)) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    }
+  }
 }
 
 // Singleton

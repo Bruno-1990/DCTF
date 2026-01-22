@@ -225,6 +225,7 @@ export async function obterResultado(req: Request, res: Response): Promise<void>
 /**
  * POST /api/sped/v2/extract-metadata
  * Extrai metadados do arquivo SPED (CNPJ, competência, regime, etc)
+ * Conforme Precheck: combina metadados do SPED com flags dos XMLs
  */
 export async function extrairMetadados(req: Request, res: Response): Promise<void> {
   try {
@@ -239,11 +240,60 @@ export async function extrairMetadados(req: Request, res: Response): Promise<voi
     }
 
     const spedFile = files.sped[0];
-    const metadata = await spedV2ValidationService.extrairMetadadosSped(spedFile.buffer);
+    const xmlFiles = files.xmls || [];
+    
+    // Extrair metadados do SPED
+    const metadataSped = await spedV2ValidationService.extrairMetadadosSped(spedFile.buffer);
+    
+    // Extrair flags dos XMLs (se houver)
+    let flagsXMLs: any = null;
+    if (xmlFiles.length > 0) {
+      try {
+        flagsXMLs = await spedV2ValidationService.extrairFlagsXMLs(
+          xmlFiles.map(f => f.buffer)
+        );
+        
+        // Combinar flags: SPED OU XML (se qualquer um detectar, marcar como true)
+        // Conforme Precheck: XML prevalece para "ocorrência operacional"
+        metadataSped.opera_st = metadataSped.opera_st || flagsXMLs.opera_st;
+        metadataSped.opera_difal = metadataSped.opera_difal || flagsXMLs.opera_difal;
+        metadataSped.opera_fcp = metadataSped.opera_fcp || flagsXMLs.opera_fcp;
+        metadataSped.opera_interestadual = metadataSped.opera_interestadual || flagsXMLs.opera_interestadual;
+        
+        // Adicionar fonte das flags
+        metadataSped.fonte_flags = {
+          st: flagsXMLs.opera_st ? 'XML' : (metadataSped.opera_st ? 'SPED' : null),
+          difal: flagsXMLs.opera_difal ? 'XML' : (metadataSped.opera_difal ? 'SPED' : null),
+          fcp: flagsXMLs.opera_fcp ? 'XML' : (metadataSped.opera_fcp ? 'SPED' : null),
+          interestadual: flagsXMLs.opera_interestadual ? 'XML' : (metadataSped.opera_interestadual ? 'SPED' : null),
+        };
+        
+        // Adicionar estatísticas dos XMLs
+        metadataSped.stats_xmls = {
+          total_xmls: flagsXMLs.total_xmls,
+          xmls_com_st: flagsXMLs.xmls_com_st,
+          xmls_com_difal: flagsXMLs.xmls_com_difal,
+          xmls_com_fcp: flagsXMLs.xmls_com_fcp,
+          xmls_interestaduais: flagsXMLs.xmls_interestaduais,
+        };
+      } catch (error: any) {
+        console.warn('[SpedV2ValidationController] Erro ao extrair flags XML (continuando):', error);
+        // Continuar mesmo se falhar (flags XML são opcionais)
+      }
+    }
+    
+    // Adicionar fonte dos campos principais (conforme Precheck)
+    metadataSped.fonte_campos = {
+      razao_social: metadataSped.razao_social ? 'SPED|0000' : null,
+      competencia: metadataSped.competencia ? 'SPED|0000' : null,
+      segmento: metadataSped.fonte_segmento ? `SPED|${metadataSped.fonte_segmento}` : null,
+      regime_tributario: metadataSped.regime_tributario ? 'SPED|0000' : null,
+      uf: metadataSped.uf ? 'SPED|0000' : null,
+    };
 
     res.json({
       success: true,
-      metadata
+      metadata: metadataSped
     });
   } catch (error: any) {
     console.error('[SpedV2ValidationController] Erro ao extrair metadados:', error);

@@ -63,7 +63,8 @@ router.use(sanitizeData);
 router.post(
   '/extract-metadata',
   upload.fields([
-    { name: 'sped', maxCount: 1 }
+    { name: 'sped', maxCount: 1 },
+    { name: 'xmls', maxCount: 1000 } // Aceitar múltiplos XMLs
   ]),
   extrairMetadados
 );

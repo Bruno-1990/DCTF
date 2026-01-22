@@ -1,0 +1,74 @@
+Especificação — Auto-preenchimento e Perfil Fiscal Inicial
+Projeto: Motor de Conferência XML × SPED (EFD ICMS/IPI) — Perfil ES
+Gerado em: 22/01/2026 20:02
+1. Objetivo
+Definir como o sistema deve auto-preencher os dados iniciais de cliente/perfil fiscal para executar o roteiro de conferência XML × SPED (EFD ICMS/IPI) com redução de falsos positivos.
+2. Escopo e premissas
+Escopo: EFD ICMS/IPI (SPED Fiscal) + NF-e (XML) da mesma competência.
+Princípio: comparar conceitos fiscais (modelo canônico), não ‘campo vs campo’ diretamente.
+Auto-preenchimento deve ser: auditável, reversível e com indicação de confiança (fonte e regra).
+Quando houver conflito entre SPED e XML, prevalece o SPED para ‘perfil do contribuinte’ e o XML para ‘ocorrência operacional’ (ex.: DIFAL em notas).
+3. Fontes de dados
+3.1 SPED EFD ICMS/IPI (Registro 0000)
+No carregamento do arquivo SPED, ler o registro |0000| para obter identificação do contribuinte, período de apuração e perfil.
+Campos recomendados:
+0000.NOME (Razão Social)
+0000.CNPJ (CNPJ)
+0000.UF (UF do estabelecimento)
+0000.DT_INI e 0000.DT_FIN (competência/período)
+0000.IND_PERFIL (A/B/C)
+0000.IND_ATIV (tipo de atividade)
+3.2 XML NF-e (emit/CRT, UF, grupos ICMS)
+No carregamento dos XMLs, varrer os documentos do período para detectar ocorrência operacional (interestadual, ST, DIFAL, FCP).
+4. Mapeamento de campos da tela (Auto-preenchimento)
+A tabela abaixo define a regra padrão, fonte e fallback para cada campo exibido no passo inicial.
+5. Necessidade dos campos para a apuração do roteiro
+Classificação sugerida:
+Obrigatório para rodar o motor com baixo falso-positivo: Razão Social (identificação), Competência, UF, Perfil/Atividade (IND_PERFIL/IND_ATIV), e flags operacionais (ST/DIFAL/FCP/Interestadual quando aplicáveis).
+Opcional (não bloqueia conferência ICMS/IPI): Regime Tributário (Lucro Presumido/Real). Relevante para outras rotinas (IRPJ/CSLL/PIS/COFINS), mas não é requisito do SPED ICMS/IPI.
+Opcional parametrizador: ‘Regime especial’ (somente se houver regras extras no motor para benefícios/TTD).
+6. Comportamento de UI/UX recomendado
+Após upload do SPED: preencher automaticamente campos base e bloquear edição por padrão (com botão ‘Editar’).
+Após upload dos XMLs: recalcular flags ST/DIFAL/FCP/Interestadual e registrar evidências (ex.: ‘Detectado em 0/120 notas’).
+Exibir ‘Fonte’ e ‘Confiança’ ao lado de cada campo (ex.: ‘SPED|0000’, ‘XML|emit/CRT’, ‘Cadastro’).
+Quando houver inconsistência (ex.: Segmento selecionado ≠ IND_ATIV do SPED), mostrar alerta e manter o valor do SPED como padrão.
+Salvar o perfil do cliente como ‘snapshot da competência’ para auditoria (quem alterou e quando).
+7. Casos especiais e guardrails (redução de falso-positivo)
+XMLs incompletos: permitir execução com validação interna do SPED (Camada B do roteiro).
+Notas complementares / devoluções: considerar eventos e CFOPs no modelo canônico; não usar flag isolada para apontar erro.
+ST parcial: varrer itens (det/prod/imposto/ICMS), não apenas totais.
+DIFAL: presença de ICMSUFDest não implica recolhimento; marcar ‘FCP’ somente se valor > 0.
+Intermediário/triangulação: interestadual deve considerar UF do destinatário; CFOP isolado pode enganar.
+8. Notas de implementação (sugestão técnica)
+8.1 Parser SPED
+Ler o arquivo linha a linha e capturar o primeiro |0000|. Validar datas e UF.
+8.2 Parser XML
+Para cada XML, capturar: emit.UF, dest.UF, ide.idDest, emit.CRT e detectar grupos ICMSST/ICMSUFDest e valores FCP.
+8.3 Persistência
+Persistir em tabela ‘perfil_competencia’ (CNPJ, competencia, ind_perfil, ind_ativ, flags, fonte, hash dos arquivos).
+Anexo A — Exemplo extraído dos arquivos de out/2025 (ORIONES)
+SPED |0000| (resumo):
+- NOME: ORIONES DIST. DE MAT. DE CONST. LTDA.
+- CNPJ: 07550459000108
+- UF: ES
+- DT_INI: 01102025
+- DT_FIN: 31102025
+- IND_PERFIL: A
+- IND_ATIV: 1
+XMLs (agregado da amostra enviada):
+- CRT (emitente): 3 (3 = Regime Normal)
+- Opera interestadual?: Não (emit ES → dest ES)
+- ST?: Não
+- DIFAL?: Não
+- FCP?: Não
+Observação: IND_ATIV no SPED está como ‘1’ (Outros). Se a UI estiver exibindo ‘Indústria’, ajustar o mapeamento ou tratar como divergência controlada.
+Campo da tela | Auto? | Fonte primária | Regra de extração | Confiabilidade | Fallback/override
+Razão Social | Sim | SPED 0000.NOME | Ler do |0000|. | Alta | Se SPED ausente: XML emit/xNome; permitir edição manual.
+Competência | Sim | SPED 0000.DT_INI/DT_FIN | Competência = mês/ano de DT_INI (validar DT_FIN no mesmo mês). | Alta | Se SPED ausente: inferir pelo dhEmi dos XMLs; exigir confirmação.
+Segmento | Parcial | SPED 0000.IND_ATIV | Mapeamento sugerido: 0=Industrial; 1=Outros (comércio/serviços); 2=Outros. Ajustar labels do sistema. | Média | Se conflito com cadastro interno, mostrar alerta e permitir escolha.
+Regime Tributário (Lucro Presumido/Real) | Não (por arquivo) | Cadastro do cliente | Não é informação confiável no SPED ICMS/IPI nem no XML. Manter como cadastro fixo (opcional no passo). | Baixa via arquivo | Se o usuário quiser, manter campo para cadastro/ajuste; não bloquear o fluxo.
+Opera com ST? | Sim | XML (itens/total) | Marcar ‘Sim’ se existir ICMSST com valores > 0 (ex.: vICMSST, vBCST) em qualquer item. | Alta | Se nenhum XML: inferir por C190/C197/E111 (ajustes ST) e marcar ‘Indeterminado’.
+Está em regime especial? | Parcial | Cadastro/Manual | Em geral não é inferível por SPED/XML. Tratar como opção de cadastro (ex.: benefício, regime especial, TTD). | Baixa via arquivo | Se marcar, o sistema habilita regras específicas parametrizadas.
+Opera com DIFAL? | Sim | XML (ICMSUFDest) | Marcar ‘Sim’ se houver grupo ICMSUFDest em alguma NF-e. | Alta | Sem XML: inferir por EFD (partilha) quando aplicável; senão ‘Não’.
+Opera com FCP? | Sim | XML (vFCP/vFCPST/vFCPUFDest) | Marcar ‘Sim’ se houver qualquer valor FCP > 0 em itens/total. | Alta | Se DIFAL presente, verificar FCPUFDest; se só tags zeradas, manter ‘Não’.
+Opera interestadual? | Sim | XML (UF emit/dest ou idDest) | Marcar ‘Sim’ se emit.UF != dest.UF ou ide.idDest em {2,3}. | Alta | Sem XML: inferir por CFOP 6xxx/2xxx na EFD; senão ‘Indeterminado’.

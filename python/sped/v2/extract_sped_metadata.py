@@ -44,12 +44,16 @@ def extract_sped_metadata(sped_content: str) -> Dict[str, Any]:
         'cnpj': None,
         'razao_social': None,
         'competencia': None,
+        'uf': None,  # NOVO: UF do estabelecimento
         'regime_tributario': None,
+        'ind_perfil': None,  # NOVO: IND_PERFIL (A/B/C)
+        'ind_ativ': None,  # NOVO: IND_ATIV (0/1/2)
         'opera_st': False,
         'opera_difal': False,
         'opera_fcp': False,
         'opera_interestadual': False,
         'segmento': None,
+        'fonte_segmento': None,  # NOVO: 'IND_ATIV' ou 'CFOP'
         'stats': {
             'total_registros': 0,
             'total_c100': 0,
@@ -82,9 +86,10 @@ def extract_sped_metadata(sped_content: str) -> Dict[str, Any]:
             continue
             
         if line.startswith('|0000|'):
-            fs = split_sped_line(line, min_fields=15)
+            fs = split_sped_line(line, min_fields=16)  # Aumentado para 16 para incluir IND_ATIV
             
             # DT_INI (posição 4 após split) - formato DDMMAAAA
+            dt_ini = None
             if len(fs) > 4:
                 competencia_str = fs[4].strip()
                 if competencia_str and len(competencia_str) == 8:
@@ -92,8 +97,20 @@ def extract_sped_metadata(sped_content: str) -> Dict[str, Any]:
                         mes = competencia_str[2:4]
                         ano = competencia_str[4:8]
                         metadata['competencia'] = f"{ano}-{mes}"
+                        dt_ini = competencia_str
                     except:
                         pass
+            
+            # DT_FIN (posição 5 após split) - validar se está no mesmo mês
+            if len(fs) > 5:
+                dt_fin = fs[5].strip()
+                if dt_fin and len(dt_fin) == 8 and dt_ini:
+                    # Validar se DT_FIN está no mesmo mês de DT_INI
+                    mes_ini = dt_ini[2:4]
+                    mes_fin = dt_fin[2:4]
+                    if mes_ini != mes_fin:
+                        # Aviso: competência pode estar incorreta
+                        metadata['aviso_competencia'] = f"DT_INI ({dt_ini}) e DT_FIN ({dt_fin}) em meses diferentes"
             
             # Razão Social (posição 6 após split)
             if len(fs) > 6:
@@ -107,16 +124,31 @@ def extract_sped_metadata(sped_content: str) -> Dict[str, Any]:
                 if cnpj and len(cnpj) == 14:
                     metadata['cnpj'] = cnpj
             
-            # Regime tributário (posição 14 após split - IND_PERFIL)
-            # 1=Simples Nacional, 2=Simples Nacional - excesso, 3=Regime Normal
-            # IMPORTANTE: Este campo pode estar vazio! Vamos inferir depois se necessário
+            # UF (posição 8 após split) - NOVO conforme Precheck
+            if len(fs) > 8:
+                uf = fs[8].strip()
+                if uf and len(uf) == 2:
+                    metadata['uf'] = uf
+            
+            # IND_PERFIL (posição 14 após split) - A/B/C
+            # NOVO: Armazenar valor original além de converter para regime
             if len(fs) > 14:
-                regime = fs[14].strip()
-                if regime:
-                    if regime in ['1', '2']:
+                ind_perfil = fs[14].strip()
+                if ind_perfil:
+                    metadata['ind_perfil'] = ind_perfil.upper()  # A, B ou C
+                    # Converter para regime tributário (compatibilidade)
+                    # Nota: IND_PERFIL não é exatamente regime, mas vamos manter compatibilidade
+                    if ind_perfil in ['1', '2']:
                         metadata['regime_tributario'] = 'SIMPLES_NACIONAL'
-                    elif regime == '3':
-                        metadata['regime_tributario'] = 'LUCRO_PRESUMIDO'  # Default para Regime Normal
+                    elif ind_perfil == '3':
+                        metadata['regime_tributario'] = 'LUCRO_PRESUMIDO'
+            
+            # IND_ATIV (posição 15 após split) - NOVO conforme Precheck
+            # 0=Industrial, 1=Outros (comércio/serviços), 2=Outros
+            if len(fs) > 15:
+                ind_ativ = fs[15].strip()
+                if ind_ativ:
+                    metadata['ind_ativ'] = ind_ativ
             
             break  # Parar após encontrar 0000
     
@@ -265,8 +297,20 @@ def extract_sped_metadata(sped_content: str) -> Dict[str, Any]:
         # Se não tem nada específico, deixar como null para o usuário preencher
         # (não assumir Simples Nacional sem evidência)
     
-    # ========== INFERIR SEGMENTO (baseado em CFOPs específicos e NCMs/CESTs) ==========
-    if cfops_set:
+    # ========== INFERIR SEGMENTO (prioridade: IND_ATIV > CFOPs) ==========
+    # NOVO conforme Precheck: Mapear IND_ATIV primeiro
+    if metadata.get('ind_ativ') is not None:
+        ind_ativ = metadata['ind_ativ']
+        # Mapeamento conforme Precheck: 0=Industrial, 1=Outros (comércio/serviços), 2=Outros
+        if ind_ativ == '0':
+            metadata['segmento'] = 'INDUSTRIA'
+            metadata['fonte_segmento'] = 'IND_ATIV'
+        elif ind_ativ in ['1', '2']:
+            metadata['segmento'] = 'COMERCIO'  # Outros = comércio/serviços
+            metadata['fonte_segmento'] = 'IND_ATIV'
+    
+    # Se IND_ATIV não foi encontrado ou não mapeou, usar inferência por CFOPs
+    if not metadata.get('segmento') and cfops_set:
         # Contar ocorrências de CFOPs por categoria
         cfops_industria = {'1101', '1102', '1201', '1202', '1401', '1402', 
                           '1901', '2101', '2102', '2201', '2202', '2401', '2402',
@@ -290,18 +334,23 @@ def extract_sped_metadata(sped_content: str) -> Dict[str, Any]:
         # Prioridade 1: Indústria (CFOPs de industrialização são muito específicos)
         if count_industria > 0:
             metadata['segmento'] = 'INDUSTRIA'
+            metadata['fonte_segmento'] = 'CFOP'
         # Prioridade 2: Bebidas (CFOPs específicos de ST + NCMs de bebidas)
         elif (count_bebidas_st > 0 and has_st) or has_ncm_bebidas:
             metadata['segmento'] = 'BEBIDAS'
+            metadata['fonte_segmento'] = 'CFOP'
         # Prioridade 3: E-commerce (predominância de CFOPs interestaduais + DIFAL)
         elif count_ecommerce > count_comercio and (has_difal or has_interestadual):
             metadata['segmento'] = 'ECOMMERCE'
+            metadata['fonte_segmento'] = 'CFOP'
         # Prioridade 4: Comércio (CFOPs de venda predominantes)
         elif count_comercio > 0 or len([c for c in cfops_set if c.startswith('5') or c.startswith('6')]) > len(cfops_set) * 0.5:
             metadata['segmento'] = 'COMERCIO'
+            metadata['fonte_segmento'] = 'CFOP'
         else:
             # Default: Comércio (maioria dos casos)
             metadata['segmento'] = 'COMERCIO'
+            metadata['fonte_segmento'] = 'DEFAULT'
     
     # Se tem regime especial detectado, adicionar ao metadata (para UI)
     if has_regime_especial:

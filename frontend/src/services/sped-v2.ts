@@ -165,10 +165,18 @@ class SpedV2Service {
 
   /**
    * Extrai metadados do arquivo SPED (CNPJ, competência, regime, etc)
+   * Conforme Precheck: também extrai flags dos XMLs se fornecidos
    */
-  async extrairMetadados(spedFile: File): Promise<SpedMetadata> {
+  async extrairMetadados(spedFile: File, xmlFiles?: File[]): Promise<SpedMetadata> {
     const formData = new FormData();
     formData.append('sped', spedFile);
+    
+    // Adicionar XMLs se fornecidos (para detectar flags operacionais)
+    if (xmlFiles && xmlFiles.length > 0) {
+      xmlFiles.forEach((xmlFile, index) => {
+        formData.append('xmls', xmlFile);
+      });
+    }
 
     const response = await axios.post(
       `${API_BASE_URL}/api/sped/v2/extract-metadata`,
