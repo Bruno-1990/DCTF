@@ -324,6 +324,11 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
       {/* Conteúdo Principal */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Relatório de Análise */}
+          {divergencias.length > 0 && (
+            <AnalysisReport divergencias=={divergencias} />
+          )}
+          
           {/* Header com busca e ordenação */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4 gap-4">
