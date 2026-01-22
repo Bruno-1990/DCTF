@@ -75,18 +75,73 @@ const Step5CorrectionPlan: React.FC<Step5CorrectionPlanProps> = ({
   onAplicarCorrecoes,
   onVisualizarEvidencias,
 }) => {
-  // Se não recebeu plano, criar um mock a partir das divergências
-  const planoAtual = plano || {
-    correcoes: [],
-    totais_por_tipo: {},
-    itens_bloqueados: [],
-    impacto_total: 0,
-    impacto_bloqueadas: 0,
-    total_correcoes: 0,
-    total_erro: 0,
-    total_revisar: 0,
-    total_legitimo: 0,
-  };
+  // Se não recebeu plano, criar um a partir das divergências
+  const planoAtual = useMemo(() => {
+    if (plano) return plano;
+
+    // Converter divergências em correções
+    const correcoes: Correcao[] = divergencias.map((div, idx) => ({
+      id: div.id || `corr_${idx}`,
+      chave_nfe: div.chave_nfe || div.documento_xml?.chave_nfe,
+      tipo: div.tipo_divergencia || 'Divergência',
+      campo: div.campo || 'campo_desconhecido',
+      valor_antes: parseFloat(div.valor_xml) || 0,
+      valor_depois: parseFloat(div.valor_efd) || 0,
+      diferenca: Math.abs(parseFloat(div.valor_xml || 0) - parseFloat(div.valor_efd || 0)),
+      regra_aplicada: div.regra_aplicada || div.contexto_fiscal?.cfop || 'N/A',
+      score_confianca: div.score_confianca || 75,
+      impacto_estimado: div.impacto === 'ALTO' ? 3 : div.impacto === 'MEDIO' ? 2 : 1,
+      classificacao: div.classificacao || 'ERRO',
+      bloqueado: false,
+      explicacao: div.explicacao || div.descricao,
+      contexto: div.contexto_fiscal,
+    }));
+
+    // Calcular totais
+    const total_erro = correcoes.filter(c => c.classificacao === 'ERRO').length;
+    const total_revisar = correcoes.filter(c => c.classificacao === 'REVISAR').length;
+    const total_legitimo = correcoes.filter(c => c.classificacao === 'LEGÍTIMO').length;
+    const impacto_total = correcoes.reduce((sum, c) => sum + (c.diferenca || 0), 0);
+
+    // Agrupar por tipo
+    const totais_por_tipo: Record<string, TotaisCorrecao> = {};
+    correcoes.forEach(c => {
+      if (!totais_por_tipo[c.tipo]) {
+        totais_por_tipo[c.tipo] = {
+          tipo: c.tipo,
+          quantidade: 0,
+          impacto_total: 0,
+          quantidade_bloqueadas: 0,
+          impacto_bloqueadas: 0,
+          quantidade_erro: 0,
+          quantidade_revisar: 0,
+          quantidade_legitimo: 0,
+        };
+      }
+      const total = totais_por_tipo[c.tipo];
+      total.quantidade++;
+      total.impacto_total += c.diferenca || 0;
+      if (c.bloqueado) {
+        total.quantidade_bloqueadas++;
+        total.impacto_bloqueadas += c.diferenca || 0;
+      }
+      if (c.classificacao === 'ERRO') total.quantidade_erro++;
+      if (c.classificacao === 'REVISAR') total.quantidade_revisar++;
+      if (c.classificacao === 'LEGÍTIMO') total.quantidade_legitimo++;
+    });
+
+    return {
+      correcoes,
+      totais_por_tipo,
+      itens_bloqueados: correcoes.filter(c => c.bloqueado),
+      impacto_total,
+      impacto_bloqueadas: 0,
+      total_correcoes: correcoes.length,
+      total_erro,
+      total_revisar,
+      total_legitimo,
+    };
+  }, [plano, divergencias]);
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
   const [filtroClassificacao, setFiltroClassificacao] = useState<string>('todos');
   const [filtroBusca, setFiltroBusca] = useState<string>('');
