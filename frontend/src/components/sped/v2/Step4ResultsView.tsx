@@ -46,16 +46,6 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
     }
   }, [divergencias]);
   
-  // Debug: Log do banner de regras
-  React.useEffect(() => {
-    console.log('[Step4ResultsView] 🎨 Banner de regras:', {
-      deveMostrar: divergenciasSemRegra.length > 0 && !!validationId,
-      divergenciasSemRegra: divergenciasSemRegra.length,
-      validationId: validationId || 'NÃO DEFINIDO',
-      totalDivergencias: divergencias.length
-    });
-  }, [divergenciasSemRegra, validationId, divergencias.length]);
-  
   const [sidebarAberto, setSidebarAberto] = useState<boolean>(true);
   const [modalRegraAberto, setModalRegraAberto] = useState<boolean>(false);
   const [filtros, setFiltros] = useState({
@@ -166,6 +156,20 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
     
     return semRegra;
   }, [divergencias]);
+  
+  // Debug: Log do banner de regras (DEPOIS da declaração de divergenciasSemRegra)
+  React.useEffect(() => {
+    console.log('[Step4ResultsView] 🎨 Banner de regras:', {
+      deveMostrar: divergenciasSemRegra.length > 0 && !!validationId,
+      divergenciasSemRegra: divergenciasSemRegra.length,
+      validationId: validationId || 'NÃO DEFINIDO',
+      totalDivergencias: divergencias.length
+    });
+    console.log('[Step4ResultsView] 🔍 Divergências sem regra:', divergenciasSemRegra.length);
+    if (divergenciasSemRegra.length > 0) {
+      console.log('[Step4ResultsView] 🔍 Exemplos de divergências sem regra:', divergenciasSemRegra.slice(0, 2));
+    }
+  }, [divergenciasSemRegra, validationId, divergencias.length]);
 
   const handleVerEvidencias = (divergencia: DivergenciaClassificada) => {
     setDivergenciaSelecionada(divergencia);
