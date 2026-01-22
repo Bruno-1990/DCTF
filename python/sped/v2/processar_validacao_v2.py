@@ -630,9 +630,9 @@ def main():
                         primeiro_item = div.documento_xml.itens[0]
                         evidencias['xml']['tags_fiscais'] = {
                             'cfop': primeiro_item.cfop,
-                            'cst': primeiro_item.icms.get('cst') if primeiro_item.icms else None,
-                            'csosn': primeiro_item.icms.get('csosn') if primeiro_item.icms else None,
-                            'origem': primeiro_item.icms.get('origem') if primeiro_item.icms else None,
+                            'cst': primeiro_item.icms.cst if primeiro_item.icms else None,
+                            'csosn': primeiro_item.icms.cst if primeiro_item.icms else None,  # CSOSN também está em cst
+                            'origem': primeiro_item.icms.origem if primeiro_item.icms else None,
                         }
                 
                 # Evidências do SPED
@@ -653,9 +653,9 @@ def main():
                         primeiro_item_sped = div.documento_efd.itens[0]
                         evidencias['sped']['registros'] = {
                             'cfop': primeiro_item_sped.cfop,
-                            'cst': primeiro_item_sped.icms.get('cst') if primeiro_item_sped.icms else None,
-                            'vl_bc_icms': float(primeiro_item_sped.icms.get('vl_bc_icms', 0)) if primeiro_item_sped.icms else None,
-                            'vl_icms': float(primeiro_item_sped.icms.get('vl_icms', 0)) if primeiro_item_sped.icms else None,
+                            'cst': primeiro_item_sped.icms.cst if primeiro_item_sped.icms else None,
+                            'vl_bc_icms': float(primeiro_item_sped.icms.base_calculo) if primeiro_item_sped.icms else None,
+                            'vl_icms': float(primeiro_item_sped.icms.valor) if primeiro_item_sped.icms else None,
                         }
                 
                 # Evidências do documento (contexto fiscal)
