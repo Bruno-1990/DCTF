@@ -14,6 +14,8 @@ import EvidenceDrawer from './EvidenceDrawer';
 import type { EvidenciaXML, EvidenciaSPED, EvidenciaComparacao } from './EvidenceDrawer';
 import type { DivergenciaClassificada } from './ClassificationView';
 import { AnalysisReport } from './AnalysisReport';
+import { RuleGeneratorModal } from './RuleGeneratorModal';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 
 // Helper function for conditional classNames
 const classNames = (...classes: (string | boolean | undefined)[]): string => {
@@ -25,6 +27,7 @@ interface Step4ResultsViewProps {
   onVerEvidencias?: (divergencia: DivergenciaClassificada) => void;
   onNext?: () => void;
   onBack?: () => void;
+  validationId?: string;
 }
 
 const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
@@ -32,6 +35,7 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
   onVerEvidencias,
   onNext,
   onBack,
+  validationId,
 }) => {
   // Debug: Log das divergências recebidas
   React.useEffect(() => {
@@ -43,6 +47,7 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
   }, [divergencias]);
   
   const [sidebarAberto, setSidebarAberto] = useState<boolean>(true);
+  const [modalRegraAberto, setModalRegraAberto] = useState<boolean>(false);
   const [filtros, setFiltros] = useState({
     classificacao: 'todos',
     impacto: 'todos',
@@ -110,6 +115,13 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
     console.log('[Step4ResultsView] ✅ Total após filtros:', filtradas.length);
     return filtradas;
   }, [divergencias, filtros, busca, ordenacao]);
+
+  // Identificar divergências sem regra (score baixo ou sem explicação clara)
+  const divergenciasSemRegra = useMemo(() => {
+    return divergencias.filter(
+      d => !d.contexto?.regra_aplicada || d.contexto?.score_confianca < 30
+    );
+  }, [divergencias]);
 
   const handleVerEvidencias = (divergencia: DivergenciaClassificada) => {
     setDivergenciaSelecionada(divergencia);
@@ -374,6 +386,31 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
           {divergencias.length > 0 && (
             <AnalysisReport divergencias={divergencias} />
           )}
+
+          {/* Banner de Divergências Não Cobertas */}
+          {divergenciasSemRegra.length > 0 && validationId && (
+            <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold text-orange-900 flex items-center gap-2">
+                    <ExclamationTriangleIcon className="h-5 w-5" />
+                    {divergenciasSemRegra.length} Divergências Não Explicadas
+                  </h4>
+                  <p className="text-sm text-orange-700 mt-1">
+                    Algumas divergências não foram cobertas pelas regras atuais.
+                    Gere regras automáticas usando nossa base de conhecimento.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setModalRegraAberto(true)}
+                  className="ml-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 flex-shrink-0"
+                >
+                  <SparklesIcon className="h-5 w-5" />
+                  Gerar Regras ({divergenciasSemRegra.length})
+                </button>
+              </div>
+            </div>
+          )}
           
           <div className="mb-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -536,6 +573,20 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
           evidencias_sped={evidenciasSPED}
           comparacao={comparacao}
           chave_nfe={divergenciaSelecionada.chave_nfe}
+        />
+      )}
+
+      {/* Modal de Geração de Regras */}
+      {validationId && (
+        <RuleGeneratorModal
+          isOpen={modalRegraAberto}
+          onClose={() => setModalRegraAberto(false)}
+          validationId={validationId}
+          divergenciasSemRegra={divergenciasSemRegra}
+          onRegrasAplicadas={() => {
+            // Recarregar validação para mostrar novas regras aplicadas
+            window.location.reload();
+          }}
         />
       )}
     </div>

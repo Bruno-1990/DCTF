@@ -15,6 +15,7 @@ from .beneficios_fiscais import (
     ValidadorBeneficio,
     IntegradorBeneficioMatriz
 )
+from .monitor_cobertura import MonitorCobertura, CasoNaoCoberto
 
 __all__ = [
     'XmlEfdValidator',
@@ -30,4 +31,6 @@ __all__ = [
     'ClassificacaoDivergencia',
     'ContextoFiscal',
     'ContextValidator',
+    'MonitorCobertura',
+    'CasoNaoCoberto',
 ]

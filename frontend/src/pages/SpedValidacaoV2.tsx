@@ -306,6 +306,7 @@ const SpedValidacaoV2: React.FC = () => {
             }}
             onNext={handleStep4Next}
             onBack={handleBack}
+            validationId={validationId}
           />
         );
       case 5:

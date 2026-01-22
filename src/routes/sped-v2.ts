@@ -13,6 +13,7 @@ import {
   obterResultado,
   extrairMetadados
 } from '../controllers/SpedV2ValidationController';
+import SpedRuleGeneratorController from '../controllers/SpedRuleGeneratorController';
 import { sanitizeData } from '../middleware/validation';
 
 const router = Router();
@@ -159,6 +160,43 @@ router.get('/validacoes', listarValidacoes);
  * }
  */
 router.delete('/validacoes/:validationId', removerValidacao);
+
+/**
+ * POST /api/sped/v2/rules/generate
+ * Gera regras automáticas para divergências não cobertas
+ * 
+ * Body:
+ * {
+ *   "validationId": "uuid",
+ *   "divergenciasSemRegra": [...]
+ * }
+ * 
+ * Response:
+ * {
+ *   "success": true,
+ *   "total_regras": 3,
+ *   "regras": [...]
+ * }
+ */
+router.post('/rules/generate', SpedRuleGeneratorController.gerarRegras.bind(SpedRuleGeneratorController));
+
+/**
+ * POST /api/sped/v2/rules/apply
+ * Aplica regras aprovadas pelo usuário
+ * 
+ * Body:
+ * {
+ *   "validationId": "uuid",
+ *   "regrasAprovadas": [...]
+ * }
+ * 
+ * Response:
+ * {
+ *   "success": true,
+ *   "message": "3 regras aplicadas com sucesso"
+ * }
+ */
+router.post('/rules/apply', SpedRuleGeneratorController.aplicarRegras.bind(SpedRuleGeneratorController));
 
 export default router;
 

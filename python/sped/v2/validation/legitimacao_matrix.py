@@ -11,6 +11,7 @@ from enum import Enum
 from ..canonical.documento_fiscal import DocumentoFiscal
 from ..canonical.item_fiscal import ItemFiscal
 from .regras_segmento import RegrasPorSegmento
+from .monitor_cobertura import MonitorCobertura
 
 
 class ClassificacaoDivergencia(Enum):
@@ -43,6 +44,10 @@ class ContextoFiscal:
 class MatrizLegitimacao:
     """Matriz de legitimação para classificar divergências"""
     
+    # Metadados de versão
+    VERSAO_REGRAS = "2.2.0"
+    DATA_ULTIMA_ATUALIZACAO = "2026-01-22"
+    
     # CFOPs de devolução
     CFOPS_DEVOLUCAO = {
         '1201', '1202', '1203', '1204', '1205', '1206', '1207', '1208', '1209', '1210',
@@ -64,9 +69,15 @@ class MatrizLegitimacao:
     # CSTs de ST (Substituição Tributária)
     CSTS_ST = {'60', '500', '900'}  # CST 60 e CSOSN 500/900
     
-    def __init__(self):
-        """Inicializa a matriz de legitimação"""
-        pass
+    def __init__(self, monitor: Optional[MonitorCobertura] = None):
+        """
+        Inicializa a matriz de legitimação
+        
+        Args:
+            monitor: Monitor de cobertura para registrar casos não explicados
+        """
+        self.monitor = monitor
+        self.regras_customizadas = self._carregar_regras_customizadas()
     
     def extrair_contexto_fiscal(
         self,
@@ -165,6 +176,15 @@ class MatrizLegitimacao:
         """
         score = 0
         explicacao_parts = []
+        
+        # NOVO: Verificar se existe regra customizada primeiro
+        cfop = str(contexto.cfop or '')
+        cst = str(contexto.cst or contexto.csosn or '')
+        
+        if cfop and cst:
+            regra_custom = self._aplicar_regra_customizada(cfop, cst, tipo_divergencia)
+            if regra_custom:
+                return regra_custom
         
         # Base: match por chave (assumindo que chegou aqui, há match)
         score += 40  # Match forte
@@ -295,12 +315,38 @@ class MatrizLegitimacao:
             return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
         
         # Classificação final baseada no score
+        classificacao_final = None
         if score >= 80:
-            return (ClassificacaoDivergencia.ERRO, min(100, score), "; ".join(explicacao_parts))
+            classificacao_final = (ClassificacaoDivergencia.ERRO, min(100, score), "; ".join(explicacao_parts))
         elif score >= 50:
-            return (ClassificacaoDivergencia.REVISAR, score, "; ".join(explicacao_parts))
+            classificacao_final = (ClassificacaoDivergencia.REVISAR, score, "; ".join(explicacao_parts))
         else:
-            return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
+            classificacao_final = (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
+        
+        # NOVO: Registrar caso não coberto se score está em zona cinzenta ou sem explicação clara
+        if self.monitor and (30 <= score <= 70 or not explicacao_parts):
+            self.monitor.registrar_caso(
+                tipo_divergencia=tipo_divergencia,
+                campo='',  # Será preenchido pelo caller
+                cfop=cfop if cfop else None,
+                cst=cst if cst else None,
+                diferenca=float(diferenca),
+                percentual_diferenca=float(percentual_diferenca),
+                chave_nfe=chave_nfe,
+                score_obtido=score,
+                explicacao_parcial="; ".join(explicacao_parts) if explicacao_parts else "Sem explicação clara",
+                contexto_completo={
+                    'cfop': cfop,
+                    'cst': cst,
+                    'tem_st': contexto.tem_st,
+                    'tem_difal': contexto.tem_difal,
+                    'finalidade_nfe': contexto.finalidade_nfe,
+                    'segmento': contexto.segmento,
+                    'regime': contexto.regime
+                }
+            )
+        
+        return classificacao_final
     
     def _get_finalidade_nome(self, finalidade: Optional[str]) -> str:
         """Retorna nome da finalidade"""
@@ -311,6 +357,71 @@ class MatrizLegitimacao:
             '4': 'devolução'
         }
         return map_finalidade.get(finalidade or '', 'normal')
+    
+    def _carregar_regras_customizadas(self) -> Dict[str, Any]:
+        """
+        Carrega regras customizadas geradas automaticamente
+        
+        Returns:
+            Dict com regras customizadas por padrão (CFOP_CST)
+        """
+        from pathlib import Path
+        import json
+        
+        arquivo_regras = Path('.taskmaster/validation_rules/custom_rules.json')
+        
+        if not arquivo_regras.exists():
+            return {}
+        
+        try:
+            with open(arquivo_regras, 'r', encoding='utf-8') as f:
+                regras = json.load(f)
+                print(f"[MatrizLegitimacao] {len(regras)} regras customizadas carregadas")
+                return regras
+        except Exception as e:
+            print(f"[MatrizLegitimacao] Erro ao carregar regras customizadas: {e}")
+            return {}
+    
+    def _aplicar_regra_customizada(
+        self,
+        cfop: str,
+        cst: str,
+        tipo_divergencia: str
+    ) -> Optional[Tuple[ClassificacaoDivergencia, int, str]]:
+        """
+        Verifica se existe regra customizada para este padrão
+        
+        Args:
+            cfop: CFOP da operação
+            cst: CST/CSOSN da operação
+            tipo_divergencia: Tipo da divergência
+        
+        Returns:
+            Tupla (classificacao, score, explicacao) ou None se não houver regra
+        """
+        padrao = f"CFOP_{cfop}_CST_{cst}"
+        
+        if padrao in self.regras_customizadas:
+            regra = self.regras_customizadas[padrao]
+            
+            # Converter tipo_acao para ClassificacaoDivergencia
+            tipo_acao = regra.get('tipo_acao', 'REVISAR')
+            if tipo_acao == 'LEGITIMO':
+                classificacao = ClassificacaoDivergencia.LEGITIMO
+                score = 20
+            elif tipo_acao == 'ERRO':
+                classificacao = ClassificacaoDivergencia.ERRO
+                score = 90
+            else:
+                classificacao = ClassificacaoDivergencia.REVISAR
+                score = 60
+            
+            explicacao = f"Regra customizada: {regra.get('titulo', 'N/A')} (confiança {regra.get('confianca', 0)}%)"
+            
+            print(f"[MatrizLegitimacao] Aplicada regra customizada para {padrao}")
+            return (classificacao, score, explicacao)
+        
+        return None
     
     def detectar_st_por_heuristica(
         self,
