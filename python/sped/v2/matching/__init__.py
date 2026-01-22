@@ -17,6 +17,11 @@ from .match_itens import (
     MatchLayer,
 )
 
+from .document_family import (
+    DocumentFamilyGrouper,
+    FamiliaDocumento,
+)
+
 __all__ = [
     'DocumentMatcher',
     'MatchResult',
@@ -26,5 +31,7 @@ __all__ = [
     'ItemMatchResult',
     'MatchConfidence',
     'MatchLayer',
+    'DocumentFamilyGrouper',
+    'FamiliaDocumento',
 ]
 

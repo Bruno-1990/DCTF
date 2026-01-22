@@ -23,13 +23,14 @@ if sys.platform == 'win32':
 # Adicionar caminho ao sys.path para imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from sped.v2.normalization import XMLNormalizer, EFDNormalizer
+from sped.v2.normalization import XMLNormalizer, EFDNormalizer, SPEDParser, RegistroC100, RegistroC170, RegistroC190, RegistroE110
 from sped.v2.matching import DocumentMatcher, ItemMatcher
 from sped.v2.validation.xml_efd_validator import XmlEfdValidator, Divergencia
 from sped.v2.validation.legitimacao_matrix import MatrizLegitimacao, ClassificacaoDivergencia
-from sped.v2.validation.totaling_engine import TotalingEngine
+from sped.v2.validation.totaling_engine import TotalingEngine, DivergenciaTotalizacao
 from sped.v2.validation.efd_internal_validator import EFDInternalValidator
 from sped.v2.validation.context_validator import ContextValidator
+from sped.v2.validation.impacto_e110 import ValidadorImpactoE110, ImpactoE110
 
 
 def main():
@@ -223,14 +224,167 @@ def main():
             traceback.print_exc()
         
         # ========== VALIDAÇÃO DE TOTALIZAÇÃO (CADEIAS C170→C190→C100→E110) ==========
-        # NOTA: TotalingEngine requer parsing específico dos registros SPED.
-        # Por enquanto, esta validação será feita na Camada B (EFDInternalValidator).
-        # A integração completa do TotalingEngine será feita em uma próxima fase
-        # quando tivermos um parser dedicado para C170, C190, C100, E110.
-        print(f"[SPED v2] INFO: Validação de totalização será expandida na próxima fase")
+        print(f"[SPED v2] [MOTOR DE TOTALIZAÇÃO] Validando cadeias C170→C190→C100→E110...")
         divergencias_totalizacao = []
-        # TODO: Implementar parsing de registros SPED para TotalingEngine
-        # quando tivermos parser dedicado para C170, C190, C100, E110
+        
+        try:
+            # Parse registros SPED
+            print(f"[SPED v2] Parseando registros SPED (C100, C170, C190, E110)...")
+            sped_parser = SPEDParser(sped_path)
+            
+            if not sped_parser.parse():
+                print(f"[SPED v2] ATENCAO: Erro ao parsear registros SPED para totalização", file=sys.stderr)
+            else:
+                print(f"[SPED v2] OK: Parse concluído - C100: {len(sped_parser.registros_c100)}, "
+                      f"C170: {len(sped_parser.registros_c170)}, C190: {len(sped_parser.registros_c190)}, "
+                      f"E110: {len(sped_parser.registros_e110)}")
+                
+                # Converter registros SPED para formato TotalingEngine
+                from sped.v2.validation.totaling_engine import (
+                    RegistroC170 as EngineC170,
+                    RegistroC190 as EngineC190,
+                    RegistroC100 as EngineC100,
+                    RegistroE110 as EngineE110
+                )
+                
+                # Converter C170
+                c170_engine = []
+                for c170 in sped_parser.registros_c170:
+                    c170_engine.append(EngineC170(
+                        chave=c170.chv_nfe_pai,
+                        cfop=c170.cfop,
+                        cst=c170.cst_icms,
+                        vl_item=c170.vl_item,
+                        vl_desconto=c170.vl_desc,
+                        vl_bc_icms=c170.vl_bc_icms,
+                        vl_icms=c170.vl_icms,
+                        vl_bc_icms_st=c170.vl_bc_icms_st,
+                        vl_icms_st=c170.vl_icms_st,
+                        vl_ipi=c170.vl_ipi,
+                        vl_pis=c170.vl_pis,
+                        vl_cofins=c170.vl_cofins,
+                        metadata={'num_item': c170.num_item, 'cod_item': c170.cod_item}
+                    ))
+                
+                # Converter C190
+                c190_engine = []
+                for c190 in sped_parser.registros_c190:
+                    c190_engine.append(EngineC190(
+                        chave=c190.chv_nfe_pai,
+                        cfop=c190.cfop,
+                        cst=c190.cst_icms,
+                        vl_opr=c190.vl_opr,
+                        vl_bc_icms=c190.vl_bc_icms,
+                        vl_icms=c190.vl_icms,
+                        vl_bc_icms_st=c190.vl_bc_icms_st,
+                        vl_icms_st=c190.vl_icms_st,
+                        vl_ipi=c190.vl_ipi,
+                        metadata={'cod_obs': c190.cod_obs}
+                    ))
+                
+                # Converter C100
+                c100_engine = []
+                for c100 in sped_parser.registros_c100:
+                    # Extrair competência da data do documento (DDMMYYYY)
+                    competencia = ''
+                    if c100.dt_doc and len(c100.dt_doc) == 8:
+                        mm = c100.dt_doc[2:4]
+                        yyyy = c100.dt_doc[4:8]
+                        competencia = f"{mm}/{yyyy}"
+                    
+                    c100_engine.append(EngineC100(
+                        chave=c100.chv_nfe,
+                        vl_merc=c100.vl_merc,
+                        vl_frt=c100.vl_frt,
+                        vl_seg=c100.vl_seg,
+                        vl_desc=c100.vl_desc,
+                        vl_out=c100.vl_out_da,
+                        vl_bc_icms=c100.vl_bc_icms,
+                        vl_icms=c100.vl_icms,
+                        vl_bc_icms_st=c100.vl_bc_icms_st,
+                        vl_icms_st=c100.vl_icms_st,
+                        vl_ipi=c100.vl_ipi,
+                        competencia=competencia,
+                        metadata={'cod_sit': c100.cod_sit, 'num_doc': c100.num_doc}
+                    ))
+                
+                # Converter E110
+                e110_engine = []
+                for e110 in sped_parser.registros_e110:
+                    e110_engine.append(EngineE110(
+                        competencia=e110.competencia,
+                        vl_tot_debitos=e110.vl_tot_debitos,
+                        vl_aj_debitos=e110.vl_aj_debitos,
+                        vl_tot_aj_debitos=e110.vl_tot_aj_debitos,
+                        vl_estornos_cred=e110.vl_estornos_cred,
+                        vl_tot_creditos=e110.vl_tot_creditos,
+                        vl_aj_creditos=e110.vl_aj_creditos,
+                        vl_tot_aj_creditos=e110.vl_tot_aj_creditos,
+                        vl_estornos_deb=e110.vl_estornos_deb,
+                        vl_sld_credor_ant=e110.vl_sld_credor_ant,
+                        vl_sld_apurado=e110.vl_sld_apurado,
+                        vl_tot_deducoes=e110.vl_tot_ded,
+                        vl_icms_recolher=e110.vl_icms_recolher,
+                        metadata={}
+                    ))
+                
+                # Executar TotalingEngine
+                print(f"[SPED v2] Executando validações de totalização...")
+                totaling_engine = TotalingEngine(
+                    tolerancia_linha=Decimal('0.01'),
+                    tolerancia_documento=Decimal('0.10'),
+                    tolerancia_periodo=Decimal('2.00')
+                )
+                
+                # Validar C170 → C190
+                divs_c170_c190 = totaling_engine.validar_c170_para_c190(c170_engine, c190_engine)
+                print(f"[SPED v2] Validação C170→C190: {len(divs_c170_c190)} divergências")
+                
+                # Validar C190 → C100
+                divs_c190_c100 = totaling_engine.validar_c190_para_c100(c190_engine, c100_engine)
+                print(f"[SPED v2] Validação C190→C100: {len(divs_c190_c100)} divergências")
+                
+                # Validar C100 → E110
+                divs_c100_e110 = totaling_engine.validar_c100_para_e110(c100_engine, e110_engine)
+                print(f"[SPED v2] Validação C100→E110: {len(divs_c100_e110)} divergências")
+                
+                # Consolidar todas divergências de totalização
+                todas_divs_totalizacao = divs_c170_c190 + divs_c190_c100 + divs_c100_e110
+                
+                # Converter divergências de totalização para formato de Divergencia
+                for div_tot in todas_divs_totalizacao:
+                    # Criar divergência compatível com o formato esperado
+                    divergencia = Divergencia(
+                        tipo=f"totalizacao_{div_tot.cadeia.replace('→', '_para_')}",
+                        nivel='documento',
+                        descricao=div_tot.mensagem,
+                        valor_xml=None,
+                        valor_efd=None,
+                        diferenca=div_tot.diferenca_absoluta,
+                        percentual_diferenca=div_tot.percentual_diferenca,
+                        severidade='alta',  # Totalização é sempre alta severidade
+                        documento_xml=None,
+                        documento_efd=None,
+                        contexto={
+                            'cadeia': div_tot.cadeia,
+                            'tipo_divergencia': div_tot.tipo,
+                            'chave': div_tot.chave,
+                            'competencia': div_tot.competencia,
+                            'cfop': div_tot.cfop,
+                            'cst': div_tot.cst,
+                            'valor_esperado': float(div_tot.valor_esperado) if div_tot.valor_esperado else None,
+                            'valor_encontrado': float(div_tot.valor_encontrado) if div_tot.valor_encontrado else None,
+                            'impacto_e110': True,  # Totalização sempre impacta E110
+                        }
+                    )
+                    divergencias_totalizacao.append(divergencia)
+                
+                print(f"[SPED v2] OK: Motor de Totalização concluído - {len(divergencias_totalizacao)} divergências encontradas")
+                
+        except Exception as e:
+            print(f"[SPED v2] ERRO: Erro no Motor de Totalização: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
         
         # ========== CAMADA C: VALIDAÇÃO XML × EFD ==========
         print(f"[SPED v2] [CAMADA C] Executando validação XML × EFD...")
@@ -285,6 +439,13 @@ def main():
             matriz = MatrizLegitimacao()
             divergencias_classificadas = []
             
+            # ========== CALCULAR IMPACTO E110 ==========
+            print(f"[SPED v2] Calculando impacto E110 nas divergências...")
+            validador_e110 = ValidadorImpactoE110(tolerancia_minima=Decimal('0.50'))
+            
+            # Obter E110 original se disponível
+            e110_original = e110_engine[0] if e110_engine else None
+            
             for div in resultado_validacao.divergencias:
                 # Extrair contexto fiscal
                 contexto = matriz.extrair_contexto_fiscal(
@@ -292,6 +453,9 @@ def main():
                     div.documento_efd,
                     perfil_fiscal
                 )
+                
+                # Calcular impacto E110
+                impacto_e110 = validador_e110.calcular_impacto(div, e110_original, perfil_fiscal)
                 
                 # Classificar divergência
                 classificacao, score_confianca, explicacao = matriz.classificar_divergencia(
@@ -302,7 +466,14 @@ def main():
                     contexto.tem_ajuste_c197 or contexto.tem_ajuste_e111
                 )
                 
-                # Atualizar divergência com classificação
+                # Ajustar severidade baseada no impacto E110
+                severidade_original = div.severidade
+                if impacto_e110.prioridade == 'ALTA' and impacto_e110.altera_apuracao:
+                    div.severidade = 'alta'
+                elif impacto_e110.prioridade == 'MEDIA':
+                    div.severidade = 'media' if div.severidade == 'baixa' else div.severidade
+                
+                # Atualizar divergência com classificação e impacto
                 div.contexto.update({
                     'classificacao': classificacao.value,
                     'score_confianca': score_confianca,
@@ -311,9 +482,21 @@ def main():
                     'cst': contexto.cst,
                     'tem_st': contexto.tem_st,
                     'tem_difal': contexto.tem_difal,
+                    'impacto_e110': {
+                        'impacto_debitos': float(impacto_e110.impacto_debitos),
+                        'impacto_creditos': float(impacto_e110.impacto_creditos),
+                        'impacto_saldo_apurado': float(impacto_e110.impacto_saldo_apurado),
+                        'impacto_icms_recolher': float(impacto_e110.impacto_icms_recolher),
+                        'altera_apuracao': impacto_e110.altera_apuracao,
+                        'prioridade': impacto_e110.prioridade,
+                        'explicacao': impacto_e110.explicacao,
+                    },
+                    'severidade_ajustada': div.severidade != severidade_original,
                 })
                 
                 divergencias_classificadas.append(div)
+            
+            print(f"[SPED v2] OK: {len(divergencias_classificadas)} divergências classificadas com impacto E110")
             
             # ========== FILTRAR DIVERGÊNCIAS LEGÍTIMAS ==========
             # Conforme roteiro: não retornar divergências classificadas como LEGÍTIMO
@@ -418,6 +601,81 @@ def main():
                 if div.contexto.get('explicacao_legitimacao'):
                     explicacao_completa += f" | {div.contexto['explicacao_legitimacao']}"
                 
+                # ========== EVIDÊNCIAS DETALHADAS (SPED + XML) ==========
+                evidencias = {
+                    'xml': {},
+                    'sped': {},
+                    'documento': {}
+                }
+                
+                # Evidências do XML
+                if div.documento_xml:
+                    evidencias['xml'] = {
+                        'chave_acesso': div.documento_xml.chave_acesso,
+                        'numero': div.documento_xml.numero,
+                        'serie': div.documento_xml.serie,
+                        'modelo': div.documento_xml.modelo,
+                        'data_emissao': div.documento_xml.data_emissao,
+                        'cnpj_emitente': div.documento_xml.cnpj_emitente,
+                        'cnpj_destinatario': div.documento_xml.cnpj_destinatario,
+                        'valor_total': float(div.documento_xml.valor_total) if div.documento_xml.valor_total else None,
+                        'valor_produtos': float(div.documento_xml.valor_produtos) if div.documento_xml.valor_produtos else None,
+                    }
+                    
+                    # Tags fiscais do XML
+                    if div.documento_xml.itens and len(div.documento_xml.itens) > 0:
+                        primeiro_item = div.documento_xml.itens[0]
+                        evidencias['xml']['tags_fiscais'] = {
+                            'cfop': primeiro_item.cfop,
+                            'cst': primeiro_item.icms.get('cst') if primeiro_item.icms else None,
+                            'csosn': primeiro_item.icms.get('csosn') if primeiro_item.icms else None,
+                            'origem': primeiro_item.icms.get('origem') if primeiro_item.icms else None,
+                        }
+                
+                # Evidências do SPED
+                if div.documento_efd:
+                    evidencias['sped'] = {
+                        'chave_acesso': div.documento_efd.chave_acesso,
+                        'numero': div.documento_efd.numero,
+                        'serie': div.documento_efd.serie,
+                        'modelo': div.documento_efd.modelo,
+                        'data_emissao': div.documento_efd.data_emissao,
+                        'codigo_participante': div.documento_efd.cnpj_emitente or div.documento_efd.cnpj_destinatario,
+                        'valor_total': float(div.documento_efd.valor_total) if div.documento_efd.valor_total else None,
+                        'cod_sit': div.documento_efd.metadata.get('cod_sit') if div.documento_efd.metadata else None,
+                    }
+                    
+                    # Tags fiscais do SPED
+                    if div.documento_efd.itens and len(div.documento_efd.itens) > 0:
+                        primeiro_item_sped = div.documento_efd.itens[0]
+                        evidencias['sped']['registros'] = {
+                            'cfop': primeiro_item_sped.cfop,
+                            'cst': primeiro_item_sped.icms.get('cst') if primeiro_item_sped.icms else None,
+                            'vl_bc_icms': float(primeiro_item_sped.icms.get('vl_bc_icms', 0)) if primeiro_item_sped.icms else None,
+                            'vl_icms': float(primeiro_item_sped.icms.get('vl_icms', 0)) if primeiro_item_sped.icms else None,
+                        }
+                
+                # Evidências do documento (contexto fiscal)
+                evidencias['documento'] = {
+                    'tipo': div.contexto.get('tpNF'),
+                    'finalidade': div.contexto.get('finalidade_nfe'),
+                    'operacao': 'Entrada' if div.contexto.get('tpNF') == '0' else 'Saída',
+                    'tem_st': div.contexto.get('tem_st', False),
+                    'tem_difal': div.contexto.get('tem_difal', False),
+                    'tem_fcp': div.contexto.get('tem_fcp', False),
+                }
+                
+                # Se tem impacto E110, adicionar às evidências
+                impacto_e110_info = div.contexto.get('impacto_e110')
+                if impacto_e110_info:
+                    evidencias['impacto_apuracao'] = {
+                        'altera_apuracao': impacto_e110_info.get('altera_apuracao', False),
+                        'prioridade': impacto_e110_info.get('prioridade', 'BAIXA'),
+                        'impacto_debitos': impacto_e110_info.get('impacto_debitos', 0.0),
+                        'impacto_creditos': impacto_e110_info.get('impacto_creditos', 0.0),
+                        'impacto_icms_recolher': impacto_e110_info.get('impacto_icms_recolher', 0.0),
+                    }
+                
                 divergencia_formatada = {
                     'id': f"div_{i+1}",
                     'campo': campo,
@@ -431,7 +689,8 @@ def main():
                     'explicacao': explicacao_completa,
                     'chave_nfe': div.documento_xml.chave_acesso if div.documento_xml else None,
                     'nivel': div.nivel,
-                    'contexto': div.contexto
+                    'contexto': div.contexto,
+                    'evidencias': evidencias,  # ✅ NOVAS EVIDÊNCIAS DETALHADAS
                 }
                 divergencias_formatadas.append(divergencia_formatada)
         
