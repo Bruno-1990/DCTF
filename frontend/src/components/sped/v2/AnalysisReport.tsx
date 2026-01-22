@@ -153,7 +153,6 @@ export const AnalysisReport: React.FC<AnalysisReportProps> = ({ divergencias }) 
           </div>
         </div>
       
-      
         {/* Exemplos de ERROS */}
         {analise.erros.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm p-5 border border-red-200 border-l-4">
@@ -164,35 +163,37 @@ export const AnalysisReport: React.FC<AnalysisReportProps> = ({ divergencias }) 
               Exemplos de Erros ({analise.erros.length} total)
             </h4>
             <div className="space-y-3">
-              {analise.erros.slice(0, 3).map((div, idx) => (
-                <div key={div.id || idx} className="bg-red-50 rounded-lg p-4 hover:bg-red-100 transition-colors">
-                  <div className="font-semibold text-gray-900 mb-2">{div.descricao}</div>
-                  <div className="flex flex-wrap gap-3 text-sm mb-2">
-                    <span className="bg-white px-2 py-1 rounded border border-red-200">
-                      <span className="text-gray-500">XML:</span> <span className="font-mono font-bold text-red-600">{div.valor_xml}</span>
-                    </span>
-                    <span className="bg-white px-2 py-1 rounded border border-red-200">
-                      <span className="text-gray-500">EFD:</span> <span className="font-mono font-bold text-red-600">{div.valor_efd}</span>
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {div.contexto_fiscal?.cfop && (
-                      <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded font-mono">CFOP: {div.contexto_fiscal.cfop}</span>
-                    )}
-                    {(div.contexto_fiscal?.cst || div.contexto_fiscal?.csosn) && (
-                      <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded font-mono">
-                        CST: {div.contexto_fiscal.cst || div.contexto_fiscal.csosn}
+              {analise.erros.slice(0, 3).map((div, idx) => {
+                return (
+                  <div key={div.id || idx} className="bg-red-50 rounded-lg p-4 hover:bg-red-100 transition-colors">
+                    <div className="font-semibold text-gray-900 mb-2">{div.descricao}</div>
+                    <div className="flex flex-wrap gap-3 text-sm mb-2">
+                      <span className="bg-white px-2 py-1 rounded border border-red-200">
+                        <span className="text-gray-500">XML:</span> <span className="font-mono font-bold text-red-600">{div.valor_xml}</span>
                       </span>
-                    )}
-                    {div.contexto?.score_confianca && (
-                      <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded">Score: {div.contexto.score_confianca}%</span>
+                      <span className="bg-white px-2 py-1 rounded border border-red-200">
+                        <span className="text-gray-500">EFD:</span> <span className="font-mono font-bold text-red-600">{div.valor_efd}</span>
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {div.contexto_fiscal?.cfop && (
+                        <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded font-mono">CFOP: {div.contexto_fiscal.cfop}</span>
+                      )}
+                      {(div.contexto_fiscal?.cst || div.contexto_fiscal?.csosn) && (
+                        <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded font-mono">
+                          CST: {div.contexto_fiscal.cst || div.contexto_fiscal.csosn}
+                        </span>
+                      )}
+                      {div.contexto?.score_confianca && (
+                        <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded">Score: {div.contexto.score_confianca}%</span>
+                      )}
+                    </div>
+                    {div.contexto?.explicacao && (
+                      <div className="mt-2 text-xs text-gray-600 italic bg-white p-2 rounded">{div.contexto.explicacao}</div>
                     )}
                   </div>
-                  {div.contexto?.explicacao && (
-                    <div className="mt-2 text-xs text-gray-600 italic bg-white p-2 rounded">{div.contexto.explicacao}</div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
