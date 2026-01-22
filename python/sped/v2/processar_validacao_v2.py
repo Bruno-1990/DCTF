@@ -337,15 +337,15 @@ def main():
                 )
                 
                 # Validar C170 → C190
-                divs_c170_c190 = totaling_engine.validar_c170_para_c190(c170_engine, c190_engine)
+                divs_c170_c190 = totaling_engine.validar_cadeia_c170_c190(c170_engine, c190_engine)
                 print(f"[SPED v2] Validação C170→C190: {len(divs_c170_c190)} divergências")
                 
                 # Validar C190 → C100
-                divs_c190_c100 = totaling_engine.validar_c190_para_c100(c190_engine, c100_engine)
+                divs_c190_c100 = totaling_engine.validar_cadeia_c190_c100(c190_engine, c100_engine)
                 print(f"[SPED v2] Validação C190→C100: {len(divs_c190_c100)} divergências")
                 
                 # Validar C100 → E110
-                divs_c100_e110 = totaling_engine.validar_c100_para_e110(c100_engine, e110_engine)
+                divs_c100_e110 = totaling_engine.validar_cadeia_c100_e110(c100_engine, e110_engine)
                 print(f"[SPED v2] Validação C100→E110: {len(divs_c100_e110)} divergências")
                 
                 # Consolidar todas divergências de totalização
