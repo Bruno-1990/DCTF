@@ -320,8 +320,15 @@ const Step5CorrectionPlan: React.FC<Step5CorrectionPlanProps> = ({
 
   const handleAplicarCorrecoes = () => {
     const selecionadas = correcoesFiltradas.filter((c) => correcoesSelecionadas.has(c.id));
+    
+    // Se houver callback de aplicação, chama
     if (onAplicarCorrecoes) {
       onAplicarCorrecoes(selecionadas, perfilExecucao);
+    }
+    
+    // Avança para próxima etapa
+    if (onNext) {
+      onNext();
     }
   };
 

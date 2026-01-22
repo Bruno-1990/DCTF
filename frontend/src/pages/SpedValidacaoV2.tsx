@@ -314,6 +314,11 @@ const SpedValidacaoV2: React.FC = () => {
             divergencias={divergencias}
             onNext={handleStep5Next}
             onBack={handleBack}
+            onAplicarCorrecoes={(correcoes, perfil) => {
+              console.log('[SpedValidacaoV2] Aplicando correções:', { count: correcoes.length, perfil });
+              // TODO: Implementar lógica de aplicação de correções no backend
+              // Por enquanto, apenas avança para aprovação
+            }}
           />
         );
       case 6:
