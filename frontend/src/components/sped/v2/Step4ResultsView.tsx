@@ -324,11 +324,6 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
       {/* Conteúdo Principal */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Relatório de Análise */}
-          {divergencias.length > 0 && (
-            <AnalysisReport divergencias={divergencias} />
-          )}
-          
           {/* Header com busca e ordenação */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4 gap-4">
@@ -352,7 +347,35 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
                 </button>
               )}
             </div>
-
+            
+            {/* Botões de Navegação no Topo */}
+            <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-200">
+              <button
+                onClick={onBack}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                <ChevronLeftIcon className="h-5 w-5 mr-2" />
+                Voltar
+              </button>
+            
+              {divergencias.length > 0 && (
+                <button
+                  onClick={onNext}
+                  className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Avançar para Correções
+                  <ChevronRightIcon className="h-5 w-5 ml-2" />
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* Relatório de Análise */}
+          {divergencias.length > 0 && (
+            <AnalysisReport divergencias={divergencias} />
+          )}
+          
+          <div className="mb-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Busca */}
               <div className="relative">
@@ -499,32 +522,6 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
           )}
         </div>
 
-        {/* Botões de Navegação */}
-        <div className="flex-shrink-0 pt-4 pb-6 px-6 border-t border-gray-200 bg-white flex justify-between items-center">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            <ChevronLeftIcon className="h-5 w-5 mr-2" />
-            Voltar
-          </button>
-        
-        {divergencias.length > 0 && (
-          <button
-            onClick={onNext}
-            className="inline-flex items-center px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            Avançar para Correções
-            <ChevronRightIcon className="h-5 w-5 ml-2" />
-          </button>
-        )}
-        
-        {divergencias.length === 0 && (
-          <div className="text-sm text-gray-500">
-            Nenhuma divergência encontrada. Não é possível avançar para correções.
-          </div>
-        )}
-        </div>
       </div>
 
       {/* Evidence Drawer */}

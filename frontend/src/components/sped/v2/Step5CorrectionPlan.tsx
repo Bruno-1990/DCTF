@@ -146,7 +146,7 @@ const Step5CorrectionPlan: React.FC<Step5CorrectionPlanProps> = ({
   const [filtroClassificacao, setFiltroClassificacao] = useState<string>('todos');
   const [filtroBusca, setFiltroBusca] = useState<string>('');
   const [agrupamento, setAgrupamento] = useState<'nenhum' | 'tipo' | 'documento' | 'regra'>('nenhum');
-  const [incluirRevisar, setIncluirRevisar] = useState<boolean>(false);
+  const [incluirRevisar, setIncluirRevisar] = useState<boolean>(true); // Iniciar com true para AVANÇADO funcionar
   const [perfilExecucao, setPerfilExecucao] = useState<PerfilExecucao>('SEGURO');
   const [correcoesSelecionadas, setCorrecoesSelecionadas] = useState<Set<string>>(new Set());
 
@@ -176,20 +176,25 @@ const Step5CorrectionPlan: React.FC<Step5CorrectionPlanProps> = ({
       );
     }
 
-    // Filtrar REVISAR se necessário
-    if (!incluirRevisar) {
-      filtradas = filtradas.filter((c) => c.classificacao !== 'REVISAR');
-    }
-
     // Aplicar perfil de execução
     if (perfilExecucao === 'SEGURO') {
+      // Apenas ERRO com score >= 80
       filtradas = filtradas.filter((c) => c.classificacao === 'ERRO' && c.score_confianca >= 80);
     } else if (perfilExecucao === 'INTERMEDIARIO') {
+      // ERRO ou REVISAR com score >= 60
       filtradas = filtradas.filter(
         (c) => (c.classificacao === 'ERRO' || c.classificacao === 'REVISAR') && c.score_confianca >= 60
       );
+    } else if (perfilExecucao === 'AVANÇADO') {
+      // AVANÇADO: Todas exceto LEGÍTIMO, incluindo REVISAR
+      // Não filtrar REVISAR aqui, deixar passar
+      filtradas = filtradas.filter((c) => c.classificacao !== 'LEGÍTIMO');
+      
+      // Aplicar flag incluirRevisar apenas para AVANÇADO
+      if (!incluirRevisar) {
+        filtradas = filtradas.filter((c) => c.classificacao !== 'REVISAR');
+      }
     }
-    // AVANÇADO inclui todas exceto LEGÍTIMO (já filtrado acima)
 
     return filtradas;
   }, [planoAtual.correcoes, filtroTipo, filtroClassificacao, filtroBusca, incluirRevisar, perfilExecucao]);
