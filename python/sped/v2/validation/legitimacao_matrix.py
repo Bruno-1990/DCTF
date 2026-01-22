@@ -159,8 +159,9 @@ class MatrizLegitimacao:
         contexto: ContextoFiscal,
         diferenca: Decimal,
         percentual_diferenca: Decimal,
-        tem_ajuste: bool = False
-    ) -> Tuple[ClassificacaoDivergencia, int, str]:
+        tem_ajuste: bool = False,
+        chave_nfe: str = ""
+    ) -> Tuple[ClassificacaoDivergencia, int, str, str]:
         """
         Classifica uma divergência baseado no contexto fiscal
         
@@ -170,9 +171,10 @@ class MatrizLegitimacao:
             diferenca: Diferença absoluta
             percentual_diferenca: Diferença percentual
             tem_ajuste: Se existe ajuste C197/E111 relacionado
+            chave_nfe: Chave da NF-e (para monitoramento)
         
         Returns:
-            Tupla (classificacao, score_confianca, explicacao)
+            Tupla (classificacao, score_confianca, explicacao, regra_aplicada)
         """
         score = 0
         explicacao_parts = []
@@ -184,7 +186,9 @@ class MatrizLegitimacao:
         if cfop and cst:
             regra_custom = self._aplicar_regra_customizada(cfop, cst, tipo_divergencia)
             if regra_custom:
-                return regra_custom
+                classificacao, score, explicacao = regra_custom
+                regra_aplicada = f"REGRA_CUSTOM_{cfop}_{cst}"
+                return (classificacao, score, explicacao, regra_aplicada)
         
         # Base: match por chave (assumindo que chegou aqui, há match)
         score += 40  # Match forte
@@ -202,7 +206,8 @@ class MatrizLegitimacao:
                 if 'ICMS' in tipo_divergencia and not 'ST' in tipo_divergencia:
                     score -= 20
                     explicacao_parts.append("Operação ST: ICMS próprio pode ser zero")
-                    return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
+                    regra_aplicada = f"REGRA_ST_v{self.VERSAO_REGRAS}"
+                    return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
             
             # DIFAL/FCP
             if contexto.tem_difal or contexto.tem_fcp:
@@ -222,34 +227,38 @@ class MatrizLegitimacao:
                 # Incoerência CFOP×CST é ERRO GRAVE - forçar classificação
                 score = 95  # Forçar ERRO (threshold é 80)
                 explicacao_parts.append(f"ERRO GRAVE: {msg_cfop_cst}")
-                return (ClassificacaoDivergencia.ERRO, min(100, score), "; ".join(explicacao_parts))
+                regra_aplicada = f"REGRA_CFOPxCST_INCOERENTE_v{self.VERSAO_REGRAS}"
+                return (ClassificacaoDivergencia.ERRO, min(100, score), "; ".join(explicacao_parts), regra_aplicada)
             
             # Verificar se é operação especial
             is_especial, tipo_especial = RegrasPorSegmento.is_operacao_especial(cfop)
             if is_especial:
                 score -= 20
                 explicacao_parts.append(f"Operação especial ({tipo_especial}): {cfop}")
+                regra_aplicada = f"REGRA_OPERACAO_ESPECIAL_{tipo_especial}_v{self.VERSAO_REGRAS}"
                 
                 # Operações especiais com ajuste são legítimas
                 if tem_ajuste:
-                    return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
+                    return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
                 else:
-                    return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
+                    return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
             
             # Devolução
             if cfop in self.CFOPS_DEVOLUCAO:
                 score -= 20
                 explicacao_parts.append(f"CFOP {cfop} de devolução")
+                regra_aplicada = f"REGRA_DEVOLUCAO_v{self.VERSAO_REGRAS}"
                 if tem_ajuste:
-                    return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
+                    return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
                 else:
-                    return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
+                    return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
             
             # Remessa/Bonificação
             if cfop in self.CFOPS_REMESSA:
                 score -= 15
                 explicacao_parts.append(f"CFOP {cfop} de remessa/bonificação")
-                return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
+                regra_aplicada = f"REGRA_REMESSA_v{self.VERSAO_REGRAS}"
+                return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
         
         # Nota complementar/ajuste/devolução
         if contexto.finalidade_nfe in ('2', '3', '4'):  # Complementar, ajuste, devolução
@@ -257,7 +266,8 @@ class MatrizLegitimacao:
             explicacao_parts.append(f"Nota {self._get_finalidade_nome(contexto.finalidade_nfe)}")
             # Score mínimo 50 para garantir REVISAR
             score_final = max(50, score - 20)
-            return (ClassificacaoDivergencia.REVISAR, score_final, "; ".join(explicacao_parts))
+            regra_aplicada = f"REGRA_NOTA_ESPECIAL_{self._get_finalidade_nome(contexto.finalidade_nfe)}_v{self.VERSAO_REGRAS}"
+            return (ClassificacaoDivergencia.REVISAR, score_final, "; ".join(explicacao_parts), regra_aplicada)
         
         # Ajustar tolerância por segmento
         # MAS: não aplicar para casos especiais que devem sempre ser classificados
@@ -282,7 +292,8 @@ class MatrizLegitimacao:
         if not casos_que_nao_podem_ser_ignorados and abs(diferenca) <= tolerancia_segmento:
             score -= 30
             explicacao_parts.append(f"Diferença dentro da tolerância do segmento ({tolerancia_segmento})")
-            return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
+            regra_aplicada = f"REGRA_TOLERANCIA_SEGMENTO_v{self.VERSAO_REGRAS}"
+            return (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
         
         # Impacto na apuração (E110)
         if abs(diferenca) > Decimal('100.00'):  # Diferença significativa
@@ -312,16 +323,20 @@ class MatrizLegitimacao:
         if contexto.regime and 'ESPECIAL' in str(contexto.regime).upper():
             score -= 15
             explicacao_parts.append("Regime especial: requer revisão manual")
-            return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts))
+            regra_aplicada = f"REGRA_REGIME_ESPECIAL_v{self.VERSAO_REGRAS}"
+            return (ClassificacaoDivergencia.REVISAR, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
+        
+        # Identificar regra aplicada baseada no contexto
+        regra_aplicada = self._identificar_regra_aplicada(contexto, cfop, cst, tem_ajuste, score)
         
         # Classificação final baseada no score
         classificacao_final = None
         if score >= 80:
-            classificacao_final = (ClassificacaoDivergencia.ERRO, min(100, score), "; ".join(explicacao_parts))
+            classificacao_final = (ClassificacaoDivergencia.ERRO, min(100, score), "; ".join(explicacao_parts), regra_aplicada)
         elif score >= 50:
-            classificacao_final = (ClassificacaoDivergencia.REVISAR, score, "; ".join(explicacao_parts))
+            classificacao_final = (ClassificacaoDivergencia.REVISAR, score, "; ".join(explicacao_parts), regra_aplicada)
         else:
-            classificacao_final = (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts))
+            classificacao_final = (ClassificacaoDivergencia.LEGITIMO, max(0, score), "; ".join(explicacao_parts), regra_aplicada)
         
         # NOVO: Registrar caso não coberto se score está em zona cinzenta ou sem explicação clara
         if self.monitor and (30 <= score <= 70 or not explicacao_parts):
@@ -357,6 +372,62 @@ class MatrizLegitimacao:
             '4': 'devolução'
         }
         return map_finalidade.get(finalidade or '', 'normal')
+    
+    def _identificar_regra_aplicada(
+        self,
+        contexto: ContextoFiscal,
+        cfop: str,
+        cst: str,
+        tem_ajuste: bool,
+        score: int
+    ) -> str:
+        """
+        Identifica qual regra foi aplicada baseado no contexto
+        
+        Returns:
+            Nome da regra aplicada (ex: "REGRA_DEVOLUCAO", "REGRA_DIFAL", etc.)
+        """
+        # Regra customizada (já aplicada antes)
+        if cfop and cst:
+            padrao = f"CFOP_{cfop}_CST_{cst}"
+            if padrao in self.regras_customizadas:
+                return f"REGRA_CUSTOM_{cfop}_{cst}"
+        
+        # Regras específicas por ordem de prioridade
+        if not RegrasPorSegmento.validar_cfop_cst(cfop, cst, contexto.segmento, contexto.regime)[0]:
+            return f"REGRA_CFOPxCST_INCOERENTE_v{self.VERSAO_REGRAS}"
+        
+        if contexto.tem_difal:
+            return f"REGRA_DIFAL_v{self.VERSAO_REGRAS}"
+        
+        if contexto.tem_fcp:
+            return f"REGRA_FCP_v{self.VERSAO_REGRAS}"
+        
+        if contexto.tem_st:
+            return f"REGRA_ST_v{self.VERSAO_REGRAS}"
+        
+        if cfop in self.CFOPS_DEVOLUCAO:
+            return f"REGRA_DEVOLUCAO_v{self.VERSAO_REGRAS}"
+        
+        if cfop in self.CFOPS_REMESSA:
+            return f"REGRA_REMESSA_v{self.VERSAO_REGRAS}"
+        
+        is_especial, tipo_especial = RegrasPorSegmento.is_operacao_especial(cfop)
+        if is_especial:
+            return f"REGRA_OPERACAO_ESPECIAL_{tipo_especial}_v{self.VERSAO_REGRAS}"
+        
+        if contexto.finalidade_nfe in ('2', '3', '4'):
+            return f"REGRA_NOTA_ESPECIAL_{self._get_finalidade_nome(contexto.finalidade_nfe)}_v{self.VERSAO_REGRAS}"
+        
+        if contexto.regime and 'ESPECIAL' in str(contexto.regime).upper():
+            return f"REGRA_REGIME_ESPECIAL_v{self.VERSAO_REGRAS}"
+        
+        if score >= 80:
+            return f"REGRA_ALTO_IMPACTO_v{self.VERSAO_REGRAS}"
+        elif score >= 50:
+            return f"REGRA_MEDIO_IMPACTO_v{self.VERSAO_REGRAS}"
+        else:
+            return f"REGRA_TOLERANCIA_SEGMENTO_v{self.VERSAO_REGRAS}"
     
     def _carregar_regras_customizadas(self) -> Dict[str, Any]:
         """

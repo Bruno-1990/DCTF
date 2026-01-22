@@ -212,12 +212,13 @@ class GoldenDatasetTester:
                     diferenca = Decimal('0.01')  # Forçar validação
                 
                 # Classificar
-                classificacao, score, explicacao = self.matriz.classificar_divergencia(
+                classificacao, score, explicacao, regra_aplicada = self.matriz.classificar_divergencia(
                     tipo_divergencia='tributo',
                     contexto=contexto,
                     diferenca=diferenca,
                     percentual_diferenca=percentual,
-                    tem_ajuste=tem_ajuste
+                    tem_ajuste=tem_ajuste,
+                    chave_nfe=ev_xml.get('chave_nfe', '')
                 )
                 
                 obtido = classificacao.value
@@ -231,12 +232,13 @@ class GoldenDatasetTester:
                     percentual = Decimal('0.01')
                     tem_ajuste = contexto.tem_ajuste_c197 or contexto.tem_ajuste_e111
                     
-                    classificacao, score, explicacao = self.matriz.classificar_divergencia(
+                    classificacao, score, explicacao, regra_aplicada = self.matriz.classificar_divergencia(
                         tipo_divergencia='tributo',
                         contexto=contexto,
                         diferenca=diferenca,
                         percentual_diferenca=percentual,
-                        tem_ajuste=tem_ajuste
+                        tem_ajuste=tem_ajuste,
+                        chave_nfe=ev_xml.get('chave_nfe', '')
                     )
                     
                     obtido = classificacao.value

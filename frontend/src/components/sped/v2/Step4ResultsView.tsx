@@ -116,10 +116,30 @@ const Step4ResultsView: React.FC<Step4ResultsViewProps> = ({
     return filtradas;
   }, [divergencias, filtros, busca, ordenacao]);
 
-  // Identificar divergências sem regra (score baixo ou sem explicação clara)
+  // Identificar divergências sem regra (sem regra_aplicada OU score muito baixo)
+  // Uma divergência é considerada "sem regra" se:
+  // 1. Não tem regra_aplicada definida (não foi classificada por nenhuma regra)
+  // 2. OU tem score muito baixo (< 20) indicando classificação incerta
   const divergenciasSemRegra = useMemo(() => {
     return divergencias.filter(
-      d => !d.contexto?.regra_aplicada || d.contexto?.score_confianca < 30
+      d => {
+        const temRegraAplicada = d.contexto?.regra_aplicada;
+        const scoreConfianca = d.contexto?.score_confianca || 0;
+        const temClassificacao = d.contexto?.classificacao;
+        
+        // Se tem regra aplicada e score >= 20, está coberta
+        if (temRegraAplicada && scoreConfianca >= 20) {
+          return false;
+        }
+        
+        // Se tem classificação e score >= 30, uma regra foi aplicada (mesmo sem nome explícito)
+        if (temClassificacao && scoreConfianca >= 30) {
+          return false;
+        }
+        
+        // Caso contrário, está sem regra
+        return true;
+      }
     );
   }, [divergencias]);
 

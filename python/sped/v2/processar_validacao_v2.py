@@ -461,12 +461,13 @@ def main():
                 impacto_e110 = validador_e110.calcular_impacto(div, e110_original, perfil_fiscal)
                 
                 # Classificar divergência
-                classificacao, score_confianca, explicacao = matriz.classificar_divergencia(
+                classificacao, score_confianca, explicacao, regra_aplicada = matriz.classificar_divergencia(
                     div.tipo,
                     contexto,
                     div.diferenca or Decimal('0'),
                     div.percentual_diferenca or Decimal('0'),
-                    contexto.tem_ajuste_c197 or contexto.tem_ajuste_e111
+                    contexto.tem_ajuste_c197 or contexto.tem_ajuste_e111,
+                    chave_nfe=div.chave_nfe or div.documento_xml.chave_acesso if div.documento_xml else ""
                 )
                 
                 # Ajustar severidade baseada no impacto E110
@@ -481,6 +482,7 @@ def main():
                     'classificacao': classificacao.value,
                     'score_confianca': score_confianca,
                     'explicacao_legitimacao': explicacao,
+                    'regra_aplicada': regra_aplicada,  # NOVO: Nome da regra aplicada
                     'cfop': contexto.cfop,
                     'cst': contexto.cst,
                     'tem_st': contexto.tem_st,
