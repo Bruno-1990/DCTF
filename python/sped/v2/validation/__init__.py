@@ -9,6 +9,12 @@ from .efd_internal_validator import EFDInternalValidator, ValidationResult, Vali
 from .totaling_engine import TotalingEngine, ResultadoTotalizacao
 from .legitimacao_matrix import MatrizLegitimacao, ClassificacaoDivergencia, ContextoFiscal
 from .context_validator import ContextValidator
+from .beneficios_fiscais import (
+    BeneficioFiscal,
+    IdentificadorBeneficio,
+    ValidadorBeneficio,
+    IntegradorBeneficioMatriz
+)
 
 __all__ = [
     'XmlEfdValidator',
