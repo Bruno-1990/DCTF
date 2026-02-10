@@ -8,17 +8,8 @@ import { ConsultaReceitaController } from '../controllers/ConsultaReceitaControl
 const router = Router();
 const consultaController = new ConsultaReceitaController();
 
-// POST /api/receita/consulta-simples - Consulta simples (CNPJ específico)
-router.post('/consulta-simples', (req, res) => consultaController.consultarSimples(req, res));
-
-// POST /api/receita/consulta-lote - Consulta em lote (todos os CNPJs)
-router.post('/consulta-lote', (req, res) => consultaController.consultarLote(req, res));
-
-// GET /api/receita/consulta-lote/:progressId - Verificar progresso de consulta em lote
-router.get('/consulta-lote/:progressId', (req, res) => consultaController.verificarProgresso(req, res));
-
-// POST /api/receita/consulta-lote/:progressId/cancelar - Cancelar consulta em lote
-router.post('/consulta-lote/:progressId/cancelar', (req, res) => consultaController.cancelarConsulta(req, res));
+// GET /api/receita/e-processos - Consulta processos eletrônicos na Receita Federal por CNPJ
+router.get('/e-processos', (req, res) => consultaController.consultarEProcessos(req, res));
 
 // GET /api/receita/validar-token - Valida token (e opcionalmente autorização para um CNPJ)
 router.get('/validar-token', (req, res) => consultaController.validarToken(req, res));

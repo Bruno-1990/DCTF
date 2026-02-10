@@ -40,6 +40,12 @@ const removeUndefined = (obj: any): any => {
 // Interceptor de requisição para remover campos undefined
 api.interceptors.request.use(
   (config) => {
+    // Não alterar FormData (ex.: upload de arquivos) — senão vira objeto vazio e o backend não recebe os arquivos.
+    // Remover Content-Type para o axios/navegador definir multipart/form-data com boundary.
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+      return config;
+    }
     // Limpar campos undefined do body (data)
     if (config.data && typeof config.data === 'object') {
       config.data = removeUndefined(config.data);

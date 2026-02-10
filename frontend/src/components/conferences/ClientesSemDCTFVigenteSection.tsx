@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   BuildingOfficeIcon,
   ChevronDownIcon,
@@ -16,6 +16,8 @@ import {
   CheckIcon,
   InformationCircleIcon,
   ArrowDownTrayIcon,
+  XMarkIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../Pagination';
 import { exportToExcel } from '../../utils/exportExcel';
@@ -100,6 +102,7 @@ export function ClientesSemDCTFVigenteSection({
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [modalCliente, setModalCliente] = useState<ClienteSemDCTFVigente | null>(null);
   const navigate = useNavigate();
   const itensPorPagina = 10;
 
@@ -165,8 +168,156 @@ export function ClientesSemDCTFVigenteSection({
     }
   };
 
+  // Componente do Modal de Divergência
+  const DivergenciaModal = () => {
+    if (!modalCliente) return null;
+
+    return (
+      <AnimatePresence>
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setModalCliente(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header do Modal */}
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 backdrop-blur-sm p-2 rounded-lg">
+                  <BuildingOfficeIcon className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Cliente sem DCTF</h2>
+                  <p className="text-amber-100 text-sm">Análise de pendência</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalCliente(null)}
+                className="text-white/80 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-lg"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+              {/* Informações da Empresa */}
+              <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                <h3 className="text-sm font-semibold text-gray-500 mb-3">EMPRESA</h3>
+                <p className="text-lg font-bold text-gray-900 mb-2">{modalCliente.razao_social}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">CNPJ:</span>
+                  <span className="font-mono text-sm font-medium text-gray-900">{formatCNPJ(modalCliente.cnpj)}</span>
+                  <button
+                    onClick={() => copyToClipboard(modalCliente.cnpj, 'modal')}
+                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                    title="Copiar CNPJ"
+                  >
+                    {copiedId === 'modal' ? (
+                      <CheckIcon className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <ClipboardDocumentIcon className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Motivo da Pendência */}
+              <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg p-4 mb-6">
+                <h3 className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-2">
+                  <ExclamationTriangleIcon className="h-5 w-5" />
+                  MOTIVO DA PENDÊNCIA
+                </h3>
+                <p className="text-sm text-amber-700 leading-relaxed">
+                  {modalCliente.mensagem || 
+                   `Cliente não possui DCTF transmitida para a competência ${modalCliente.competencia_vigente}.`}
+                </p>
+              </div>
+
+              {/* Detalhes da Competência */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">DETALHES DA COMPETÊNCIA</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Competência</p>
+                      <p className="text-base font-semibold text-amber-600">{modalCliente.competencia_vigente}</p>
+                    </div>
+                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Vencimento</p>
+                      <p className="text-base font-semibold text-gray-900">{formatDate(modalCliente.vencimento)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Nível de Severidade */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">NÍVEL DE SEVERIDADE</h3>
+                  <div className={`rounded-lg p-4 ${
+                    modalCliente.severidade === 'high' 
+                      ? 'bg-red-50 border border-red-200' 
+                      : modalCliente.severidade === 'medium' 
+                      ? 'bg-amber-50 border border-amber-200' 
+                      : 'bg-blue-50 border border-blue-200'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      {modalCliente.severidade === 'high' && (
+                        <span className="inline-flex items-center bg-red-100 text-red-800 px-3 py-1.5 rounded-lg text-sm font-semibold border border-red-200">
+                          🔴 Alta Prioridade
+                        </span>
+                      )}
+                      {modalCliente.severidade === 'medium' && (
+                        <span className="inline-flex items-center bg-amber-100 text-amber-800 px-3 py-1.5 rounded-lg text-sm font-semibold border border-amber-200">
+                          🟡 Média Prioridade
+                        </span>
+                      )}
+                      {modalCliente.severidade === 'low' && (
+                        <span className="inline-flex items-center bg-blue-100 text-blue-800 px-3 py-1.5 rounded-lg text-sm font-semibold border border-blue-200">
+                          🔵 Baixa Prioridade
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer do Modal com Ações */}
+            <div className="bg-gray-50 px-6 py-4 flex items-center justify-between border-t border-gray-200">
+              <button
+                onClick={() => setModalCliente(null)}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => {
+                  navigate(`/clientes/${modalCliente.cnpj}`);
+                  setModalCliente(null);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+              >
+                <InformationCircleIcon className="h-4 w-4" />
+                Ver Detalhes
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      </AnimatePresence>
+    );
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+      {/* Modal de Divergência */}
+      <DivergenciaModal />
+      
       <div
         onClick={handleToggle}
         className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors cursor-pointer"
@@ -256,7 +407,12 @@ export function ClientesSemDCTFVigenteSection({
                       .map((cliente) => (
                         <tr key={cliente.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-gray-800 font-medium text-xs">
-                            {cliente.razao_social || '—'}
+                            <button
+                              onClick={() => setModalCliente(cliente)}
+                              className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left transition-colors"
+                            >
+                              {cliente.razao_social || '—'}
+                            </button>
                           </td>
                           <td className="px-4 py-3 text-gray-600 text-xs">
                             <div className="flex items-center gap-2">

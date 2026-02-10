@@ -10,6 +10,7 @@ export interface IrpfFaturamentoMiniData {
   id?: string;
   cliente_id: string;
   codigo_sci: number;
+  codigo_empresa?: number; // 1=Matriz, 2=Filial (SCI BDCOD)
   ano: number;
   valor_total: number;
   media_mensal: number;
@@ -31,13 +32,14 @@ export class IrpfFaturamentoMini extends DatabaseService<IrpfFaturamentoMiniData
           \`id\` VARCHAR(36) PRIMARY KEY,
           \`cliente_id\` VARCHAR(36) NOT NULL,
           \`codigo_sci\` INT NOT NULL,
+          \`codigo_empresa\` INT NOT NULL DEFAULT 1,
           \`ano\` INT NOT NULL,
           \`valor_total\` DECIMAL(15, 2) NOT NULL,
           \`media_mensal\` DECIMAL(15, 2) NOT NULL,
           \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          INDEX \`idx_cliente_ano\` (\`cliente_id\`, \`ano\`),
+          INDEX \`idx_cliente_empresa_ano\` (\`cliente_id\`, \`codigo_empresa\`, \`ano\`),
           INDEX \`idx_codigo_sci_ano\` (\`codigo_sci\`, \`ano\`),
-          UNIQUE KEY \`uk_cliente_ano\` (\`cliente_id\`, \`ano\`)
+          UNIQUE KEY \`uk_cliente_empresa_ano\` (\`cliente_id\`, \`codigo_empresa\`, \`ano\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `;
 
@@ -60,12 +62,12 @@ export class IrpfFaturamentoMini extends DatabaseService<IrpfFaturamentoMiniData
     ano: number,
     dadosMensais: Array<{
       faturamento_total: number;
-    }>
+    }>,
+    codigoEmpresa: number = 1
   ): Promise<ApiResponse<boolean>> {
     try {
       await this.ensureTable();
 
-      // Calcular totais
       const valorTotal = dadosMensais.reduce(
         (sum, item) => sum + (item.faturamento_total || 0),
         0
@@ -75,8 +77,8 @@ export class IrpfFaturamentoMini extends DatabaseService<IrpfFaturamentoMiniData
       const id = require('uuid').v4();
       const sql = `
         INSERT INTO \`irpf_faturamento_mini\` 
-          (\`id\`, \`cliente_id\`, \`codigo_sci\`, \`ano\`, \`valor_total\`, \`media_mensal\`)
-        VALUES (?, ?, ?, ?, ?, ?)
+          (\`id\`, \`cliente_id\`, \`codigo_sci\`, \`codigo_empresa\`, \`ano\`, \`valor_total\`, \`media_mensal\`)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           \`valor_total\` = VALUES(\`valor_total\`),
           \`media_mensal\` = VALUES(\`media_mensal\`),
@@ -87,6 +89,7 @@ export class IrpfFaturamentoMini extends DatabaseService<IrpfFaturamentoMiniData
         id,
         clienteId,
         codigoSci,
+        codigoEmpresa,
         ano,
         valorTotal,
         mediaMensal,

@@ -6,7 +6,6 @@ import {
   DocumentTextIcon,
   UsersIcon,
   ChartBarIcon,
-  CreditCardIcon,
   DocumentMagnifyingGlassIcon,
   ClockIcon,
   ArrowRightIcon,
@@ -36,12 +35,6 @@ const cards = [
     description: "Gerencie os dados dos clientes e suas informações fiscais.",
     href: "/clientes",
     icon: UsersIcon,
-  },
-  {
-    title: "Pagamentos",
-    description: "Consulte e gerencie informações de pagamentos da Receita Federal.",
-    href: "/clientes?tab=pagamentos",
-    icon: CreditCardIcon,
   },
   {
     title: "Relatórios",

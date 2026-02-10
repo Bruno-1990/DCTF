@@ -27,16 +27,62 @@ import {
 } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import type { AxiosError } from 'axios';
-import PagamentosTab from '../components/Clientes/PagamentosTab';
 import EProcessosTab from '../components/Clientes/EProcessosTab';
+import CFOPTab from '../components/Clientes/CFOPTab';
 import ExportClientesModal from '../components/Clientes/ExportClientesModal';
 import { clientesService } from '../services';
 import { useToast } from '../hooks/useToast';
-import { irpfService, type FaturamentoAnual } from '../services/irpf';
+import { irpfService, type FaturamentoAnual, type FaturamentoPorEmpresa } from '../services/irpf';
 import { CurrencyDollarIcon, CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
+
+/** Prefixo fixo do caminho de rede; o usuário informa apenas o nome da pasta após este caminho. */
+const PREFIXO_PASTA_REDE = '\\\\192.168.0.9\\Clientes\\';
+
+function suffixRede(full: string | null | undefined): string {
+  if (!full) return '';
+  return full.startsWith(PREFIXO_PASTA_REDE) ? full.slice(PREFIXO_PASTA_REDE.length) : full;
+}
+
+function fullPathRede(suffix: string): string {
+  const s = (suffix || '').trim();
+  return s ? PREFIXO_PASTA_REDE + s : '';
+}
+
+/** Exibe texto de cliente em maiúsculas (padrão único na tela). */
+function displayUppercase(s: string | null | undefined, fallback = ''): string {
+  const t = s != null && String(s).trim() !== '' ? String(s).trim().toUpperCase() : fallback;
+  return t;
+}
+
+/** Abre a pasta no Windows: tenta protocolo dctf-openfolder (se instalado), senão copia o caminho. */
+function abrirPastaRede(pathRede: string | undefined | null, toast: { success: (m: string) => void; error: (m: string) => void }) {
+  const path = (pathRede || '').trim();
+  if (!path) {
+    toast.error('Informe o nome da pasta na Rede antes de abrir.');
+    return;
+  }
+  const copyAndNotify = () => {
+    navigator.clipboard.writeText(path).then(
+      () => toast.success('Caminho copiado. Cole no Explorer (Win+E) ou em Executar (Win+R) para abrir a pasta.'),
+      () => toast.error('Não foi possível copiar o caminho.')
+    );
+  };
+  try {
+    const protocolUrl = 'dctf-openfolder://' + encodeURIComponent(path).replace(/%2F/g, '/');
+    const w = window.open(protocolUrl, '_blank', 'noopener');
+    navigator.clipboard.writeText(path).catch(() => {});
+    if (!w || w.closed) {
+      copyAndNotify();
+    } else {
+      toast.success('Abrindo pasta no Explorer. Caminho também copiado — se não abrir, cole em Win+R.');
+    }
+  } catch {
+    copyAndNotify();
+  }
+}
 
 // Componente moderno de seleção de Mês/Ano
 const MonthYearPicker: React.FC<{
@@ -246,6 +292,28 @@ const MonthYearPicker: React.FC<{
 const Clientes: React.FC = () => {
   const { clientes, loadClientes, createCliente, updateClienteById, deleteClienteById, loading, error, clearError } = useClientes();
   const toast = useToast();
+
+  // Função para formatar tipos de relatório
+  const formatTipoRelatorio = (tipo: string): string => {
+    const tiposRelatorio: Record<string, string> = {
+      'CTB': 'CONTÁBIL',
+      'FISE': 'FISCAL ENTRADA',
+      'FPG': 'TRABALHISTA',
+      'FISS': 'FISCAL SAÍDA',
+    };
+    return tiposRelatorio[tipo?.toUpperCase()] || tipo;
+  };
+
+  const getTipoRelatorioColor = (tipo: string): string => {
+    const colors: Record<string, string> = {
+      'CTB': 'bg-blue-100 text-blue-800 border-blue-200',
+      'FISE': 'bg-green-100 text-green-800 border-green-200',
+      'FPG': 'bg-purple-100 text-purple-800 border-purple-200',
+      'FISS': 'bg-orange-100 text-orange-800 border-orange-200',
+    };
+    return colors[tipo?.toUpperCase()] || 'bg-gray-100 text-gray-800 border-gray-200';
+  };
+
   const [showForm, setShowForm] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
   const [formData, setFormData] = useState<Partial<Cliente>>({});
@@ -263,7 +331,7 @@ const Clientes: React.FC = () => {
   const [clientesParticipacao, setClientesParticipacao] = useState<Cliente[]>([]);
   // Aba Faturamento SCI
   const [clientesFaturamento, setClientesFaturamento] = useState<Cliente[]>([]);
-  const [faturamentoData, setFaturamentoData] = useState<Map<string, { faturamento: FaturamentoAnual[]; loading: boolean; carregado: boolean; error?: string; ultimaAtualizacao?: string | null }>>(new Map());
+  const [faturamentoData, setFaturamentoData] = useState<Map<string, { faturamento: FaturamentoAnual[]; empresas?: FaturamentoPorEmpresa[]; loading: boolean; carregado: boolean; error?: string; ultimaAtualizacao?: string | null }>>(new Map());
   const [loadingFaturamento, setLoadingFaturamento] = useState(false);
   const [searchFaturamento, setSearchFaturamento] = useState('');
   const carregandoFaturamentoRef = useRef(false);
@@ -338,21 +406,21 @@ const Clientes: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'pagamentos' | 'e-processos' | 'cnae'>(() => {
+  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-processos' | 'cnae' | 'cfop'>(() => {
     // Inicializar pela URL/localStorage para evitar 1º render na aba errada (que dispara várias requisições/toasts)
     const params = new URLSearchParams(window.location.search);
     const tabFromQuery = params.get('tab');
     const tabFromStorage = window.localStorage.getItem('clientes_active_tab');
     const tab = (tabFromQuery as any) || tabFromStorage || 'clientes';
 
-    if (tab === 'pagamentos') return 'pagamentos';
     if (tab === 'lancamentos') return 'lancamentos';
     if (tab === 'e-processos') return 'e-processos';
     if (tab === 'participacao') return 'participacao';
     if (tab === 'cnae') return 'cnae';
+    if (tab === 'cfop') return 'cfop';
     return 'clientes';
   });
-  const [cnpjParaPagamentos, setCnpjParaPagamentos] = useState<string | undefined>(undefined);
+  const [cnpjParaEProcessos, setCnpjParaEProcessos] = useState<string | undefined>(undefined);
   const [hostLancamentos, setHostLancamentos] = useState<any[]>([]);
   const [hostLoading, setHostLoading] = useState(false);
   const [hostError, setHostError] = useState<string | null>(null);
@@ -741,11 +809,11 @@ const Clientes: React.FC = () => {
         const row: any[] = [
           (cliente as any).codigo_sci || '-',
           formatarCpfCnpj(cliente.cnpj_limpo || (cliente as any).cnpj),
-          cliente.razao_social || cliente.nome || 'N/A',
-          (cliente as any).fantasia || '-',
-          (cliente as any).email || '-',
-          (cliente as any).telefone || '-',
-          (cliente as any).endereco || '-',
+          displayUppercase(cliente.razao_social || cliente.nome, 'N/A'),
+          displayUppercase((cliente as any).fantasia, '-'),
+          displayUppercase((cliente as any).email, '-'),
+          displayUppercase((cliente as any).telefone, '-'),
+          displayUppercase((cliente as any).endereco, '-'),
           (cliente as any).regime_tributario || '-',
           cnaePrincipal || '-',
           cnaePrincipalText || '-',
@@ -843,18 +911,22 @@ const Clientes: React.FC = () => {
     }
   };
 
-  // Função para mudar de aba e atualizar URL
-  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'pagamentos' | 'e-processos' | 'cnae') => {
+  // Função para mudar de aba e atualizar URL (preserva cnpj/contexto ao trocar de aba)
+  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-processos' | 'cnae' | 'cfop') => {
     setActiveTab(tab);
-    // Atualizar URL sem recarregar a página
     const params = new URLSearchParams(location.search);
     if (tab === 'clientes') {
-      params.delete('tab'); // 'clientes' é o padrão, não precisa na URL
+      params.delete('tab');
     } else {
       params.set('tab', tab);
     }
+    // Preservar CNPJ do campo Buscar Cliente na URL ao ir para CFOP (e outras abas que usam contexto)
+    const campoBusca = tab === 'faturamento-sci' ? searchFaturamento : search;
+    const cnpjLimpo = (campoBusca || '').replace(/\D/g, '');
+    if (cnpjLimpo.length === 14) {
+      params.set('cnpj', cnpjLimpo);
+    }
     navigate({ search: params.toString() }, { replace: true });
-    // Salvar no localStorage também
     localStorage.setItem('clientes_active_tab', tab);
   };
 
@@ -940,36 +1012,35 @@ const Clientes: React.FC = () => {
       | 'participacao'
       | 'faturamento-sci'
       | 'lancamentos'
-      | 'pagamentos'
       | 'e-processos'
       | 'cnae'
+      | 'cfop'
       | null;
 
     const tab = (tabFromQuery as any) || tabFromStorage || 'clientes';
-    if (tab === 'pagamentos') setActiveTab('pagamentos');
-    else if (tab === 'lancamentos') setActiveTab('lancamentos');
+    if (tab === 'lancamentos') setActiveTab('lancamentos');
     else if (tab === 'e-processos') setActiveTab('e-processos');
     else if (tab === 'participacao') setActiveTab('participacao');
     else if (tab === 'faturamento-sci') setActiveTab('faturamento-sci');
     else if (tab === 'cnae') setActiveTab('cnae');
+    else if (tab === 'cfop') setActiveTab('cfop');
     else setActiveTab('clientes');
     
-    // Detectar CNPJ na query string para pagamentos, e-processos, lançamentos, clientes e faturamento-sci
+    // Detectar CNPJ na query string para e-processos, lançamentos, clientes, faturamento-sci e cfop
     const cnpjFromQuery = params.get('cnpj');
     if (cnpjFromQuery) {
       const cnpjLimpo = cnpjFromQuery.replace(/\D/g, '');
       if (cnpjLimpo.length === 14) {
-        if (tab === 'pagamentos' || tab === 'e-processos') {
-          setCnpjParaPagamentos(cnpjLimpo);
-        } else if (tab === 'lancamentos' || tab === 'clientes' || tab === 'faturamento-sci') {
-          // Preencher o campo de busca com o CNPJ formatado
+        if (tab === 'e-processos') {
+          setCnpjParaEProcessos(cnpjLimpo);
+        } else if (tab === 'lancamentos' || tab === 'clientes' || tab === 'faturamento-sci' || tab === 'cfop') {
+          // Preencher o campo de busca (contexto) com o CNPJ formatado
           const cnpjFormatado = cnpjLimpo
             .replace(/(\d{2})(\d)/, '$1.$2')
             .replace(/(\d{3})(\d)/, '$1.$2')
             .replace(/(\d{3})(\d)/, '$1/$2')
             .replace(/(\d{4})(\d)/, '$1-$2');
           setSearch(cnpjFormatado);
-          // Se for faturamento-sci, também preencher o campo de busca específico
           if (tab === 'faturamento-sci') {
             setSearchFaturamento(cnpjFormatado);
           }
@@ -977,6 +1048,19 @@ const Clientes: React.FC = () => {
       }
     }
   }, [location.search]);
+
+  // Na aba CFOP, persistir CNPJ do campo de busca na URL para não perder o contexto ao usar filtros (ano/mês, Mensal/Soma anual, Atualizar, etc.)
+  useEffect(() => {
+    if (activeTab !== 'cfop') return;
+    const cnpjLimpo = (search || '').replace(/\D/g, '');
+    if (cnpjLimpo.length !== 14) return;
+    const params = new URLSearchParams(location.search);
+    const cnpjNaUrl = params.get('cnpj')?.replace(/\D/g, '');
+    if (cnpjNaUrl === cnpjLimpo) return;
+    params.set('tab', 'cfop');
+    params.set('cnpj', cnpjLimpo);
+    navigate({ search: params.toString() }, { replace: true });
+  }, [activeTab, search, navigate]);
 
   // Detectar scroll para mostrar botão "voltar ao topo" na aba Participação
   useEffect(() => {
@@ -1579,7 +1663,8 @@ const Clientes: React.FC = () => {
               try {
                 const resultado = await irpfService.buscarApenasCache(cliente.id, anosParaBuscarFaturamento);
                 const faturamento = resultado.data;
-                
+                const empresas = resultado.empresas;
+
                 // Garantir que sempre temos os 2 anos, preenchendo com zeros se necessário
                 const faturamentoCompleto = anosParaBuscarFaturamento.map((ano) => {
                   const encontrado = faturamento.find((f) => f.ano === ano);
@@ -1590,11 +1675,12 @@ const Clientes: React.FC = () => {
                     meses: [],
                   };
                 });
-                
+
                 setFaturamentoData((prev) => {
                   const novo = new Map(prev);
                   novo.set(cliente.id, {
                     faturamento: faturamentoCompleto,
+                    empresas: empresas,
                     loading: false,
                     carregado: true,
                     ultimaAtualizacao: resultado.ultimaAtualizacao || null,
@@ -1660,14 +1746,22 @@ const Clientes: React.FC = () => {
         return encontrado || { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
       });
       
-      // Buscar a última atualização após atualizar
+      // Buscar a última atualização após atualizar (retorna também empresas desagrupadas)
       try {
         const resultadoCache = await irpfService.buscarApenasCache(clienteId, anosParaBuscarFaturamento);
+        const faturamentoAtualizado = resultadoCache.empresas
+          ? resultadoCache.data
+          : faturamentoCompleto;
+        const faturamentoCompletoPosAtualizar = anosParaBuscarFaturamento.map((ano) => {
+          const encontrado = faturamentoAtualizado.find((f: FaturamentoAnual) => f.ano === ano);
+          return encontrado || { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
+        });
         setFaturamentoData((prev) => {
           const novo = new Map(prev);
-          novo.set(clienteId, { 
-            faturamento: faturamentoCompleto, 
-            loading: false, 
+          novo.set(clienteId, {
+            faturamento: faturamentoCompletoPosAtualizar,
+            empresas: resultadoCache.empresas,
+            loading: false,
             carregado: true,
             ultimaAtualizacao: resultadoCache.ultimaAtualizacao || new Date().toISOString(),
           });
@@ -1677,9 +1771,9 @@ const Clientes: React.FC = () => {
         // Se falhar ao buscar última atualização, usar data atual
         setFaturamentoData((prev) => {
           const novo = new Map(prev);
-          novo.set(clienteId, { 
-            faturamento: faturamentoCompleto, 
-            loading: false, 
+          novo.set(clienteId, {
+            faturamento: faturamentoCompleto,
+            loading: false,
             carregado: true,
             ultimaAtualizacao: new Date().toISOString(),
           });
@@ -1687,7 +1781,7 @@ const Clientes: React.FC = () => {
         });
       }
       
-      toast.success(`Faturamento atualizado para ${cliente.razao_social || cliente.nome}`, 3000);
+      toast.success(`Faturamento atualizado para ${displayUppercase(cliente.razao_social || cliente.nome)}`, 3000);
     } catch (error: any) {
       console.error(`Erro ao atualizar faturamento para ${clienteId}:`, error);
       setFaturamentoData((prev) => {
@@ -1892,7 +1986,7 @@ const Clientes: React.FC = () => {
       // Razão Social - linha completa
       doc.text(`Razão Social:`, margin + 3, infoY);
       doc.setFont('helvetica', 'bold');
-      const razaoSocial = cliente.razao_social || cliente.nome || '-';
+      const razaoSocial = displayUppercase(cliente.razao_social || cliente.nome, '-');
       doc.text(razaoSocial, margin + 30, infoY, { maxWidth: pageWidth - margin - 33 });
       doc.setFont('helvetica', 'normal');
       infoY += 7;
@@ -2128,7 +2222,7 @@ const Clientes: React.FC = () => {
       // Razão Social - linha completa
       doc.text(`Razão Social:`, margin + 3, infoY);
       doc.setFont('helvetica', 'bold');
-      const razaoSocial = cliente.razao_social || cliente.nome || '-';
+      const razaoSocial = displayUppercase(cliente.razao_social || cliente.nome, '-');
       doc.text(razaoSocial, margin + 30, infoY, { maxWidth: pageWidth - margin - 33 });
       doc.setFont('helvetica', 'normal');
       infoY += 7;
@@ -2368,7 +2462,9 @@ const Clientes: React.FC = () => {
         response: error?.response?.data,
         status: error?.response?.status
       });
-      toast.error(error?.response?.data?.error || error?.message || 'Erro ao executar consulta personalizada');
+      const msg = error?.response?.data?.error || error?.message || 'Erro ao executar consulta personalizada';
+      const isTimeout = error?.code === 'ECONNABORTED' || error?.response?.status === 504;
+      toast.error(isTimeout ? 'A consulta demorou muito. Tente um período menor ou tente novamente.' : msg);
     } finally {
       setLoadingConsultaPersonalizada(false);
     }
@@ -2428,6 +2524,13 @@ const Clientes: React.FC = () => {
         setSuccessMessage('Cliente cadastrado com sucesso!');
       }
       limparForm();
+      setSearch('');
+      setSearchFaturamento('');
+      setDebouncedSearch('');
+      const params = new URLSearchParams(location.search);
+      params.delete('cnpj');
+      if (params.toString()) navigate({ search: params.toString() }, { replace: true });
+      else navigate({ search: '' }, { replace: true });
       setShowSuccess(true);
       setTimeout(() => {
         setShowSuccess(false);
@@ -2783,7 +2886,7 @@ const Clientes: React.FC = () => {
   const executeDelete = async (cliente: Cliente) => {
     if (!cliente.id) return;
     
-    const clienteNome = cliente.razao_social || cliente.nome || 'Cliente';
+    const clienteNome = displayUppercase(cliente.razao_social || cliente.nome, 'Cliente');
     
     // Limpar estado de exclusão pendente
     setPendingDelete({ cliente: null, countdown: 0 });
@@ -3266,6 +3369,20 @@ const Clientes: React.FC = () => {
             </button>
             <button
               type="button"
+              onClick={() => handleTabChange('cfop')}
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+                activeTab === 'cfop'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+              }`}
+            >
+              Faturamento CFOP
+              {activeTab === 'cfop' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => handleTabChange('lancamentos')}
               className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                 activeTab === 'lancamentos'
@@ -3275,20 +3392,6 @@ const Clientes: React.FC = () => {
             >
               Lançamentos (SCI)
               {activeTab === 'lancamentos' && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleTabChange('pagamentos')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
-                activeTab === 'pagamentos'
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/30 transform scale-105'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
-              }`}
-            >
-              Pagamentos
-              {activeTab === 'pagamentos' && (
                 <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
               )}
             </button>
@@ -3345,7 +3448,7 @@ const Clientes: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-bold text-white">
-                    {clienteModalCNAEAtividades.razao_social || clienteModalCNAEAtividades.nome || 'Cliente'}
+                    {displayUppercase(clienteModalCNAEAtividades.razao_social || clienteModalCNAEAtividades.nome, 'Cliente')}
                   </h2>
                   <p className="text-sm text-blue-100 mt-1">
                     CNPJ: {clienteModalCNAEAtividades.cnpj_limpo || clienteModalCNAEAtividades.cnpj || '—'}
@@ -3577,9 +3680,12 @@ const Clientes: React.FC = () => {
             className="fixed inset-0 z-40"
             onClick={() => {
               setVisualizandoCliente(null);
-              // Limpar clienteId da URL
+              setSearch('');
+              setSearchFaturamento('');
+              setDebouncedSearch('');
               const params = new URLSearchParams(location.search);
               params.delete('clienteId');
+              params.delete('cnpj');
               navigate({ search: params.toString() }, { replace: true });
             }}
           />
@@ -3591,7 +3697,7 @@ const Clientes: React.FC = () => {
           <div className="px-8 py-5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">
-                {visualizandoCliente.razao_social || visualizandoCliente.nome || 'Cliente'}
+                {displayUppercase(visualizandoCliente.razao_social || visualizandoCliente.nome, 'Cliente')}
               </h2>
               <div className="flex items-center gap-3">
                 <button
@@ -3678,9 +3784,12 @@ const Clientes: React.FC = () => {
                 <button
                   onClick={() => {
                     setVisualizandoCliente(null);
-                    // Limpar clienteId da URL
+                    setSearch('');
+                    setSearchFaturamento('');
+                    setDebouncedSearch('');
                     const params = new URLSearchParams(location.search);
                     params.delete('clienteId');
+                    params.delete('cnpj');
                     navigate({ search: params.toString() }, { replace: true });
                   }}
                   className="px-6 py-2.5 bg-white text-blue-600 hover:bg-blue-50 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2 shadow-md hover:shadow-lg border-2 border-white hover:border-blue-200"
@@ -3699,7 +3808,7 @@ const Clientes: React.FC = () => {
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1.5">Razão Social</label>
                   <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                    {visualizandoCliente.razao_social || visualizandoCliente.nome || '—'}
+                    {displayUppercase(visualizandoCliente.razao_social || visualizandoCliente.nome, '—')}
                   </div>
                 </div>
                 <div>
@@ -3759,7 +3868,7 @@ const Clientes: React.FC = () => {
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Fantasia</label>
                     <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                      {(visualizandoCliente as any).fantasia}
+                      {displayUppercase((visualizandoCliente as any).fantasia)}
                     </div>
                   </div>
                 )}
@@ -3855,6 +3964,49 @@ const Clientes: React.FC = () => {
               </div>
             )}
 
+            {/* Rede - sempre visível e editável na visualização */}
+            <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
+              <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Rede</h3>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Nome da pasta na Rede</label>
+                <div className="flex flex-wrap items-stretch rounded-lg border-2 border-gray-200 bg-white overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                  <span className="inline-flex items-center px-3 py-2.5 text-sm text-gray-600 bg-gray-50 border-r border-gray-200 whitespace-nowrap">
+                    {PREFIXO_PASTA_REDE}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Nome da pasta"
+                    value={suffixRede((visualizandoCliente as any).nome_pasta_rede)}
+                    onChange={(e) => setVisualizandoCliente(prev => prev ? { ...prev, nome_pasta_rede: fullPathRede(e.target.value) || undefined } as Cliente : null)}
+                    onBlur={async () => {
+                      if (!visualizandoCliente?.id) return;
+                      const valor = fullPathRede(suffixRede((visualizandoCliente as any).nome_pasta_rede));
+                      try {
+                        await updateClienteById(visualizandoCliente.id, { nome_pasta_rede: valor || null } as Partial<Cliente>);
+                        toast.success('Rede atualizada.');
+                      } catch (err: any) {
+                        const msg = err?.response?.data?.error ?? err?.message ?? 'Erro ao salvar Rede.';
+                        const isMigration = /não existe no banco|Nenhum campo para atualizar/i.test(msg);
+                        toast.error(isMigration ? 'Não foi possível salvar a pasta na Rede. Execute a migration 019 no banco (coluna nome_pasta_rede).' : msg);
+                      }
+                    }}
+                    className="flex-1 min-w-0 px-3 py-2.5 text-sm text-gray-900 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => abrirPastaRede((visualizandoCliente as any).nome_pasta_rede, toast)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-blue-700 bg-blue-50 border-l border-gray-200 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+                    title="Abrir pasta no Windows Explorer (ou copiar caminho)"
+                  >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    Abrir pasta
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Endereço */}
             {((visualizandoCliente as any).logradouro || (visualizandoCliente as any).municipio || (visualizandoCliente as any).cep) && (
               <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
@@ -3929,7 +4081,7 @@ const Clientes: React.FC = () => {
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1.5">E-mail (Receita)</label>
                       <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).receita_email}
+                        {displayUppercase((visualizandoCliente as any).receita_email)}
                       </div>
                     </div>
                   )}
@@ -3937,7 +4089,7 @@ const Clientes: React.FC = () => {
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1.5">Telefone (Receita)</label>
                       <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).receita_telefone}
+                        {displayUppercase((visualizandoCliente as any).receita_telefone)}
                       </div>
                     </div>
                   )}
@@ -4035,8 +4187,8 @@ const Clientes: React.FC = () => {
         </>
       )}
 
-      {/* Barra de Busca e Ações - Não exibir nas abas de Pagamentos, E-Processos e CNAE, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
-      {activeTab !== 'pagamentos' && activeTab !== 'e-processos' && activeTab !== 'cnae' && !showForm && !visualizandoCliente && (
+      {/* Barra de Busca e Ações - Não exibir nas abas de E-Processos e CNAE, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
+      {activeTab !== 'e-processos' && activeTab !== 'cnae' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div className={`flex-1 ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
@@ -4466,6 +4618,35 @@ const Clientes: React.FC = () => {
             </div>
               </div>
             </div>
+
+            {/* Rede - sempre visível com prefixo fixo */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Rede</label>
+              <div className="flex flex-wrap items-stretch rounded-xl border-2 border-gray-200 bg-white overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 shadow-sm hover:shadow-md">
+                <span className="inline-flex items-center px-4 py-3 text-gray-600 bg-gray-50 border-r border-gray-200 whitespace-nowrap">
+                  {PREFIXO_PASTA_REDE}
+                </span>
+                <input
+                  type="text"
+                  placeholder="Nome da pasta"
+                  value={suffixRede((formData as any).nome_pasta_rede)}
+                  onChange={(e) => setFormData({ ...formData, nome_pasta_rede: fullPathRede(e.target.value) || undefined } as any)}
+                  className="flex-1 min-w-0 px-4 py-3 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => abrirPastaRede((formData as any).nome_pasta_rede, toast)}
+                  className="inline-flex items-center gap-1.5 px-4 py-3 text-sm font-medium text-blue-700 bg-blue-50 border-l border-gray-200 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+                  title="Abrir pasta no Windows Explorer (ou copiar caminho)"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  Abrir pasta
+                </button>
+              </div>
+            </div>
+
             {mostrarCadastroCompleto && (
               <div className="space-y-6 mt-6">
                 {!((formData as any).receita_ws_status || (formData as any).razao_social || (formData as any).nome) && (
@@ -4929,9 +5110,9 @@ const Clientes: React.FC = () => {
                               setVisualizandoCliente(cliente);
                             }}
                             className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline transition-colors cursor-pointer text-left truncate min-w-0 flex-1"
-                            title={cliente.razao_social || cliente.nome || '-'}
+                            title={displayUppercase(cliente.razao_social || cliente.nome, '-')}
                           >
-                            {cliente.razao_social || cliente.nome || '-'}
+                            {displayUppercase(cliente.razao_social || cliente.nome, '-')}
                           </button>
                         </div>
                       </td>
@@ -5092,14 +5273,14 @@ const Clientes: React.FC = () => {
         </button>
       )}
 
-      {/* Aba de Pagamentos */}
-      {activeTab === 'pagamentos' && (
-        <PagamentosTab cnpjPreenchido={cnpjParaPagamentos} />
-      )}
-
       {/* Aba de E-Processos */}
       {activeTab === 'e-processos' && (
-        <EProcessosTab cnpjPreenchido={cnpjParaPagamentos} />
+        <EProcessosTab cnpjPreenchido={cnpjParaEProcessos} />
+      )}
+
+      {/* Aba de CFOP */}
+      {activeTab === 'cfop' && (
+        <CFOPTab />
       )}
 
       {/* Aba de CNAE */}
@@ -5578,11 +5759,11 @@ const Clientes: React.FC = () => {
                               <div className="flex items-start justify-between gap-4 mb-2">
                                 <div className="flex-1 min-w-0">
                                   <h4 className="text-lg font-bold text-gray-900 truncate group-hover:text-purple-600 transition-colors">
-                                    {cliente.razao_social || cliente.nome || 'N/A'}
+                                    {displayUppercase(cliente.razao_social || cliente.nome, 'N/A')}
                                   </h4>
                                   {(cliente as any).fantasia && (
                                     <p className="text-sm text-gray-500 truncate mt-0.5">
-                                      {(cliente as any).fantasia}
+                                      {displayUppercase((cliente as any).fantasia)}
                                     </p>
                                   )}
                                 </div>
@@ -5727,7 +5908,7 @@ const Clientes: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                       <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3">
                         <p className="text-xs font-medium text-purple-600 uppercase tracking-wide mb-1">Razão Social</p>
-                        <p className="text-sm font-semibold text-gray-900 leading-tight">{resultadoConsultaPersonalizada.cliente.razao_social}</p>
+                        <p className="text-sm font-semibold text-gray-900 leading-tight">{displayUppercase(resultadoConsultaPersonalizada.cliente.razao_social)}</p>
                       </div>
                       <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3">
                         <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">CNPJ</p>
@@ -5873,6 +6054,7 @@ const Clientes: React.FC = () => {
                       <button
                         onClick={atualizarTodosFaturamentos}
                         disabled={loadingFaturamento}
+                        title="Atualizar faturamento direto do banco SCI para todos os clientes"
                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                       >
                         <ArrowPathIcon className={`h-4 w-4 ${loadingFaturamento ? 'animate-spin' : ''}`} />
@@ -5895,135 +6077,161 @@ const Clientes: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {/* Lista de Clientes */}
+                {/* Lista: um item por (Cliente + Empresa) — Matriz e Filiais como linhas separadas */}
                 <div className="space-y-4">
                   {clientesFaturamento
                     .filter((c) => {
                       if (!searchFaturamento) return true;
-                      // Remove formatação do termo de busca para comparar apenas números
                       const termLimpo = searchFaturamento.replace(/\D/g, '').toLowerCase();
                       const termOriginal = searchFaturamento.toLowerCase();
-                      // CNPJ do cliente sem formatação
                       const cnpjLimpo = (c.cnpj_limpo || (c.cnpj ? c.cnpj.replace(/\D/g, '') : '')).toLowerCase();
-                      // Razão social para busca por nome
                       const razao = (c.razao_social || c.nome || '').toLowerCase();
-                      // Busca por CNPJ (sem formatação) ou por razão social
                       return (termLimpo && cnpjLimpo.includes(termLimpo)) || razao.includes(termOriginal);
                     })
-                    .map((cliente) => {
+                    .flatMap((cliente) => {
                       const data = faturamentoData.get(cliente.id);
                       const faturamento = data?.faturamento || [];
-                      
-                      return (
-                        <div key={cliente.id} className="bg-gray-50 rounded-lg border border-gray-200 p-4">
-                          <div className="flex items-center justify-between mb-4">
-                            <div>
-                              <h3 className="text-lg font-semibold text-gray-900">
-                                {cliente.razao_social || cliente.nome || 'Sem nome'}
-                              </h3>
-                              <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
-                                <div className="flex items-center gap-2">
-                                  <span>CNPJ: {(() => {
-                                    const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
-                                    const cnpjKey = cnpjValue.replace(/\D/g, '');
-                                    const cnpjFormatado = cnpjValue ? formatCNPJ(cnpjKey) : '-';
-                                    return cnpjFormatado;
-                                  })()}</span>
-                                  {(() => {
-                                    const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
-                                    const cnpjKey = cnpjValue.replace(/\D/g, '');
-                                    if (!cnpjKey) return null;
-                                    return (
-                                      <button
-                                        onClick={() => copyToClipboard(cnpjKey, cnpjKey)}
-                                        className="p-1 hover:bg-gray-200 rounded transition-colors"
-                                        title="Copiar CNPJ"
-                                      >
-                                        {copiedCnpj === cnpjKey ? (
-                                          <ClipboardDocumentCheckIcon className="h-4 w-4 text-green-600" />
-                                        ) : (
-                                          <ClipboardDocumentIcon className="h-4 w-4 text-gray-500" />
-                                        )}
-                                      </button>
-                                    );
-                                  })()}
-                                </div>
-                                <span>Código SCI: {cliente.codigo_sci || '-'}</span>
+                      const empresas = data?.empresas;
+                      const exibirPorEmpresa = empresas && empresas.length > 0;
+
+                      const renderCardsFaturamento = (lista: FaturamentoAnual[], tituloEmpresa?: string) => (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {lista.map((fat) => (
+                            <div
+                              key={tituloEmpresa ? `${tituloEmpresa}-${fat.ano}` : fat.ano}
+                              onClick={() => exibirDetalhesFaturamento(cliente.id, fat.ano)}
+                              className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-purple-400 hover:shadow-md transition-all duration-200"
+                            >
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-base font-semibold text-gray-900">
+                                  Faturamento {fat.ano}
+                                </h4>
+                                <span className="text-lg font-bold text-green-700">
+                                  {formatarMoedaFaturamento(fat.valorTotal)}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-600 mb-2">
+                                Período: 02/01/{fat.ano} a 01/01/{fat.ano + 1}
+                              </div>
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-gray-600">Média Mensal:</span>
+                                <span className="font-semibold text-blue-700">
+                                  {formatarMoedaFaturamento(fat.mediaMensal || 0)}
+                                </span>
+                              </div>
+                              <div className="mt-3 pt-3 border-t border-gray-100">
+                                <span className="text-xs text-purple-600 font-medium flex items-center gap-1">
+                                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                  </svg>
+                                  Clique para ver detalhes
+                                </span>
                               </div>
                             </div>
-                            <div className="flex items-center gap-3">
-                              {data?.ultimaAtualizacao && (
-                                <div className="text-xs text-gray-500">
-                                  <span className="text-gray-400">Última atualização:</span>{' '}
-                                  <span className="font-medium">{formatDateTime(data.ultimaAtualizacao)}</span>
-                                </div>
-                              )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  atualizarFaturamentoCliente(cliente.id);
-                                }}
-                                disabled={data?.loading || loadingFaturamento}
-                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                title="Atualizar faturamento"
-                              >
-                                <ArrowPathIcon className={`h-5 w-5 ${data?.loading ? 'animate-spin' : ''}`} />
-                              </button>
+                          ))}
+                        </div>
+                      );
+
+                      const cabecalhoCliente = (
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {displayUppercase(cliente.razao_social || cliente.nome, 'Sem nome')}
+                            </h3>
+                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                              <div className="flex items-center gap-2">
+                                <span>CNPJ: {(() => {
+                                  const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
+                                  const cnpjKey = cnpjValue.replace(/\D/g, '');
+                                  const cnpjFormatado = cnpjValue ? formatCNPJ(cnpjKey) : '-';
+                                  return cnpjFormatado;
+                                })()}</span>
+                                {(() => {
+                                  const cnpjValue = cliente.cnpj_limpo || cliente.cnpj || '';
+                                  const cnpjKey = cnpjValue.replace(/\D/g, '');
+                                  if (!cnpjKey) return null;
+                                  return (
+                                    <button
+                                      onClick={() => copyToClipboard(cnpjKey, cnpjKey)}
+                                      className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                      title="Copiar CNPJ"
+                                    >
+                                      {copiedCnpj === cnpjKey ? (
+                                        <ClipboardDocumentCheckIcon className="h-4 w-4 text-green-600" />
+                                      ) : (
+                                        <ClipboardDocumentIcon className="h-4 w-4 text-gray-500" />
+                                      )}
+                                    </button>
+                                  );
+                                })()}
+                              </div>
+                              <span>Código SCI: {cliente.codigo_sci || '-'}</span>
                             </div>
                           </div>
+                          <div className="flex items-center gap-3">
+                            {data?.ultimaAtualizacao && (
+                              <div className="text-xs text-gray-500">
+                                <span className="text-gray-400">Última atualização:</span>{' '}
+                                <span className="font-medium">{formatDateTime(data.ultimaAtualizacao)}</span>
+                              </div>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                atualizarFaturamentoCliente(cliente.id);
+                              }}
+                              disabled={data?.loading || loadingFaturamento}
+                              className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              title="Atualizar direto do banco SCI"
+                            >
+                              <ArrowPathIcon className={`h-5 w-5 ${data?.loading ? 'animate-spin' : ''}`} />
+                            </button>
+                          </div>
+                        </div>
+                      );
 
+                      if (exibirPorEmpresa) {
+                        return empresas!.map((emp) => (
+                          <div
+                            key={`${cliente.id}-${emp.codigo_empresa}`}
+                            className="bg-gray-50 rounded-lg border border-gray-200 p-4"
+                          >
+                            {cabecalhoCliente}
+                            {data?.error && (
+                              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                                <strong>Erro:</strong> {data.error}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 mb-3">
+                              <BuildingOfficeIcon className="h-5 w-5 text-gray-500" />
+                              <h4 className="text-base font-semibold text-gray-800">{emp.tipo}</h4>
+                            </div>
+                            {emp.data.length > 0 ? (
+                              renderCardsFaturamento(emp.data, emp.tipo)
+                            ) : (
+                              <p className="text-sm text-gray-500">Nenhum dado para este período.</p>
+                            )}
+                          </div>
+                        ));
+                      }
+
+                      return [
+                        <div key={cliente.id} className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                          {cabecalhoCliente}
                           {data?.error && (
                             <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
                               <strong>Erro:</strong> {data.error}
                             </div>
                           )}
-
-                          {faturamento.length > 0 && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {faturamento.map((fat) => (
-                                <div 
-                                  key={fat.ano} 
-                                  onClick={() => exibirDetalhesFaturamento(cliente.id, fat.ano)}
-                                  className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-purple-400 hover:shadow-md transition-all duration-200"
-                                >
-                                  <div className="flex items-center justify-between mb-3">
-                                    <h4 className="text-base font-semibold text-gray-900">
-                                      Faturamento {fat.ano}
-                                    </h4>
-                                    <span className="text-lg font-bold text-green-700">
-                                      {formatarMoedaFaturamento(fat.valorTotal)}
-                                    </span>
-                                  </div>
-                                  <div className="text-xs text-gray-600 mb-2">
-                                    Período: 02/01/{fat.ano} a 01/01/{fat.ano + 1}
-                                  </div>
-                                  <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-600">Média Mensal:</span>
-                                    <span className="font-semibold text-blue-700">
-                                      {formatarMoedaFaturamento(fat.mediaMensal || 0)}
-                                    </span>
-                                  </div>
-                                  <div className="mt-3 pt-3 border-t border-gray-100">
-                                    <span className="text-xs text-purple-600 font-medium flex items-center gap-1">
-                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                      </svg>
-                                      Clique para ver detalhes
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
+                          {faturamento.length > 0 ? renderCardsFaturamento(faturamento) : null}
                           {!data?.carregado && !data?.loading && (
                             <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg text-sm">
-                              Clique em "Atualizar" para buscar o faturamento do SCI
+                              Clique em &quot;Atualizar&quot; para buscar o faturamento do SCI
                             </div>
                           )}
-                        </div>
-                      );
+                        </div>,
+                      ];
                     })}
                 </div>
               </div>
@@ -6136,7 +6344,7 @@ const Clientes: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                       <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3">
                         <p className="text-xs font-medium text-purple-600 uppercase tracking-wide mb-1">Razão Social</p>
-                        <p className="text-sm font-semibold text-gray-900 leading-tight">{detalhesFaturamento.cliente.razao_social || detalhesFaturamento.cliente.nome}</p>
+                        <p className="text-sm font-semibold text-gray-900 leading-tight">{displayUppercase(detalhesFaturamento.cliente.razao_social || detalhesFaturamento.cliente.nome)}</p>
                       </div>
                       <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3">
                         <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">CNPJ</p>
@@ -6518,6 +6726,10 @@ const Clientes: React.FC = () => {
               </div>
             </div>
 
+            <p className="px-6 text-xs text-gray-500">
+              Consultas com período longo (ex.: ano inteiro) podem demorar até 3 minutos. Períodos menores costumam responder mais rápido.
+            </p>
+
             <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
               <button
                 onClick={() => {
@@ -6811,7 +7023,7 @@ const Clientes: React.FC = () => {
                           }}
                           title="Clique para ver detalhes na aba Cadastro"
                         >
-                          {cliente.razao_social || cliente.nome || 'Sem nome'}
+                          {displayUppercase(cliente.razao_social || cliente.nome, 'Sem nome')}
                         </h3>
                         <div className="flex items-center gap-3 mt-1">
                           <div className="flex items-center gap-1.5">
@@ -7320,8 +7532,13 @@ const Clientes: React.FC = () => {
                         <td className="px-4 py-3 text-sm text-gray-700">
                           {item.competencia}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {item.relatorio}
+                        <td className="px-4 py-3 text-sm">
+                          <span 
+                            className={`inline-flex items-center border px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wide ${getTipoRelatorioColor(item.relatorio)}`}
+                            title={`Código: ${item.relatorio}`}
+                          >
+                            {formatTipoRelatorio(item.relatorio)}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700">
                           {item.tipo}
@@ -7357,7 +7574,7 @@ const Clientes: React.FC = () => {
                   Exclusão em {pendingDelete.countdown} segundo{pendingDelete.countdown !== 1 ? 's' : ''}
                 </p>
                 <p className="text-sm text-white/90 mt-1">
-                  Cliente: {pendingDelete.cliente.razao_social || pendingDelete.cliente.nome || 'Cliente'}
+                  Cliente: {displayUppercase(pendingDelete.cliente.razao_social || pendingDelete.cliente.nome, 'Cliente')}
                 </p>
               </div>
             </div>

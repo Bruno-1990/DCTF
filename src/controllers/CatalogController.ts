@@ -10,6 +10,21 @@ export class CatalogController {
   private pythonScriptPath: string;
   private catalogPath: string;
 
+  /**
+   * Normaliza data para formato Firebird (YYYY-MM-DD).
+   * Aceita DD.MM.YYYY ou YYYY-MM-DD; evita SQLCODE -104 (Token unknown).
+   */
+  private normalizarDataFirebird(data: string): string {
+    const s = (data || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const match = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if (match) {
+      const [, d, m, y] = match;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return s;
+  }
+
   constructor() {
     // Caminho para o script Python
     this.pythonScriptPath = path.join(
@@ -182,11 +197,31 @@ export class CatalogController {
 
       const command = `python "${scriptPath}" ${args.join(' ')}`;
 
-      // Executar script Python
-      const { stdout, stderr } = await execAsync(command, {
+      // Timeout de 3 minutos para consultas longas (ex.: SP_BI_FAT) - evita travamento
+      const TIMEOUT_MS = 180000;
+      const execPromise = execAsync(command, {
         encoding: 'utf-8',
         maxBuffer: 50 * 1024 * 1024, // 50MB para resultados grandes
       });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('A consulta ao SCI demorou mais de 3 minutos. Tente um período menor ou simplifique a query.')), TIMEOUT_MS);
+      });
+
+      let stdout: string;
+      let stderr: string;
+      try {
+        const result = await Promise.race([execPromise, timeoutPromise]);
+        stdout = result.stdout;
+        stderr = result.stderr ?? '';
+      } catch (raceError: any) {
+        if (raceError?.message?.includes('demorou mais')) {
+          res.status(504).json({
+            error: raceError.message,
+          });
+          return;
+        }
+        throw raceError;
+      }
 
       if (stderr && !stderr.includes('INFO')) {
         console.error('Python stderr:', stderr);
@@ -461,37 +496,49 @@ LIMIT 100;  -- Ajuste o limite conforme necessário
       // Valores padrão
       const p1 = param1 !== undefined ? param1 : 2;
       const p2 = param2 !== undefined ? param2 : 2;
-      const dataIni = data_inicio || '01.12.2024';
-      const dataFim = data_fim || '31.12.2024';
+      // Firebird espera datas em YYYY-MM-DD (evita SQLCODE -104 Token unknown)
+      const dataIni = this.normalizarDataFirebird(data_inicio || '2024-01-01');
+      const dataFim = this.normalizarDataFirebird(data_fim || '2024-12-31');
       const p3 = param3 !== undefined ? param3 : 1;
 
       // SQL para executar a stored procedure
-      // No Firebird, stored procedures são chamadas via SELECT * FROM nome_procedure(params)
       const sql = `SELECT * FROM SP_BI_FAT(${cod_emp}, ${p1}, ${p2}, '${dataIni}', '${dataFim}', ${p3})`;
 
-      // Caminho para o script Python
       const scriptPath = path.join(
         __dirname,
         '../../python/catalog/executar_sql.py'
       );
-
-      // Usar base64 para passar SQL de forma segura
       const sqlBase64 = Buffer.from(sql, 'utf-8').toString('base64');
-
-      // Construir comando Python
       const command = `python "${scriptPath}" --base64 ${sqlBase64}`;
 
-      // Executar script Python
-      const { stdout, stderr } = await execAsync(command, {
+      // Timeout de 3 minutos - SP_BI_FAT para período longo pode demorar
+      const TIMEOUT_MS = 180000;
+      const execPromise = execAsync(command, {
         encoding: 'utf-8',
         maxBuffer: 50 * 1024 * 1024, // 50MB
       });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('A consulta SP_BI_FAT demorou mais de 3 minutos. Tente um período menor.')), TIMEOUT_MS);
+      });
+
+      let stdout: string;
+      let stderr: string;
+      try {
+        const result = await Promise.race([execPromise, timeoutPromise]) as { stdout: string; stderr?: string };
+        stdout = result.stdout;
+        stderr = result.stderr ?? '';
+      } catch (raceError: any) {
+        if (raceError?.message?.includes('demorou mais')) {
+          res.status(504).json({ error: raceError.message });
+          return;
+        }
+        throw raceError;
+      }
 
       if (stderr && !stderr.includes('INFO')) {
         console.error('Python stderr:', stderr);
       }
 
-      // Parse do resultado JSON
       try {
         const resultado = JSON.parse(stdout);
         

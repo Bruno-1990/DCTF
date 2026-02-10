@@ -354,44 +354,50 @@ class QueryBuilder implements SupabaseQueryBuilder {
   }
 
   private async executeInsert(): Promise<{ data: any; error: any }> {
-    const fields = Object.keys(this.insertData).join(', ');
-    const placeholders = Object.keys(this.insertData).map(() => '?').join(', ');
+    const fieldsArray = Object.keys(this.insertData);
+    const fields = fieldsArray.map(f => `\`${f}\``).join(', ');
+    const placeholders = fieldsArray.map(() => '?').join(', ');
     const values = Object.values(this.insertData);
 
     let query: string;
     if (this.isUpsert) {
-      // UPSERT: INSERT ... ON DUPLICATE KEY UPDATE
-      const updateFields = Object.keys(this.insertData)
-        .filter(key => key !== (this.upsertConflictColumn || 'id'))
-        .map(key => `\`${key}\` = VALUES(\`${key}\`)`)
+      // UPSERT: INSERT ... AS new ON DUPLICATE KEY UPDATE
+      // Usar sintaxe moderna do MySQL 8.0.20+ (sem VALUES() depreciado)
+      const conflictKey = this.upsertConflictColumn || 'id';
+      
+      // Criar lista de campos para UPDATE, excluindo a chave de conflito
+      const updateFields = fieldsArray
+        .filter(key => key !== conflictKey)
+        .map(key => `\`${key}\` = new.\`${key}\``)
         .join(', ');
       
-      // Para ON DUPLICATE KEY UPDATE, MySQL usa a PRIMARY KEY ou UNIQUE KEY automaticamente
-      // Não precisamos especificar qual coluna, apenas os campos a atualizar
-      // Se não há campos para atualizar (todos foram filtrados), atualizar pelo menos updated_at se existir
       let finalUpdateFields = updateFields;
+      
+      // Se não há campos para atualizar, garantir que pelo menos um seja atualizado
       if (!finalUpdateFields || finalUpdateFields.trim() === '') {
-        // Se não há campos para atualizar, verificar se existe updated_at
-        if (this.insertData.updated_at !== undefined) {
-          finalUpdateFields = '`updated_at` = VALUES(`updated_at`)';
+        if (fieldsArray.includes('updated_at')) {
+          finalUpdateFields = '`updated_at` = new.`updated_at`';
         } else {
-          // Fallback: atualizar um campo que não seja a chave primária
-          const nonKeyFields = Object.keys(this.insertData).filter(key => {
-            const conflictKey = this.upsertConflictColumn || 'id';
-            return key !== conflictKey;
-          });
+          // Fallback: atualizar qualquer campo que não seja a chave
+          const nonKeyFields = fieldsArray.filter(key => key !== conflictKey);
           if (nonKeyFields.length > 0) {
-            finalUpdateFields = `\`${nonKeyFields[0]}\` = VALUES(\`${nonKeyFields[0]}\`)`;
+            finalUpdateFields = `\`${nonKeyFields[0]}\` = new.\`${nonKeyFields[0]}\``;
           } else {
-            // Último recurso: atualizar a própria chave (não faz nada, mas evita erro SQL)
-            const conflictKey = this.upsertConflictColumn || 'id';
+            // Último recurso: não atualizar nada (manter registro existente)
             finalUpdateFields = `\`${conflictKey}\` = \`${conflictKey}\``;
           }
         }
       }
       
-      query = `INSERT INTO \`${this.table}\` (${fields}) VALUES (${placeholders}) 
+      // Sintaxe moderna: INSERT ... VALUES (...) AS new ON DUPLICATE KEY UPDATE
+      query = `INSERT INTO \`${this.table}\` (${fields}) 
+               VALUES (${placeholders}) AS new
                ON DUPLICATE KEY UPDATE ${finalUpdateFields}`;
+      
+      // Log detalhado para debug
+      console.log('[SupabaseAdapter] UPSERT Query:', query);
+      console.log('[SupabaseAdapter] UPSERT Values:', values);
+      console.log('[SupabaseAdapter] Update Fields:', finalUpdateFields);
     } else {
       query = `INSERT INTO \`${this.table}\` (${fields}) VALUES (${placeholders})`;
     }
@@ -399,7 +405,8 @@ class QueryBuilder implements SupabaseQueryBuilder {
     const connection = await getConnection();
 
     try {
-      await connection.execute(query, values);
+      const result = await connection.execute(query, values);
+      console.log('[SupabaseAdapter] Execute result:', result);
       
       // Buscar o registro inserido/atualizado
       let inserted;

@@ -27,6 +27,7 @@ export type DCTFListResponse = {
   pagination?: { total: number; totalPages: number; page: number; limit: number };
   lastUpdate?: string | null;
   tiposDisponiveis?: string[];
+  periodosTransmissaoDisponiveis?: string[];
 };
 
 type ListParams = {
@@ -37,6 +38,7 @@ type ListParams = {
   status?: string;
   situacao?: string;
   tipo?: string;
+  periodoTransmissao?: string;
   orderBy?: string;
   order?: 'asc' | 'desc';
   search?: string;
@@ -47,7 +49,7 @@ export const dctfService = {
     const response = await api.get<any>('/dctf', { params });
     const body = response.data;
     if (Array.isArray(body)) {
-      return { items: body.map(normalizeItem) as DCTFListItem[], lastUpdate: null, tiposDisponiveis: [] };
+      return { items: body.map(normalizeItem) as DCTFListItem[], lastUpdate: null, tiposDisponiveis: [], periodosTransmissaoDisponiveis: [] };
     }
     if (body && Array.isArray(body.data)) {
       return { 
@@ -55,9 +57,10 @@ export const dctfService = {
         pagination: body.pagination,
         lastUpdate: body.lastUpdate || null,
         tiposDisponiveis: body.tiposDisponiveis || [],
+        periodosTransmissaoDisponiveis: body.periodosTransmissaoDisponiveis || [],
       };
     }
-    return { items: [], lastUpdate: null, tiposDisponiveis: [] };
+    return { items: [], lastUpdate: null, tiposDisponiveis: [], periodosTransmissaoDisponiveis: [] };
   },
 
   async getById(id: string): Promise<DCTF> {
@@ -112,6 +115,7 @@ export const dctfService = {
       errors: number;
       currentBatch: number;
       totalBatches: number;
+      errorLog?: string[];
     };
   }> {
     const response = await api.post('/dctf/admin/sync');
@@ -147,6 +151,38 @@ export const dctfService = {
     return response.data;
   },
 
+  /**
+   * Baixa o log de erros de sincronização
+   */
+  async downloadSyncErrorsLog(): Promise<Blob> {
+    const response = await api.get('/dctf/admin/sync-errors-log', {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  /**
+   * Tenta sincronizar novamente os registros com erro
+   */
+  async retrySyncErrors(): Promise<{ 
+    success: boolean; 
+    message?: string; 
+    error?: string;
+    data?: {
+      total: number;
+      processed: number;
+      inserted: number;
+      updated: number;
+      errors: number;
+      currentBatch: number;
+      totalBatches: number;
+      errorLog?: string[];
+    };
+  }> {
+    const response = await api.post('/dctf/admin/retry-sync-errors');
+    return response.data;
+  },
+
   async processSpreadsheet(file: File): Promise<{ dctfId: string; message: string }> {
     const formData = new FormData();
     formData.append('file', file);
@@ -167,6 +203,40 @@ export const dctfService = {
       return body.data;
     }
     return [];
+  },
+
+  /**
+   * Envia email com DCTFs em andamento para o destinatário informado.
+   * @param to - Email completo (ex: ti@central-rnc.com.br) ou apenas o nome (ex: ti) — sufixo @central-rnc.com.br é aplicado no backend se faltar.
+   */
+  async sendEmailPending(to: string): Promise<{ success: boolean; message: string; total?: number }> {
+    const response = await api.post<{ success: boolean; message: string; data?: { total: number; destinatario: string } }>(
+      '/dctf/admin/send-email-pending',
+      { to: to.trim() }
+    );
+    return {
+      success: response.data.success,
+      message: response.data.message,
+      total: response.data.data?.total,
+    };
+  },
+
+  /**
+   * Importa declarações DCTF a partir de imagens PNG (OCR).
+   * Envia os arquivos para o backend que extrai a tabela e persiste em teste_png (MySQL).
+   */
+  async importFromPng(files: File[]): Promise<{
+    success: boolean;
+    inserted: number;
+    updated: number;
+    errors: number;
+    details?: { perFile: { filename: string; rows: number; inserted: number; error?: string }[] };
+  }> {
+    const formData = new FormData();
+    files.forEach((f) => formData.append('images', f));
+    // Não definir Content-Type: o axios define multipart/form-data com boundary automaticamente
+    const response = await api.post('/dctf/admin/import-from-png', formData);
+    return response.data;
   },
 };
 

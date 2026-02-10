@@ -10,6 +10,8 @@ import { ApiResponse } from '../types';
 import { DCTFDados } from '../models/DCTFDados';
 import { DCTFAnalysisService } from '../services/DCTFAnalysisService';
 import { DCTFSyncService } from '../services/DCTFSyncService';
+import EmailService from '../services/EmailService';
+import { mysqlPool } from '../config/mysql';
 
 export class DCTFController {
   private dctfModel: DCTF;
@@ -300,6 +302,7 @@ export class DCTFController {
         status,
         situacao,
         tipo,
+        periodoTransmissao,
         orderBy,
         order = 'desc',
         search,
@@ -331,6 +334,24 @@ export class DCTFController {
       });
       const tiposDisponiveis = Array.from(tiposUnicos).sort();
 
+      // Extrair períodos de transmissão únicos disponíveis (formato YYYY-MM)
+      // IMPORTANTE: Usar UTC para evitar problemas de timezone
+      const periodosTransmissaoUnicos = new Set<string>();
+      filteredData.forEach((d: any) => {
+        const dataTransmissao = d.dataTransmissao || d.data_transmissao;
+        if (dataTransmissao) {
+          const date = new Date(dataTransmissao);
+          if (!isNaN(date.getTime())) {
+            // Usar UTC para evitar diferença de timezone
+            const ano = date.getUTCFullYear();
+            const mes = String(date.getUTCMonth() + 1).padStart(2, '0');
+            periodosTransmissaoUnicos.add(`${ano}-${mes}`);
+          }
+        }
+      });
+      // Ordenar períodos (mais recentes primeiro)
+      const periodosTransmissaoDisponiveis = Array.from(periodosTransmissaoUnicos).sort((a, b) => b.localeCompare(a));
+
       // Aplicar filtros adicionais
       if (periodo) {
         filteredData = filteredData.filter((d: any) => d.periodo === periodo);
@@ -349,6 +370,61 @@ export class DCTFController {
           const tipoDeclaracao = d.tipoDeclaracao || d.tipo || d.tipo_declaracao || 'Original';
           return tipoDeclaracao === tipo;
         });
+      }
+
+      // Filtro por período de transmissão (YYYY-MM)
+      if (periodoTransmissao && typeof periodoTransmissao === 'string' && periodoTransmissao.trim() !== '') {
+        console.log('[DCTF Controller] Filtrando por período de transmissão:', periodoTransmissao);
+        console.log('[DCTF Controller] Total antes do filtro:', filteredData.length);
+        
+        // Log dos primeiros 3 registros para debug
+        filteredData.slice(0, 3).forEach((d: any, idx: number) => {
+          const dataTransmissao = d.dataTransmissao || d.data_transmissao;
+          if (dataTransmissao) {
+            const date = new Date(dataTransmissao);
+            // Comparar timezone local vs UTC
+            const anoLocal = date.getFullYear();
+            const mesLocal = String(date.getMonth() + 1).padStart(2, '0');
+            const anoUTC = date.getUTCFullYear();
+            const mesUTC = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const periodoLocal = `${anoLocal}-${mesLocal}`;
+            const periodoUTC = `${anoUTC}-${mesUTC}`;
+            
+            console.log(`[DCTF Controller] Registro ${idx + 1}:`, {
+              dataTransmissao: dataTransmissao,
+              dateObj: date.toISOString(),
+              periodoLocal: periodoLocal,
+              periodoUTC: periodoUTC,
+              periodoFiltro: periodoTransmissao,
+              matchLocal: periodoLocal === periodoTransmissao,
+              matchUTC: periodoUTC === periodoTransmissao
+            });
+          }
+        });
+        
+        filteredData = filteredData.filter((d: any) => {
+          const dataTransmissao = d.dataTransmissao || d.data_transmissao;
+          if (!dataTransmissao) {
+            return false;
+          }
+          
+          const date = new Date(dataTransmissao);
+          if (isNaN(date.getTime())) {
+            return false;
+          }
+          
+          // USAR UTC para evitar problemas de timezone
+          const ano = date.getUTCFullYear();
+          const mes = String(date.getUTCMonth() + 1).padStart(2, '0');
+          const periodoItem = `${ano}-${mes}`;
+          
+          const match = periodoItem === periodoTransmissao;
+          
+          return match;
+        });
+        
+        console.log('[DCTF Controller] Total após filtro:', filteredData.length);
+        console.log('[DCTF Controller] ========================================');
       }
 
       // Filtro de busca por CNPJ/CPF
@@ -380,8 +456,11 @@ export class DCTFController {
         }
       }
 
-      // Se houver filtro (search, situacao ou tipo) e não houver orderBy, ordenar por data de transmissão (mais recentes primeiro)
-      const hasFilter = (search && typeof search === 'string' && search.trim()) || (situacao && situacao !== 'Todos') || (tipo && tipo !== 'Todos');
+      // Se houver filtro (search, situacao, tipo ou periodoTransmissao) e não houver orderBy, ordenar por data de transmissão (mais recentes primeiro)
+      const hasFilter = (search && typeof search === 'string' && search.trim()) || 
+                        (situacao && situacao !== 'Todos') || 
+                        (tipo && tipo !== 'Todos') ||
+                        (periodoTransmissao && periodoTransmissao !== '');
       let orderKey = typeof orderBy === 'string' ? orderBy : undefined;
       let orderToUse = order;
       if (hasFilter && !orderKey) {
@@ -483,6 +562,7 @@ export class DCTFController {
         },
         lastUpdate: lastUpdate ? lastUpdate.toISOString() : null,
         tiposDisponiveis: tiposDisponiveis,
+        periodosTransmissaoDisponiveis: periodosTransmissaoDisponiveis,
       });
     } catch (error) {
       res.status(500).json({
@@ -931,6 +1011,466 @@ export class DCTFController {
       res.status(500).json({
         success: false,
         error: 'Erro interno do servidor ao deletar dados do Supabase',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * POST /api/dctf/admin/detect-duplicates
+   * Detecta registros duplicados na tabela dctf_declaracoes
+   */
+  async detectDuplicates(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('[ADMIN] Detectando duplicados...');
+      
+      const { DCTFDeduplicationService } = await import('../services/DCTFDeduplicationService');
+      const deduplicationService = new DCTFDeduplicationService();
+      
+      const result = await deduplicationService.detectDuplicates();
+      
+      if (!result.success) {
+        res.status(500).json(result);
+        return;
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao detectar duplicados:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno ao detectar duplicados',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * POST /api/dctf/admin/remove-duplicates
+   * Remove registros duplicados, mantendo o mais recente
+   */
+  async removeDuplicates(req: Request, res: Response): Promise<void> {
+    try {
+      const { dryRun = true } = req.body;
+      
+      console.log(`[ADMIN] ${dryRun ? 'Simulando' : 'Executando'} remoção de duplicados...`);
+      
+      const { DCTFDeduplicationService } = await import('../services/DCTFDeduplicationService');
+      const deduplicationService = new DCTFDeduplicationService();
+      
+      const result = await deduplicationService.removeDuplicates(dryRun);
+      
+      if (!result.success) {
+        res.status(500).json(result);
+        return;
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao remover duplicados:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno ao remover duplicados',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * POST /api/dctf/admin/create-unique-constraint
+   * Cria constraint UNIQUE para prevenir futuros duplicados
+   */
+  async createUniqueConstraint(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('[ADMIN] Criando constraint UNIQUE...');
+      
+      const { DCTFDeduplicationService } = await import('../services/DCTFDeduplicationService');
+      const deduplicationService = new DCTFDeduplicationService();
+      
+      const result = await deduplicationService.createUniqueConstraint();
+      
+      if (!result.success) {
+        res.status(500).json(result);
+        return;
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao criar constraint:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno ao criar constraint',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * DELETE /api/dctf/admin/remove-unique-constraint
+   * Remove a constraint UNIQUE (para manutenção)
+   */
+  async removeUniqueConstraint(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('[ADMIN] Removendo constraint UNIQUE...');
+      
+      const { DCTFDeduplicationService } = await import('../services/DCTFDeduplicationService');
+      const deduplicationService = new DCTFDeduplicationService();
+      
+      const result = await deduplicationService.removeUniqueConstraint();
+      
+      if (!result.success) {
+        res.status(500).json(result);
+        return;
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao remover constraint:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno ao remover constraint',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * GET /api/dctf/admin/sync-errors-log
+   * Baixa o arquivo de log de erros de sincronização
+   */
+  async downloadSyncErrorsLog(req: Request, res: Response): Promise<void> {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const logPath = path.join(process.cwd(), 'sync-errors.log');
+      
+      // Verificar se o arquivo existe
+      if (!fs.existsSync(logPath)) {
+        res.status(404).json({
+          success: false,
+          error: 'Log de erros não encontrado',
+          message: 'Nenhum erro foi registrado ainda ou o arquivo foi deletado',
+        });
+        return;
+      }
+      
+      // Ler conteúdo do arquivo
+      const logContent = fs.readFileSync(logPath, 'utf-8');
+      
+      // Enviar como download
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Disposition', 'attachment; filename="sync-errors.log"');
+      res.send(logContent);
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao baixar log:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao baixar log de erros',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * POST /api/dctf/admin/retry-sync-errors
+   * Tenta sincronizar novamente apenas os registros que falharam
+   */
+  async retrySyncErrors(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('[ADMIN] Iniciando retry de registros com erro...');
+      
+      // Por enquanto, apenas executa uma sincronização completa
+      // TODO: Implementar lógica de retry seletivo
+      const result = await this.syncService.syncFromSupabase((progress) => {
+        console.log('[ADMIN Retry] Progresso:', progress);
+      });
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao fazer retry:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno ao fazer retry',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * POST /api/dctf/admin/send-email-pending
+   * Envia email com todas as DCTFs em status "Em andamento"
+   */
+  async sendEmailPending(req: Request, res: Response): Promise<void> {
+    try {
+      const emailDestinoRaw = (req.body?.to ?? req.body?.email ?? '').toString().trim();
+      if (!emailDestinoRaw) {
+        res.status(400).json({
+          success: false,
+          error: 'Destinatário obrigatório',
+          message: 'Informe o email de destino (ex: ti ou ti@central-rnc.com.br).',
+        });
+        return;
+      }
+      const emailDestino = emailDestinoRaw.includes('@')
+        ? emailDestinoRaw
+        : `${emailDestinoRaw}@central-rnc.com.br`;
+      const dominioPermitido = '@central-rnc.com.br';
+      if (!emailDestino.toLowerCase().endsWith(dominioPermitido)) {
+        res.status(400).json({
+          success: false,
+          error: 'Destinatário inválido',
+          message: `Só é permitido enviar para emails @central-rnc.com.br.`,
+        });
+        return;
+      }
+
+      console.log('[ADMIN] Buscando DCTFs em andamento (apenas Clientes Ativos, 1 linha por declaração oficial)...');
+      
+      // Chave oficial = uma linha por (CNPJ, Período, Categoria, Origem, Tipo) para bater com a relação oficial (26 itens).
+      // Evita enviar 39 linhas quando na relação oficial só existem 26 declarações.
+      const [rows] = await mysqlPool.query(
+        `SELECT 
+          d.id,
+          d.cnpj,
+          d.tipo_ni,
+          d.periodo_apuracao,
+          d.data_transmissao,
+          d.categoria,
+          d.origem,
+          d.tipo,
+          d.situacao,
+          d.debito_apurado,
+          d.saldo_a_pagar,
+          d.updated_at,
+          c.razao_social
+        FROM dctf_declaracoes d
+        INNER JOIN clientes c ON (
+          TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(d.cnpj, '.', ''), '/', ''), '-', ''), ' ', ''), CHAR(9), ''), CHAR(13), '')) = c.cnpj_limpo
+        )
+        INNER JOIN (
+          SELECT MAX(d2.id) AS id_manter
+          FROM dctf_declaracoes d2
+          INNER JOIN clientes c2 ON (
+            TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(d2.cnpj, '.', ''), '/', ''), '-', ''), ' ', ''), CHAR(9), ''), CHAR(13), '')) = c2.cnpj_limpo
+          )
+          WHERE d2.situacao = ?
+            AND c2.razao_social IS NOT NULL
+            AND TRIM(c2.razao_social) <> ''
+          GROUP BY d2.cnpj, d2.periodo_apuracao, d2.categoria, d2.origem, d2.tipo
+        ) unico ON d.id = unico.id_manter
+        WHERE d.situacao = ?
+          AND c.razao_social IS NOT NULL
+          AND TRIM(c.razao_social) <> ''
+        ORDER BY d.cnpj, d.periodo_apuracao, d.origem, d.tipo`,
+        ['Em andamento', 'Em andamento']
+      );
+      
+      const dctfs = rows as any[];
+      
+      console.log(`[ADMIN] Encontradas ${dctfs.length} declarações em andamento (1 por item oficial, Clientes Ativos)`);
+      
+      // Gerar HTML
+      const htmlContent = EmailService.generateDCTFEmailHTML(dctfs);
+      
+      // Enviar email para o destinatário informado
+      await EmailService.sendEmail({
+        to: emailDestino,
+        subject: `📋 DCTFs em Andamento (Clientes Ativos) - ${new Date().toLocaleDateString('pt-BR')}`,
+        html: htmlContent,
+      });
+      
+      console.log(`[ADMIN] ✅ Email enviado com sucesso para ${emailDestino}`);
+      
+      res.json({
+        success: true,
+        message: `Email enviado com sucesso para ${emailDestino}`,
+        data: {
+          total: dctfs.length,
+          destinatario: emailDestino,
+        },
+      });
+    } catch (error: any) {
+      console.error('[ADMIN] ❌ Erro ao enviar email:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao enviar email',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * GET /api/dctf/admin/export-em-aberto
+   * Exporta todos os registros "Em andamento" em CSV para conferência com a relação oficial.
+   */
+  async exportEmAberto(req: Request, res: Response): Promise<void> {
+    try {
+      const [rows] = await mysqlPool.query(
+        `SELECT tipo_ni, cnpj, periodo_apuracao, data_transmissao, categoria, origem, tipo, situacao, debito_apurado, saldo_a_pagar
+         FROM dctf_declaracoes
+         WHERE situacao = ?
+         ORDER BY cnpj, periodo_apuracao, origem, tipo`,
+        ['Em andamento']
+      );
+      const list = rows as any[];
+
+      const formatCnpj = (v: string | null) => {
+        if (!v) return '';
+        const n = String(v).replace(/\D/g, '');
+        if (n.length !== 14) return v;
+        return `${n.slice(0, 2)}.${n.slice(2, 5)}.${n.slice(5, 8)}/${n.slice(8, 12)}-${n.slice(12)}`;
+      };
+      const escape = (v: unknown) => {
+        const s = v == null ? '' : String(v);
+        if (s.includes('"') || s.includes(',') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      };
+      const formatDate = (v: unknown) => {
+        if (!v) return '';
+        const d = ValidationService.normalizeDate(v as any);
+        return d ? d.toISOString().slice(0, 19).replace('T', ' ') : '';
+      };
+
+      const header = 'Tipo NI;Número Identificação;Período Apuração;Data Transmissão;Categoria;Origem;Tipo;Situação;Débito Apurado;Saldo a Pagar';
+      const lines = list.map((r: any) => [
+        escape(r.tipo_ni ?? 'CNPJ'),
+        escape(formatCnpj(r.cnpj)),
+        escape(r.periodo_apuracao),
+        escape(formatDate(r.data_transmissao)),
+        escape(r.categoria),
+        escape(r.origem),
+        escape(r.tipo),
+        escape(r.situacao),
+        escape(r.debito_apurado),
+        escape(r.saldo_a_pagar),
+      ].join(';'));
+      const csv = [header, ...lines].join('\r\n');
+
+      const filename = `dctf-registros-em-aberto-${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send('\uFEFF' + csv);
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao exportar em aberto:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao exportar CSV',
+        message: error.message || 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * POST /api/dctf/admin/import-from-png
+   * Recebe imagens PNG (multipart), extrai tabela via OCR e persiste em teste_png (MySQL).
+   */
+  async importFromPng(req: Request, res: Response): Promise<void> {
+    try {
+      const files = req.files as Express.Multer.File[] | undefined;
+      if (!files?.length) {
+        res.status(400).json({
+          success: false,
+          error: 'Nenhum arquivo enviado',
+          message: 'Envie uma ou mais imagens PNG (campo "images").',
+        });
+        return;
+      }
+
+      const { extractFromPngBuffers } = await import('../services/DCTFPngExtractorService');
+      const { createSupabaseAdapter } = await import('../services/SupabaseAdapter');
+      const { v4: uuidv4 } = await import('uuid');
+
+      const fileInputs = files.map((f) => ({
+        buffer: f.buffer as Buffer,
+        filename: f.originalname || undefined,
+      }));
+      const perFileResults = await extractFromPngBuffers(fileInputs);
+
+      const mysqlAdapter = createSupabaseAdapter();
+      const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      let inserted = 0;
+      let errors = 0;
+      const details: { filename: string; rows: number; inserted: number; error?: string }[] = [];
+
+      for (const fileResult of perFileResults) {
+        if (fileResult.error) {
+          details.push({
+            filename: fileResult.filename,
+            rows: 0,
+            inserted: 0,
+            error: fileResult.error,
+          });
+          errors += 1;
+          continue;
+        }
+
+        let fileInserted = 0;
+        let firstInsertError: string | undefined;
+        for (const row of fileResult.rows) {
+          const id = uuidv4();
+          const dataTransmissao =
+            row.data_transmissao && !row.data_transmissao.includes(' ')
+              ? `${row.data_transmissao} 00:00:00`
+              : row.data_transmissao;
+          const debitoApurado =
+            row.debito_apurado != null && row.debito_apurado !== ''
+              ? Number(row.debito_apurado)
+              : null;
+          const saldoAPagar =
+            row.saldo_a_pagar != null && row.saldo_a_pagar !== ''
+              ? Number(row.saldo_a_pagar)
+              : null;
+          const record = {
+            id,
+            cliente_id: null,
+            cnpj: row.cnpj ?? null,
+            periodo_apuracao: row.periodo_apuracao ?? null,
+            data_transmissao: dataTransmissao ?? null,
+            situacao: row.situacao ?? null,
+            tipo_ni: row.tipo_ni ?? null,
+            categoria: row.categoria ?? null,
+            origem: row.origem ?? null,
+            tipo: row.tipo ?? null,
+            debito_apurado: Number.isFinite(debitoApurado) ? debitoApurado : null,
+            saldo_a_pagar: Number.isFinite(saldoAPagar) ? saldoAPagar : null,
+            created_at: now,
+            updated_at: now,
+          };
+
+          const { error: mysqlError } = await mysqlAdapter
+            .from('teste_png')
+            .insert(record);
+          if (mysqlError) {
+            if (!firstInsertError) firstInsertError = (mysqlError as any)?.message || String(mysqlError);
+            console.error('[ADMIN import-from-png] MySQL insert error:', mysqlError);
+            errors += 1;
+            continue;
+          }
+
+          inserted += 1;
+          fileInserted += 1;
+        }
+
+        details.push({
+          filename: fileResult.filename,
+          rows: fileResult.rows.length,
+          inserted: fileInserted,
+          ...(firstInsertError && { insertError: firstInsertError }),
+        });
+      }
+
+      res.json({
+        success: true,
+        inserted,
+        updated: 0,
+        errors,
+        details: { perFile: details },
+      });
+    } catch (error: any) {
+      console.error('[ADMIN] Erro ao importar de PNG:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao importar imagens PNG',
         message: error.message || 'Erro desconhecido',
       });
     }

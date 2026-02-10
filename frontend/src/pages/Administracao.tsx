@@ -13,7 +13,6 @@ const ADMIN_CREDENTIALS = {
 };
 
 const STORAGE_KEY = 'dctf_admin_authenticated';
-const STORAGE_PROGRESS_KEY = 'dctf_consulta_progress_id';
 // AUTH_TIMEOUT removido - não expira automaticamente na aba admin para não atrapalhar consultas em lote
 
 const Administracao: React.FC = () => {
@@ -41,6 +40,7 @@ const Administracao: React.FC = () => {
     errors: number;
     currentBatch: number;
     totalBatches: number;
+    errorLog?: string[];
   } | null>(null);
   const [fixingSchema, setFixingSchema] = useState(false);
   const [schemaFixSuccess, setSchemaFixSuccess] = useState<string | null>(null);
@@ -51,6 +51,41 @@ const Administracao: React.FC = () => {
   const [deletingSupabase, setDeletingSupabase] = useState(false);
   const [deleteSupabaseSuccess, setDeleteSupabaseSuccess] = useState<string | null>(null);
   const [deleteSupabaseError, setDeleteSupabaseError] = useState<string | null>(null);
+  
+  const [retrying, setRetrying] = useState(false);
+  const [lastSyncErrors, setLastSyncErrors] = useState<string[]>([]);
+  
+  // Estados para envio de email (destino dinâmico: usuário digita nome, sufixo @central-rnc.com.br)
+  const EMAIL_SUFFIX = '@central-rnc.com.br';
+  const [emailDestinoInput, setEmailDestinoInput] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+
+  // Estados para importação de imagens PNG (OCR)
+  const [uploadingPng, setUploadingPng] = useState(false);
+  const [pngResult, setPngResult] = useState<{
+    inserted: number;
+    updated: number;
+    errors: number;
+    details?: { perFile: { filename: string; rows: number; inserted: number; error?: string; insertError?: string }[] };
+  } | null>(null);
+  const [pngError, setPngError] = useState<string | null>(null);
+  const [selectedPngFiles, setSelectedPngFiles] = useState<File[]>([]);
+
+  const getEmailDestinoCompleto = (): string => {
+    const v = emailDestinoInput.trim();
+    if (!v) return '';
+    return v.includes('@') ? v : `${v}${EMAIL_SUFFIX}`;
+  };
+  const emailDestinoValido = (): boolean => {
+    const full = getEmailDestinoCompleto();
+    return full.length > 0 && full.toLowerCase().endsWith(EMAIL_SUFFIX) && full.indexOf('@') > 0;
+  };
+  const aplicaAutocompleteEmail = () => {
+    const v = emailDestinoInput.trim();
+    if (v && !v.includes('@')) setEmailDestinoInput(`${v}${EMAIL_SUFFIX}`);
+  };
   
   // Estados para atualização de clientes na ReceitaWS
   const [atualizandoClientes, setAtualizandoClientes] = useState(false);
@@ -63,33 +98,6 @@ const Administracao: React.FC = () => {
   } | null>(null);
   const [atualizacaoResultado, setAtualizacaoResultado] = useState<any>(null);
   const [atualizacaoError, setAtualizacaoError] = useState<string | null>(null);
-  
-  // Estados para consulta em lote na Receita
-  const [dataInicialConsulta, setDataInicialConsulta] = useState('');
-  const [dataFinalConsulta, setDataFinalConsulta] = useState('');
-  const [consultando, setConsultando] = useState(false);
-  const [consultaResultado, setConsultaResultado] = useState<any>(null);
-  const [consultaError, setConsultaError] = useState<string | null>(null);
-  const [limiteCNPJs, setLimiteCNPJs] = useState<number>(50);
-  const [apenasFaltantes, setApenasFaltantes] = useState<boolean>(false);
-  const [waitMs, setWaitMs] = useState<number>(2000);
-  
-  // Estados para progresso da consulta em lote
-  const [progressId, setProgressId] = useState<string | null>(null);
-  const [progresso, setProgresso] = useState<{
-    totalCNPJs: number;
-    processados: number;
-    porcentagem: number;
-    currentTotalItens?: number;
-    currentProcessados?: number;
-    encontrados?: number;
-    salvos?: number;
-    atualizados?: number;
-    pulados?: number;
-    cnpjAtual?: string;
-    status: 'em_andamento' | 'concluida' | 'cancelada' | 'erro';
-  } | null>(null);
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Estados para consulta em lote de Situação Fiscal
   const [consultandoSITF, setConsultandoSITF] = useState(false);
@@ -166,22 +174,6 @@ const Administracao: React.FC = () => {
         sessionStorage.removeItem(STORAGE_KEY);
       }
     }
-    // Tentar retomar uma consulta em andamento (sem recarregar a página)
-    const savedProgressId = sessionStorage.getItem(STORAGE_PROGRESS_KEY);
-    if (savedProgressId) {
-      setConsultando(true);
-      setProgressId(savedProgressId);
-      // Iniciar/retomar polling
-      if (!pollingIntervalRef.current) {
-        const interval = setInterval(() => {
-          verificarProgresso(savedProgressId);
-        }, 2000);
-        pollingIntervalRef.current = interval;
-      }
-      // Primeira verificação imediata
-      verificarProgresso(savedProgressId);
-    }
-    
     // Verificar se há processamento SITF em andamento no banco de dados
     const verificarProcessamentoSITF = async () => {
       try {
@@ -483,6 +475,9 @@ const Administracao: React.FC = () => {
           `Sincronização concluída: ${result.data?.inserted || 0} inseridos, ${result.data?.updated || 0} atualizados, ${result.data?.errors || 0} erros`;
         setSyncSuccess(message);
         setSyncProgress(result.data || null);
+        if (result.data?.errorLog) {
+          setLastSyncErrors(result.data.errorLog);
+        }
         // NÃO recarregar a página - manter dados na tela
         // Os dados de progresso já estão sendo exibidos
       } else {
@@ -495,101 +490,94 @@ const Administracao: React.FC = () => {
     }
   };
 
-  // Função para verificar progresso via polling
-  const verificarProgresso = async (id: string) => {
+  const handleDownloadLog = async () => {
     try {
-      const response = await axios.get(`/api/receita/consulta-lote/${id}`);
-      
-      if (response.data.success && response.data.data) {
-        const progressoData = response.data.data;
-        setProgresso({
-          totalCNPJs: progressoData.totalCNPJs,
-          processados: progressoData.processados,
-          porcentagem: progressoData.porcentagem || 0,
-          currentTotalItens: progressoData.currentTotalItens ?? 0,
-          currentProcessados: progressoData.currentProcessados ?? 0,
-          encontrados: progressoData.encontrados ?? 0,
-          salvos: progressoData.salvos ?? 0,
-          atualizados: progressoData.atualizados ?? 0,
-          pulados: progressoData.pulados ?? 0,
-          cnpjAtual: progressoData.cnpjAtual,
-          status: progressoData.status,
-        });
-
-        // Se não há CNPJs a processar, encerrar polling imediatamente
-        if (progressoData.totalCNPJs === 0 && (progressoData.status === 'concluida' || progressoData.status === 'em_andamento')) {
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-          setConsultando(false);
-        }
-
-        // Se a consulta foi concluída, cancelada ou teve erro, parar o polling
-        if (progressoData.status === 'concluida' || progressoData.status === 'cancelada' || progressoData.status === 'erro') {
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-          setConsultando(false);
-          sessionStorage.removeItem(STORAGE_PROGRESS_KEY);
-          
-          if (progressoData.status === 'concluida' && progressoData.resultado) {
-            setConsultaResultado(progressoData.resultado);
-          }
-          
-          if (progressoData.status === 'cancelada') {
-            setConsultaError('Consulta cancelada pelo usuário.');
-          }
-          
-          if (progressoData.status === 'erro') {
-            setConsultaError(progressoData.erro || 'Erro ao processar consulta em lote.');
-          }
-        }
-      }
+      const blob = await dctfService.downloadSyncErrorsLog();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sync-errors-${new Date().toISOString().slice(0,10)}.log`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
     } catch (err: any) {
-      // Em caso de rate limit (429), reduzir frequência do polling temporariamente
-      const status = err?.response?.status;
-      if (status === 429) {
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
-        // Tenta novamente com backoff leve
-        setTimeout(() => {
-          if (progressId && !pollingIntervalRef.current) {
-            const interval = setInterval(() => {
-              verificarProgresso(progressId);
-            }, 3000); // 3s após receber 429
-            pollingIntervalRef.current = interval;
-          }
-        }, 1500);
-        return;
+      if (err.response?.status === 404) {
+        alert('Nenhum log de erros encontrado. Execute a sincronização primeiro.');
+      } else {
+        alert('Erro ao baixar log: ' + (err.message || 'Erro desconhecido'));
       }
-      // Para outros erros, apenas silenciar (polling segue no próximo tick)
     }
   };
 
-  // Função para cancelar consulta
-  const handleCancelarConsulta = async () => {
-    if (!progressId) return;
+  const handleRetrySyncErrors = async () => {
+    setRetrying(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+    setSyncProgress(null);
 
     try {
-      const response = await axios.post(`/api/receita/consulta-lote/${progressId}/cancelar`);
-      
-      if (response.data.success) {
-        // Parar polling
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
+      const result = await dctfService.retrySyncErrors();
+      if (result.success) {
+        const message = result.message || 
+          `Retry concluído: ${result.data?.inserted || 0} inseridos, ${result.data?.updated || 0} atualizados, ${result.data?.errors || 0} erros`;
+        setSyncSuccess(message);
+        setSyncProgress(result.data || null);
+        if (result.data?.errorLog) {
+          setLastSyncErrors(result.data.errorLog);
         }
-        
-        setConsultando(false);
-        setConsultaError('Consulta cancelada pelo usuário.');
+      } else {
+        setSyncError(result.error || 'Erro ao fazer retry de sincronização');
       }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.error || err.message || 'Erro ao cancelar consulta';
-      setConsultaError(errorMessage);
+      setSyncError(err.response?.data?.error || err.message || 'Erro ao fazer retry');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  /**
+   * Envia email com DCTFs em andamento
+   */
+  const handleSendEmailPending = async () => {
+    const to = getEmailDestinoCompleto();
+    if (!to || !emailDestinoValido()) return;
+    setSendingEmail(true);
+    setEmailError(null);
+    setEmailSuccess(null);
+
+    try {
+      const result = await dctfService.sendEmailPending(to);
+      if (result.success) {
+        setEmailSuccess(`Email enviado com sucesso! ${result.total ?? 0} registros enviados para ${to}`);
+      } else {
+        setEmailError('Erro ao enviar email');
+      }
+    } catch (err: any) {
+      setEmailError(err.response?.data?.message || err.response?.data?.error || err.message || 'Erro ao enviar email');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const handleImportFromPng = async () => {
+    if (!selectedPngFiles.length) return;
+    setUploadingPng(true);
+    setPngError(null);
+    setPngResult(null);
+    try {
+      const data = await dctfService.importFromPng(selectedPngFiles);
+      setPngResult({
+        inserted: data.inserted,
+        updated: data.updated ?? 0,
+        errors: data.errors,
+        details: data.details,
+      });
+      setSelectedPngFiles([]);
+    } catch (err: any) {
+      setPngError(err.response?.data?.message || err.response?.data?.error || err.message || 'Erro ao importar PNG.');
+    } finally {
+      setUploadingPng(false);
     }
   };
 
@@ -687,85 +675,6 @@ const Administracao: React.FC = () => {
     buscarTotalPendentes();
   }, []);
 
-  // Limpar polling quando componente desmontar
-  useEffect(() => {
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-    };
-  }, []);
-
-  const handleConsultaLote = async () => {
-    if (!dataInicialConsulta || !dataFinalConsulta) {
-      setConsultaError('Por favor, preencha a data inicial e data final.');
-      return;
-    }
-
-    // Limpar estados anteriores e iniciar visualização imediatamente
-    setConsultando(true);
-    setConsultaError(null);
-    setConsultaResultado(null);
-    setProgresso({
-      totalCNPJs: 0,
-      processados: 0,
-      porcentagem: 0,
-      status: 'em_andamento',
-    } as any);
-    setProgressId(null);
-    
-    // Limpar polling anterior se existir
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-
-    try {
-      // Converter datas para formato YYYY-MM-DD
-      const dataInicialFormatada = new Date(dataInicialConsulta).toISOString().split('T')[0];
-      const dataFinalFormatada = new Date(dataFinalConsulta).toISOString().split('T')[0];
-
-      const response = await axios.post(
-        '/api/receita/consulta-lote',
-        {
-          dataInicial: dataInicialFormatada,
-          dataFinal: dataFinalFormatada,
-          limiteCNPJs: limiteCNPJs || undefined,
-          apenasFaltantes: apenasFaltantes,
-          waitMs: waitMs || 0,
-        }
-      );
-
-      if (response.data.success && response.data.data?.progressId) {
-        const id = response.data.data.progressId;
-        setProgressId(id);
-        sessionStorage.setItem(STORAGE_PROGRESS_KEY, id);
-        
-        // Iniciar polling para verificar progresso (2s para reduzir risco de 429)
-        const interval = setInterval(() => {
-          verificarProgresso(id);
-        }, 2000);
-        pollingIntervalRef.current = interval;
-        
-        // Primeira verificação imediata
-        verificarProgresso(id);
-      } else {
-        throw new Error(response.data.error || 'Erro ao iniciar consulta em lote');
-      }
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.error || err.message || 'Erro ao consultar pagamentos em lote';
-      setConsultaError(errorMessage);
-      setConsultando(false);
-      sessionStorage.removeItem(STORAGE_PROGRESS_KEY);
-      
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-    }
-  };
-
   // Se não estiver autenticado, mostrar modal de login
   if (!isAuthenticated || showLoginModal) {
     return (
@@ -842,7 +751,7 @@ const Administracao: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Administração</h1>
         <button
@@ -1434,6 +1343,67 @@ const Administracao: React.FC = () => {
               </div>
             )}
 
+            {/* Monitoramento de Erros - Opção B */}
+            {syncProgress && syncProgress.errors > 0 && (
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4 mt-4 mb-4">
+                <div className="flex items-start">
+                  <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-yellow-900 mb-2">
+                      🔍 Monitoramento de Erros
+                    </h4>
+                    <div className="text-sm text-yellow-800 mb-3">
+                      <strong>{syncProgress.errors}</strong> registro(s) falharam na sincronização
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {/* Opção A: Botão para baixar log */}
+                      <button
+                        onClick={handleDownloadLog}
+                        className="flex items-center gap-2 bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 text-sm font-medium transition-colors"
+                        title="Baixar arquivo com detalhes completos dos erros"
+                      >
+                        <DocumentArrowDownIcon className="h-4 w-4" />
+                        📥 Baixar Log de Erros
+                      </button>
+                      
+                      {/* Opção C: Botão de retry automático */}
+                      <button
+                        onClick={handleRetrySyncErrors}
+                        disabled={retrying}
+                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                        title="Tentar sincronizar novamente os registros com erro"
+                      >
+                        <ArrowPathIcon className={`h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
+                        🔄 {retrying ? 'Tentando novamente...' : 'Tentar Novamente'}
+                      </button>
+                    </div>
+
+                    {/* Opção B: Painel mostrando últimos erros em tempo real */}
+                    {lastSyncErrors.length > 0 && (
+                      <details className="mt-3" open={lastSyncErrors.length <= 5}>
+                        <summary className="text-sm font-medium text-yellow-900 cursor-pointer hover:text-yellow-700 mb-2">
+                          📋 Ver Últimos Erros ({lastSyncErrors.length})
+                        </summary>
+                        <div className="mt-2 bg-white rounded border border-yellow-300 p-3 max-h-60 overflow-y-auto">
+                          <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">
+                            {lastSyncErrors.slice(0, 15).join('\n\n---\n\n')}
+                            {lastSyncErrors.length > 15 && '\n\n... e mais ' + (lastSyncErrors.length - 15) + ' erros (baixe o log completo)'}
+                          </pre>
+                        </div>
+                      </details>
+                    )}
+                    
+                    {lastSyncErrors.length === 0 && (
+                      <div className="text-xs text-yellow-700 bg-yellow-100 rounded p-2">
+                        💡 <strong>Dica:</strong> Clique em "Baixar Log de Erros" para ver detalhes completos dos problemas
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 onClick={handleFixSchema}
@@ -1457,315 +1427,136 @@ const Administracao: React.FC = () => {
         </div>
       </div>
 
-      {/* Seção de Consulta em Lote na Receita Federal */}
-      <div className="bg-blue-50 border-2 border-blue-200 shadow-lg rounded-lg p-6 mb-6">
+      {/* Seção de Envio de Email com DCTFs em Andamento */}
+      <div className="bg-purple-50 border-2 border-purple-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
-          <ArrowPathIcon className="h-6 w-6 text-blue-600 mr-3 mt-1" />
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-6 w-6 text-purple-600 mr-3 mt-1">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+          </svg>
           <div className="flex-1">
-            <h2 className="text-xl font-semibold text-blue-900 mb-2">Consulta em Lote - Receita Federal</h2>
-            <p className="text-sm text-blue-700 mb-4">
-              Consulta pagamentos na Receita Federal para CNPJs cadastrados no sistema.
-              O sistema irá iterar sobre cada CNPJ, fazer requisições na Receita Federal
-              e salvar/atualizar os pagamentos encontrados na tabela <code className="bg-blue-100 px-1 rounded">receita_pagamentos</code>.
+            <h2 className="text-xl font-semibold text-purple-900 mb-2">Enviar Email - DCTFs em Andamento</h2>
+            <p className="text-sm text-purple-700 mb-4">
+              Envia um email formatado com todas as DCTFs em status <strong>"Em andamento"</strong> (Clientes Ativos).
+              Digite o nome do destinatário; o sufixo <strong>@central-rnc.com.br</strong> é preenchido automaticamente ao sair do campo ou ao pressionar Tab.
             </p>
 
-            <div className="bg-white rounded-lg p-4 border border-blue-300 mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Informações da Consulta</h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label htmlFor="dataInicialConsulta" className="block text-sm font-medium text-gray-700 mb-2">
-                    Data Inicial <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    id="dataInicialConsulta"
-                    value={dataInicialConsulta}
-                    onChange={(e) => setDataInicialConsulta(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="dataFinalConsulta" className="block text-sm font-medium text-gray-700 mb-2">
-                    Data Final <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    id="dataFinalConsulta"
-                    value={dataFinalConsulta}
-                    onChange={(e) => setDataFinalConsulta(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="limiteCNPJs" className="block text-sm font-medium text-gray-700 mb-2">
-                    Limite de CNPJs (opcional)
-                  </label>
-                  <input
-                    type="number"
-                    id="limiteCNPJs"
-                    min="1"
-                    max="200"
-                    value={limiteCNPJs}
-                    onChange={(e) => setLimiteCNPJs(parseInt(e.target.value) || 50)}
-                    placeholder="50"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Padrão: 50 (máximo: 200)</p>
-                </div>
-
-                <div>
-                  <label htmlFor="waitMs" className="block text-sm font-medium text-gray-700 mb-2">
-                    Atraso entre requisições (ms)
-                  </label>
-                  <input
-                    type="number"
-                    id="waitMs"
-                    min="0"
-                    step="100"
-                    value={waitMs}
-                    onChange={(e) => setWaitMs(parseInt(e.target.value) || 0)}
-                    placeholder="2000"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Sugestão: 2000 ms</p>
-                </div>
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <label htmlFor="email-destino" className="text-sm font-medium text-purple-900">Destinatário:</label>
+              <div className="flex items-center rounded-lg border-2 border-purple-300 bg-white focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-200">
+                <input
+                  id="email-destino"
+                  type="text"
+                  value={emailDestinoInput}
+                  onChange={(e) => setEmailDestinoInput(e.target.value)}
+                  onBlur={aplicaAutocompleteEmail}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Tab') aplicaAutocompleteEmail();
+                  }}
+                  placeholder="Ex: ti"
+                  className="px-3 py-2 rounded-l-md border-0 focus:ring-0 min-w-[120px] text-gray-900 placeholder-gray-400"
+                  autoComplete="off"
+                />
+                <span className="px-3 py-2 text-gray-500 bg-gray-50 border-l border-purple-200 rounded-r-md text-sm select-none">
+                  @central-rnc.com.br
+                </span>
               </div>
+            </div>
+            
+            <div className="bg-white rounded-lg p-4 border border-purple-300 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será incluído:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Todas as DCTFs com situação <strong>"Em andamento"</strong></li>
+                <li>Informações completas: CNPJ, Período, Data/Hora transmissão, Categoria, Origem, Tipo</li>
+                <li>Valores financeiros: Débito Apurado e Saldo a Pagar</li>
+                <li>Totalizadores: Total de registros, soma de débitos e soma de saldos</li>
+                <li>HTML bem formatado para fácil leitura</li>
+              </ul>
+            </div>
 
-              {/* Opção de busca: Todos ou Apenas Faltantes */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Tipo de Consulta:
-                </label>
-                <div className="flex items-center gap-6">
-                  <label className="flex items-center cursor-pointer">
-                    <input
-                      type="radio"
-                      name="tipoConsulta"
-                      value="todos"
-                      checked={!apenasFaltantes}
-                      onChange={() => setApenasFaltantes(false)}
-                      className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                    />
-                    <span className="text-sm text-gray-700">
-                      <strong>Todos os CNPJs</strong>
-                      <span className="block text-xs text-gray-500 mt-1">
-                        Consulta todos os CNPJs cadastrados (atualiza registros existentes)
-                      </span>
-                    </span>
-                  </label>
-                  <label className="flex items-center cursor-pointer">
-                    <input
-                      type="radio"
-                      name="tipoConsulta"
-                      value="faltantes"
-                      checked={apenasFaltantes}
-                      onChange={() => setApenasFaltantes(true)}
-                      className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                    />
-                    <span className="text-sm text-gray-700">
-                      <strong>Apenas CNPJs Faltantes</strong>
-                      <span className="block text-xs text-gray-500 mt-1">
-                        Consulta apenas CNPJs que ainda não têm registros no período (evita requisições desnecessárias)
-                      </span>
-                    </span>
-                  </label>
-                </div>
+            {emailSuccess && (
+              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
+                ✅ {emailSuccess}
               </div>
+            )}
 
-              <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Como funciona:</strong> O sistema irá buscar {apenasFaltantes ? 'apenas os CNPJs que ainda não têm registros de pagamento' : 'todos os CNPJs'} da tabela <code className="bg-blue-100 px-1 rounded">clientes</code>,
-                  fazer uma requisição na Receita Federal para cada CNPJ (no período informado), e salvar/atualizar
-                  os pagamentos encontrados na tabela <code className="bg-blue-100 px-1 rounded">receita_pagamentos</code>.
-                  Se um pagamento já existir (verificado por número do documento), ele será atualizado; caso contrário, será criado.
-                  {apenasFaltantes && (
-                    <span className="block mt-2 font-semibold text-green-700">
-                      ✓ Modo "Apenas Faltantes" ativado: Evita consultar CNPJs que já possuem dados no período, economizando requisições.
-                    </span>
-                  )}
-                </p>
+            {emailError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
+                ❌ {emailError}
               </div>
+            )}
 
-              {consultaResultado && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                  <h4 className="font-semibold text-green-900 mb-3">Resultado da Consulta em Lote</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <div className="text-gray-600">Total de CNPJs</div>
-                      <div className="text-2xl font-bold text-gray-900">{consultaResultado.totalCNPJs}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Total Consultados</div>
-                      <div className="text-2xl font-bold text-blue-600">{consultaResultado.totalConsultados}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Total Encontrados</div>
-                      <div className="text-2xl font-bold text-green-600">{consultaResultado.totalEncontrados}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Salvos/Atualizados</div>
-                      <div className="text-2xl font-bold text-purple-600">{consultaResultado.totalSalvos + consultaResultado.totalAtualizados}</div>
-                      <div className="text-xs text-gray-500">
-                        ({consultaResultado.totalSalvos} novos, {consultaResultado.totalAtualizados} atualizados)
-                      </div>
-                    </div>
-                  </div>
-                  {consultaResultado.totalErros > 0 && (
-                    <div className="mt-3 text-sm text-red-600">
-                      <strong>Erros:</strong> {consultaResultado.totalErros} CNPJ(s) com erro
-                    </div>
-                  )}
-                  
-                  {/* Detalhes por CNPJ */}
-                  {consultaResultado.detalhes && consultaResultado.detalhes.length > 0 && (
-                    <div className="mt-4 max-h-60 overflow-y-auto">
-                      <h5 className="font-medium text-gray-900 mb-2">Detalhes por CNPJ:</h5>
-                      <div className="space-y-1 text-xs">
-                        {consultaResultado.detalhes.slice(0, 20).map((detalhe: any, index: number) => (
-                          <div
-                            key={index}
-                            className={`p-2 rounded ${
-                              detalhe.status === 'sucesso'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            <span className="font-medium">{detalhe.cnpj}</span>
-                            {detalhe.status === 'sucesso' && (
-                              <span className="ml-2">
-                                - {detalhe.encontrados || 0} encontrado(s), {detalhe.salvos || 0} salvo(s), {detalhe.atualizados || 0} atualizado(s)
-                              </span>
-                            )}
-                            {detalhe.status === 'erro' && (
-                              <span className="ml-2">- Erro: {detalhe.erro}</span>
-                            )}
-                          </div>
-                        ))}
-                        {consultaResultado.detalhes.length > 20 && (
-                          <div className="text-gray-500 italic">
-                            ... e mais {consultaResultado.detalhes.length - 20} CNPJ(s)
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {consultaError && (
-                <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4 text-sm">
-                  {consultaError}
-                </div>
-              )}
-
-              {/* Barra de Progresso */}
-              {(consultando || progressId) && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm font-medium text-blue-900">
-                      {(progresso?.totalCNPJs ?? 0) === 0
-                        ? 'Nenhum CNPJ a processar neste período (modo Apenas Faltantes).'
-                        : 'Processando consulta em lote...'}
-                    </div>
-                    <div className="text-sm font-semibold text-blue-700">
-                      {(progresso?.processados ?? 0)} de {(progresso?.totalCNPJs ?? 0)} CNPJs ({progresso?.porcentagem ?? 0}%)
-                    </div>
-                  </div>
-                  
-                  {/* Barra de progresso visual */}
-                  <div className="w-full bg-blue-200 rounded-full h-4 mb-2 overflow-hidden">
-                    <div
-                      className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${progresso?.porcentagem ?? 0}%` }}
-                    />
-                  </div>
-                  
-                  {/* Barra secundária: progresso da gravação do CNPJ atual */}
-                  {((progresso?.currentTotalItens ?? 0) > 0) && (
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="text-xs text-blue-900">
-                          Gravando itens do CNPJ atual
-                        </div>
-                        <div className="text-xs font-semibold text-blue-700">
-                          {(progresso?.currentProcessados ?? 0)} / {(progresso?.currentTotalItens ?? 0)}
-                        </div>
-                      </div>
-                      <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-blue-500 h-full rounded-full transition-all duration-300 ease-out"
-                          style={{
-                            width: `${Math.min(
-                              100,
-                              Math.round(
-                                (((progresso?.currentProcessados ?? 0) / (progresso?.currentTotalItens || 1)) * 100)
-                              )
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Métricas em tempo real */}
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 text-slate-700">
-                      Encontrados: <strong>{progresso?.encontrados ?? 0}</strong>
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700">
-                      Salvos: <strong>{progresso?.salvos ?? 0}</strong>
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-                      Atualizados: <strong>{progresso?.atualizados ?? 0}</strong>
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-100 text-amber-700">
-                      Pulados: <strong>{progresso?.pulados ?? 0}</strong>
-                    </span>
-                  </div>
-                  
-                  {progresso?.cnpjAtual && (
-                    <div className="text-xs text-blue-600 mt-2">
-                      Processando CNPJ: <span className="font-mono font-semibold">{progresso?.cnpjAtual}</span>
-                    </div>
-                  )}
-                  
-                  {(progresso?.status ?? 'em_andamento') === 'em_andamento' && (
-                    <div className="flex items-center gap-2 mt-3">
-                      <button
-                        onClick={handleCancelarConsulta}
-                        className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-medium text-sm"
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                        Parar Consulta
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
+            <div className="flex gap-3">
               <button
-                onClick={handleConsultaLote}
-                disabled={consultando || !dataInicialConsulta || !dataFinalConsulta}
-                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                onClick={handleSendEmailPending}
+                disabled={sendingEmail || !emailDestinoValido()}
+                className="flex items-center gap-2 bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
-                {consultando ? (
-                  <>
-                    <LoadingSpinner size="sm" />
-                    <span>Consultando...</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowPathIcon className="h-5 w-5" />
-                    <span>Iniciar Consulta em Lote</span>
-                  </>
-                )}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+                {sendingEmail ? 'Enviando Email...' : 'Enviar Email'}
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Seção Importar de imagens PNG */}
+      <div className="bg-amber-50 border-2 border-amber-200 shadow-lg rounded-lg p-6 mb-6">
+        <div className="flex items-start mb-4">
+          <DocumentMagnifyingGlassIcon className="h-6 w-6 text-amber-600 mr-3 mt-1" />
+          <div className="flex-1">
+            <h2 className="text-xl font-semibold text-amber-900 mb-2">Importar de imagens PNG</h2>
+            <p className="text-sm text-amber-700 mb-4">
+              Selecione uma ou mais imagens PNG (prints da tela oficial da Receita com a tabela de declarações).
+              O sistema extrai os dados via OCR e grava na tabela <code className="bg-amber-100 px-1 rounded">teste_png</code> (MySQL).
+            </p>
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <label className="cursor-pointer bg-white border-2 border-amber-400 text-amber-800 px-4 py-2 rounded-lg hover:bg-amber-50 font-medium">
+                <input
+                  type="file"
+                  accept="image/png"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const list = e.target.files ? Array.from(e.target.files) : [];
+                    setSelectedPngFiles(list);
+                    setPngResult(null);
+                    setPngError(null);
+                  }}
+                />
+                {selectedPngFiles.length ? `${selectedPngFiles.length} arquivo(s) selecionado(s)` : 'Selecionar PNG'}
+              </label>
+              <button
+                type="button"
+                onClick={handleImportFromPng}
+                disabled={uploadingPng || selectedPngFiles.length === 0}
+                className="flex items-center gap-2 bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                {uploadingPng ? `Processando ${selectedPngFiles.length} imagem(ns)...` : 'Importar'}
+              </button>
+            </div>
+            {pngError && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-800 text-sm">
+                {pngError}
+              </div>
+            )}
+            {pngResult && (
+              <div className="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg text-green-800 text-sm">
+                <p className="font-medium">Importação concluída: {pngResult.inserted} registro(s) inserido(s), {pngResult.errors} erro(s).</p>
+                {pngResult.details?.perFile?.length ? (
+                  <ul className="mt-2 list-disc list-inside text-xs">
+                    {pngResult.details.perFile.map((f, i) => (
+                      <li key={i}>
+                        {f.filename}: {f.rows} linha(s), {f.inserted} inserido(s)
+                        {f.error ? ` — ${f.error}` : ''}
+                        {f.insertError ? ` — Erro MySQL: ${f.insertError}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
       </div>

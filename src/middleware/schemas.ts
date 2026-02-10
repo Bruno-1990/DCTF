@@ -153,6 +153,9 @@ export const dctfSchemas = {
     periodo: Joi.string().pattern(/^\d{4}-\d{2}$/).optional().allow('').messages({
       'string.pattern.base': 'Período deve estar no formato YYYY-MM'
     }),
+    periodoTransmissao: Joi.string().pattern(/^\d{4}-\d{2}$/).optional().allow('').messages({
+      'string.pattern.base': 'Período de transmissão deve estar no formato YYYY-MM (ex: 2026-01)'
+    }),
     status: Joi.string()
       .valid('pendente', 'processando', 'concluido', 'erro')
       .optional(),

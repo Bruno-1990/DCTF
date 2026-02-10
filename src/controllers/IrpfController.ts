@@ -131,8 +131,9 @@ export class IrpfController {
       const faturamentoAnos = await Promise.all(
         anosParaBuscar.map(async (ano) => {
           try {
-            const dataInicio = `01.01.${ano}`;
-            const dataFim = `31.12.${ano}`;
+            // Firebird espera datas em YYYY-MM-DD (evita SQLCODE -104 Token unknown)
+            const dataInicio = `${ano}-01-01`;
+            const dataFim = `${ano}-12-31`;
 
             // Query combinada - a query já filtra e retorna SUM e AVG
             // IMPORTANTE: Usar os mesmos nomes de colunas que aparecem na interface do usuário
@@ -286,14 +287,16 @@ export class IrpfController {
       if (detalhadoResult.success && detalhadoResult.data && detalhadoResult.data.length > 0) {
         console.log(`[IRPF Controller - buscarApenasCache] Dados encontrados no cache DETALHADO: ${detalhadoResult.data.length} registros`);
         
-        // Agrupar por ano e calcular totais
-        const dadosPorAno = new Map<number, any[]>();
+        // Agrupar por (codigo_empresa, ano) para desagrupar Matriz e Filiais
+        const dadosPorEmpresaEAno = new Map<string, any[]>();
         detalhadoResult.data.forEach((item) => {
+          const codigoEmpresa = Number(item.codigo_empresa) || 1;
           const ano = item.ano;
-          if (!dadosPorAno.has(ano)) {
-            dadosPorAno.set(ano, []);
+          const key = `${codigoEmpresa}-${ano}`;
+          if (!dadosPorEmpresaEAno.has(key)) {
+            dadosPorEmpresaEAno.set(key, []);
           }
-          dadosPorAno.get(ano)!.push(item);
+          dadosPorEmpresaEAno.get(key)!.push(item);
         });
 
         // Encontrar a última atualização (mais recente updated_at de todos os dados)
@@ -307,20 +310,48 @@ export class IrpfController {
           }
         });
 
-        // Calcular totais e médias para cada ano
+        // Listar códigos de empresa únicos (ordenados: 1=Matriz primeiro)
+        const codigosEmpresa = Array.from(new Set(detalhadoResult.data.map((d) => Number(d.codigo_empresa) || 1))).sort((a, b) => a - b);
+
+        // Montar empresas: cada uma com { codigo_empresa, tipo, data: FaturamentoAnual[] }
+        const empresas: Array<{ codigo_empresa: number; tipo: string; data: any[] }> = codigosEmpresa.map((codigoEmpresa) => {
+          const tipo = codigoEmpresa === 1 ? 'Matriz' : `Filial ${codigoEmpresa}`;
+          const dataPorAno = anosParaBuscar.map((ano) => {
+            const key = `${codigoEmpresa}-${ano}`;
+            const dadosAno = dadosPorEmpresaEAno.get(key) || [];
+            if (dadosAno.length > 0) {
+              const valorTotal = dadosAno.reduce((sum, item) => sum + (Number(item.faturamento_total) || 0), 0);
+              const qtdMesesRegistrados = dadosAno.length;
+              const mediaMensal = qtdMesesRegistrados > 0 ? valorTotal / qtdMesesRegistrados : 0;
+              return {
+                ano,
+                valorTotal,
+                mediaMensal,
+                meses: dadosAno.map(d => ({
+                  mes: d.mes,
+                  valor: d.faturamento_total,
+                  dados: d,
+                })),
+              };
+            }
+            return { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
+          });
+          return { codigo_empresa: codigoEmpresa, tipo, data: dataPorAno };
+        });
+
+        // Resultado agregado (soma de todas as empresas) para compatibilidade
+        const dadosPorAno = new Map<number, any[]>();
+        detalhadoResult.data.forEach((item) => {
+          const ano = item.ano;
+          if (!dadosPorAno.has(ano)) dadosPorAno.set(ano, []);
+          dadosPorAno.get(ano)!.push(item);
+        });
         const resultado = anosParaBuscar.map((ano) => {
           const dadosAno = dadosPorAno.get(ano) || [];
-          
           if (dadosAno.length > 0) {
-            // Somar faturamento_total de todos os meses do ano
             const valorTotal = dadosAno.reduce((sum, item) => sum + (Number(item.faturamento_total) || 0), 0);
-            
-            // Calcular média: Total do Período / quantidade de meses registrados
             const qtdMesesRegistrados = dadosAno.length;
             const mediaMensal = qtdMesesRegistrados > 0 ? valorTotal / qtdMesesRegistrados : 0;
-            
-            console.log(`[IRPF Controller - buscarApenasCache] Ano ${ano}: ${qtdMesesRegistrados} meses registrados, Total: ${valorTotal}, Média: ${mediaMensal} (${valorTotal} / ${qtdMesesRegistrados})`);
-            
             return {
               ano,
               valorTotal,
@@ -331,19 +362,14 @@ export class IrpfController {
                 dados: d,
               })),
             };
-          } else {
-            return {
-              ano,
-              valorTotal: 0,
-              mediaMensal: 0,
-              meses: [],
-            };
           }
+          return { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
         });
 
         res.json({
           success: true,
           data: resultado,
+          empresas,
           fromCache: 'detalhado',
           ultimaAtualizacao: ultimaAtualizacao,
         });
@@ -367,36 +393,63 @@ export class IrpfController {
             }
           }
         });
-        
-        // Criar mapa dos dados do mini cache
-        const miniMap = new Map<number, any>();
+
+        // Agrupar mini por (codigo_empresa, ano) para desagrupar Matriz e Filiais
+        const miniPorEmpresaAno = new Map<string, any>();
         miniResult.data.forEach((item) => {
-          miniMap.set(item.ano, item);
+          const codigoEmpresa = Number(item.codigo_empresa) || 1;
+          const key = `${codigoEmpresa}-${item.ano}`;
+          miniPorEmpresaAno.set(key, item);
+        });
+        const codigosEmpresaMini = Array.from(new Set(miniResult.data.map((d) => Number(d.codigo_empresa) || 1))).sort((a, b) => a - b);
+
+        const empresas = codigosEmpresaMini.map((codigoEmpresa) => {
+          const tipo = codigoEmpresa === 1 ? 'Matriz' : `Filial ${codigoEmpresa}`;
+          const data = anosParaBuscar.map((ano) => {
+            const item = miniPorEmpresaAno.get(`${codigoEmpresa}-${ano}`);
+            if (item) {
+              return {
+                ano: item.ano,
+                valorTotal: item.valor_total || 0,
+                mediaMensal: item.media_mensal || 0,
+                meses: [],
+              };
+            }
+            return { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
+          });
+          return { codigo_empresa: codigoEmpresa, tipo, data };
         });
 
-        // Montar resultado a partir do cache mini
+        // Resultado agregado (soma por ano) para compatibilidade
+        const miniMap = new Map<number, any>();
+        miniResult.data.forEach((item) => {
+          const ano = item.ano;
+          const existente = miniMap.get(ano);
+          if (!existente) {
+            miniMap.set(ano, { ano, valorTotal: item.valor_total || 0, mediaMensal: item.media_mensal || 0, count: 1 });
+          } else {
+            existente.valorTotal += item.valor_total || 0;
+            existente.count += 1;
+            existente.mediaMensal = existente.count > 0 ? existente.valorTotal / existente.count : 0;
+          }
+        });
         const resultado = anosParaBuscar.map((ano) => {
           const item = miniMap.get(ano);
           if (item) {
             return {
               ano: item.ano,
-              valorTotal: item.valor_total || 0,
-              mediaMensal: item.media_mensal || 0,
-              meses: [], // Cache mini não tem detalhes mensais
-            };
-          } else {
-            return {
-              ano,
-              valorTotal: 0,
-              mediaMensal: 0,
+              valorTotal: item.valorTotal || 0,
+              mediaMensal: item.mediaMensal || 0,
               meses: [],
             };
           }
+          return { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
         });
 
         res.json({
           success: true,
           data: resultado,
+          empresas,
           fromCache: 'mini',
           ultimaAtualizacao: ultimaAtualizacao,
         });
@@ -455,6 +508,7 @@ export class IrpfController {
       res.json({
         success: true,
         data: resultado,
+        empresas: [{ codigo_empresa: 1, tipo: 'Matriz', data: resultado }],
         fromCache: 'legacy',
       });
     } catch (error: any) {
@@ -512,13 +566,15 @@ export class IrpfController {
       const faturamentoAnos = await Promise.all(
         anosParaBuscar.map(async (ano) => {
           try {
-            const dataInicio = `01.01.${ano}`;
-            const dataFim = `31.12.${ano}`;
+            // Firebird espera datas em YYYY-MM-DD (evita SQLCODE -104 Token unknown)
+            const dataInicio = `${ano}-01-01`;
+            const dataFim = `${ano}-12-31`;
 
-            // Query DETALHADA - retorna todos os campos por mês
-            // Usar param2 = 2 para obter dados detalhados (igual ao scheduler)
+            // Query DETALHADA - param3=0 para desagrupar: Matriz e Filial separados
+            // Coluna de empresa no SCI: BDCODEMP (1=Matriz, 2=Filial). SP_BI_FAT retorna BDCODEMP, não BDCOD.
             const sql = `
               SELECT
+                t.BDCODEMP,
                 t.BDREF,
                 SUM(CASE WHEN t.BDORDEM = 1 THEN t.BDVALOR ELSE 0 END) AS VENDAS_BRUTAS,
                 SUM(CASE WHEN t.BDORDEM = 2 THEN t.BDVALOR ELSE 0 END) AS DEVOLUCOES_DEDUCOES,
@@ -527,9 +583,9 @@ export class IrpfController {
                 SUM(CASE WHEN t.BDORDEM = 5 THEN t.BDVALOR ELSE 0 END) AS OUTRAS_RECEITAS,
                 SUM(CASE WHEN t.BDORDEM = 6 THEN t.BDVALOR ELSE 0 END) AS OPERACOES_IMOBILIARIAS,
                 SUM(CASE WHEN t.BDORDEM = 7 THEN t.BDVALOR ELSE 0 END) AS FATURAMENTO_TOTAL
-              FROM SP_BI_FAT(${codigoSci}, 2, 2, '${dataInicio}', '${dataFim}', 1) t
-              GROUP BY t.BDREF
-              ORDER BY t.BDREF
+              FROM SP_BI_FAT(${codigoSci}, 2, 2, '${dataInicio}', '${dataFim}', 0) t
+              GROUP BY t.BDCODEMP, t.BDREF
+              ORDER BY t.BDCODEMP, t.BDREF
             `;
             
             console.log(`[IRPF] Executando query DETALHADA para cliente ${clienteId} (SCI ${codigoSci}), ano ${ano}`);
@@ -565,8 +621,9 @@ export class IrpfController {
               };
             }
 
-            // Processar dados mensais detalhados
-            const dadosMensais: Array<{
+            // Processar dados mensais detalhados agrupados por empresa (BDCODEMP = Matriz/Filial)
+            // Estrutura com param3=0: [BDCODEMP, BDREF, VENDAS_BRUTAS, ..., FATURAMENTO_TOTAL]
+            const porEmpresa = new Map<number, Array<{
               mes: number;
               bdref: number;
               vendas_brutas: number;
@@ -576,34 +633,26 @@ export class IrpfController {
               outras_receitas: number;
               operacoes_imobiliarias: number;
               faturamento_total: number;
-            }> = [];
-
-            let valorTotal = 0;
-            let mediaMensal = 0;
+            }>>();
 
             for (const row of resultado.rows) {
-              // BDREF vem como número inteiro no formato YYYYMM (ex: 202501)
+              let codigoEmpresa: number;
               let bdref: number;
-              let vendasBrutas = 0;
-              let devolucoesDeducoes = 0;
-              let vendasLiquidadas = 0;
-              let servicos = 0;
-              let outrasReceitas = 0;
-              let operacoesImobiliarias = 0;
-              let faturamentoTotal = 0;
+              let vendasBrutas = 0, devolucoesDeducoes = 0, vendasLiquidadas = 0, servicos = 0;
+              let outrasReceitas = 0, operacoesImobiliarias = 0, faturamentoTotal = 0;
 
               if (Array.isArray(row)) {
-                // Estrutura: [BDREF, VENDAS_BRUTAS, DEVOLUCOES_DEDUCOES, VENDAS_LIQUIDUIDAS, SERVICOS, OUTRAS_RECEITAS, OPERACOES_IMOBILIARIAS, FATURAMENTO_TOTAL]
-                bdref = Number(row[0]) || 0;
-                vendasBrutas = Number(row[1]) || 0;
-                devolucoesDeducoes = Number(row[2]) || 0;
-                vendasLiquidadas = Number(row[3]) || 0;
-                servicos = Number(row[4]) || 0;
-                outrasReceitas = Number(row[5]) || 0;
-                operacoesImobiliarias = Number(row[6]) || 0;
-                faturamentoTotal = Number(row[7]) || 0;
+                codigoEmpresa = Number(row[0]) || 1;
+                bdref = Number(row[1]) || 0;
+                vendasBrutas = Number(row[2]) || 0;
+                devolucoesDeducoes = Number(row[3]) || 0;
+                vendasLiquidadas = Number(row[4]) || 0;
+                servicos = Number(row[5]) || 0;
+                outrasReceitas = Number(row[6]) || 0;
+                operacoesImobiliarias = Number(row[7]) || 0;
+                faturamentoTotal = Number(row[8]) || 0;
               } else {
-                // Estrutura objeto
+                codigoEmpresa = Number(row.BDCOD || row.BDCODEMP || row.bdcod || row.codigo_empresa || 1);
                 bdref = Number(row.BDREF || row.bdref || 0);
                 vendasBrutas = Number(row.VENDAS_BRUTAS || row.vendas_brutas || 0);
                 devolucoesDeducoes = Number(row.DEVOLUCOES_DEDUCOES || row.devolucoes_deducoes || 0);
@@ -615,13 +664,11 @@ export class IrpfController {
               }
 
               if (bdref > 0) {
-                // Extrair mês e ano do BDREF (formato YYYYMM)
                 const mes = bdref % 100;
                 const anoBdref = Math.floor(bdref / 100);
-
-                // Validar mês (1-12)
                 if (mes >= 1 && mes <= 12 && anoBdref === ano) {
-                  dadosMensais.push({
+                  if (!porEmpresa.has(codigoEmpresa)) porEmpresa.set(codigoEmpresa, []);
+                  porEmpresa.get(codigoEmpresa)!.push({
                     mes,
                     bdref,
                     vendas_brutas: vendasBrutas,
@@ -632,83 +679,74 @@ export class IrpfController {
                     operacoes_imobiliarias: operacoesImobiliarias,
                     faturamento_total: faturamentoTotal,
                   });
-
-                  // Acumular totais
-                  valorTotal += faturamentoTotal;
                 }
               }
             }
 
-            // Calcular média mensal
-            mediaMensal = dadosMensais.length > 0 ? valorTotal / dadosMensais.length : 0;
+            // Salvar e acumular por empresa (Matriz = 1, Filial = 2, etc.)
+            const empresasResult: Array<{ codigo_empresa: number; ano: number; valorTotal: number; mediaMensal: number; meses: Array<{ mes: number; valor: number; dados: any }> }> = [];
 
-            console.log(`[IRPF] Processados ${dadosMensais.length} meses - Total: ${valorTotal}, Média: ${mediaMensal}`);
+            for (const [codigoEmpresa, dadosMensais] of porEmpresa.entries()) {
+              const valorTotal = dadosMensais.reduce((s, d) => s + d.faturamento_total, 0);
+              const mediaMensal = dadosMensais.length > 0 ? valorTotal / dadosMensais.length : 0;
 
-            // 1. Salvar dados detalhados na tabela irpf_faturamento_detalhado
-            const detalhadoResult = await this.detalhadoModel.salvarDetalhado(
-              clienteId,
-              codigoSci,
-              ano,
-              dadosMensais
-            );
+              const detalhadoResult = await this.detalhadoModel.salvarDetalhado(
+                clienteId,
+                codigoSci,
+                ano,
+                dadosMensais,
+                codigoEmpresa
+              );
+              if (!detalhadoResult.success) {
+                console.error(`[IRPF] Erro ao salvar detalhado empresa ${codigoEmpresa}:`, detalhadoResult.error);
+              }
 
-            if (!detalhadoResult.success) {
-              throw new Error(`Erro ao salvar dados detalhados: ${detalhadoResult.error}`);
+              await this.consolidadoModel.gerarCache(
+                clienteId,
+                codigoSci,
+                ano,
+                dadosMensais.map(d => ({ mes: d.mes, bdref: d.bdref, faturamento_total: d.faturamento_total })),
+                codigoEmpresa
+              );
+              await this.miniModel.gerarCache(
+                clienteId,
+                codigoSci,
+                ano,
+                dadosMensais.map(d => ({ faturamento_total: d.faturamento_total })),
+                codigoEmpresa
+              );
+
+              const meses = dadosMensais.map(d => ({ mes: d.mes, valor: d.faturamento_total, dados: d }));
+              await this.cacheModel.salvarFaturamento(
+                clienteId,
+                codigoSci,
+                ano,
+                meses,
+                valorTotal,
+                mediaMensal,
+                codigoEmpresa
+              );
+
+              empresasResult.push({
+                codigo_empresa: codigoEmpresa,
+                ano,
+                valorTotal,
+                mediaMensal,
+                meses,
+              });
             }
 
-            // 2. Gerar cache consolidado (meses com faturamento)
-            const consolidadoResult = await this.consolidadoModel.gerarCache(
-              clienteId,
-              codigoSci,
-              ano,
-              dadosMensais.map(d => ({
-                mes: d.mes,
-                bdref: d.bdref,
-                faturamento_total: d.faturamento_total
-              }))
-            );
-
-            if (!consolidadoResult.success) {
-              console.error(`[IRPF] Erro ao gerar cache consolidado para ano ${ano}:`, consolidadoResult.error);
-              // Não lançar erro - os dados detalhados já foram salvos
-            }
-
-            // 3. Gerar cache mini (totais anuais)
-            const miniResult = await this.miniModel.gerarCache(
-              clienteId,
-              codigoSci,
-              ano,
-              dadosMensais.map(d => ({
-                faturamento_total: d.faturamento_total
-              }))
-            );
-
-            if (!miniResult.success) {
-              console.error(`[IRPF] Erro ao gerar cache mini para ano ${ano}:`, miniResult.error);
-              // Não lançar erro - os dados detalhados já foram salvos
-            }
-
-            // 4. Também salvar no cache antigo (para compatibilidade com frontend)
-            const meses = dadosMensais.map(d => ({
-              mes: d.mes,
-              valor: d.faturamento_total,
-              dados: d,
-            }));
-
-            await this.cacheModel.salvarFaturamento(
-              clienteId, 
-              codigoSci, 
-              ano, 
-              meses, 
-              valorTotal,
-              mediaMensal
-            );
+            // Retorno por ano: agregar todas as empresas para compatibilidade com resposta atual
+            const valorTotalGeral = empresasResult.reduce((s, e) => s + e.valorTotal, 0);
+            const mesesGeral = empresasResult.flatMap(e => e.meses);
+            const mediaMensalGeral = mesesGeral.length > 0 ? valorTotalGeral / mesesGeral.length : 0;
 
             return {
               ano,
-              valorTotal,
-              mediaMensal,
-              meses,
+              valorTotal: valorTotalGeral,
+              mediaMensal: mediaMensalGeral,
+              meses: mesesGeral,
+              empresas: empresasResult,
             };
           } catch (error: any) {
             console.error(`Erro ao atualizar faturamento de ${ano}:`, error);
@@ -780,11 +818,15 @@ export class IrpfController {
           cliente = clienteResult.data;
         }
       } else {
-        // Buscar por Razão Social
-        const clientesResult = await this.clienteModel.findBy({ razao_social: busca });
+        // Buscar por Razão Social (parcial, case-insensitive)
+        const clientesResult = await this.clienteModel.findByRazaoSocial(busca);
         if (clientesResult.success && clientesResult.data && clientesResult.data.length > 0) {
-          // Pegar o primeiro resultado (ou implementar busca mais sofisticada)
-          cliente = clientesResult.data[0];
+          const lista = clientesResult.data as any[];
+          // Preferir match exato; senão o primeiro com codigo_sci; senão o primeiro
+          const buscaNorm = (busca || '').trim();
+          const exato = lista.find((c: any) => (c.razao_social || '').trim() === buscaNorm);
+          const comSci = lista.filter((c: any) => c.codigo_sci != null && String(c.codigo_sci).trim() !== '');
+          cliente = exato || (comSci.length > 0 ? comSci[0] : lista[0]);
         }
       }
 
@@ -805,19 +847,19 @@ export class IrpfController {
         return;
       }
 
-      // Converter datas para formato do Firebird (DD.MM.YYYY)
+      // Datas para SQL: Firebird espera YYYY-MM-DD (evita SQLCODE -104 Token unknown)
       // As datas vêm no formato YYYY-MM-DD do frontend
-      const dataIni = new Date(dataInicial + 'T00:00:00'); // Adicionar hora para evitar problemas de timezone
+      const dataIni = new Date(dataInicial + 'T00:00:00');
       const dataFim = new Date(dataFinal + 'T23:59:59');
-      
-      const diaInicio = String(dataIni.getDate()).padStart(2, '0');
-      const mesInicio = String(dataIni.getMonth() + 1).padStart(2, '0');
       const anoInicio = dataIni.getFullYear();
-      const dataInicioFormatada = `${diaInicio}.${mesInicio}.${anoInicio}`;
-      
-      const diaFim = String(dataFim.getDate()).padStart(2, '0');
-      const mesFim = String(dataFim.getMonth() + 1).padStart(2, '0');
+      const mesInicio = String(dataIni.getMonth() + 1).padStart(2, '0');
+      const diaInicio = String(dataIni.getDate()).padStart(2, '0');
       const anoFim = dataFim.getFullYear();
+      const mesFim = String(dataFim.getMonth() + 1).padStart(2, '0');
+      const diaFim = String(dataFim.getDate()).padStart(2, '0');
+      const dataInicioSql = `${anoInicio}-${mesInicio}-${diaInicio}`;
+      const dataFimSql = `${anoFim}-${mesFim}-${diaFim}`;
+      const dataInicioFormatada = `${diaInicio}.${mesInicio}.${anoInicio}`;
       const dataFimFormatada = `${diaFim}.${mesFim}.${anoFim}`;
 
       // Determinar parâmetros da query baseado no tipo
@@ -859,7 +901,7 @@ FROM (
             ELSE 'Mês Inválido'
         END || '/' || CAST(CAST(t.BDREF AS INTEGER) / 100 AS VARCHAR(4)) AS MES_ANO,
         SUM(CASE WHEN t.BDORDEM = 7 THEN t.BDVALOR ELSE 0 END) AS FATURAMENTO
-    FROM SP_BI_FAT(${codigoSci}, 2, 2, '${dataInicioFormatada}', '${dataFimFormatada}', ${paramSomar}) t
+    FROM SP_BI_FAT(${codigoSci}, 2, 2, '${dataInicioSql}', '${dataFimSql}', ${paramSomar}) t
     GROUP BY t.BDREF
     UNION ALL
     /* Total do período */
@@ -868,7 +910,7 @@ FROM (
         999999 AS ORDEM_DATA,
         'Total do Período' AS MES_ANO,
         SUM(CASE WHEN t.BDORDEM = 7 THEN t.BDVALOR ELSE 0 END) AS FATURAMENTO
-    FROM SP_BI_FAT(${codigoSci}, 2, 2, '${dataInicioFormatada}', '${dataFimFormatada}', ${paramSomar}) t
+    FROM SP_BI_FAT(${codigoSci}, 2, 2, '${dataInicioSql}', '${dataFimSql}', ${paramSomar}) t
 ) x
 ORDER BY x.ORDEM, x.ORDEM_DATA`;
       } else {
@@ -912,7 +954,7 @@ FROM (
         SUM(CASE WHEN t.BDORDEM = 5 THEN t.BDVALOR ELSE 0 END) AS OUTRAS_RECEITAS,
         SUM(CASE WHEN t.BDORDEM = 6 THEN t.BDVALOR ELSE 0 END) AS OPERACOES_IMOBILIARIAS,
         SUM(CASE WHEN t.BDORDEM = 7 THEN t.BDVALOR ELSE 0 END) AS FATURAMENTO_TOTAL
-    FROM SP_BI_FAT(${codigoSci}, 2, ${paramTipo}, '${dataInicioFormatada}', '${dataFimFormatada}', ${paramSomar}) t
+    FROM SP_BI_FAT(${codigoSci}, 2, ${paramTipo}, '${dataInicioSql}', '${dataFimSql}', ${paramSomar}) t
     GROUP BY t.BDREF
     UNION ALL
     /* Total do período */
@@ -927,7 +969,7 @@ FROM (
         SUM(CASE WHEN t.BDORDEM = 5 THEN t.BDVALOR ELSE 0 END) AS OUTRAS_RECEITAS,
         SUM(CASE WHEN t.BDORDEM = 6 THEN t.BDVALOR ELSE 0 END) AS OPERACOES_IMOBILIARIAS,
         SUM(CASE WHEN t.BDORDEM = 7 THEN t.BDVALOR ELSE 0 END) AS FATURAMENTO_TOTAL
-    FROM SP_BI_FAT(${codigoSci}, 2, ${paramTipo}, '${dataInicioFormatada}', '${dataFimFormatada}', ${paramSomar}) t
+    FROM SP_BI_FAT(${codigoSci}, 2, ${paramTipo}, '${dataInicioSql}', '${dataFimSql}', ${paramSomar}) t
 ) x
 ORDER BY x.ordem, x.BDREF`;
       }
@@ -937,19 +979,38 @@ ORDER BY x.ordem, x.BDREF`;
       console.log(`[IRPF] Período: ${dataInicioFormatada} a ${dataFimFormatada}`);
       console.log(`[IRPF] SQL:\n${sql}`);
 
-      // Executar query via Python
+      // Executar query via Python (com timeout de 90s para não travar a requisição)
       const scriptPath = path.join(
         __dirname,
         '../../python/catalog/executar_sql.py'
       );
-
-      const { stdout, stderr } = await execAsync(
+      const TIMEOUT_MS = 180000; // 3 minutos - SP_BI_FAT para período longo pode demorar
+      const execPromise = execAsync(
         `python "${scriptPath}" --base64 ${Buffer.from(sql, 'utf-8').toString('base64')}`,
         {
           encoding: 'utf-8',
           maxBuffer: 50 * 1024 * 1024, // 50MB
         }
       );
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Consulta ao SCI demorou mais de 3 minutos. Tente um período menor (ex.: trimestre) ou tente novamente.`)), TIMEOUT_MS);
+      });
+      let stdout: string;
+      let stderr: string;
+      try {
+        const result = await Promise.race([execPromise, timeoutPromise]);
+        stdout = result.stdout;
+        stderr = result.stderr ?? '';
+      } catch (raceError: any) {
+        if (raceError?.message?.includes('demorou mais')) {
+          res.status(504).json({
+            success: false,
+            error: raceError.message,
+          });
+          return;
+        }
+        throw raceError;
+      }
 
       if (stderr && !stderr.includes('INFO')) {
         console.error('[IRPF] Python stderr:', stderr);

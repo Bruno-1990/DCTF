@@ -4,12 +4,22 @@
  */
 
 import { Router } from 'express';
+import multer from 'multer';
 import { DCTFController } from '../controllers/DCTFController';
 import { validate, validateParams, validateQuery, sanitizeData } from '../middleware/validation';
 import { dctfSchemas } from '../middleware/schemas';
 
 const router = Router();
 const dctfController = new DCTFController();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, cb) => {
+    const ok = file.mimetype === 'image/png';
+    cb(null, !!ok);
+  },
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 // Middleware de sanitização global
 router.use(sanitizeData);
@@ -67,6 +77,56 @@ router.post('/admin/fix-schema', (req, res) => {
 // POST /api/dctf/admin/delete-supabase - Deletar todas as declarações do Supabase (operação administrativa)
 router.post('/admin/delete-supabase', (req, res) => {
   dctfController.deletarDoSupabase(req, res);
+});
+
+// GET /api/dctf/admin/check-duplicates - Conferência: listar registros duplicados no MySQL
+router.get('/admin/check-duplicates', (req, res) => {
+  dctfController.detectDuplicates(req, res);
+});
+
+// GET /api/dctf/admin/export-em-aberto - Exportar registros "Em andamento" em CSV para conferência
+router.get('/admin/export-em-aberto', (req, res) => {
+  dctfController.exportEmAberto(req, res);
+});
+
+// POST /api/dctf/admin/detect-duplicates - Detectar registros duplicados
+router.post('/admin/detect-duplicates', (req, res) => {
+  dctfController.detectDuplicates(req, res);
+});
+
+// POST /api/dctf/admin/remove-duplicates - Remover registros duplicados
+router.post('/admin/remove-duplicates', (req, res) => {
+  dctfController.removeDuplicates(req, res);
+});
+
+// POST /api/dctf/admin/create-unique-constraint - Criar constraint UNIQUE
+router.post('/admin/create-unique-constraint', (req, res) => {
+  dctfController.createUniqueConstraint(req, res);
+});
+
+// DELETE /api/dctf/admin/remove-unique-constraint - Remover constraint UNIQUE
+router.delete('/admin/remove-unique-constraint', (req, res) => {
+  dctfController.removeUniqueConstraint(req, res);
+});
+
+// GET /api/dctf/admin/sync-errors-log - Baixar log de erros de sincronização
+router.get('/admin/sync-errors-log', (req, res) => {
+  dctfController.downloadSyncErrorsLog(req, res);
+});
+
+// POST /api/dctf/admin/retry-sync-errors - Retry automático dos registros com erro
+router.post('/admin/retry-sync-errors', (req, res) => {
+  dctfController.retrySyncErrors(req, res);
+});
+
+// POST /api/dctf/admin/send-email-pending - Enviar email com DCTFs em andamento
+router.post('/admin/send-email-pending', (req, res) => {
+  dctfController.sendEmailPending(req, res);
+});
+
+// POST /api/dctf/admin/import-from-png - Importar declarações a partir de imagens PNG (OCR)
+router.post('/admin/import-from-png', upload.array('images', 20), (req, res) => {
+  dctfController.importFromPng(req, res);
 });
 
 // POST /api/dctf - Criar declaração

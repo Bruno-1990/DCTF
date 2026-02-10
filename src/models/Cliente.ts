@@ -32,6 +32,7 @@ const clienteCreateSchema = Joi.object({
   endereco: Joi.string().max(500).optional().allow('', null).messages({
     'string.max': 'Endereço deve ter no máximo 500 caracteres',
   }),
+  nome_pasta_rede: Joi.string().max(255).optional().allow('', null),
 }).unknown(true);
 
 const clienteUpdateSchema = Joi.object({
@@ -40,6 +41,7 @@ const clienteUpdateSchema = Joi.object({
   email: Joi.string().email().optional().allow('', null),
   telefone: Joi.string().max(255).optional().allow('', null),
   endereco: Joi.string().max(500).optional().allow('', null),
+  nome_pasta_rede: Joi.string().max(255).optional().allow('', null),
 }).unknown(true);
 
 export class Cliente extends DatabaseService<ICliente> {
@@ -76,6 +78,14 @@ export class Cliente extends DatabaseService<ICliente> {
       const empty = new Set<string>();
       Cliente.tableColumnsCache[key] = empty;
       return empty;
+    }
+  }
+
+  /** Invalida cache de colunas de uma tabela (útil após migrations). */
+  private invalidateTableColumnsCache(table: string): void {
+    const key = String(table || '').trim();
+    if (key && Cliente.tableColumnsCache[key]) {
+      delete Cliente.tableColumnsCache[key];
     }
   }
 
@@ -275,6 +285,7 @@ export class Cliente extends DatabaseService<ICliente> {
       email: row.email || undefined,
       telefone: row.telefone || undefined,
       endereco: row.endereco || undefined,
+      nome_pasta_rede: row.nome_pasta_rede ?? undefined,
       fantasia: row.fantasia || undefined,
       tipo_estabelecimento: row.tipo_estabelecimento || undefined,
       situacao_cadastral: row.situacao_cadastral || undefined,
@@ -456,6 +467,7 @@ export class Cliente extends DatabaseService<ICliente> {
       email: clienteData.email || undefined,
       telefone: clienteData.telefone ? this.normalizeTelefone(clienteData.telefone) : undefined,
       endereco: clienteData.endereco || undefined,
+      nome_pasta_rede: clienteData.nome_pasta_rede || undefined,
     };
 
     const safeInsert = await this.filterToExistingColumns('clientes', dataToInsert);
@@ -595,7 +607,17 @@ export class Cliente extends DatabaseService<ICliente> {
       }
     }
 
-    const safeUpdate = await this.filterToExistingColumns('clientes', dataToUpdate);
+    let safeUpdate = await this.filterToExistingColumns('clientes', dataToUpdate);
+    if (Object.keys(safeUpdate).length === 0 && dataToUpdate.nome_pasta_rede !== undefined) {
+      this.invalidateTableColumnsCache('clientes');
+      safeUpdate = await this.filterToExistingColumns('clientes', dataToUpdate);
+    }
+    if (Object.keys(safeUpdate).length === 0 && dataToUpdate.nome_pasta_rede !== undefined) {
+      return {
+        success: false,
+        error: 'Campo "Nome da pasta na Rede" não existe no banco. Execute a migration 019_add_clientes_nome_pasta_rede.sql na tabela clientes.',
+      };
+    }
     const result = await this.update(id, safeUpdate as any);
     
     if (!result.success || !result.data) {
@@ -631,6 +653,27 @@ export class Cliente extends DatabaseService<ICliente> {
       success: false,
       error: 'Cliente não encontrado',
     };
+  }
+
+  /**
+   * Buscar clientes por Razão Social (parcial, case-insensitive).
+   * Útil para Consulta Personalizada quando o usuário digita parte do nome.
+   */
+  async findByRazaoSocial(busca: string): Promise<ApiResponse<ICliente[]>> {
+    const termo = (busca || '').trim();
+    if (termo.length < 2) {
+      return { success: true, data: [] };
+    }
+    try {
+      const likeParam = `%${termo}%`;
+      const query = `SELECT * FROM \`${this.tableName}\` WHERE LOWER(TRIM(\`razao_social\`)) LIKE LOWER(?) ORDER BY \`razao_social\` ASC`;
+      const resp = await this.executeCustomQuery<any>(query, [likeParam]);
+      if (!resp.success) return resp as ApiResponse<ICliente[]>;
+      const list = (resp.data || []).map((row: any) => this.mapSupabaseRow(row));
+      return { success: true, data: list };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Erro ao buscar por razão social', data: [] };
+    }
   }
 
   /**

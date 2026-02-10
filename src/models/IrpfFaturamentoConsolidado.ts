@@ -32,14 +32,15 @@ export class IrpfFaturamentoConsolidado extends DatabaseService<IrpfFaturamentoC
           \`id\` VARCHAR(36) PRIMARY KEY,
           \`cliente_id\` VARCHAR(36) NOT NULL,
           \`codigo_sci\` INT NOT NULL,
+          \`codigo_empresa\` INT NOT NULL DEFAULT 1,
           \`ano\` INT NOT NULL,
           \`mes\` INT NOT NULL,
           \`mes_ano\` VARCHAR(20) NOT NULL,
           \`faturamento\` DECIMAL(15, 2) NOT NULL,
           \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          INDEX \`idx_cliente_ano_mes\` (\`cliente_id\`, \`ano\`, \`mes\`),
+          INDEX \`idx_cliente_empresa_ano_mes\` (\`cliente_id\`, \`codigo_empresa\`, \`ano\`, \`mes\`),
           INDEX \`idx_codigo_sci_ano\` (\`codigo_sci\`, \`ano\`),
-          UNIQUE KEY \`uk_cliente_ano_mes\` (\`cliente_id\`, \`ano\`, \`mes\`)
+          UNIQUE KEY \`uk_cliente_empresa_ano_mes\` (\`cliente_id\`, \`codigo_empresa\`, \`ano\`, \`mes\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `;
 
@@ -64,7 +65,8 @@ export class IrpfFaturamentoConsolidado extends DatabaseService<IrpfFaturamentoC
       mes: number;
       bdref: number;
       faturamento_total: number;
-    }>
+    }>,
+    codigoEmpresa: number = 1
   ): Promise<ApiResponse<number>> {
     try {
       await this.ensureTable();
@@ -93,8 +95,8 @@ export class IrpfFaturamentoConsolidado extends DatabaseService<IrpfFaturamentoC
 
         const sql = `
           INSERT INTO \`irpf_faturamento_consolidado\` 
-            (\`id\`, \`cliente_id\`, \`codigo_sci\`, \`ano\`, \`mes\`, \`mes_ano\`, \`faturamento\`)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+            (\`id\`, \`cliente_id\`, \`codigo_sci\`, \`codigo_empresa\`, \`ano\`, \`mes\`, \`mes_ano\`, \`faturamento\`)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             \`faturamento\` = VALUES(\`faturamento\`),
             \`mes_ano\` = VALUES(\`mes_ano\`),
@@ -105,6 +107,7 @@ export class IrpfFaturamentoConsolidado extends DatabaseService<IrpfFaturamentoC
           id,
           clienteId,
           codigoSci,
+          codigoEmpresa,
           ano,
           item.mes,
           mesAno,

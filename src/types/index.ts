@@ -20,6 +20,8 @@ export interface Cliente extends BaseEntity {
   email?: string;
   telefone?: string;
   endereco?: string;
+  /** Nome da pasta do cliente na rede (ex.: servidor de arquivos). Label na UI: Rede. */
+  nome_pasta_rede?: string | null;
 
   // Campos ampliados (ReceitaWS / cadastro robusto)
   fantasia?: string;

@@ -14,6 +14,13 @@ export interface FaturamentoAnual {
   meses: FaturamentoMensal[];
 }
 
+/** Faturamento desagrupado por empresa (Matriz / Filial) */
+export interface FaturamentoPorEmpresa {
+  codigo_empresa: number;
+  tipo: string; // 'Matriz' | 'Filial 2' | ...
+  data: FaturamentoAnual[];
+}
+
 export interface IrpfClienteData {
   clienteId: string;
   cnpj: string;
@@ -60,7 +67,11 @@ export const irpfService = {
   async buscarApenasCache(
     clienteId: string,
     anos?: number[]
-  ): Promise<{ data: FaturamentoAnual[]; ultimaAtualizacao?: string | null }> {
+  ): Promise<{
+    data: FaturamentoAnual[];
+    empresas?: FaturamentoPorEmpresa[];
+    ultimaAtualizacao?: string | null;
+  }> {
     const response = await api.get(`/irpf/faturamento/${clienteId}/cache`, {
       params: anos ? { anos: anos.join(',') } : undefined,
     });
@@ -71,6 +82,7 @@ export const irpfService = {
 
     return {
       data: response.data.data || [],
+      empresas: response.data.empresas || undefined,
       ultimaAtualizacao: response.data.ultimaAtualizacao || null,
     };
   },
@@ -139,7 +151,9 @@ export const irpfService = {
     }>;
   }> {
     console.log('[IRPF Service] Enviando requisição:', params);
-    const response = await api.post('/irpf/consulta-personalizada', params);
+    const response = await api.post('/irpf/consulta-personalizada', params, {
+      timeout: 200000, // ~3,3 min - deve ser maior que o timeout do backend (3 min)
+    });
     console.log('[IRPF Service] Resposta completa:', response.data);
     
     if (!response.data.success) {
@@ -168,8 +182,9 @@ export const irpfService = {
     codigoSci: number,
     ano: number
   ): Promise<FaturamentoMensal[]> {
-    const dataInicio = `01.01.${ano}`;
-    const dataFim = `31.12.${ano}`;
+    // Firebird espera datas em YYYY-MM-DD (evita SQLCODE -104 Token unknown)
+    const dataInicio = `${ano}-01-01`;
+    const dataFim = `${ano}-12-31`;
 
     const response = await api.post('/sci/catalog/sp-bi-fat', {
       cod_emp: codigoSci,

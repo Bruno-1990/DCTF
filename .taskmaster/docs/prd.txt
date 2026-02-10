@@ -1,567 +1,326 @@
-# DCTF Management Platform - Product Requirements Document
-
-**Última Atualização:** 12 de Novembro de 2025  
-**Status do Projeto:** ✅ Implementação Completa  
-**Total de Funcionalidades:** 24 funcionalidades principais implementadas
-
-## Visão Geral
-Sistema web robusto para gerenciamento e análise de declarações DCTF (Declaração de Débitos e Créditos Tributários Federais) com interface moderna, upload de arquivos, análise de dados e painel administrativo completo.
-
-## Objetivos Principais
-- ✅ Criar uma plataforma web completa para gerenciamento de DCTF
-- ✅ Implementar sistema de upload e processamento de arquivos CSV, XLS e XLSX
-- ✅ Desenvolver interface moderna com Tailwind CSS
-- ✅ Implementar análise robusta de dados DCTF com cálculo de multas potenciais
-- ✅ Criar sistema de CRUD completo para clientes
-- ✅ Implementar atualizações em tempo real via WebSocket
-- ✅ Desenvolver painel administrativo avançado
-- ✅ Integrar com API da Receita Federal para verificação de pagamentos
-- ✅ Sistema de gerenciamento de pagamentos e status fiscal
-
-## Funcionalidades Principais
-
-**Total de Funcionalidades Implementadas: 24**
-
-### 1. ✅ Configuração do Ambiente de Desenvolvimento (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Setup completo do ambiente Node.js 20+ com TypeScript
-- ✅ Configuração de dependências e ferramentas (ESLint, Prettier, Jest)
-- ✅ Estrutura de pastas orientada a objetos (src/, frontend/, docs/, tests/)
-- ✅ Configuração de ambiente de desenvolvimento local com nodemon e ts-node
-- ✅ Configuração do Git e .gitignore
-- ✅ Scripts de build, dev, test e lint configurados
-
-### 2. ✅ Modelos de Dados e Banco (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Design e implementação do modelo de dados orientado a objetos
-- ✅ Configuração completa do banco de dados Supabase (PostgreSQL)
-- ✅ Criação de tabelas: clientes, dctf_declaracoes, dctf_dados, analises, flags, relatorios, upload_history
-- ✅ Implementação de relacionamentos entre tabelas
-- ✅ Migrações SQL para normalização de CNPJ, pagamentos, conferências e views
-- ✅ Otimização de índices e performance (índices compostos, particionamento)
-- ✅ Implementação de Row Level Security (RLS) e políticas de acesso
-- ✅ Modelos TypeScript com classes e interfaces para todas as entidades
-
-### 3. ✅ Configuração das Tabelas DCTF (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Estruturação específica das tabelas DCTF com campos normalizados
-- ✅ Implementação de validações específicas (códigos DCTF, períodos fiscais, valores monetários)
-- ✅ Sistema de códigos e categorias DCTF (tabela dctf_codes)
-- ✅ Constraints de integridade referencial e regras de negócio
-- ✅ Validação de planilhas (estrutura, colunas obrigatórias, encoding)
-- ✅ Regras de cálculo fiscal (alíquotas, bases de cálculo, arredondamento)
-- ✅ Índices otimizados para consultas por período, CNPJ e códigos DCTF
-- ✅ Triggers e procedures para validação automática
-
-### 4. ✅ Interface Frontend - Estrutura Base (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Configuração do React 18 com TypeScript e Vite
-- ✅ Estrutura de componentes e páginas orientada a objetos
-- ✅ Sistema de roteamento com React Router v6 (rotas protegidas, lazy loading)
-- ✅ Gerenciamento de estado global com Zustand
-- ✅ Integração com API Backend (Axios com interceptors, tratamento de erros)
-- ✅ Configuração de testes (Vitest, React Testing Library, Playwright)
-- ✅ Sistema de componentes base reutilizáveis
-
-### 5. ✅ Configuração do Tailwind CSS (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Instalação e configuração do Tailwind CSS v4
-- ✅ Sistema de design consistente com componentes reutilizáveis
-- ✅ Configuração de temas e variáveis CSS
-- ✅ Responsividade completa para mobile, tablet e desktop
-- ✅ Acessibilidade implementada (ARIA labels, navegação por teclado)
-
-### 6. ✅ Aba Clientes com CRUD e Upload de Planilhas (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Interface completa para listagem de clientes com paginação
-- ✅ Formulários de criação e edição com validação em tempo real
-- ✅ Sistema de filtros e busca avançada (por CNPJ, nome, razão social)
-- ✅ Funcionalidade de exclusão com confirmação
-- ✅ Validação de dados do lado cliente (CNPJ, email, telefone)
-- ✅ Upload de planilhas (.xls, .xlsx, .csv) com drag and drop
-- ✅ Processamento assíncrono de planilhas de clientes
-- ✅ Paginação e ordenação por múltiplos campos
-- ✅ Normalização automática de CNPJ
-
-### 7. ✅ Página Inicial com Upload de Planilhas DCTF (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Interface drag and drop para upload de planilhas DCTF
-- ✅ Suporte a múltiplos formatos (.xls, .xlsx, .csv)
-- ✅ Validação de arquivos (formato, tamanho, estrutura)
-- ✅ Preview dos dados antes do upload
-- ✅ Progress bar e feedback visual em tempo real
-- ✅ Tratamento de erros com mensagens descritivas
-- ✅ Salvamento automático no Supabase após validação
-- ✅ Processamento assíncrono com notificações WebSocket
-
-### 8. ✅ Sistema de Análise Robusta DCTF com Match de Clientes (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Algoritmos de análise de dados DCTF orientados a objetos
-- ✅ Mapeamento de requisitos fiscais e regras de multas (IN RFB nº 2005/2021, CTN, Lei 9.430/96)
-- ✅ Pipeline de ingestão e normalização de dados DCTF
-- ✅ Validações cruzadas e consistência (vínculos Cliente x Declaração)
-- ✅ Motor de análise de risco e cálculo de multas potenciais
-- ✅ Match automático de declarações com tabela de clientes
-- ✅ Sistema de alertas e workflow de notificações
-- ✅ Geração de relatórios executivos com base legal e recomendações
-- ✅ Exportação de relatórios em PDF e Excel
-- ✅ Visualizações gráficas e charts (Recharts)
-- ✅ Dashboard interativo de análise DCTF com métricas de severidade
-- ✅ Sistema de análise com severidade e plano de ação personalizado
-- ✅ Trilhas de auditoria e testes automatizados
-
-### 9. ✅ API Backend - CRUD Completo (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Desenvolvimento de APIs RESTful orientadas a objetos
-- ✅ Endpoints completos para todas as operações CRUD (Clientes, DCTF, Relatórios, Flags)
-- ✅ Validação de dados no backend com Joi schemas
-- ✅ Tratamento de erros e exceções centralizado
-- ✅ Documentação da API (docs/API-*.md)
-- ✅ Rate limiting e segurança (Helmet, CORS, express-rate-limit)
-- ✅ Middleware de autenticação e autorização
-- ✅ Endpoints de pagamentos e sincronização com Receita Federal
-- ✅ Endpoints de performance e monitoramento
-- ✅ Testes unitários e de integração (Jest, Supertest)
-
-### 10. ✅ Sistema de Validação de Flags (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Catálogo de flags e matriz de severidade (baixa, média, alta, crítica)
-- ✅ Motor de validação de flags com regras automáticas
-- ✅ Validação de CNPJ e documentos com normalização
-- ✅ Verificação de consistência de dados cruzados
-- ✅ Sistema de alertas e notificações via WebSocket
-- ✅ Log de validações com auditoria completa
-- ✅ API REST para consulta, resolução e reabertura de flags
-- ✅ Integração automática com DCTFAnalysisService
-- ✅ Monitoramento e métricas de flags abertas
-
-### 11. ✅ WebSocket - Atualizações em Tempo Real (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Implementação de WebSocket server com Socket.IO
-- ✅ Gateway WebSocket integrado ao Express com autenticação JWT
-- ✅ Atualizações em tempo real da interface (análises, flags, uploads)
-- ✅ Notificações push para eventos críticos
-- ✅ Sincronização de dados entre usuários via salas por cliente
-- ✅ Gerenciamento de conexões com reconexão automática
-- ✅ Fallback para polling quando WebSocket não disponível
-- ✅ Eventos: analysis.completed, flags.created, flags.updated
-- ✅ Cliente WebSocket no frontend com hooks React
-- ✅ Testes de carga e monitoramento de saúde
-
-### 12. ✅ Painel Administrativo e Dashboard Principal (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Dashboard principal interativo com métricas críticas
-- ✅ Gerenciamento de dados DCTF (limpeza, deduplicação, normalização)
-- ✅ Sistema de conferências e validações
-- ✅ Relatórios administrativos com histórico
-- ✅ Logs e auditoria (AuditTrailService)
-- ✅ Monitoramento de performance (PerformanceMonitoringService)
-- ✅ Geração de relatórios PDF administrativos
-- ✅ Views e consultas otimizadas para dashboard
-- ✅ Sistema de upload history e rastreamento
-
-### 13. ✅ Sistema de Upload de Arquivos (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Processamento assíncrono de arquivos com Multer
-- ✅ Validação de formato e conteúdo (CSV, XLS, XLSX)
-- ✅ Tratamento de arquivos grandes com streaming
-- ✅ Normalização e sanitização de dados
-- ✅ Armazenamento seguro no Supabase
-- ✅ Histórico de uploads com auditoria
-- ✅ Processamento em lote com progress tracking
-
-### 14. ✅ Dashboard Interativo de Análise DCTF (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Dashboard interativo com informações críticas para identificação de problemas
-- ✅ Métricas de severidade em tempo real
-- ✅ Visualizações gráficas com Recharts
-- ✅ Indicadores e KPIs baseados em legislação fiscal
-- ✅ Integração com WebSocket para atualizações em tempo real
-- ✅ Filtros e consultas avançadas
-
-### 15. ✅ Sistema de Geração de Relatórios PDF (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Sistema orientado a objetos para geração de relatórios de apuração em PDF
-- ✅ Design harmonioso e configuração profissional
-- ✅ Relatórios com base legal, recomendações e planos de ação
-- ✅ Exportação em PDF e Excel
-- ✅ Templates customizáveis
-
-### 16. ✅ Sistema de Gerenciamento de Dados DCTF (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Sistema de limpeza e deduplicação de dados DCTF
-- ✅ Normalização de campos (competência, CNPJ, códigos)
-- ✅ Validações e regras de negócio centralizadas
-- ✅ Auditoria e histórico de uploads
-- ✅ Endpoints REST para limpeza e gestão com filtros/paginação
-- ✅ Controle de acesso e roles nos endpoints
-- ✅ Testes unitários e de integração
-
-### 17. ✅ Sistema de Análise com Severidade e Plano de Ação (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Sistema orientado a objetos para análise de severidade
-- ✅ Geração de planos de ação personalizados
-- ✅ Linguagem simples e sucinta para usuários finais
-- ✅ Classificação por severidade (baixa, média, alta, crítica)
-- ✅ Recomendações de regularização baseadas em legislação
-
-### 18. ✅ Integração com API da Receita Federal (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Integração com API da Receita Federal para verificação de pagamentos
-- ✅ Sincronização automática de status de pagamento
-- ✅ Matching de dados DCTF com documentos de arrecadação
-- ✅ Atualização automática de status (pago, parcelado, pendente)
-- ✅ Registro de comprovantes de pagamento
-- ✅ Tabelas de histórico de consultas e erros
-
-### 19. ✅ Sistema de Gerenciamento de Pagamentos (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ API completa para gerenciamento de status de pagamento
-- ✅ Atualização individual e em lote de pagamentos
-- ✅ Filtros avançados (por cliente, período, status, saldo)
-- ✅ Estatísticas de pagamento (totais, pendentes, pagos)
-- ✅ Rastreamento de comprovantes e datas de pagamento
-- ✅ Integração com sistema de conferências
-
-### 20. ✅ Sistema de Códigos DCTF (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ API completa para gerenciamento de códigos DCTF
-- ✅ CRUD de códigos com validação e categorização
-- ✅ Sistema de hierarquia de códigos por categoria
-- ✅ Gerenciamento de alíquotas por código e período
-- ✅ Validação de códigos DCTF
-- ✅ Busca e exportação de códigos (CSV)
-- ✅ Estatísticas e relatórios de códigos
-- ✅ Códigos de receita organizados por categoria e subcategoria
-- ✅ Validação de códigos obrigatórios por período
-
-### 21. ✅ Sistema de Conferências DCTF (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ API de conferências com resumo e detalhes
-- ✅ Conferência de dados DCTF por CNPJ e período
-- ✅ Comparação entre declarações e dados cadastrais
-- ✅ Views otimizadas para consultas de conferência
-- ✅ Integração com dashboard administrativo
-- ✅ Relatórios de conferência
-
-### 22. ✅ Sistema de Cálculo Fiscal (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ API completa para cálculos fiscais DCTF
-- ✅ Cálculo de impostos com base em alíquotas
-- ✅ Cálculo de compensação de impostos
-- ✅ Cálculo de alíquota efetiva
-- ✅ Cálculo de totais por categoria
-- ✅ Cálculo de percentual de variação
-- ✅ Validação de totais de seções DCTF
-- ✅ Validação de consistência de dados fiscais
-- ✅ Validação de regras de arredondamento
-- ✅ Regras de cálculo fiscal configuráveis
-
-### 23. ✅ Sistema de Situação Fiscal (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ Integração com API da Receita Federal para download de situação fiscal
-- ✅ Download assíncrono de PDFs de situação fiscal por CNPJ
-- ✅ Extração automática de dados de PDFs (débitos, pendências)
-- ✅ Armazenamento seguro de PDFs em base64
-- ✅ Histórico de downloads com metadados
-- ✅ API para consulta de histórico de situação fiscal
-- ✅ Extração sob demanda de dados de PDFs armazenados
-- ✅ Processamento assíncrono com retry automático
-- ✅ Gerenciamento de protocolos e status de processamento
-
-### 24. ✅ Sistema de Monitoramento de Performance (IMPLEMENTADO)
-**Status:** Completo
-
-**Implementações Realizadas:**
-- ✅ API de monitoramento de performance do banco de dados
-- ✅ Monitoramento de queries lentas
-- ✅ Métricas de performance do sistema
-- ✅ Health check do sistema
-- ✅ Análise de performance de índices
-- ✅ Recomendações de otimização
-- ✅ Identificação de índices não utilizados
-- ✅ Reindexação de tabelas DCTF
-- ✅ Otimização automática de consultas
-- ✅ Relatórios completos de performance
-
-## Requisitos Técnicos
-
-### Frontend (IMPLEMENTADO)
-- ✅ React 18 com TypeScript
-- ✅ Vite como bundler e dev server
-- ✅ Tailwind CSS v4
-- ✅ Zustand para gerenciamento de estado
-- ✅ React Query (@tanstack/react-query) para cache
-- ✅ Recharts para visualizações gráficas
-- ✅ React Router v6 para roteamento
-- ✅ Axios para requisições HTTP
-- ✅ Socket.IO Client para WebSocket
-
-### Backend (IMPLEMENTADO)
-- ✅ Node.js 20+ com Express
-- ✅ TypeScript com strict mode
-- ✅ Supabase Client para banco de dados (PostgreSQL)
-- ✅ WebSocket (Socket.IO) integrado
-- ✅ Multer para upload de arquivos
-- ✅ JWT para autenticação (preparado)
-- ✅ Winston para logging estruturado
-- ✅ Joi para validação de schemas
-- ✅ ExcelJS e XLSX para processamento de planilhas
-- ✅ PDFKit para geração de relatórios PDF
-
-### Banco de Dados (IMPLEMENTADO)
-- ✅ PostgreSQL via Supabase
-- ✅ Tabelas otimizadas para DCTF com relacionamentos
-- ✅ Índices compostos para performance
-- ✅ Triggers e procedures para validação
-- ✅ Row Level Security (RLS) implementado
-- ✅ Migrações SQL versionadas
-- ✅ Views para consultas otimizadas
-- ✅ Funções para normalização de CNPJ
-
-### Infraestrutura
-- ⏳ Deploy na Vercel ou Netlify (frontend) - Preparado
-- ⏳ Deploy no Railway ou Heroku (backend) - Preparado
-- ✅ Dockerfile configurado
-- ✅ Documentação de deploy (DEPLOY.md, GUIA-DEPLOY.md)
-- ⏳ CI/CD com GitHub Actions - Preparado
-- ✅ Scripts de build e produção configurados
-
-## Critérios de Sucesso
-
-### ✅ Implementado
-- ✅ Interface responsiva e intuitiva (mobile, tablet, desktop)
-- ✅ Upload e processamento de arquivos com feedback em tempo real
-- ✅ Análise de dados DCTF com validações robustas e cálculo de multas
-- ✅ Tempo de resposta da API otimizado com índices e cache
-- ✅ Suporte a processamento de grandes volumes de dados
-- ✅ Sistema de auditoria e logs completo
-
-### ⏳ Em Produção
-- ⏳ Upload e processamento de arquivos em menos de 30 segundos (depende do tamanho)
-- ⏳ Análise de dados DCTF com 99% de precisão (requer validação com dados reais)
-- ⏳ Tempo de resposta da API menor que 200ms (requer monitoramento em produção)
-- ⏳ Suporte a até 10.000 registros simultâneos (requer testes de carga)
-- ⏳ 99.9% de uptime (requer monitoramento contínuo)
-
-## Cronograma Realizado
-
-### ✅ Fase 1 - CONCLUÍDA
-**Configuração do ambiente e modelos de dados**
-- Setup completo do ambiente de desenvolvimento
-- Configuração do banco Supabase
-- Criação de todas as tabelas e relacionamentos
-- Implementação de modelos TypeScript
-
-### ✅ Fase 2 - CONCLUÍDA
-**Interface frontend e CRUD básico**
-- Configuração do React + TypeScript + Vite
-- Sistema de roteamento e estado global
-- CRUD completo de clientes com upload de planilhas
-- Interface de upload de DCTF
-
-### ✅ Fase 3 - CONCLUÍDA
-**Sistema de upload e análise**
-- Upload e processamento de planilhas DCTF
-- Sistema de análise robusta com cálculo de multas
-- Match automático com clientes
-- Geração de relatórios PDF e Excel
-
-### ✅ Fase 4 - CONCLUÍDA
-**WebSocket e painel administrativo**
-- Implementação completa de WebSocket
-- Dashboard administrativo interativo
-- Sistema de flags e validações
-- Gerenciamento de dados DCTF
-
-### ✅ Fase 5 - CONCLUÍDA
-**Testes, otimização e funcionalidades avançadas**
-- Testes unitários e de integração
-- Sistema de pagamentos e integração com Receita Federal
-- Dashboard interativo de análise
-- Documentação completa
-
-### ⏳ Fase 6 - EM ANDAMENTO
-**Deploy e produção**
-- Deploy do frontend e backend
-- Configuração de CI/CD
-- Monitoramento em produção
-- Otimizações baseadas em uso real
-
-## Considerações de Segurança (IMPLEMENTADO)
-
-### ✅ Implementado
-- ✅ Validação de dados em todas as camadas (frontend, backend, banco)
-- ✅ Row Level Security (RLS) no Supabase
-- ✅ Logs de auditoria completos (AuditTrailService)
-- ✅ Rate limiting configurado (express-rate-limit)
-- ✅ Sanitização de inputs (Joi schemas, normalização)
-- ✅ Helmet para segurança HTTP
-- ✅ CORS configurado adequadamente
-- ✅ Tratamento seguro de uploads de arquivos
-
-### ⏳ Preparado para Implementação
-- ⏳ Autenticação e autorização robusta (estrutura pronta, requer configuração)
-- ⏳ Criptografia de dados sensíveis (requer configuração de chaves)
-- ⏳ HTTPS obrigatório em produção (requer certificado SSL)
-
-## Arquitetura Implementada
-
-### Estrutura de Pastas
-```
-DCTF_MPC/
-├── src/                    # Backend TypeScript
-│   ├── controllers/        # Controladores REST
-│   ├── models/             # Modelos de dados
-│   ├── services/           # Serviços de negócio
-│   ├── routes/             # Rotas da API
-│   ├── middleware/         # Middlewares Express
-│   └── scripts/            # Scripts utilitários
-├── frontend/               # Frontend React
-│   ├── src/
-│   │   ├── components/     # Componentes reutilizáveis
-│   │   ├── pages/          # Páginas da aplicação
-│   │   ├── services/       # Serviços de API
-│   │   ├── hooks/           # Custom hooks
-│   │   └── store/           # Estado global (Zustand)
-├── docs/                   # Documentação completa
-├── tests/                  # Testes automatizados
-└── .taskmaster/            # Gerenciamento de tarefas
-```
-
-### Serviços Principais Implementados
-- **DCTFAnalysisService**: Análise robusta de dados DCTF
-- **DCTFIngestionService**: Ingestão e normalização de dados
-- **FlagValidationService**: Validação e geração de flags
-- **DCTFReportService**: Geração de relatórios
-- **ReceitaFederalService**: Integração com API da Receita
-- **PagamentoService**: Gerenciamento de pagamentos
-- **WebSocketGateway**: Comunicação em tempo real
-- **AdminDashboardService**: Dashboard administrativo
-- **ConferenciaService**: Sistema de conferências
-- **AuditTrailService**: Auditoria e logs
-- **DCTFCodesService**: Gerenciamento de códigos DCTF
-- **DCTFCalculationService**: Cálculos fiscais
-- **FiscalCalculationController**: Regras de cálculo fiscal
-- **SituacaoFiscalOrchestrator**: Orquestração de situação fiscal
-- **PerformanceMonitoringService**: Monitoramento de performance
-- **DCTFValidationService**: Validação de dados DCTF
-- **DCTFBusinessRulesService**: Regras de negócio DCTF
-- **ConsultaReceitaService**: Consultas à Receita Federal
-- **SincronizacaoReceitaService**: Sincronização com Receita
-
-### Páginas Frontend Implementadas
-- **Home**: Upload de planilhas DCTF
-- **Clientes**: CRUD de clientes com upload
-- **DCTF**: Listagem e visualização de declarações
-- **DCTFDadosPage**: Visualização detalhada de dados DCTF
-- **DCTFList**: Lista de declarações DCTF
-- **Relatorios**: Geração e visualização de relatórios
-- **AdminDashboard**: Dashboard administrativo
-- **Administracao**: Página de administração
-- **Conferencias**: Sistema de conferências
-- **Pagamentos**: Gerenciamento de pagamentos
-- **SituacaoFiscal**: Situação fiscal dos clientes (download e visualização)
-- **UploadClientes**: Upload de planilhas de clientes
-- **UploadDCTF**: Upload de planilhas DCTF
-- **ErrorPage**: Página de tratamento de erros
-
-## Documentação Disponível
-
-### Documentos Técnicos
-- ✅ `ARQUITETURA_BANCO_DADOS.md`: Estrutura completa do banco
-- ✅ `DCTF-analise-robusta.md`: Documentação da análise DCTF
-- ✅ `INTEGRACAO-RECEITA-PAGAMENTO.md`: Integração com Receita Federal
-- ✅ `API-PAGAMENTOS.md`: API de pagamentos
-- ✅ `API-DCTF-Dados.md`: API de dados DCTF
-- ✅ `API-Flags.md`: API de flags
-- ✅ `API-Spreadsheet.md`: API de planilhas
-- ✅ `VERIFICACAO-PAGAMENTO-DCTF.md`: Verificação de pagamentos
-- ✅ `CONFIGURACAO-RECEITA-API.md`: Configuração da API da Receita
-- ✅ `COMO-USAR-SINCRONIZACAO-RECEITA.md`: Guia de sincronização
-- ✅ `websocket-arquitetura.md`: Arquitetura WebSocket
-- ✅ `flags-matriz.md`: Matriz de flags
-- ✅ `DEPLOY.md` e `GUIA-DEPLOY.md`: Guias de deploy
-
-### Migrações SQL
-- ✅ `001_normalize_cnpj_column.sql`: Normalização de CNPJ
-- ✅ `002_fix_cnpj_functions.sql`: Correção de funções CNPJ
-- ✅ `003_add_pagamento_status.sql`: Status de pagamento
-- ✅ `004_create_receita_pagamentos.sql`: Tabela de pagamentos Receita
-- ✅ `005_create_receita_erros_consulta.sql`: Erros de consulta
-- ✅ `006_conferencias_views.sql`: Views de conferências
-- ✅ `007_add_hora_transmissao.sql`: Hora de transmissão
-
-## Próximos Passos Recomendados
-
-1. **Deploy em Produção**
-   - Configurar variáveis de ambiente
-   - Deploy do frontend (Vercel/Netlify)
-   - Deploy do backend (Railway/Heroku)
-   - Configurar domínio e SSL
-
-2. **Autenticação Completa**
-   - Implementar sistema de login
-   - Configurar JWT tokens
-   - Implementar roles e permissões
-
-3. **Monitoramento**
-   - Configurar Sentry ou similar
-   - Implementar métricas de performance
-   - Configurar alertas
-
-4. **Otimizações**
-   - Testes de carga
-   - Otimização de queries
-   - Cache de consultas frequentes
-
-5. **Melhorias Contínuas**
-   - Feedback dos usuários
-   - Novas funcionalidades conforme necessidade
-   - Atualização de legislação fiscal
+# PRD - Sistema DCTF MPC - Melhorias e Expansão
+
+## 1. Visão Geral do Projeto
+
+O DCTF MPC é um sistema completo de análise e processamento de dados fiscais brasileiros, incluindo DCTF (Declaração de Débitos e Créditos Tributários Federais), SPED (Sistema Público de Escrituração Digital), IRPF e outras obrigações fiscais. O sistema possui arquitetura moderna com backend Node.js/TypeScript, frontend React/TypeScript, integração com Supabase e MySQL, e processamento avançado de documentos fiscais.
+
+## 2. Objetivos do Projeto
+
+### 2.1 Objetivos Principais
+- Melhorar a qualidade e confiabilidade do sistema de análise fiscal
+- Expandir funcionalidades de validação e correção automática
+- Otimizar performance e escalabilidade
+- Melhorar experiência do usuário no frontend
+- Implementar testes automatizados abrangentes
+- Documentar melhor o sistema e suas APIs
+
+### 2.2 Objetivos Técnicos
+- Refatorar código legado para padrões modernos
+- Implementar arquitetura de microserviços onde apropriado
+- Melhorar tratamento de erros e logging
+- Implementar monitoramento e observabilidade
+- Otimizar consultas ao banco de dados
+- Melhorar segurança e validação de dados
+
+## 3. Escopo do Projeto
+
+### 3.1 Módulos Principais
+
+#### 3.1.1 Módulo DCTF
+- Processamento e análise de declarações DCTF
+- Validação de códigos e estruturas
+- Geração de relatórios e dashboards
+- Integração com sistemas externos
+
+#### 3.1.2 Módulo SPED v2.0
+- Sistema de validação e correção de arquivos SPED (EFD ICMS/IPI)
+- Pipeline de processamento em 5 camadas (Normalização, Validação Interna, Matching, Classificação, Correção)
+- Sistema RAG para documentos legais
+- Packs por segmento (Comércio, Bebidas, Indústria, E-commerce)
+- Base de conhecimento com versionamento
+
+#### 3.1.3 Módulo IRPF
+- Processamento de dados IRPF
+- Cálculos fiscais e relatórios
+- Cache e otimizações
+
+#### 3.1.4 Módulo Clientes
+- Gestão de clientes e dados cadastrais
+- Integração com ReceitaWS para validação de CNPJ
+- Sincronização de dados
+- Normalização de CNPJ e razões sociais
+
+#### 3.1.5 Módulo Banco de Horas
+- Processamento de dados de banco de horas
+- Relatórios e análises
+- Integração com sistema SCI
+
+#### 3.1.6 Módulo Conferências
+- Sistema de conferência de dados fiscais
+- Dashboard administrativo
+- Relatórios de divergências
+
+### 3.2 Funcionalidades Transversais
+
+#### 3.2.1 Autenticação e Autorização
+- Sistema de autenticação seguro
+- Controle de acesso baseado em roles
+- Middleware de validação
+
+#### 3.2.2 APIs e Integrações
+- RESTful APIs bem documentadas
+- WebSocket para atualizações em tempo real
+- Integração com serviços externos (ReceitaWS, etc.)
+
+#### 3.2.3 Processamento de Arquivos
+- Upload e processamento de arquivos (CSV, XLSX, XML, PDF)
+- Validação de formatos
+- Tratamento de erros
+
+## 4. Requisitos Funcionais
+
+### 4.1 Melhorias no Backend
+
+#### 4.1.1 Refatoração de Código
+- Refatorar controllers para seguir padrão MVC consistente
+- Extrair lógica de negócio para services
+- Melhorar tipagem TypeScript
+- Implementar padrões de design apropriados
+- Reduzir duplicação de código
+
+#### 4.1.2 Tratamento de Erros
+- Implementar sistema de erros padronizado
+- Melhorar mensagens de erro para usuários
+- Implementar logging estruturado
+- Adicionar rastreamento de erros
+
+#### 4.1.3 Validação de Dados
+- Implementar validação robusta em todas as rotas
+- Usar Joi ou Zod para validação de schemas
+- Validar dados de entrada e saída
+- Implementar sanitização de dados
+
+#### 4.1.4 Performance
+- Otimizar consultas ao banco de dados
+- Implementar cache onde apropriado
+- Adicionar índices ao banco de dados
+- Otimizar processamento de arquivos grandes
+- Implementar paginação em listagens
+
+#### 4.1.5 Testes
+- Implementar testes unitários para services
+- Implementar testes de integração para APIs
+- Implementar testes end-to-end
+- Configurar cobertura de código mínima (80%)
+- Implementar testes de carga
+
+### 4.2 Melhorias no Frontend
+
+#### 4.2.1 Componentes
+- Refatorar componentes para melhor reutilização
+- Implementar design system consistente
+- Melhorar acessibilidade (a11y)
+- Otimizar renderização e performance
+- Implementar lazy loading de componentes
+
+#### 4.2.2 Estado e Dados
+- Otimizar gerenciamento de estado
+- Implementar cache de dados no cliente
+- Melhorar tratamento de loading e erros
+- Implementar sincronização em tempo real
+
+#### 4.2.3 UX/UI
+- Melhorar feedback visual para usuários
+- Implementar animações suaves
+- Melhorar responsividade mobile
+- Implementar dark mode
+- Melhorar navegação e fluxos
+
+#### 4.2.4 Testes Frontend
+- Implementar testes unitários de componentes
+- Implementar testes de integração
+- Implementar testes E2E com Playwright/Cypress
+- Testes de acessibilidade
+
+### 4.3 Melhorias no Banco de Dados
+
+#### 4.3.1 Estrutura
+- Revisar e otimizar schemas
+- Adicionar índices necessários
+- Implementar constraints apropriadas
+- Normalizar dados onde necessário
+
+#### 4.3.2 Migrações
+- Criar sistema de migrações versionado
+- Documentar todas as migrações
+- Implementar rollback seguro
+- Testar migrações em ambiente de desenvolvimento
+
+#### 4.3.3 Performance
+- Analisar e otimizar queries lentas
+- Implementar materialized views onde apropriado
+- Otimizar índices
+- Implementar particionamento se necessário
+
+### 4.4 Melhorias no Sistema SPED v2.0
+
+#### 4.4.1 Pipeline de Processamento
+- Otimizar cada camada do pipeline
+- Implementar processamento paralelo onde possível
+- Melhorar tratamento de erros em cada etapa
+- Adicionar métricas e monitoramento
+
+#### 4.4.2 Sistema RAG
+- Melhorar qualidade dos embeddings
+- Otimizar busca semântica
+- Implementar cache de consultas
+- Melhorar chunking de documentos
+
+#### 4.4.3 Correção Automática
+- Melhorar precisão das correções sugeridas
+- Implementar mais guardrails de segurança
+- Adicionar mais evidências para correções
+- Melhorar sistema de aprovação
+
+### 4.5 DevOps e Infraestrutura
+
+#### 4.5.1 CI/CD
+- Implementar pipeline CI/CD completo
+- Testes automatizados no pipeline
+- Deploy automatizado para ambientes
+- Versionamento semântico
+
+#### 4.5.2 Monitoramento
+- Implementar logging centralizado
+- Adicionar métricas de performance
+- Implementar alertas proativos
+- Dashboard de monitoramento
+
+#### 4.5.3 Segurança
+- Implementar rate limiting
+- Adicionar validação de entrada
+- Implementar CORS apropriado
+- Revisar e corrigir vulnerabilidades
+- Implementar autenticação JWT robusta
+
+## 5. Requisitos Não Funcionais
+
+### 5.1 Performance
+- Tempo de resposta de APIs < 200ms para 95% das requisições
+- Suportar pelo menos 100 usuários concorrentes
+- Processar arquivos de até 100MB em menos de 5 minutos
+
+### 5.2 Segurança
+- Implementar HTTPS em produção
+- Validação de todos os inputs
+- Proteção contra SQL injection
+- Proteção contra XSS
+- Rate limiting em todas as APIs públicas
+
+### 5.3 Confiabilidade
+- Uptime de 99.9%
+- Sistema de backup automático
+- Recuperação de desastres
+- Tratamento robusto de erros
+
+### 5.4 Escalabilidade
+- Arquitetura preparada para escalar horizontalmente
+- Processamento assíncrono para tarefas pesadas
+- Cache distribuído
+- Load balancing
+
+### 5.5 Manutenibilidade
+- Código bem documentado
+- Testes abrangentes
+- Documentação de APIs
+- Guias de desenvolvimento
+
+## 6. Tecnologias e Ferramentas
+
+### 6.1 Backend
+- Node.js 20+
+- TypeScript 5+
+- Express.js
+- Supabase (PostgreSQL)
+- MySQL2
+- Socket.io
+- Winston (logging)
+- Jest (testes)
+
+### 6.2 Frontend
+- React 18+
+- TypeScript
+- Vite
+- Tailwind CSS
+- React Query / SWR
+- Socket.io Client
+
+### 6.3 Processamento
+- Python 3.11+ (para processamento SPED)
+- Pandas, NumPy
+- Bibliotecas de processamento XML/PDF
+
+### 6.4 DevOps
+- Docker / Docker Compose
+- GitHub Actions (CI/CD)
+- Nginx (reverse proxy)
+
+## 7. Estrutura de Tarefas Sugerida
+
+### 7.1 Fase 1: Fundação e Qualidade
+- Configurar Task Master e estrutura de tarefas
+- Implementar testes básicos
+- Melhorar tratamento de erros
+- Documentar APIs principais
+
+### 7.2 Fase 2: Refatoração Backend
+- Refatorar controllers
+- Extrair services
+- Melhorar validação
+- Otimizar queries
+
+### 7.3 Fase 3: Melhorias Frontend
+- Refatorar componentes
+- Melhorar UX/UI
+- Implementar testes
+- Otimizar performance
+
+### 7.4 Fase 4: Otimizações e Expansão
+- Otimizar banco de dados
+- Melhorar sistema SPED
+- Implementar monitoramento
+- Expandir funcionalidades
+
+### 7.5 Fase 5: DevOps e Produção
+- Implementar CI/CD
+- Configurar monitoramento
+- Melhorar segurança
+- Documentação final
+
+## 8. Critérios de Sucesso
+
+- Código com cobertura de testes > 80%
+- Todas as APIs documentadas
+- Performance melhorada em 50%
+- Zero vulnerabilidades críticas
+- Documentação completa e atualizada
+- Sistema estável em produção
+
+## 9. Riscos e Mitigações
+
+### 9.1 Riscos Técnicos
+- **Refatoração quebra funcionalidades existentes**: Mitigação através de testes abrangentes
+- **Performance degradada**: Mitigação através de benchmarks e testes de carga
+- **Incompatibilidade de dependências**: Mitigação através de versionamento cuidadoso
+
+### 9.2 Riscos de Prazo
+- **Escopo muito amplo**: Mitigação através de priorização e fases
+- **Dependências externas**: Mitigação através de planejamento antecipado
+
+## 10. Próximos Passos
+
+1. Inicializar Task Master com este PRD
+2. Gerar tarefas iniciais baseadas neste documento
+3. Priorizar tarefas por impacto e esforço
+4. Começar implementação pela Fase 1
+5. Revisar e ajustar conforme necessário

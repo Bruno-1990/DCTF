@@ -89,7 +89,7 @@ const EProcessosTab: React.FC<EProcessosTabProps> = ({ cnpjPreenchido }) => {
     setProcessos(null);
 
     try {
-      const response = await axios.get('/api/receita-pagamentos/e-processos', {
+      const response = await axios.get('/api/receita/e-processos', {
         params: { cnpj: cnpjLimpo }
       });
 

@@ -19,8 +19,6 @@ import spreadsheetRoutes from './routes/spreadsheet';
 import flagsRoutes from './routes/flags';
 import adminDashboardRoutes from './routes/admin-dashboard';
 import adminDashboardConferenceRoutes from './routes/admin-dashboard-conferences';
-import pagamentosRoutes from './routes/pagamentos';
-import receitaPagamentosRoutes from './routes/receita-pagamentos';
 import receitaRoutes from './routes/receita';
 import conferenciasRoutes from './routes/conferencias';
 import conferencesRoutes from './routes/conferences';
@@ -31,6 +29,7 @@ import spedRoutes from './routes/sped';
 import spedV2KnowledgeRoutes from './routes/sped-v2-knowledge';
 import spedV2Routes from './routes/sped-v2';
 import irpfRoutes from './routes/irpf';
+import cfopRoutes from './routes/cfop';
 
 class Server {
   private app: express.Application;
@@ -91,7 +90,6 @@ class Server {
         // Rotas com limiter dedicado ou que precisam de polling frequente
         if (p.startsWith('/api/situacao-fiscal')) return true;
         if (p.startsWith('/api/receita')) return true;
-        if (p.startsWith('/api/receita-pagamentos')) return true;
         // Rotas de status do SPED v2 precisam de polling frequente
         if (p.startsWith('/api/sped/v2/status/')) return true;
         return false;
@@ -145,7 +143,6 @@ class Server {
     this.app.use('/api/flags', flagsRoutes);
     this.app.use('/api/dashboard/admin', adminDashboardRoutes);
     this.app.use('/api/dashboard/admin/conferences', adminDashboardConferenceRoutes);
-    this.app.use('/api/pagamentos', pagamentosRoutes);
     // Limiters dedicados para rotas sensíveis (evita que o limiter global derrube o app inteiro)
     const receitaLimiter = rateLimit({
       windowMs: 60 * 1000, // 1 minute
@@ -163,7 +160,6 @@ class Server {
       legacyHeaders: false,
     });
 
-    this.app.use('/api/receita-pagamentos', receitaLimiter, receitaPagamentosRoutes);
     this.app.use('/api/receita', receitaLimiter, receitaRoutes);
     this.app.use('/api/conferencias', conferenciasRoutes);
     this.app.use('/api/conferences', conferencesRoutes);
@@ -182,6 +178,7 @@ class Server {
     this.app.use('/api/sped/v2/knowledge', spedV2KnowledgeRoutes);
     this.app.use('/api/sped/v2', spedV2Routes);
     this.app.use('/api/irpf', irpfRoutes);
+    this.app.use('/api/cfop', cfopRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

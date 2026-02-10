@@ -38,7 +38,9 @@ export class DCTFSyncService {
    */
   async syncFromSupabase(
     onProgress?: (progress: SyncProgress) => void
-  ): Promise<ApiResponse<SyncProgress>> {
+  ): Promise<ApiResponse<SyncProgress & { errorLog?: string[] }>> {
+    const errorLog: string[] = []; // Log de erros detalhados
+    
     try {
       // Verificar se Supabase está disponível
       const supabaseClient = supabaseAdmin || supabase;
@@ -115,37 +117,123 @@ export class DCTFSyncService {
           continue;
         }
 
-        // 4. Inserir/atualizar cada registro no MySQL usando upsert
+        // 4. Inserir/atualizar cada registro no MySQL usando upsert com verificação de duplicados
         for (const record of batchData) {
           try {
-            // Verificar se o registro já existe no MySQL (por id)
-            const { data: existingData } = await this.mysqlAdapter
+            // Verificar se já existe um registro com os mesmos dados (TODOS os campos)
+            const { data: existingByData } = await this.mysqlAdapter
               .from('dctf_declaracoes')
-              .select('id')
-              .eq('id', record.id)
-              .limit(1);
-
-            const exists = existingData && existingData.length > 0;
+              .select('id, created_at, updated_at, cnpj, periodo_apuracao, data_transmissao, situacao, tipo_ni, categoria, origem, tipo, debito_apurado, saldo_a_pagar')
+              .eq('cnpj', record.cnpj)
+              .eq('periodo_apuracao', record.periodo_apuracao || record.periodo)
+              .limit(10); // Pegar até 10 registros para comparação
             
-            // Usar upsert para inserir ou atualizar automaticamente
-            const mappedRecord = this.mapSupabaseToMySQL(record);
+            let shouldInsert = true;
+            let existingId: string | null = null;
             
-            // Usar upsert com id como chave de conflito
-            const { error: upsertError } = await this.mysqlAdapter
-              .from('dctf_declaracoes')
-              .upsert(mappedRecord, { onConflict: 'id' });
-
-            if (upsertError) {
-              console.error(`[DCTF Sync] Erro ao fazer upsert do registro ${record.id}:`, upsertError);
-              console.error(`[DCTF Sync] Dados tentados:`, JSON.stringify(mappedRecord, null, 2));
-              console.error(`[DCTF Sync] Erro completo:`, JSON.stringify(upsertError, null, 2));
-              errors++;
-            } else {
-              // Contar baseado na verificação anterior
-              if (exists) {
-                updated++;
+            if (existingByData && existingByData.length > 0) {
+              // Criar chave do novo registro baseada em TODOS os dados
+              const newRecordKey = this.createRecordKey(record);
+              
+              // Verificar se algum registro existente tem TODOS os mesmos dados
+              for (const existing of existingByData) {
+                const existingRecordKey = this.createRecordKey(existing);
+                
+                if (existingRecordKey === newRecordKey) {
+                  // Encontrou duplicado EXATO! Comparar datas para manter o mais recente
+                  const existingDate = new Date(existing.updated_at || existing.created_at);
+                  const newDate = new Date(record.updated_at || record.created_at);
+                  
+                  if (newDate > existingDate) {
+                    // Novo registro é mais recente - atualizar o existente
+                    existingId = existing.id;
+                    shouldInsert = false;
+                  } else {
+                    // Registro existente é mais recente - pular inserção
+                    shouldInsert = false;
+                    existingId = null;
+                    console.log(`[DCTF Sync] Registro duplicado mais antigo ignorado: ${record.id} (já existe ${existing.id})`);
+                  }
+                  break;
+                }
+              }
+            }
+            
+            if (shouldInsert || existingId) {
+              const mappedRecord = this.mapSupabaseToMySQL(record);
+              
+              if (existingId) {
+                // Atualizar registro existente com dados mais recentes
+                const { error: updateError } = await this.mysqlAdapter
+                  .from('dctf_declaracoes')
+                  .update(mappedRecord)
+                  .eq('id', existingId);
+                
+                if (updateError) {
+                  const errorMsg = `UPDATE FALHOU - ID: ${existingId}, CNPJ: ${mappedRecord.cnpj}, Período: ${mappedRecord.periodo_apuracao}, Erro: ${JSON.stringify(updateError)}`;
+                  errorLog.push(errorMsg);
+                  console.error(`[DCTF Sync] ❌ ERRO ao atualizar registro duplicado ${existingId}:`);
+                  console.error(`[DCTF Sync] Erro:`, JSON.stringify(updateError, null, 2));
+                  console.error(`[DCTF Sync] Dados tentados:`, JSON.stringify({
+                    id: existingId,
+                    cnpj: mappedRecord.cnpj,
+                    periodo: mappedRecord.periodo_apuracao,
+                    data_transmissao: mappedRecord.data_transmissao
+                  }, null, 2));
+                  errors++;
+                } else {
+                  updated++;
+                  console.log(`[DCTF Sync] ✅ Registro duplicado atualizado: ${existingId} (substituiu ${record.id})`);
+                }
               } else {
-                inserted++;
+                // 🔍 CORREÇÃO: Verificar se o ID específico já existe no MySQL antes de tentar INSERT
+                const { data: existingById } = await this.mysqlAdapter
+                  .from('dctf_declaracoes')
+                  .select('id')
+                  .eq('id', mappedRecord.id)
+                  .limit(1);
+                
+                if (existingById && existingById.length > 0) {
+                  // ID já existe! Fazer UPDATE em vez de INSERT
+                  const { error: updateError } = await this.mysqlAdapter
+                    .from('dctf_declaracoes')
+                    .update(mappedRecord)
+                    .eq('id', mappedRecord.id);
+                  
+                  if (updateError) {
+                    const errorMsg = `UPDATE FALHOU (ID existente) - ID: ${mappedRecord.id}, CNPJ: ${mappedRecord.cnpj}, Período: ${mappedRecord.periodo_apuracao}, Erro: ${JSON.stringify(updateError)}`;
+                    errorLog.push(errorMsg);
+                    console.error(`[DCTF Sync] ❌ ERRO ao atualizar registro com ID existente ${mappedRecord.id}:`);
+                    console.error(`[DCTF Sync] Erro:`, JSON.stringify(updateError, null, 2));
+                    errors++;
+                  } else {
+                    updated++;
+                    console.log(`[DCTF Sync] ✅ Registro com ID existente atualizado: ${mappedRecord.id}`);
+                  }
+                } else {
+                  // ID não existe, pode inserir
+                  const { error: insertError } = await this.mysqlAdapter
+                    .from('dctf_declaracoes')
+                    .insert(mappedRecord);
+                  
+                  if (insertError) {
+                    const errorMsg = `INSERT FALHOU - ID: ${record.id}, CNPJ: ${mappedRecord.cnpj}, Período: ${mappedRecord.periodo_apuracao}, Erro: ${JSON.stringify(insertError)}`;
+                    errorLog.push(errorMsg);
+                    console.error(`[DCTF Sync] ❌ ERRO ao inserir registro ${record.id}:`);
+                    console.error(`[DCTF Sync] Erro:`, JSON.stringify(insertError, null, 2));
+                    console.error(`[DCTF Sync] Dados tentados:`, JSON.stringify({
+                      id: mappedRecord.id,
+                      cnpj: mappedRecord.cnpj,
+                      periodo: mappedRecord.periodo_apuracao,
+                      data_transmissao: mappedRecord.data_transmissao,
+                      tipo_ni: mappedRecord.tipo_ni,
+                      categoria: mappedRecord.categoria
+                    }, null, 2));
+                    errors++;
+                  } else {
+                    inserted++;
+                  }
+                }
               }
             }
 
@@ -187,11 +275,29 @@ export class DCTFSyncService {
       };
 
       console.log('[DCTF Sync] Sincronização concluída:', result);
+      
+      // Salvar log de erros se houver
+      if (errorLog.length > 0) {
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const logPath = path.join(process.cwd(), 'sync-errors.log');
+          const timestamp = new Date().toISOString();
+          const logContent = `\n\n=== SYNC ERROR LOG - ${timestamp} ===\n` + 
+            errorLog.join('\n') + 
+            `\n=== END LOG ===\n`;
+          
+          fs.appendFileSync(logPath, logContent);
+          console.log(`[DCTF Sync] Log de erros salvo em: ${logPath}`);
+        } catch (logError) {
+          console.error('[DCTF Sync] Erro ao salvar log:', logError);
+        }
+      }
 
       return {
         success: true,
-        data: result,
-        message: `Sincronização concluída: ${inserted} inseridos, ${updated} atualizados, ${errors} erros`,
+        data: { ...result, errorLog },
+        message: `Sincronização concluída: ${inserted} inseridos, ${updated} atualizados, ${errors} erros${errorLog.length > 0 ? ' (ver sync-errors.log)' : ''}`,
       };
     } catch (error: any) {
       console.error('[DCTF Sync] Erro geral na sincronização:', error);
@@ -203,8 +309,63 @@ export class DCTFSyncService {
   }
 
   /**
+   * Normaliza data para comparação (remove diferenças de hora/formato)
+   */
+  private normalizeDateForComparison(dateValue: any): string | null {
+    if (!dateValue) return null;
+    
+    try {
+      let dateStr: string;
+      
+      if (typeof dateValue === 'string') {
+        dateStr = dateValue;
+      } else if (dateValue instanceof Date) {
+        dateStr = dateValue.toISOString();
+      } else {
+        return null;
+      }
+      
+      // Extrair apenas a data (YYYY-MM-DD)
+      const match = dateStr.match(/(\d{4}-\d{2}-\d{2})/);
+      return match ? match[1] : null;
+    } catch {
+      return null;
+    }
+  }
+  
+  /**
+   * Cria uma chave única baseada em TODOS os dados relevantes do registro
+   * Usado para detectar duplicados exatos
+   * Normaliza NULL, undefined e strings vazias para o mesmo valor
+   */
+  private createRecordKey(record: any): string {
+    const normalize = (value: any): string => {
+      if (value === null || value === undefined || value === '') {
+        return 'NULL';
+      }
+      return String(value).trim().toLowerCase();
+    };
+    
+    const keyParts = [
+      normalize(record.cnpj),
+      normalize(record.periodo_apuracao || record.periodo),
+      this.normalizeDateForComparison(record.data_transmissao || record.dataTransmissao) || 'NULL',
+      normalize(record.situacao),
+      normalize(record.tipo_ni),
+      normalize(record.categoria),
+      normalize(record.origem),
+      normalize(record.tipo),
+      normalize(record.debito_apurado ?? record.debitoApurado ?? 0),
+      normalize(record.saldo_a_pagar ?? record.saldoAPagar ?? 0),
+    ];
+    
+    return keyParts.join('|');
+  }
+
+  /**
    * Mapeia dados do Supabase para formato MySQL
    * Inclui TODAS as colunas que existem no Supabase
+   * Valida e corrige timestamps inválidos
    */
   private mapSupabaseToMySQL(supabaseRecord: any): any {
     // Normalizar cliente_id: se for CNPJ formatado ou não for UUID válido, usar NULL
@@ -218,12 +379,68 @@ export class DCTFSyncService {
       }
     }
 
+    /**
+     * Valida e corrige timestamps com componentes de tempo inválidos
+     * Exemplo: '2026-01-05 15:64:31' vira '2026-01-05 00:00:00'
+     */
+    const sanitizeTimestamp = (timestamp: any): string | null => {
+      if (!timestamp) return null;
+      
+      const timestampStr = String(timestamp).trim();
+      if (!timestampStr) return null;
+      
+      // Regex para detectar timestamp com formato: YYYY-MM-DD HH:MM:SS
+      const timestampRegex = /^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/;
+      const match = timestampStr.match(timestampRegex);
+      
+      if (match) {
+        const [, date, hours, minutes, seconds] = match;
+        const h = parseInt(hours, 10);
+        const m = parseInt(minutes, 10);
+        const s = parseInt(seconds, 10);
+        
+        // Validar componentes de tempo
+        if (h > 23 || m > 59 || s > 59) {
+          console.warn(`[DCTF Sync] ⚠️ Timestamp inválido detectado: ${timestampStr}. Usando apenas data: ${date} 00:00:00`);
+          return `${date} 00:00:00`;
+        }
+      }
+      
+      // Se já está no formato correto ou é apenas uma data (YYYY-MM-DD), retornar como está
+      return timestampStr;
+    };
+
+    // Normalizar data_transmissao: combinar com hora_transmissao se disponível
+    let dataTransmissao = supabaseRecord.data_transmissao || supabaseRecord.dataTransmissao || null;
+    if (dataTransmissao) {
+      // Se temos hora_transmissao, combinar
+      if (supabaseRecord.hora_transmissao) {
+        // Extrair apenas a data (YYYY-MM-DD)
+        const dateOnly = dataTransmissao.split('T')[0].split(' ')[0];
+        // Combinar com hora e VALIDAR
+        dataTransmissao = sanitizeTimestamp(`${dateOnly} ${supabaseRecord.hora_transmissao}`);
+      } else {
+        // Se é apenas uma data (sem hora), adicionar 00:00:00
+        if (!dataTransmissao.includes('T') && !dataTransmissao.includes(':')) {
+          dataTransmissao = `${dataTransmissao} 00:00:00`;
+        } else {
+          // Converter ISO para formato MySQL (YYYY-MM-DD HH:MM:SS)
+          const date = new Date(dataTransmissao);
+          if (!isNaN(date.getTime())) {
+            dataTransmissao = date.toISOString().slice(0, 19).replace('T', ' ');
+          }
+        }
+        // Validar o timestamp final
+        dataTransmissao = sanitizeTimestamp(dataTransmissao);
+      }
+    }
+
     const mapped: any = {
       id: supabaseRecord.id,
       cliente_id: clienteId, // Pode ser NULL
       cnpj: supabaseRecord.cnpj || null,
       periodo_apuracao: supabaseRecord.periodo_apuracao || supabaseRecord.periodo || null,
-      data_transmissao: supabaseRecord.data_transmissao || supabaseRecord.dataTransmissao || null,
+      data_transmissao: dataTransmissao,
       situacao: supabaseRecord.situacao || null,
     };
 
@@ -240,8 +457,8 @@ export class DCTFSyncService {
       'numero_recibo',
       'data_declaracao',
       'numero_identificacao',
-      'created_at',
-      'updated_at',
+      'status',
+      'total_registros',
     ];
 
     for (const field of optionalFields) {
@@ -250,11 +467,22 @@ export class DCTFSyncService {
       }
     }
 
-    // Garantir que created_at e updated_at existem
-    if (!mapped.created_at) {
+    // Normalizar timestamps para formato MySQL
+    if (supabaseRecord.created_at) {
+      const date = new Date(supabaseRecord.created_at);
+      if (!isNaN(date.getTime())) {
+        mapped.created_at = date.toISOString().slice(0, 19).replace('T', ' ');
+      }
+    } else {
       mapped.created_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
     }
-    if (!mapped.updated_at) {
+
+    if (supabaseRecord.updated_at) {
+      const date = new Date(supabaseRecord.updated_at);
+      if (!isNaN(date.getTime())) {
+        mapped.updated_at = date.toISOString().slice(0, 19).replace('T', ' ');
+      }
+    } else {
       mapped.updated_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
     }
 

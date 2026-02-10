@@ -2964,5 +2964,179 @@
       "updated": "2026-01-19T15:19:50.917Z",
       "description": "Validação SPED v2.0 - Sistema Robusto de Conferência XML × SPED com arquitetura em 3 camadas, matriz de legitimação e UX profissional"
     }
+  },
+  "melhorias-expansao": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Configurar e Validar Ambiente Task Master",
+        "description": "Verificar configuração de modelos, chaves de API e estrutura de pastas do Task Master",
+        "details": "Validar que o Task Master está corretamente configurado, verificar modelos disponíveis, testar conexão com APIs e garantir que a estrutura de pastas está correta.",
+        "testStrategy": "Executar comandos de validação do Task Master e verificar se todas as ferramentas estão funcionando",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Implementar Sistema de Testes Unitários para Services",
+        "description": "Configurar Jest, criar testes para services principais do backend, atingir cobertura mínima de 80%",
+        "details": "Configurar ambiente de testes com Jest, criar testes unitários para todos os services principais, implementar mocks para dependências externas, configurar cobertura de código e atingir meta de 80% de cobertura.",
+        "testStrategy": "Executar npm test e verificar relatório de cobertura, garantir que todos os services principais têm testes",
+        "status": "pending",
+        "dependencies": [1],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Refatorar Controllers do Backend",
+        "description": "Refatorar controllers para seguir padrão MVC consistente, extrair lógica de negócio para services, melhorar tipagem TypeScript",
+        "details": "Revisar todos os controllers, extrair lógica de negócio para services dedicados, melhorar tipagem TypeScript, reduzir duplicação de código, implementar padrões consistentes de tratamento de erros e validação.",
+        "testStrategy": "Executar testes de integração para garantir que refatoração não quebrou funcionalidades existentes",
+        "status": "pending",
+        "dependencies": [2],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Implementar Sistema de Tratamento de Erros Padronizado",
+        "description": "Criar classes de erro customizadas, melhorar mensagens de erro, implementar logging estruturado",
+        "details": "Criar hierarquia de classes de erro customizadas, implementar sistema de logging estruturado com Winston, melhorar mensagens de erro para usuários finais, implementar rastreamento de erros e contexto.",
+        "testStrategy": "Testar diferentes cenários de erro e verificar que mensagens são apropriadas e logs são estruturados",
+        "status": "pending",
+        "dependencies": [3],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Otimizar Consultas ao Banco de Dados",
+        "description": "Analisar queries lentas, adicionar índices necessários, implementar cache onde apropriado, otimizar processamento de arquivos grandes",
+        "details": "Usar ferramentas de análise de performance do banco de dados, identificar queries lentas, adicionar índices estratégicos, implementar cache Redis ou similar, otimizar processamento de arquivos grandes com streaming.",
+        "testStrategy": "Executar testes de performance e comparar tempos de resposta antes e depois das otimizações",
+        "status": "pending",
+        "dependencies": [3],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Implementar Validação Robusta em Todas as Rotas",
+        "description": "Usar Joi ou Zod para validação de schemas, validar dados de entrada e saída, implementar sanitização",
+        "details": "Implementar validação com Joi ou Zod em todas as rotas da API, criar schemas de validação reutilizáveis, implementar sanitização de dados de entrada, validar dados de saída, adicionar validação de tipos TypeScript.",
+        "testStrategy": "Criar testes que validem diferentes cenários de entrada inválida e verificar que erros apropriados são retornados",
+        "status": "pending",
+        "dependencies": [3],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Refatorar Componentes do Frontend",
+        "description": "Refatorar componentes para melhor reutilização, implementar design system consistente, melhorar acessibilidade",
+        "details": "Revisar componentes do frontend, extrair componentes reutilizáveis, criar design system com componentes base, melhorar acessibilidade (a11y) seguindo WCAG, otimizar renderização e performance com React.memo e useMemo.",
+        "testStrategy": "Executar testes de componentes e verificar acessibilidade com ferramentas automatizadas",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Melhorar UX/UI do Frontend",
+        "description": "Implementar feedback visual melhor, animações suaves, melhorar responsividade mobile, implementar dark mode",
+        "details": "Melhorar feedback visual para ações do usuário, implementar animações suaves com Framer Motion ou CSS transitions, melhorar responsividade mobile com breakpoints apropriados, implementar dark mode com sistema de temas.",
+        "testStrategy": "Testar em diferentes dispositivos e navegadores, verificar acessibilidade e usabilidade",
+        "status": "pending",
+        "dependencies": [7],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Implementar Testes para o Frontend",
+        "description": "Testes unitários de componentes, testes de integração, testes E2E com Playwright/Cypress",
+        "details": "Configurar ambiente de testes para React com Vitest ou Jest, criar testes unitários para componentes principais, implementar testes de integração, configurar testes E2E com Playwright ou Cypress, adicionar testes de acessibilidade.",
+        "testStrategy": "Executar suite completa de testes e garantir cobertura adequada",
+        "status": "pending",
+        "dependencies": [7],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Otimizar Pipeline de Processamento SPED v2.0",
+        "description": "Otimizar cada camada do pipeline, implementar processamento paralelo, melhorar tratamento de erros",
+        "details": "Revisar e otimizar cada camada do pipeline SPED (Normalização, Validação Interna, Matching, Classificação, Correção), implementar processamento paralelo onde possível, melhorar tratamento de erros em cada etapa, adicionar métricas e monitoramento.",
+        "testStrategy": "Executar testes de performance do pipeline e verificar que processamento paralelo melhora tempos",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "Melhorar Sistema RAG do SPED",
+        "description": "Melhorar qualidade dos embeddings, otimizar busca semântica, implementar cache de consultas, melhorar chunking",
+        "details": "Revisar e melhorar qualidade dos embeddings de documentos legais, otimizar busca semântica no sistema RAG, implementar cache de consultas frequentes, melhorar algoritmo de chunking de documentos para melhor contexto.",
+        "testStrategy": "Testar precisão das respostas do RAG e medir tempos de resposta",
+        "status": "pending",
+        "dependencies": [10],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Implementar Pipeline CI/CD Completo",
+        "description": "Configurar GitHub Actions, testes automatizados no pipeline, deploy automatizado para ambientes",
+        "details": "Configurar GitHub Actions para CI/CD, implementar pipeline com testes automatizados, configurar deploy automatizado para ambientes de desenvolvimento e produção, implementar versionamento semântico, adicionar notificações de status.",
+        "testStrategy": "Testar pipeline completo fazendo push de mudanças e verificando que todos os passos executam corretamente",
+        "status": "pending",
+        "dependencies": [2, 9],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "Implementar Monitoramento e Observabilidade",
+        "description": "Logging centralizado, métricas de performance, alertas proativos, dashboard de monitoramento",
+        "details": "Implementar logging centralizado com Winston ou similar, adicionar métricas de performance (tempo de resposta, uso de recursos), configurar alertas proativos para problemas, criar dashboard de monitoramento, integrar com ferramentas como Prometheus/Grafana ou similar.",
+        "testStrategy": "Verificar que logs são coletados corretamente e alertas são disparados em cenários de erro",
+        "status": "pending",
+        "dependencies": [4],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "Revisar e Melhorar Segurança do Sistema",
+        "description": "Implementar rate limiting robusto, revisar validação de entrada, corrigir vulnerabilidades, melhorar autenticação JWT",
+        "details": "Implementar rate limiting em todas as rotas públicas, revisar e melhorar validação de entrada, executar scan de vulnerabilidades e corrigir problemas encontrados, melhorar sistema de autenticação JWT com refresh tokens, implementar CORS apropriado.",
+        "testStrategy": "Executar testes de segurança e scans de vulnerabilidades, testar rate limiting",
+        "status": "pending",
+        "dependencies": [6],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 15,
+        "title": "Documentar Todas as APIs do Sistema",
+        "description": "Criar documentação OpenAPI/Swagger, documentar endpoints, exemplos de uso, guias de integração",
+        "details": "Criar documentação OpenAPI/Swagger para todas as APIs, documentar cada endpoint com exemplos de requisição e resposta, criar guias de integração, adicionar exemplos de código em diferentes linguagens, manter documentação atualizada.",
+        "testStrategy": "Verificar que todos os endpoints estão documentados e exemplos funcionam corretamente",
+        "status": "pending",
+        "dependencies": [3],
+        "priority": "medium",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2026-01-23T17:03:33.488Z",
+      "updated": "2026-01-23T17:03:33.488Z",
+      "description": "Melhorias e expansão do sistema DCTF MPC - Refatoração, testes, otimizações e novas funcionalidades"
+    }
   }
 }

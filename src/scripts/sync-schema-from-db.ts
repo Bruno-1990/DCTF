@@ -90,7 +90,6 @@ async function getAllTables(): Promise<string[]> {
     'dctf_codes',
     'dctf_receita_codes',
     'dctf_aliquotas',
-    'receita_pagamentos',
   ];
 
   const existingTables: string[] = [];

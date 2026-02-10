@@ -10,6 +10,7 @@ export interface IrpfFaturamentoDetalhadoData {
   id?: string;
   cliente_id: string;
   codigo_sci: number;
+  codigo_empresa?: number; // 1=Matriz, 2=Filial (SCI BDCOD/BDCODEMP)
   ano: number;
   mes: number;
   bdref: number; // YYYYMM format (ex: 202501)
@@ -40,6 +41,7 @@ export class IrpfFaturamentoDetalhado extends DatabaseService<IrpfFaturamentoDet
           \`id\` VARCHAR(36) PRIMARY KEY,
           \`cliente_id\` VARCHAR(36) NOT NULL,
           \`codigo_sci\` INT NOT NULL,
+          \`codigo_empresa\` INT NOT NULL DEFAULT 1,
           \`ano\` INT NOT NULL,
           \`mes\` INT NOT NULL,
           \`bdref\` INT NOT NULL,
@@ -53,14 +55,27 @@ export class IrpfFaturamentoDetalhado extends DatabaseService<IrpfFaturamentoDet
           \`dados_originais\` JSON,
           \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          INDEX \`idx_cliente_ano_mes\` (\`cliente_id\`, \`ano\`, \`mes\`),
+          INDEX \`idx_cliente_ano_mes\` (\`cliente_id\`, \`codigo_empresa\`, \`ano\`, \`mes\`),
           INDEX \`idx_codigo_sci_ano\` (\`codigo_sci\`, \`ano\`),
           INDEX \`idx_bdref\` (\`bdref\`),
-          UNIQUE KEY \`uk_cliente_ano_mes\` (\`cliente_id\`, \`ano\`, \`mes\`)
+          UNIQUE KEY \`uk_cliente_empresa_ano_mes\` (\`cliente_id\`, \`codigo_empresa\`, \`ano\`, \`mes\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `;
 
       await this.executeCustomQuery(createTableSQL);
+      // Migração: adicionar codigo_empresa se a tabela já existia
+      try {
+        const checkCol = await this.executeCustomQuery<any>(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'irpf_faturamento_detalhado' AND COLUMN_NAME = 'codigo_empresa'`);
+        if (!checkCol.data || (Array.isArray(checkCol.data) && checkCol.data.length === 0)) {
+          await this.executeCustomQuery(`ALTER TABLE \`irpf_faturamento_detalhado\` ADD COLUMN \`codigo_empresa\` INT NOT NULL DEFAULT 1 AFTER \`codigo_sci\``);
+          try {
+            await this.executeCustomQuery(`ALTER TABLE \`irpf_faturamento_detalhado\` DROP INDEX \`uk_cliente_ano_mes\``);
+          } catch (_) { /* pode não existir */ }
+          await this.executeCustomQuery(`ALTER TABLE \`irpf_faturamento_detalhado\` ADD UNIQUE KEY \`uk_cliente_empresa_ano_mes\` (\`cliente_id\`, \`codigo_empresa\`, \`ano\`, \`mes\`)`);
+        }
+      } catch (migErr: any) {
+        if (migErr?.message && !migErr.message.includes('Duplicate column')) console.warn('[IrpfFaturamentoDetalhado] Migração codigo_empresa:', migErr.message);
+      }
       return { success: true, data: true };
     } catch (error) {
       return {
@@ -88,7 +103,8 @@ export class IrpfFaturamentoDetalhado extends DatabaseService<IrpfFaturamentoDet
       operacoes_imobiliarias: number;
       faturamento_total: number;
       dados_originais?: any;
-    }>
+    }>,
+    codigoEmpresa: number = 1
   ): Promise<ApiResponse<number>> {
     try {
       await this.ensureTable();
@@ -99,11 +115,11 @@ export class IrpfFaturamentoDetalhado extends DatabaseService<IrpfFaturamentoDet
         const id = require('uuid').v4();
         const sql = `
           INSERT INTO \`irpf_faturamento_detalhado\` 
-            (\`id\`, \`cliente_id\`, \`codigo_sci\`, \`ano\`, \`mes\`, \`bdref\`,
+            (\`id\`, \`cliente_id\`, \`codigo_sci\`, \`codigo_empresa\`, \`ano\`, \`mes\`, \`bdref\`,
              \`vendas_brutas\`, \`devolucoes_deducoes\`, \`vendas_liquidadas\`,
              \`servicos\`, \`outras_receitas\`, \`operacoes_imobiliarias\`,
              \`faturamento_total\`, \`dados_originais\`)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             \`vendas_brutas\` = VALUES(\`vendas_brutas\`),
             \`devolucoes_deducoes\` = VALUES(\`devolucoes_deducoes\`),
@@ -120,6 +136,7 @@ export class IrpfFaturamentoDetalhado extends DatabaseService<IrpfFaturamentoDet
           id,
           clienteId,
           codigoSci,
+          codigoEmpresa,
           ano,
           item.mes,
           item.bdref,

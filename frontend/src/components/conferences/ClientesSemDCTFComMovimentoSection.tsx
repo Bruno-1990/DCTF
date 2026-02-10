@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ExclamationTriangleIcon,
   ChevronDownIcon,
@@ -17,6 +17,7 @@ import {
   InformationCircleIcon,
   ArrowTopRightOnSquareIcon,
   ArrowDownTrayIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../Pagination';
 import { exportToExcel } from '../../utils/exportExcel';
@@ -64,6 +65,26 @@ function formatCNPJ(cnpj?: string | null) {
   return cnpj;
 }
 
+function formatTipoMovimento(tipo: string): string {
+  const tiposMovimento: Record<string, string> = {
+    'CTB': 'CONTÁBIL',
+    'FISE': 'FISCAL ENTRADA',
+    'FPG': 'TRABALHISTA',
+    'FISS': 'FISCAL SAÍDA',
+  };
+  return tiposMovimento[tipo.toUpperCase()] || tipo;
+}
+
+function getTipoMovimentoColor(tipo: string): string {
+  const colors: Record<string, string> = {
+    'CTB': 'bg-blue-100 text-blue-800 border-blue-200',
+    'FISE': 'bg-green-100 text-green-800 border-green-200',
+    'FPG': 'bg-purple-100 text-purple-800 border-purple-200',
+    'FISS': 'bg-orange-100 text-orange-800 border-orange-200',
+  };
+  return colors[tipo.toUpperCase()] || 'bg-gray-100 text-gray-800 border-gray-200';
+}
+
 function SeverityTag({ severity, label }: { severity: 'high' | 'medium' | 'low'; label: string }) {
   const styles = {
     high: 'bg-red-100 text-red-800 border-red-200',
@@ -99,6 +120,7 @@ export function ClientesSemDCTFComMovimentoSection({
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [modalCliente, setModalCliente] = useState<ClienteSemDCTFComMovimento | null>(null);
   const navigate = useNavigate();
   const itensPorPagina = 10;
 
@@ -140,7 +162,7 @@ export function ClientesSemDCTFComMovimentoSection({
         formatCNPJ(cliente.cnpj) || '—',
         cliente.competencia_obrigacao,
         cliente.competencia_movimento,
-        cliente.tipos_movimento.join(', ') || '—',
+        cliente.tipos_movimento.map(tipo => formatTipoMovimento(tipo)).join(', ') || '—',
         cliente.total_movimentacoes.toString(),
         formatDate(cliente.prazoVencimento),
         cliente.diasAteVencimento.toString(),
@@ -168,8 +190,180 @@ export function ClientesSemDCTFComMovimentoSection({
     }
   };
 
+  // Componente do Modal de Divergência
+  const DivergenciaModal = () => {
+    if (!modalCliente) return null;
+
+    return (
+      <AnimatePresence>
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setModalCliente(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header do Modal */}
+            <div className="bg-gradient-to-r from-orange-500 to-red-500 px-6 py-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 backdrop-blur-sm p-2 rounded-lg">
+                  <ExclamationTriangleIcon className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Divergência Detectada</h2>
+                  <p className="text-orange-100 text-sm">Análise de obrigação DCTF</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalCliente(null)}
+                className="text-white/80 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-lg"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+              {/* Informações da Empresa */}
+              <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                <h3 className="text-sm font-semibold text-gray-500 mb-3">EMPRESA</h3>
+                <p className="text-lg font-bold text-gray-900 mb-2">{modalCliente.razao_social}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">CNPJ:</span>
+                  <span className="font-mono text-sm font-medium text-gray-900">{formatCNPJ(modalCliente.cnpj)}</span>
+                  <button
+                    onClick={() => copyToClipboard(modalCliente.cnpj, 'modal')}
+                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                    title="Copiar CNPJ"
+                  >
+                    {copiedId === 'modal' ? (
+                      <CheckIcon className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <ClipboardDocumentIcon className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Motivo da Divergência */}
+              <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4 mb-6">
+                <h3 className="text-sm font-semibold text-red-800 mb-2 flex items-center gap-2">
+                  <ExclamationTriangleIcon className="h-5 w-5" />
+                  MOTIVO DA DIVERGÊNCIA
+                </h3>
+                <p className="text-sm text-red-700 leading-relaxed">
+                  {modalCliente.motivoObrigacao || 
+                   `Cliente teve ${modalCliente.total_movimentacoes} movimentação(ões) em ${modalCliente.competencia_movimento}, mas ainda não transmitiu DCTF para ${modalCliente.competencia_obrigacao}.`}
+                </p>
+              </div>
+
+              {/* Detalhes da Movimentação */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">DETALHES DA MOVIMENTAÇÃO</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Competência com Movimento</p>
+                      <p className="text-base font-semibold text-gray-900">{modalCliente.competencia_movimento}</p>
+                    </div>
+                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">DCTF Obrigatória</p>
+                      <p className="text-base font-semibold text-red-600">{modalCliente.competencia_obrigacao}</p>
+                    </div>
+                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Total de Movimentações</p>
+                      <p className="text-base font-semibold text-gray-900">{modalCliente.total_movimentacoes}</p>
+                    </div>
+                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Vencimento</p>
+                      <p className="text-base font-semibold text-gray-900">{formatDate(modalCliente.prazoVencimento)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tipos de Movimento */}
+                {modalCliente.tipos_movimento && modalCliente.tipos_movimento.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">TIPOS DE MOVIMENTO DETECTADOS</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {modalCliente.tipos_movimento.map((tipo, idx) => (
+                        <span 
+                          key={idx} 
+                          className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold border uppercase tracking-wide ${getTipoMovimentoColor(tipo)}`}
+                          title={`Código: ${tipo}`}
+                        >
+                          {formatTipoMovimento(tipo)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Status de Prazo */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">STATUS DE PRAZO</h3>
+                  <div className={`rounded-lg p-4 ${
+                    modalCliente.diasAteVencimento < 0 
+                      ? 'bg-red-50 border border-red-200' 
+                      : modalCliente.diasAteVencimento <= 5 
+                      ? 'bg-amber-50 border border-amber-200' 
+                      : 'bg-blue-50 border border-blue-200'
+                  }`}>
+                    <p className={`text-sm font-semibold ${
+                      modalCliente.diasAteVencimento < 0 
+                        ? 'text-red-800' 
+                        : modalCliente.diasAteVencimento <= 5 
+                        ? 'text-amber-800' 
+                        : 'text-blue-800'
+                    }`}>
+                      {modalCliente.diasAteVencimento < 0 
+                        ? `⚠️ Vencido há ${Math.abs(modalCliente.diasAteVencimento)} dias` 
+                        : modalCliente.diasAteVencimento <= 5 
+                        ? `⏰ Faltam apenas ${modalCliente.diasAteVencimento} dias para o vencimento` 
+                        : `✓ ${modalCliente.diasAteVencimento} dias até o vencimento`
+                      }
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer do Modal com Ações */}
+            <div className="bg-gray-50 px-6 py-4 flex items-center justify-between border-t border-gray-200">
+              <button
+                onClick={() => setModalCliente(null)}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => {
+                  const cnpjLimpo = modalCliente.cnpj.replace(/\D/g, '');
+                  navigate(`/clientes?tab=lancamentos&cnpj=${cnpjLimpo}`);
+                  setModalCliente(null);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+              >
+                <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                Ver Lançamentos
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      </AnimatePresence>
+    );
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+      {/* Modal de Divergência */}
+      <DivergenciaModal />
+      
       <div
         onClick={handleToggle}
         className="w-full px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3 hover:bg-gray-100 transition-colors cursor-pointer"
@@ -266,7 +460,12 @@ export function ClientesSemDCTFComMovimentoSection({
                         return (
                           <tr key={id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 text-gray-800 font-medium text-xs">
-                              {cliente.razao_social || '—'}
+                              <button
+                                onClick={() => setModalCliente(cliente)}
+                                className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left transition-colors"
+                              >
+                                {cliente.razao_social || '—'}
+                              </button>
                             </td>
                             <td className="px-4 py-3 text-gray-600 text-xs">
                               <div className="flex items-center gap-2">
@@ -289,11 +488,15 @@ export function ClientesSemDCTFComMovimentoSection({
                             </td>
                             <td className="px-4 py-3 text-gray-600 text-xs">{cliente.competencia_movimento}</td>
                             <td className="px-4 py-3 text-gray-600 text-xs">
-                              <div className="flex flex-wrap gap-1">
+                              <div className="flex flex-wrap gap-1.5">
                                 {cliente.tipos_movimento && cliente.tipos_movimento.length > 0 ? (
                                   cliente.tipos_movimento.map((tipo, idx) => (
-                                    <span key={idx} className="inline-block bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-medium">
-                                      {tipo}
+                                    <span 
+                                      key={idx} 
+                                      className={`inline-flex items-center border px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wide ${getTipoMovimentoColor(tipo)}`}
+                                      title={tipo}
+                                    >
+                                      {formatTipoMovimento(tipo)}
                                     </span>
                                   ))
                                 ) : (

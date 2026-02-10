@@ -9,6 +9,7 @@ type LoadParams = {
   status?: string;
   situacao?: string;
   tipo?: string;
+  periodoTransmissao?: string;
   orderBy?: string;
   order?: 'asc' | 'desc';
   search?: string;

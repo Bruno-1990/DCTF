@@ -9,6 +9,8 @@ export interface Cliente {
   email?: string;
   telefone?: string;
   endereco?: string;
+  /** Nome da pasta na rede. Label na UI: Rede. */
+  nome_pasta_rede?: string | null;
   cidade?: string;
   estado?: string;
   cep?: string;

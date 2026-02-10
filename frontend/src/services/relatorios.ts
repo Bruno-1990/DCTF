@@ -33,7 +33,7 @@ type ListParams = {
 };
 
 type GenerateReportOptions = {
-  reportType: 'gerencial' | 'clientes' | 'dctf' | 'conferencia' | 'pendentes' | 'pagamentos-pendentes';
+  reportType: 'gerencial' | 'clientes' | 'dctf' | 'conferencia' | 'pendentes';
   format: 'pdf' | 'xlsx';
   months?: number;
   period?: string;
