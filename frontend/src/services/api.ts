@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 // Prefer VITE_API_BASE_URL; fallback to VITE_API_URL (append /api if missing);
-// final fallback: http://localhost:3000/api
+// final fallback: http://localhost:38572/api (porta 38572 para evitar colisão com outros apps)
 const baseFromEnv = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
 const legacyBase = (import.meta as any).env?.VITE_API_URL as string | undefined;
 const computedLegacy = legacyBase ? (legacyBase.endsWith('/api') ? legacyBase : `${legacyBase.replace(/\/$/, '')}/api`) : undefined;
-const API_BASE_URL = baseFromEnv || computedLegacy || 'http://localhost:3000/api';
+const API_BASE_URL = baseFromEnv || computedLegacy || 'http://localhost:38572/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -71,7 +71,7 @@ api.interceptors.response.use(
     
     // Melhorar mensagem de erro quando não consegue conectar
     if (error.code === 'ECONNREFUSED' || error.message?.includes('ERR_CONNECTION_REFUSED')) {
-      const friendlyError = new Error('Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 3000.');
+      const friendlyError = new Error('Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 38572.');
       friendlyError.name = 'ConnectionError';
       return Promise.reject(friendlyError);
     }

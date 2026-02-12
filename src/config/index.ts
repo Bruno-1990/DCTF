@@ -17,7 +17,7 @@ export interface AppConfig {
 }
 
 const config: AppConfig = {
-  port: parseInt(process.env['PORT'] || '3000', 10),
+  port: parseInt(process.env['PORT'] || '38572', 10),
   nodeEnv: process.env['NODE_ENV'] || 'development',
   database: {
     url: process.env['SUPABASE_URL'] || '',
