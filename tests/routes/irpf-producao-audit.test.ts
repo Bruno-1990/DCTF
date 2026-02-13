@@ -1,5 +1,6 @@
 /**
- * Task 8.1 - Registrar audit_event em toda ação sensível (quem, quando, o quê, de/para, motivo)
+ * Task 8.1 - Registrar audit_event em toda ação sensível
+ * Task 8.3 - Endpoint listagem trilha de auditoria por case
  */
 
 import { describe, it, expect, beforeAll, beforeEach } from '@jest/globals';
@@ -64,6 +65,7 @@ describe('IRPF Produção - Audit events (Task 8.1)', () => {
   it('PATCH /cases/:id/triage deve registrar audit_event com event_type triage_updated', async () => {
     await request(app)
       .patch('/api/irpf-producao/cases/1/triage')
+      .set('X-User-Profile', 'Preparador')
       .send({ marcadores: { saude: true }, fontes_esperadas: ['ITAU'] });
     const triageAudit = auditCalls.find((c) => c.sql.includes('triage_updated'));
     expect(triageAudit).toBeDefined();
@@ -82,6 +84,7 @@ describe('IRPF Produção - Audit events (Task 8.1)', () => {
     });
     await request(app)
       .post('/api/irpf-producao/cases/1/status')
+      .set('X-User-Profile', 'Revisor')
       .send({ status: 'READY_FOR_REVIEW' });
     const statusAudit = auditCalls.find((c) => c.sql.includes('status_change'));
     expect(statusAudit).toBeDefined();
@@ -117,5 +120,54 @@ describe('IRPF Produção - Audit events (Task 8.1)', () => {
     expect(res.status).toBe(201);
     const uploadAudit = auditCalls.find((c) => c.sql.includes('document_upload'));
     expect(uploadAudit).toBeDefined();
+  });
+});
+
+describe('IRPF Produção - Listagem auditoria por case (Task 8.3)', () => {
+  let app: Express;
+
+  beforeAll(() => {
+    const expressApp = express();
+    expressApp.use(express.json());
+    const irpfRoutes = require('../../src/routes/irpf-producao').default;
+    expressApp.use('/api/irpf-producao', irpfRoutes);
+    app = expressApp;
+  });
+
+  beforeEach(() => {
+    mockExecuteQuery.mockImplementation((sql: string) => {
+      if (sql.includes('irpf_producao_audit_events') && sql.includes('ORDER BY created_at DESC')) {
+        return [
+          { id: 1, case_id: 1, event_type: 'status_change', actor: 'user@test.com', payload: '{"from":"PENDING_DOCS","to":"READY_FOR_REVIEW"}', created_at: new Date('2025-02-01T12:00:00Z') },
+          { id: 2, case_id: 1, event_type: 'triage_updated', actor: 'user@test.com', payload: '{}', created_at: new Date('2025-02-01T11:00:00Z') },
+        ];
+      }
+      if (sql.includes('irpf_producao_cases') && sql.includes('WHERE id')) {
+        return [{ id: 1, case_code: 'C0000001' }];
+      }
+      return [];
+    });
+  });
+
+  it('GET /cases/:id/audit deve retornar 200 com events ordenados por created_at desc', async () => {
+    const res = await request(app).get('/api/irpf-producao/cases/1/audit');
+    expect(res.status).toBe(200);
+    expect(res.body?.success).toBe(true);
+    expect(Array.isArray(res.body?.data?.events)).toBe(true);
+    expect(res.body.data.events.length).toBe(2);
+    expect(res.body.data.events[0].event_type).toBe('status_change');
+    expect(res.body.data.events[0]).toHaveProperty('actor');
+    expect(res.body.data.events[0]).toHaveProperty('payload');
+    expect(res.body.data.events[0]).toHaveProperty('created_at');
+  });
+
+  it('GET /cases/:id/audit para case inexistente deve retornar 404', async () => {
+    mockExecuteQuery.mockImplementation((sql: string) => {
+      if (sql.includes('irpf_producao_cases') && sql.includes('WHERE id')) return [];
+      if (sql.includes('irpf_producao_audit_events')) return [];
+      return [];
+    });
+    const res = await request(app).get('/api/irpf-producao/cases/999/audit');
+    expect(res.status).toBe(404);
   });
 });

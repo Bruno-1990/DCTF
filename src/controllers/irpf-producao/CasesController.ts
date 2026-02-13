@@ -108,6 +108,28 @@ export class CasesController {
     }
   }
 
+  /** GET /api/irpf-producao/cases/:id/audit - Trilha de auditoria do case (Task 8.3) */
+  async getAudit(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'ID inválido' });
+      }
+      const caseRows = await executeQuery<any>('SELECT id FROM irpf_producao_cases WHERE id = ?', [id]);
+      if (!caseRows.length) {
+        return res.status(404).json({ success: false, error: 'Case não encontrado' });
+      }
+      const events = await executeQuery<any>(
+        'SELECT id, case_id, event_type, actor, payload, created_at FROM irpf_producao_audit_events WHERE case_id = ? ORDER BY created_at DESC',
+        [id]
+      );
+      res.json({ success: true, data: { events: events || [] } });
+    } catch (error: any) {
+      console.error('[IRPF Produção] getAudit:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao listar auditoria' });
+    }
+  }
+
   /** POST /api/irpf-producao/cases - Criar case */
   async create(req: Request, res: Response) {
     try {

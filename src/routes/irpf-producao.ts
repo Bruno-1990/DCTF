@@ -44,6 +44,7 @@ function requireProfile(req: Request, res: Response, next: NextFunction): void {
 
 // Cases
 router.get('/cases', (req, res) => casesController.list(req, res));
+router.get('/cases/:id/audit', (req, res) => casesController.getAudit(req, res));
 router.get('/cases/:id', (req, res) => casesController.getById(req, res));
 router.post('/cases', (req, res) => casesController.create(req, res));
 router.patch('/cases/:id', (req, res) => casesController.update(req, res));
