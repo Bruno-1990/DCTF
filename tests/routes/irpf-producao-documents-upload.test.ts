@@ -64,6 +64,20 @@ describe('IRPF Produção - Upload documentos (Task 6.2)', () => {
     app = expressApp;
   });
 
+  it('deve rejeitar docType fora da lista 8.3 com 400 e código DOC_TYPE_REQUIRED (Task 6.3)', async () => {
+    const fixturesDir = path.join(__dirname, 'fixtures');
+    if (!fs.existsSync(fixturesDir)) fs.mkdirSync(fixturesDir, { recursive: true });
+    const corruptedPath = path.join(fixturesDir, 'corrupted.pdf');
+    fs.writeFileSync(corruptedPath, Buffer.from('not a valid pdf content'));
+    const res = await request(app)
+      .post('/api/irpf-producao/cases/1/documents')
+      .attach('file', corruptedPath)
+      .field('docType', 'INVALID_DOCTYPE')
+      .field('source', 'N/A');
+    expect(res.status).toBe(400);
+    expect(res.body?.code).toBe('DOC_TYPE_REQUIRED');
+  });
+
   it('deve rejeitar PDF corrompido com 400 e código DOC_CORRUPTED', async () => {
     const fixturesDir = path.join(__dirname, 'fixtures');
     if (!fs.existsSync(fixturesDir)) fs.mkdirSync(fixturesDir, { recursive: true });

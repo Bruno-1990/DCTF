@@ -7,6 +7,7 @@ import { Request, Response } from 'express';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB (PRD 8.4)
 const ALLOWED_MIMES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+const ALLOWED_DOC_TYPES = ['CADASTRO', 'INF_REND', 'INF_BANC', 'INF_INV', 'SAUDE', 'EDUC', 'PENSAO', 'DEPENDENTES', 'ALUGUEL', 'BENS_AQUIS', 'BENS_VENDA', 'DIVIDAS', 'EXTERIOR', 'RV_GCAP', 'PROTOCOLO', 'DEC_GERADO', 'OUTROS']; // PRD 8.3
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParseModule = require('pdf-parse');
@@ -60,6 +61,13 @@ export class DocumentsController {
         return res.status(400).json({
           success: false,
           error: 'docType e source são obrigatórios',
+          code: 'DOC_TYPE_REQUIRED'
+        });
+      }
+      if (!ALLOWED_DOC_TYPES.includes(String(docType).trim())) {
+        return res.status(400).json({
+          success: false,
+          error: 'docType deve ser um valor da lista fechada (8.3).',
           code: 'DOC_TYPE_REQUIRED'
         });
       }
