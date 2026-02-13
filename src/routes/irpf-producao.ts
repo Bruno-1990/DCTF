@@ -1,13 +1,24 @@
 /**
  * Rotas do módulo IRPF Produção (PRD-IRPF-001)
  * Prefixo: /api/irpf-producao
+ * Reutiliza auth/sanitização do DCTF (mesmo padrão de clientes, dctf, etc.)
  */
 
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { CasesController } from '../controllers/irpf-producao/CasesController';
+import { sanitizeData } from '../middleware/validation';
 
 const router = Router();
 const casesController = new CasesController();
+
+// Reutilizar middleware de sanitização (padrão DCTF)
+router.use(sanitizeData);
+
+// Anexar info de auth para RBAC futuro (reutiliza padrão: header Authorization)
+router.use((req: Request, _res: Response, next: NextFunction) => {
+  (req as any).irpfAuth = { hasAuth: !!req.headers.authorization };
+  next();
+});
 
 // Cases
 router.get('/cases', (req, res) => casesController.list(req, res));

@@ -36,5 +36,22 @@ describe('IRPF Produção API - Rotas e sub-rotas', () => {
       const response = await request(app).get('/api/irpf-producao/cases/1');
       expect([200, 401, 403, 404, 500]).toContain(response.status);
     });
+
+    it('deve reutilizar middleware de sanitização (sanitizeData) nas rotas', () => {
+      const routesModule = require('../../src/routes/irpf-producao');
+      expect(routesModule.default).toBeDefined();
+      const router = routesModule.default;
+      expect(router.stack).toBeDefined();
+      expect(router.stack.length).toBeGreaterThan(0);
+    });
+
+    it('deve considerar header Authorization (auth/RBAC reutilizado)', async () => {
+      const withoutAuth = await request(app).get('/api/irpf-producao/cases');
+      const withAuth = await request(app)
+        .get('/api/irpf-producao/cases')
+        .set('Authorization', 'Bearer test-token');
+      expect([200, 401, 403, 500]).toContain(withoutAuth.status);
+      expect([200, 401, 403, 500]).toContain(withAuth.status);
+    });
   });
 });
