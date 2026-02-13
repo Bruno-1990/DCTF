@@ -3423,7 +3423,7 @@
         "description": "Checklist automático por perfil e marcadores (Anexo B). Pendências com severidade, dono, prazo, status. BLOCKER bloqueia avanço (gates). RF-030 a RF-034.",
         "details": "Itens por causa de malha fina; fontes pagadoras esperadas e informe conferido; limites de dedução configuráveis.",
         "testStrategy": "Gerar checklist; criar pendência BLOCKER e tentar avançar status.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           5
@@ -3434,7 +3434,7 @@
             "id": 1,
             "title": "Geração de checklist automático por perfil e marcadores (Anexo B)",
             "description": "Itens por causa de malha fina; fontes esperadas e informe conferido.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 7
           },
@@ -3442,7 +3442,7 @@
             "id": 2,
             "title": "Modelo de pendências: severidade INFO/WARN/BLOCKER, dono, prazo, status",
             "description": "RF-030 a RF-034; BLOCKER impede transição para READY_FOR_REVIEW.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 7
           },
@@ -3450,7 +3450,7 @@
             "id": 3,
             "title": "Integrar gates de workflow com existência de BLOCKER",
             "description": "Validação antes de avançar status; limites de dedução configuráveis.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 7
           }
@@ -4090,7 +4090,7 @@
     ],
     "metadata": {
       "created": "2026-02-13T17:00:14.299Z",
-      "updated": "2026-02-13T18:44:59.637Z",
+      "updated": "2026-02-13T19:06:38.236Z",
       "description": "Módulo IRPF Produção — Sistema interno de produção de declarações IRPF integrado ao DCTF: cases, documentos, extração dinâmica, fluxos Node/OCR, checklist, geração .DEC e validações em camadas"
     }
   }
