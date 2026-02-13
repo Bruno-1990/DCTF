@@ -6,6 +6,7 @@
 
 import { mkdirSync, existsSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
 
 const SUBFOLDERS = [
   '00_cadastro',
@@ -63,4 +64,11 @@ export async function saveFileAtomically(
   writeFileSync(tempPath, content);
   renameSync(tempPath, finalPath);
   return finalPath;
+}
+
+/**
+ * SHA-256 do conteúdo (para deduplicação, PRD 8.6).
+ */
+export function computeSha256(content: Buffer): string {
+  return createHash('sha256').update(content).digest('hex');
 }

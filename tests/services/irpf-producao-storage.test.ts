@@ -92,3 +92,25 @@ describe('IRPF Produção - Storage (Task 3.2)', () => {
     expect(outPath).not.toMatch(/\d{3}\.\d{3}\.\d{3}-\d{2}/);
   });
 });
+
+describe('IRPF Produção - Storage (Task 3.3)', () => {
+  it('computeSha256 retorna hash hexadecimal de 64 caracteres', async () => {
+    const { computeSha256 } = await import('../../src/services/irpf-producao/storage');
+    const hash = computeSha256(Buffer.from('test content'));
+    expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(hash.length).toBe(64);
+  });
+
+  it('resolveCasePath usa IRPF_STORAGE_PATH quando definida', async () => {
+    const prev = process.env.IRPF_STORAGE_PATH;
+    try {
+      process.env.IRPF_STORAGE_PATH = 'C:\\Share\\IRPF';
+      const { resolveCasePath } = await import('../../src/services/irpf-producao/storage');
+      const path = resolveCasePath(2025, 'C0001');
+      expect(path).toMatch(/C:\\Share\\IRPF[\\/]2025[\\/]C0001$/);
+    } finally {
+      if (prev !== undefined) process.env.IRPF_STORAGE_PATH = prev;
+      else delete process.env.IRPF_STORAGE_PATH;
+    }
+  });
+});
