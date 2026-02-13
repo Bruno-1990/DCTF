@@ -3368,7 +3368,7 @@
         "description": "Upload multipart; validação MIME/tamanho; integridade e páginas; metadados docType+fonte obrigatórios; deduplicação por hash; persistência atômica; códigos de erro (Anexo F). RF-020 a RF-029, 8.6.",
         "details": "Fluxo 8.6: recepção → validação pré-persistência → metadados → hash/dedupe → .uploading → rename → documents. Resposta com document_id, version, deduplicação.",
         "testStrategy": "Upload válido/inválido; timeout; retry idempotente.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           3,
           4
@@ -3379,7 +3379,7 @@
             "id": 1,
             "title": "Recepção multipart e validação MIME/tamanho máximo",
             "description": "Validar tipo permitido e tamanho; rejeitar com DOC_MIME_NOT_ALLOWED ou DOC_SIZE_EXCEEDED.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 6
           },
@@ -3387,7 +3387,7 @@
             "id": 2,
             "title": "Validação pré-persistência (abrir arquivo, páginas, tamanho mínimo)",
             "description": "Verificar corrupção e páginas>0; retornar DOC_CORRUPTED/DOC_EMPTY com 400.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 6
           },
@@ -3395,7 +3395,7 @@
             "id": 3,
             "title": "Metadados docType e fonte obrigatórios no backend",
             "description": "Validar lista fechada 8.3; rejeitar com DOC_TYPE_REQUIRED se ausente.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 6
           },
@@ -3403,7 +3403,7 @@
             "id": 4,
             "title": "Deduplicação por SHA-256 e persistência atômica",
             "description": "Calcular hash; se existir para case, registrar vínculo sem duplicar arquivo. Gravar .uploading → rename → insert documents.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 6
           },
@@ -3411,7 +3411,7 @@
             "id": 5,
             "title": "Resposta de sucesso e tratamento de erros (códigos Anexo F)",
             "description": "Retornar document_id, file_path, version, deduplicação; STORAGE_WRITE_FAILED em falha de disco.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 6
           }
@@ -4090,7 +4090,7 @@
     ],
     "metadata": {
       "created": "2026-02-13T17:00:14.299Z",
-      "updated": "2026-02-13T18:24:44.530Z",
+      "updated": "2026-02-13T18:44:59.637Z",
       "description": "Módulo IRPF Produção — Sistema interno de produção de declarações IRPF integrado ao DCTF: cases, documentos, extração dinâmica, fluxos Node/OCR, checklist, geração .DEC e validações em camadas"
     }
   }
