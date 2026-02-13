@@ -62,3 +62,33 @@ describe('IRPF Produção - Storage (Task 3.1)', () => {
     }
   });
 });
+
+describe('IRPF Produção - Storage (Task 3.2)', () => {
+  let basePath: string;
+
+  beforeEach(() => {
+    basePath = join(tmpdir(), `irpf-atomic-${Date.now()}`);
+    mkdirSync(basePath, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(basePath)) {
+      try {
+        rmSync(basePath, { recursive: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('saveFileAtomically grava em .uploading e renomeia para nome final (sem CPF no nome)', async () => {
+    const { saveFileAtomically } = await import('../../src/services/irpf-producao/storage');
+    const finalName = '2025_C0001842_INF_BANC_ITAU_2025-02-10_v1.pdf';
+    const content = Buffer.from('test pdf content');
+    const outPath = await saveFileAtomically(basePath, finalName, content);
+    expect(outPath).toBe(join(basePath, finalName));
+    expect(existsSync(outPath)).toBe(true);
+    expect(existsSync(join(basePath, `${finalName}.uploading`))).toBe(false);
+    expect(outPath).not.toMatch(/\d{3}\.\d{3}\.\d{3}-\d{2}/);
+  });
+});

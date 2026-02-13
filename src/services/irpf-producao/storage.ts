@@ -1,10 +1,10 @@
 /**
- * Storage IRPF Produção (PRD 8.1, 8.2)
+ * Storage IRPF Produção (PRD 8.1, 8.2, 8.5)
  * Path por ANO/CASEID; subpastas 00_cadastro a 11_dec, 99_auditoria.
- * RNF-001: sem CPF/nome no path.
+ * Escrita atômica: .uploading → rename. RNF-001: sem CPF/nome no path.
  */
 
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
 
 const SUBFOLDERS = [
@@ -47,4 +47,20 @@ export async function ensureSubfolders(casePath: string): Promise<void> {
       mkdirSync(full, { recursive: true });
     }
   }
+}
+
+/**
+ * Escrita atômica: grava em {dir}/{filename}.uploading e renomeia para {dir}/{filename}.
+ * Nome do arquivo não deve conter CPF (RNF-001).
+ */
+export async function saveFileAtomically(
+  dir: string,
+  filename: string,
+  content: Buffer
+): Promise<string> {
+  const tempPath = join(dir, `${filename}.uploading`);
+  const finalPath = join(dir, filename);
+  writeFileSync(tempPath, content);
+  renameSync(tempPath, finalPath);
+  return finalPath;
 }
