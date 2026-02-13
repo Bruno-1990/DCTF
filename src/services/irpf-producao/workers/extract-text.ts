@@ -8,6 +8,7 @@ import { readFile } from 'fs/promises';
 import { executeQuery, getConnection } from '../../../config/mysql';
 import { getRedisConnectionOptions } from '../queues/config';
 import { startRun, completeRun, failRun } from '../job-runs';
+import { runExtractionPipeline } from '../extraction-pipeline';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require('pdf-parse');
@@ -67,6 +68,7 @@ async function processExtractTextJob(job: Job<ExtractTextJobData, void>): Promis
       return;
     }
 
+    await runExtractionPipeline(document_id, text || '');
     await completeRun(runId);
   } catch (err) {
     const msg = (err as Error).message ?? String(err);

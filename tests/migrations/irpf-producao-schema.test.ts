@@ -75,3 +75,26 @@ describe('IRPF Produção - Schema (Task 2.3)', () => {
     expect(content).toMatch(/sha256|idx_sha256/i);
   });
 });
+
+describe('IRPF Produção - Schema (Task 10 - Extração dinâmica)', () => {
+  const file024 = '024_create_irpf_producao_extraction_tables.sql';
+
+  it('deve ter migração 024 com tabela irpf_producao_document_extraction_config', () => {
+    const content = readMigration(file024);
+    expect(content).toMatch(/CREATE TABLE.*irpf_producao_document_extraction_config/i);
+    expect(content).toMatch(/doc_type|extrator_nome|tipo|parametros|campo_destino|versao_regra|ativo/i);
+  });
+
+  it('deve ter tabela irpf_producao_document_extracted_data com FK para documents', () => {
+    const content = readMigration(file024);
+    expect(content).toMatch(/CREATE TABLE.*irpf_producao_document_extracted_data/i);
+    expect(content).toMatch(/document_id|rule_version|campo_destino|valor_extraido|valor_normalizado|confidence_score|raw_snippet|override_by/i);
+    expect(content).toMatch(/irpf_producao_documents.*ON DELETE CASCADE/i);
+  });
+
+  it('documents deve ganhar coluna raw_text (migração 024)', () => {
+    const content = readMigration(file024);
+    expect(content).toMatch(/irpf_producao_documents/i);
+    expect(content).toMatch(/raw_text/i);
+  });
+});
