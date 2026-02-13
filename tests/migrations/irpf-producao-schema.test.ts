@@ -66,3 +66,12 @@ describe('IRPF Produção - Schema (Task 2.2)', () => {
     expect(content).toMatch(/job_id|status|attempts|error/i);
   });
 });
+
+describe('IRPF Produção - Schema (Task 2.3)', () => {
+  it('documents deve ter índices extraction_status, (case_id, doc_type, source, version) e sha256', () => {
+    const content = readMigration('021_create_irpf_producao_documents.sql');
+    expect(content).toMatch(/extraction_status|idx_extraction/i);
+    expect(content).toMatch(/case_id.*doc_type|idx_doc_case|doc_type.*source.*version/i);
+    expect(content).toMatch(/sha256|idx_sha256/i);
+  });
+});
