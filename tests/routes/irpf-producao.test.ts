@@ -80,4 +80,30 @@ describe('IRPF Produção API - Rotas e sub-rotas', () => {
       expect(fs.existsSync(dir)).toBe(true);
     });
   });
+
+  describe('Páginas e rotas front /irpf-producao (Task 1.4)', () => {
+    it('deve ter páginas em frontend/src/pages/IrpfProducao/', () => {
+      const path = require('path');
+      const fs = require('fs');
+      const dir = path.join(__dirname, '../../frontend/src/pages/IrpfProducao');
+      expect(fs.existsSync(dir)).toBe(true);
+      expect(fs.existsSync(path.join(dir, 'IrpfProducaoKanban.tsx'))).toBe(true);
+      expect(fs.existsSync(path.join(dir, 'IrpfProducaoCase.tsx'))).toBe(true);
+    });
+
+    it('deve ter serviço API frontend src/services/irpfProducao.ts', () => {
+      const path = require('path');
+      const fs = require('fs');
+      const p = path.join(__dirname, '../../frontend/src/services/irpfProducao.ts');
+      expect(fs.existsSync(p)).toBe(true);
+    });
+
+    it('router deve registrar rotas sob /irpf-producao', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const routerPath = path.join(__dirname, '../../frontend/src/router/index.tsx');
+      const content = fs.readFileSync(routerPath, 'utf8');
+      expect(content).toMatch(/irpf-producao|IrpfProducao/);
+    });
+  });
 });
