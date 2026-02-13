@@ -22,19 +22,33 @@ const upload = multer({
 // Reutilizar middleware de sanitização (padrão DCTF)
 router.use(sanitizeData);
 
-// Anexar info de auth para RBAC futuro (reutiliza padrão: header Authorization)
+// Anexar info de auth e RBAC (RF-005)
+const IRPF_PROFILES = ['Operador', 'Preparador', 'Revisor', 'Auditor', 'Admin'];
 router.use((req: Request, _res: Response, next: NextFunction) => {
   (req as any).irpfAuth = { hasAuth: !!req.headers.authorization };
+  const profile = (req.headers['x-user-profile'] as string)?.trim();
+  if (profile && IRPF_PROFILES.includes(profile)) {
+    (req as any).irpfAuth.profile = profile;
+  }
   next();
 });
+
+function requireProfile(req: Request, res: Response, next: NextFunction): void {
+  const profile = (req as any).irpfAuth?.profile;
+  if (!profile || !IRPF_PROFILES.includes(profile)) {
+    res.status(403).json({ success: false, error: 'Perfil obrigatório para esta ação.', code: 'RBAC_FORBIDDEN' });
+    return;
+  }
+  next();
+}
 
 // Cases
 router.get('/cases', (req, res) => casesController.list(req, res));
 router.get('/cases/:id', (req, res) => casesController.getById(req, res));
 router.post('/cases', (req, res) => casesController.create(req, res));
 router.patch('/cases/:id', (req, res) => casesController.update(req, res));
-router.patch('/cases/:id/triage', (req, res) => casesController.patchTriage(req, res));
-router.post('/cases/:id/status', (req, res) => casesController.updateStatus(req, res));
+router.patch('/cases/:id/triage', requireProfile, (req, res) => casesController.patchTriage(req, res));
+router.post('/cases/:id/status', requireProfile, (req, res) => casesController.updateStatus(req, res));
 
 router.post(
   '/cases/:id/documents',
