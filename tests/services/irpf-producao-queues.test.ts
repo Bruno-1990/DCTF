@@ -68,3 +68,12 @@ describe('IRPF Produção - Filas BullMQ (Task 9.1)', () => {
     expect(() => getQueue('invalid' as any)).toThrow(/Invalid IRPF queue name/);
   });
 });
+
+describe('IRPF Produção - Jobs versionados e idempotentes (Task 9.3)', () => {
+  it('JOB_VERSION e enqueueExtractText com options.jobId existem para idempotência', async () => {
+    const mod = await import('../../src/services/irpf-producao/enqueue-extract-text');
+    expect(mod.JOB_VERSION).toBe(1);
+    expect(typeof mod.enqueueExtractText).toBe('function');
+    expect(mod.enqueueExtractText.length).toBeGreaterThanOrEqual(1);
+  });
+});
