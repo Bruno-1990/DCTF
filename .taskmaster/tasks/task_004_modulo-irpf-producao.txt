@@ -1,0 +1,31 @@
+# Task ID: 4
+# Title: Gestão de cases (CRUD, status, workflow)
+# Status: pending
+# Dependencies: 2
+# Priority: high
+# Description: CRUD de cases (ano, exercício, contribuinte, perfil, responsável). Máquina de estados (NEW → INTAKE_* → PROCESSING → READY_FOR_REVIEW → APPROVED → SUBMITTED → CLOSED). Gates: BLOCKER impede READY_FOR_REVIEW.
+# Details:
+RF-001 a RF-005. Transições com validação; audit_event em mudança de status. Políticas P-005, P-015 (concorrência).
+
+# Test Strategy:
+Criar case, alterar status respeitando gates; verificar audit.
+
+# Subtasks:
+## 1. CRUD de cases (ano, exercício, contribuinte, perfil, responsável) [pending]
+### Dependencies: None
+### Description: Endpoints e serviços para criar, listar, atualizar case; campos obrigatórios.
+### Details:
+
+
+## 2. Máquina de estados e transições com validação [pending]
+### Dependencies: None
+### Description: NEW → INTAKE_* → PROCESSING → READY_FOR_REVIEW → APPROVED → SUBMITTED → CLOSED; validar gate BLOCKER.
+### Details:
+
+
+## 3. Registrar audit_event em toda mudança de status [pending]
+### Dependencies: None
+### Description: Quem, quando, de/para; política P-005/P-015 para concorrência.
+### Details:
+
+

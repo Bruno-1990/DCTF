@@ -1,0 +1,25 @@
+# Task ID: 19
+# Title: Layout .DEC por exercício e writers por tipo de registro
+# Status: pending
+# Dependencies: 18
+# Priority: high
+# Description: Carregar leiaute (DOC/IRPF-LeiauteTXT-20XX.pdf ou config) por tipo de registro: Inicio, Fim, Tam, Formato N/NN/C/A/I. Writers: WriterIR, Writer01, Writer16, Writer17-20, 21-92, 84/88, T9, HR, DR, R9. 11.4 PRD.
+# Details:
+API interna por tipo de registro; encoding fixo (Latin-1); ordem conforme Anexo D.
+
+# Test Strategy:
+Gerar linha de teste por tipo de registro e validar tamanho/formato.
+
+# Subtasks:
+## 1. Carregar leiaute por exercício (DOC/IRPF-LeiauteTXT-20XX.pdf ou config): Inicio, Fim, Tam, Formato N/NN/C/A/I [pending]
+### Dependencies: None
+### Description: 11.4 PRD; um registro de layout por tipo.
+### Details:
+
+
+## 2. Implementar writers: WriterIR, Writer01, Writer16, Writer17-20, 21-92, 84/88, T9, HR, DR, R9 [pending]
+### Dependencies: None
+### Description: Um writer por tipo de registro; encoding Latin-1; ordem Anexo D.
+### Details:
+
+

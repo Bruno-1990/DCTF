@@ -1,8 +1,8 @@
 {
   "models": {
     "main": {
-      "provider": "mcp",
-      "modelId": "mcp-sampling",
+      "provider": "openai",
+      "modelId": "gpt-4o-mini",
       "maxTokens": 65536,
       "temperature": 0.2
     },

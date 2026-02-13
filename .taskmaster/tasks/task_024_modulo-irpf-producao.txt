@@ -1,0 +1,31 @@
+# Task ID: 24
+# Title: UX e copy (legendas, placeholders, empty states)
+# Status: pending
+# Dependencies: 1, 4, 6, 7
+# Priority: medium
+# Description: Implementar diretrizes 11.6 PRD: legendas curtas, placeholders úteis, mensagens de erro que orientem, empty states com CTA, status em português amigável, feedback loading/sucesso.
+# Details:
+Checklist de revisão de tela (11.6); acessibilidade (contraste, aria-label).
+
+# Test Strategy:
+Revisar telas principais com checklist PRD.
+
+# Subtasks:
+## 1. Legendas curtas, placeholders úteis, mensagens de erro que orientem (11.6 PRD) [pending]
+### Dependencies: None
+### Description: Copy em português; feedback claro.
+### Details:
+
+
+## 2. Empty states com CTA e status em português amigável [pending]
+### Dependencies: None
+### Description: Telas vazias com ação sugerida; status legíveis.
+### Details:
+
+
+## 3. Feedback loading/sucesso; acessibilidade (contraste, aria-label) [pending]
+### Dependencies: None
+### Description: Checklist 11.6; revisar telas principais.
+### Details:
+
+

@@ -2985,7 +2985,9 @@
         "details": "Configurar ambiente de testes com Jest, criar testes unitários para todos os services principais, implementar mocks para dependências externas, configurar cobertura de código e atingir meta de 80% de cobertura.",
         "testStrategy": "Executar npm test e verificar relatório de cobertura, garantir que todos os services principais têm testes",
         "status": "pending",
-        "dependencies": [1],
+        "dependencies": [
+          1
+        ],
         "priority": "high",
         "subtasks": []
       },
@@ -2996,7 +2998,9 @@
         "details": "Revisar todos os controllers, extrair lógica de negócio para services dedicados, melhorar tipagem TypeScript, reduzir duplicação de código, implementar padrões consistentes de tratamento de erros e validação.",
         "testStrategy": "Executar testes de integração para garantir que refatoração não quebrou funcionalidades existentes",
         "status": "pending",
-        "dependencies": [2],
+        "dependencies": [
+          2
+        ],
         "priority": "high",
         "subtasks": []
       },
@@ -3007,7 +3011,9 @@
         "details": "Criar hierarquia de classes de erro customizadas, implementar sistema de logging estruturado com Winston, melhorar mensagens de erro para usuários finais, implementar rastreamento de erros e contexto.",
         "testStrategy": "Testar diferentes cenários de erro e verificar que mensagens são apropriadas e logs são estruturados",
         "status": "pending",
-        "dependencies": [3],
+        "dependencies": [
+          3
+        ],
         "priority": "high",
         "subtasks": []
       },
@@ -3018,7 +3024,9 @@
         "details": "Usar ferramentas de análise de performance do banco de dados, identificar queries lentas, adicionar índices estratégicos, implementar cache Redis ou similar, otimizar processamento de arquivos grandes com streaming.",
         "testStrategy": "Executar testes de performance e comparar tempos de resposta antes e depois das otimizações",
         "status": "pending",
-        "dependencies": [3],
+        "dependencies": [
+          3
+        ],
         "priority": "medium",
         "subtasks": []
       },
@@ -3029,7 +3037,9 @@
         "details": "Implementar validação com Joi ou Zod em todas as rotas da API, criar schemas de validação reutilizáveis, implementar sanitização de dados de entrada, validar dados de saída, adicionar validação de tipos TypeScript.",
         "testStrategy": "Criar testes que validem diferentes cenários de entrada inválida e verificar que erros apropriados são retornados",
         "status": "pending",
-        "dependencies": [3],
+        "dependencies": [
+          3
+        ],
         "priority": "high",
         "subtasks": []
       },
@@ -3051,7 +3061,9 @@
         "details": "Melhorar feedback visual para ações do usuário, implementar animações suaves com Framer Motion ou CSS transitions, melhorar responsividade mobile com breakpoints apropriados, implementar dark mode com sistema de temas.",
         "testStrategy": "Testar em diferentes dispositivos e navegadores, verificar acessibilidade e usabilidade",
         "status": "pending",
-        "dependencies": [7],
+        "dependencies": [
+          7
+        ],
         "priority": "medium",
         "subtasks": []
       },
@@ -3062,7 +3074,9 @@
         "details": "Configurar ambiente de testes para React com Vitest ou Jest, criar testes unitários para componentes principais, implementar testes de integração, configurar testes E2E com Playwright ou Cypress, adicionar testes de acessibilidade.",
         "testStrategy": "Executar suite completa de testes e garantir cobertura adequada",
         "status": "pending",
-        "dependencies": [7],
+        "dependencies": [
+          7
+        ],
         "priority": "medium",
         "subtasks": []
       },
@@ -3084,7 +3098,9 @@
         "details": "Revisar e melhorar qualidade dos embeddings de documentos legais, otimizar busca semântica no sistema RAG, implementar cache de consultas frequentes, melhorar algoritmo de chunking de documentos para melhor contexto.",
         "testStrategy": "Testar precisão das respostas do RAG e medir tempos de resposta",
         "status": "pending",
-        "dependencies": [10],
+        "dependencies": [
+          10
+        ],
         "priority": "medium",
         "subtasks": []
       },
@@ -3095,7 +3111,10 @@
         "details": "Configurar GitHub Actions para CI/CD, implementar pipeline com testes automatizados, configurar deploy automatizado para ambientes de desenvolvimento e produção, implementar versionamento semântico, adicionar notificações de status.",
         "testStrategy": "Testar pipeline completo fazendo push de mudanças e verificando que todos os passos executam corretamente",
         "status": "pending",
-        "dependencies": [2, 9],
+        "dependencies": [
+          2,
+          9
+        ],
         "priority": "high",
         "subtasks": []
       },
@@ -3106,7 +3125,9 @@
         "details": "Implementar logging centralizado com Winston ou similar, adicionar métricas de performance (tempo de resposta, uso de recursos), configurar alertas proativos para problemas, criar dashboard de monitoramento, integrar com ferramentas como Prometheus/Grafana ou similar.",
         "testStrategy": "Verificar que logs são coletados corretamente e alertas são disparados em cenários de erro",
         "status": "pending",
-        "dependencies": [4],
+        "dependencies": [
+          4
+        ],
         "priority": "high",
         "subtasks": []
       },
@@ -3117,7 +3138,9 @@
         "details": "Implementar rate limiting em todas as rotas públicas, revisar e melhorar validação de entrada, executar scan de vulnerabilidades e corrigir problemas encontrados, melhorar sistema de autenticação JWT com refresh tokens, implementar CORS apropriado.",
         "testStrategy": "Executar testes de segurança e scans de vulnerabilidades, testar rate limiting",
         "status": "pending",
-        "dependencies": [6],
+        "dependencies": [
+          6
+        ],
         "priority": "high",
         "subtasks": []
       },
@@ -3128,7 +3151,9 @@
         "details": "Criar documentação OpenAPI/Swagger para todas as APIs, documentar cada endpoint com exemplos de requisição e resposta, criar guias de integração, adicionar exemplos de código em diferentes linguagens, manter documentação atualizada.",
         "testStrategy": "Verificar que todos os endpoints estão documentados e exemplos funcionam corretamente",
         "status": "pending",
-        "dependencies": [3],
+        "dependencies": [
+          3
+        ],
         "priority": "medium",
         "subtasks": []
       }
@@ -3137,6 +3162,133 @@
       "created": "2026-01-23T17:03:33.488Z",
       "updated": "2026-01-23T17:03:33.488Z",
       "description": "Melhorias e expansão do sistema DCTF MPC - Refatoração, testes, otimizações e novas funcionalidades"
+    }
+  },
+  "modulo-irpf-producao": {
+    "tasks": [
+      {"id": 1, "title": "Integração do módulo IRPF ao sistema DCTF", "description": "Configurar rotas /api/irpf-producao, reuso de auth/MySQL, estrutura backend (controllers, services) e front (pages, rotas /irpf-producao) conforme Anexo E do PRD.", "details": "src/routes/irpf-producao.ts; src/controllers/irpf-producao/; src/services/irpf-producao/; frontend/src/pages/IrpfProducao/; prefixo tabelas irpf_producao_. Reuso: executeQuery, RBAC, padrões de logging.", "testStrategy": "Acessar /irpf-producao e /api/irpf-producao com auth; verificar conexão MySQL.", "status": "pending", "dependencies": [], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Criar rota e montar sub-rotas /api/irpf-producao", "description": "Arquivo src/routes/irpf-producao.ts e registro no app; prefixo /api/irpf-producao.", "status": "pending", "dependencies": [], "parentTaskId": 1},
+        {"id": 2, "title": "Reutilizar auth e RBAC do DCTF no módulo IRPF", "description": "Middleware de autenticação e verificação de perfil (Operador, Preparador, Revisor, etc.).", "status": "pending", "dependencies": [], "parentTaskId": 1},
+        {"id": 3, "title": "Criar controllers e services base (CasesController, storage)", "description": "Estrutura src/controllers/irpf-producao/, src/services/irpf-producao/; injeção MySQL.", "status": "pending", "dependencies": [], "parentTaskId": 1},
+        {"id": 4, "title": "Criar páginas e rotas front /irpf-producao (Kanban, CaseDetail)", "description": "frontend/src/pages/IrpfProducao/; rotas sob /irpf-producao; serviço API irpfProducao.ts.", "status": "pending", "dependencies": [], "parentTaskId": 1}
+      ]},
+      {"id": 2, "title": "Modelo de dados IRPF (cases, documents, issues, audit)", "description": "Criar tabelas cases, case_people, documents (com extraction_*), issues, audit_events, jobs/job_runs no MySQL com prefixo irpf_producao_; índices conforme seção 12 do PRD.", "details": "Campos documents: extraction_status, extraction_flow, extraction_error_message, extraction_attempts. Índices: documents(extraction_status), documents(case_id, doc_type, source, version), documents(sha256).", "testStrategy": "Migrações aplicam sem erro; inserção/consulta de case e document.", "status": "pending", "dependencies": [1], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Criar tabelas cases, case_people, documents (com extraction_*)", "description": "Campos extraction_status, extraction_flow, extraction_error_message, extraction_attempts em documents.", "status": "pending", "dependencies": [], "parentTaskId": 2},
+        {"id": 2, "title": "Criar tabelas issues, audit_events, jobs, job_runs", "description": "Índices issues(case_id, severity, status); audit_events(case_id, created_at).", "status": "pending", "dependencies": [], "parentTaskId": 2},
+        {"id": 3, "title": "Índices documents e config_rules (opcional)", "description": "documents(extraction_status), documents(case_id, doc_type, source, version), documents(sha256).", "status": "pending", "dependencies": [], "parentTaskId": 2}
+      ]},
+      {"id": 3, "title": "Storage e estrutura de pastas (pasta de rede)", "description": "Módulo Storage: resolver pasta por ANO/CASEID, escrita atômica (.uploading → rename), cálculo SHA-256, nome padrão sem CPF. Variável IRPF_STORAGE_PATH.", "details": "Estrutura \\\\SERVIDOR\\IRPF\\{ANO}\\{CASEID}\\ com 00_cadastro a 11_dec, 99_auditoria. RNF-001: sem CPF/nome no path. 8.1 e 8.2 PRD.", "testStrategy": "Salvar arquivo de teste e verificar nome/pasta e hash.", "status": "pending", "dependencies": [2], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Resolver path por ANO e CASEID e criar subpastas 00-11, 99", "description": "Função que monta \\\\SERVIDOR\\IRPF\\{ANO}\\{CASEID}\\; criar 00_cadastro a 11_dec, 99_auditoria.", "status": "pending", "dependencies": [], "parentTaskId": 3},
+        {"id": 2, "title": "Escrita atômica: gravar .uploading e rename para nome final", "description": "Evitar arquivo incompleto; nome padrão sem CPF (RNF-001).", "status": "pending", "dependencies": [], "parentTaskId": 3},
+        {"id": 3, "title": "Cálculo SHA-256 do arquivo e variável IRPF_STORAGE_PATH", "description": "Hash após escrita; config por env para path do share.", "status": "pending", "dependencies": [], "parentTaskId": 3}
+      ]},
+      {"id": 4, "title": "Gestão de cases (CRUD, status, workflow)", "description": "CRUD de cases (ano, exercício, contribuinte, perfil, responsável). Máquina de estados (NEW → INTAKE_* → PROCESSING → READY_FOR_REVIEW → APPROVED → SUBMITTED → CLOSED). Gates: BLOCKER impede READY_FOR_REVIEW.", "details": "RF-001 a RF-005. Transições com validação; audit_event em mudança de status. Políticas P-005, P-015 (concorrência).", "testStrategy": "Criar case, alterar status respeitando gates; verificar audit.", "status": "pending", "dependencies": [2], "priority": "high", "subtasks": [
+        {"id": 1, "title": "CRUD de cases (ano, exercício, contribuinte, perfil, responsável)", "description": "Endpoints e serviços para criar, listar, atualizar case; campos obrigatórios.", "status": "pending", "dependencies": [], "parentTaskId": 4},
+        {"id": 2, "title": "Máquina de estados e transições com validação", "description": "NEW → INTAKE_* → PROCESSING → READY_FOR_REVIEW → APPROVED → SUBMITTED → CLOSED; validar gate BLOCKER.", "status": "pending", "dependencies": [], "parentTaskId": 4},
+        {"id": 3, "title": "Registrar audit_event em toda mudança de status", "description": "Quem, quando, de/para; política P-005/P-015 para concorrência.", "status": "pending", "dependencies": [], "parentTaskId": 4}
+      ]},
+      {"id": 5, "title": "Folha de rosto (triagem) e marcadores", "description": "Form de triagem com marcadores (saúde, educação, bens, investimentos, exterior, pensão) e fontes pagadoras esperadas. Marcadores ajustam checklist e risco. RF-010, RF-011, RF-012.", "details": "Dados em case ou tabela de triagem; alimentar checklist (Anexo B) e risco inicial.", "testStrategy": "Salvar triagem e verificar checklist atualizado.", "status": "pending", "dependencies": [4], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Form de triagem com marcadores (saúde, educação, bens, investimentos, exterior, pensão)", "description": "Campos booleanos ou tags; persistir em case ou tabela de triagem.", "status": "pending", "dependencies": [], "parentTaskId": 5},
+        {"id": 2, "title": "Fontes pagadoras esperadas e alimentar checklist (Anexo B)", "description": "Lista de fontes; gerar itens de checklist conforme perfil e marcadores.", "status": "pending", "dependencies": [], "parentTaskId": 5},
+        {"id": 3, "title": "Cálculo de risco inicial a partir dos marcadores", "description": "RF-012; risco inicial para políticas de revisão.", "status": "pending", "dependencies": [], "parentTaskId": 5}
+      ]},
+      {"id": 6, "title": "Upload de documentos (validação em camadas e persistência)", "description": "Upload multipart; validação MIME/tamanho; integridade e páginas; metadados docType+fonte obrigatórios; deduplicação por hash; persistência atômica; códigos de erro (Anexo F). RF-020 a RF-029, 8.6.", "details": "Fluxo 8.6: recepção → validação pré-persistência → metadados → hash/dedupe → .uploading → rename → documents. Resposta com document_id, version, deduplicação.", "testStrategy": "Upload válido/inválido; timeout; retry idempotente.", "status": "pending", "dependencies": [3, 4], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Recepção multipart e validação MIME/tamanho máximo", "description": "Validar tipo permitido e tamanho; rejeitar com DOC_MIME_NOT_ALLOWED ou DOC_SIZE_EXCEEDED.", "status": "pending", "dependencies": [], "parentTaskId": 6},
+        {"id": 2, "title": "Validação pré-persistência (abrir arquivo, páginas, tamanho mínimo)", "description": "Verificar corrupção e páginas>0; retornar DOC_CORRUPTED/DOC_EMPTY com 400.", "status": "pending", "dependencies": [], "parentTaskId": 6},
+        {"id": 3, "title": "Metadados docType e fonte obrigatórios no backend", "description": "Validar lista fechada 8.3; rejeitar com DOC_TYPE_REQUIRED se ausente.", "status": "pending", "dependencies": [], "parentTaskId": 6},
+        {"id": 4, "title": "Deduplicação por SHA-256 e persistência atômica", "description": "Calcular hash; se existir para case, registrar vínculo sem duplicar arquivo. Gravar .uploading → rename → insert documents.", "status": "pending", "dependencies": [], "parentTaskId": 6},
+        {"id": 5, "title": "Resposta de sucesso e tratamento de erros (códigos Anexo F)", "description": "Retornar document_id, file_path, version, deduplicação; STORAGE_WRITE_FAILED em falha de disco.", "status": "pending", "dependencies": [], "parentTaskId": 6}
+      ]},
+      {"id": 7, "title": "Checklist e pendências (INFO/WARN/BLOCKER)", "description": "Checklist automático por perfil e marcadores (Anexo B). Pendências com severidade, dono, prazo, status. BLOCKER bloqueia avanço (gates). RF-030 a RF-034.", "details": "Itens por causa de malha fina; fontes pagadoras esperadas e informe conferido; limites de dedução configuráveis.", "testStrategy": "Gerar checklist; criar pendência BLOCKER e tentar avançar status.", "status": "pending", "dependencies": [4, 5], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Geração de checklist automático por perfil e marcadores (Anexo B)", "description": "Itens por causa de malha fina; fontes esperadas e informe conferido.", "status": "pending", "dependencies": [], "parentTaskId": 7},
+        {"id": 2, "title": "Modelo de pendências: severidade INFO/WARN/BLOCKER, dono, prazo, status", "description": "RF-030 a RF-034; BLOCKER impede transição para READY_FOR_REVIEW.", "status": "pending", "dependencies": [], "parentTaskId": 7},
+        {"id": 3, "title": "Integrar gates de workflow com existência de BLOCKER", "description": "Validação antes de avançar status; limites de dedução configuráveis.", "status": "pending", "dependencies": [], "parentTaskId": 7}
+      ]},
+      {"id": 8, "title": "Auditoria (audit_events) e RBAC", "description": "Toda ação sensível gera audit_event (quem, quando, o quê, de/para, motivo). RBAC por perfil (Operador, Preparador, Revisor, Auditor, Admin). RF-005.", "details": "Tabela audit_events; middleware RBAC; listagem de trilha por case.", "testStrategy": "Alterar case e documento; listar auditoria do case.", "status": "pending", "dependencies": [2, 4], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Registrar audit_event em toda ação sensível (quem, quando, o quê, de/para, motivo)", "description": "Inserção em audit_events; padrão de payload.", "status": "pending", "dependencies": [], "parentTaskId": 8},
+        {"id": 2, "title": "Middleware RBAC por perfil (Operador, Preparador, Revisor, Auditor, Admin)", "description": "RF-005; verificar perfil antes de ações críticas.", "status": "pending", "dependencies": [], "parentTaskId": 8},
+        {"id": 3, "title": "Endpoint ou tela de listagem de trilha de auditoria por case", "description": "Ordenação por data; filtros opcionais.", "status": "pending", "dependencies": [], "parentTaskId": 8}
+      ]},
+      {"id": 9, "title": "Jobs/Workers e fila (BullMQ + Redis)", "description": "Configurar BullMQ + Redis; jobs: extract_text (Node), classify, validate, score_risk, generate_case_summary. Persistência job_runs no MySQL. 11.3 PRD.", "details": "extract_text apenas para PDF editável (8.8). Fluxo OCR é via webhook. Jobs versionados e idempotentes.", "testStrategy": "Enfileirar job e verificar execução e job_runs.", "status": "pending", "dependencies": [2, 6], "priority": "medium", "subtasks": [
+        {"id": 1, "title": "Configurar BullMQ + Redis e filas do módulo IRPF", "description": "Conexão Redis; filas: extract_text, classify, validate, score_risk, generate_case_summary.", "status": "pending", "dependencies": [], "parentTaskId": 9},
+        {"id": 2, "title": "Implementar job extract_text (Node) e persistir job_runs no MySQL", "description": "Worker que lê PDF editável; gravar execução em job_runs; 8.8.", "status": "pending", "dependencies": [], "parentTaskId": 9},
+        {"id": 3, "title": "Jobs versionados e idempotentes; demais jobs (classify, validate, score_risk, summary)", "description": "Evitar duplicação; retry seguro.", "status": "pending", "dependencies": [], "parentTaskId": 9}
+      ]},
+      {"id": 10, "title": "Extração dinâmica (regras e pipeline no Node)", "description": "Tabelas document_extraction_config e document_extracted_data. Pipeline: obter texto → normalizar → extratores (regex/posição/tabela) → validar → persistir com confidence_score. RF-044 a RF-048, 8.7.", "details": "Regras por docType (e fonte); versionamento; documento sem regra grava raw_text e EXTRACTED. Override humano com auditoria.", "testStrategy": "Regra de teste para um docType; upload PDF texto e verificar document_extracted_data.", "status": "pending", "dependencies": [2, 6, 9], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Tabelas document_extraction_config e document_extracted_data", "description": "Regras por docType/fonte; versionamento; resultado com rule_version, confidence_score, override.", "status": "pending", "dependencies": [], "parentTaskId": 10},
+        {"id": 2, "title": "Pipeline: obter texto → normalizar → extratores (regex/posição) → persistir", "description": "Aplicar regras configuradas; validar tipos; gravar em document_extracted_data.", "status": "pending", "dependencies": [], "parentTaskId": 10},
+        {"id": 3, "title": "Documento sem regra: gravar raw_text e EXTRACTED/REQUIRES_REVIEW", "description": "Não criar linhas em document_extracted_data; permitir reprocessamento quando regras forem adicionadas.", "status": "pending", "dependencies": [], "parentTaskId": 10}
+      ]},
+      {"id": 11, "title": "Dois fluxos de leitura: classificação e fluxo Node", "description": "Pós-upload: classificar texto nativo vs requer OCR (amostra de texto ou MIME). Texto nativo: enfileirar extract_text (Node). Campos extraction_status, extraction_flow. RF-049, 8.8.", "details": "Classificação assíncrona; extraction_status PENDING → EXTRACTING → EXTRACTED/EXTRACTION_ERROR/REQUIRES_REVIEW; extraction_flow NATIVE_TEXT.", "testStrategy": "Upload PDF editável e verificar status e document_extracted_data.", "status": "pending", "dependencies": [6, 9, 10], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Classificar pós-upload: texto nativo vs requer OCR (amostra de texto ou MIME)", "description": "Decidir fluxo NATIVE_TEXT ou OCR_WEBHOOK; atualizar extraction_flow.", "status": "pending", "dependencies": [], "parentTaskId": 11},
+        {"id": 2, "title": "Para texto nativo: enfileirar job extract_text e atualizar extraction_status", "description": "PENDING → EXTRACTING → EXTRACTED/EXTRACTION_ERROR/REQUIRES_REVIEW.", "status": "pending", "dependencies": [], "parentTaskId": 11},
+        {"id": 3, "title": "Persistir extraction_status e extraction_flow em documents", "description": "RF-049; permitir acompanhamento na UI.", "status": "pending", "dependencies": [], "parentTaskId": 11}
+      ]},
+      {"id": 12, "title": "Webhook OCR e callback (fluxo externo)", "description": "Para PDF não editável e imagens: POST ao webhook com document_id, file_url, callback_url. Endpoint POST /documents/process-callback; contrato 8.9; timeout e retry (RNF-043).", "details": "Payload backend→webhook e callback (extracted_fields, status). Idempotência do callback. extraction_flow OCR_WEBHOOK; EXTRACTION_ERROR em timeout/falha.", "testStrategy": "Simular webhook e callback; timeout e retry.", "status": "pending", "dependencies": [6, 10], "priority": "high", "subtasks": [
+        {"id": 1, "title": "POST ao webhook externo com document_id, file_url, callback_url (contrato 8.9)", "description": "Para PDF não editável e imagens; payload conforme especificação.", "status": "pending", "dependencies": [], "parentTaskId": 12},
+        {"id": 2, "title": "Endpoint POST /documents/process-callback e idempotência", "description": "Receber extracted_fields e status; atualizar document; EXTRACTION_ERROR em timeout (RNF-043).", "status": "pending", "dependencies": [], "parentTaskId": 12},
+        {"id": 3, "title": "Retry e timeout configuráveis; marcar extraction_flow OCR_WEBHOOK", "description": "Persistir tentativas; não duplicar processamento no callback.", "status": "pending", "dependencies": [], "parentTaskId": 12}
+      ]},
+      {"id": 13, "title": "Reprocessamento manual de extração e monitoramento", "description": "Ação 'reprocessar extração' para EXTRACTION_ERROR/REQUIRES_REVIEW (RF-049a). Tela de monitoramento de jobs e falhas (RNF-032). Health check GET /health (RNF-033).", "details": "Reenfileirar ou reenviar ao webhook; extraction_attempts; endpoint /api/irpf-producao/health (MySQL + share).", "testStrategy": "Reprocessar documento; chamar /health.", "status": "pending", "dependencies": [9, 11, 12], "priority": "medium", "subtasks": [
+        {"id": 1, "title": "Ação 'reprocessar extração' para EXTRACTION_ERROR/REQUIRES_REVIEW (RF-049a)", "description": "Reenfileirar extract_text ou reenviar ao webhook; incrementar extraction_attempts.", "status": "pending", "dependencies": [], "parentTaskId": 13},
+        {"id": 2, "title": "Tela de monitoramento de jobs e falhas (RNF-032)", "description": "Listar jobs recentes, status, erros; filtros por case/documento.", "status": "pending", "dependencies": [], "parentTaskId": 13},
+        {"id": 3, "title": "Health check GET /api/irpf-producao/health (RNF-033)", "description": "Verificar MySQL e acesso ao share; retorno 200/503.", "status": "pending", "dependencies": [], "parentTaskId": 13}
+      ]},
+      {"id": 14, "title": "Validações iniciais e divergências", "description": "Disparar processamento do case; gerar divergências e pendências automaticamente. Validações iniciais (completude, informes). RF-040 a RF-043.", "details": "Job processar case; comparar fontes esperadas x recebidas; criar pendências.", "testStrategy": "Processar case e verificar pendências geradas.", "status": "pending", "dependencies": [7, 9], "priority": "medium", "subtasks": [
+        {"id": 1, "title": "Job que dispara processamento do case (completude, informes)", "description": "RF-040 a RF-043; validações iniciais automatizadas.", "status": "pending", "dependencies": [], "parentTaskId": 14},
+        {"id": 2, "title": "Comparar fontes pagadoras esperadas x recebidas e gerar divergências", "description": "Criar pendências automaticamente; severidade conforme regra.", "status": "pending", "dependencies": [], "parentTaskId": 14}
+      ]},
+      {"id": 15, "title": "Dossiê final (inventário + hashes + histórico)", "description": "Export dossiê: inventário de documentos, hashes SHA-256, histórico do case. RF-062.", "details": "Endpoint ou ação para gerar dossiê; gate: não fechar CLOSED sem inventário.", "testStrategy": "Gerar dossiê e verificar conteúdo.", "status": "pending", "dependencies": [4, 6, 8], "priority": "medium", "subtasks": [
+        {"id": 1, "title": "Endpoint ou ação para export: inventário de documentos + hashes SHA-256", "description": "RF-062; listar todos os documentos do case com hash.", "status": "pending", "dependencies": [], "parentTaskId": 15},
+        {"id": 2, "title": "Incluir histórico do case (audit, status, eventos) no dossiê", "description": "Linha do tempo ou resumo; gate: não permitir CLOSED sem inventário.", "status": "pending", "dependencies": [], "parentTaskId": 15}
+      ]},
+      {"id": 16, "title": "Revisão e aprovação (revisor, justificativa, override)", "description": "Revisor aprova/reprova com justificativa obrigatória. Override controlado com motivo e anexos. Revisor sênior para alto risco (policy). RF-050 a RF-052.", "details": "Transição para APPROVED; gates antes de READY_FOR_REVIEW; política P-004.", "testStrategy": "Aprovar/reprovar com justificativa; tentar aprovar case de alto risco sem sênior.", "status": "pending", "dependencies": [4, 7, 8], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Fluxo de aprovação/reprovação com justificativa obrigatória", "description": "RF-050, RF-051; transição para APPROVED; gates antes de READY_FOR_REVIEW.", "status": "pending", "dependencies": [], "parentTaskId": 16},
+        {"id": 2, "title": "Override controlado com motivo e anexos; auditoria", "description": "RF-052; registrar quem alterou e por quê.", "status": "pending", "dependencies": [], "parentTaskId": 16},
+        {"id": 3, "title": "Política P-004: revisor sênior obrigatório para case de alto risco", "description": "Validar perfil antes de aprovar; bloquear se não sênior.", "status": "pending", "dependencies": [], "parentTaskId": 16}
+      ]},
+      {"id": 17, "title": "Protocolos e pós-entrega", "description": "Upload de PROTOCOLO (recibo); vinculação ao case. Ocorrência pós-entrega (malha/retificação) com motivo catalogado e anexo. RF-060, RF-061. Gate: PROTOCOLO antes de SUBMITTED.", "details": "DocType PROTOCOLO; lista fechada de motivos; pasta 10_protocolos.", "testStrategy": "Anexar protocolo; registrar ocorrência pós-entrega.", "status": "pending", "dependencies": [4, 6], "priority": "medium", "subtasks": [
+        {"id": 1, "title": "Upload e vinculação de documento PROTOCOLO (recibo); pasta 10_protocolos", "description": "RF-060; DocType PROTOCOLO; gate antes de SUBMITTED.", "status": "pending", "dependencies": [], "parentTaskId": 17},
+        {"id": 2, "title": "Registro de ocorrência pós-entrega (malha/retificação) com motivo catalogado e anexo", "description": "RF-061; lista fechada de motivos; anexo opcional.", "status": "pending", "dependencies": [], "parentTaskId": 17}
+      ]},
+      {"id": 18, "title": "Modelo declaration_* e dec_layout_version", "description": "Tabelas declaration_income_pj/pf/exempt/exclusive, declaration_dependents, declaration_payments, declaration_assets, declaration_debts, declaration_totals, dec_layout_version. Mapeamento bloco .DEC → origem (Anexo C).", "details": "Popular declaration_* a partir de case_people, triagem, documentos e formulários. dec_layout_version por exercício. Nenhum campo .DEC sem origem (P-014).", "testStrategy": "Inserir dados de teste e verificar mapeamento Anexo C.", "status": "pending", "dependencies": [2, 4, 5, 10], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Criar tabelas declaration_income_*, declaration_dependents, declaration_payments, declaration_assets, declaration_debts, declaration_totals, dec_layout_version", "description": "Schema conforme Anexo C; dec_layout_version por exercício.", "status": "pending", "dependencies": [], "parentTaskId": 18},
+        {"id": 2, "title": "Mapeamento bloco .DEC → origem (Anexo C); popular a partir de case_people, triagem, documentos", "description": "P-014: nenhum campo .DEC sem origem definida.", "status": "pending", "dependencies": [], "parentTaskId": 18}
+      ]},
+      {"id": 19, "title": "Layout .DEC por exercício e writers por tipo de registro", "description": "Carregar leiaute (DOC/IRPF-LeiauteTXT-20XX.pdf ou config) por tipo de registro: Inicio, Fim, Tam, Formato N/NN/C/A/I. Writers: WriterIR, Writer01, Writer16, Writer17-20, 21-92, 84/88, T9, HR, DR, R9. 11.4 PRD.", "details": "API interna por tipo de registro; encoding fixo (Latin-1); ordem conforme Anexo D.", "testStrategy": "Gerar linha de teste por tipo de registro e validar tamanho/formato.", "status": "pending", "dependencies": [18], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Carregar leiaute por exercício (DOC/IRPF-LeiauteTXT-20XX.pdf ou config): Inicio, Fim, Tam, Formato N/NN/C/A/I", "description": "11.4 PRD; um registro de layout por tipo.", "status": "pending", "dependencies": [], "parentTaskId": 19},
+        {"id": 2, "title": "Implementar writers: WriterIR, Writer01, Writer16, Writer17-20, 21-92, 84/88, T9, HR, DR, R9", "description": "Um writer por tipo de registro; encoding Latin-1; ordem Anexo D.", "status": "pending", "dependencies": [], "parentTaskId": 19}
+      ]},
+      {"id": 20, "title": "Calculadora de totais e validação de consistência", "description": "Calcular base, imposto, deduções (simplificada 20% vs completa); totais de rendimentos e pagamentos. Validação: tipo simplificada/completa coerente com blocos 17/18 ou 19/20; T9 = totais calculados. RF-075.", "details": "declaration_totals; fórmulas conforme leiaute e Anexo A (limites).", "testStrategy": "Calcular totais para case simplificado e completo; validar consistência.", "status": "pending", "dependencies": [18], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Calcular base, imposto, deduções (simplificada 20% vs completa) e totais de rendimentos/pagamentos", "description": "declaration_totals; fórmulas e limites Anexo A.", "status": "pending", "dependencies": [], "parentTaskId": 20},
+        {"id": 2, "title": "Validação: tipo simplificada/completa coerente com blocos 17/18 ou 19/20; T9 = totais calculados", "description": "RF-075; bloquear geração se inconsistente.", "status": "pending", "dependencies": [], "parentTaskId": 20}
+      ]},
+      {"id": 21, "title": "Orquestrador de geração .DEC e validações em camadas", "description": "Fluxo: carregar case + declaration_* + layout → validar pré-condições (RF-072, RF-070) → writers na ordem Anexo D → escrever em 11_dec → validação pós-geração (RF-076) → registrar DEC_GERADO ou rollback.", "details": "Pré: APPROVED, sem BLOCKER, totais consistentes. Pós: releitura, T9 count, NR_HASH. Falha em pós: remover arquivo, não registrar, audit erro.", "testStrategy": "Gerar .DEC em case aprovado; falhar pré ou pós e verificar rollback.", "status": "pending", "dependencies": [16, 18, 19, 20], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Carregar case, declaration_* e layout; validar pré-condições RF-072/RF-070", "description": "APPROVED, sem BLOCKER, totais consistentes, dados mínimos IR/16/17-18 ou 19-20.", "status": "pending", "dependencies": [], "parentTaskId": 21},
+        {"id": 2, "title": "Chamar writers na ordem Anexo D (IR, [01], 16, 17/18 ou 19/20, 21-92, 84/88, T9, HR, DR, R9)", "description": "Buffer/stream com encoding fixo; um writer por tipo de registro.", "status": "pending", "dependencies": [], "parentTaskId": 21},
+        {"id": 3, "title": "Escrever arquivo em 11_dec com nome padrão {CPF}-IRPF-A-{EXERCÍCIO}-{ANO_BASE}-{ORIGI|RETIF}.DEC", "description": "Encoding Latin-1; terminador 0x0D0x0A.", "status": "pending", "dependencies": [], "parentTaskId": 21},
+        {"id": 4, "title": "Validação pós-geração: releitura, T9 count, NR_HASH", "description": "Se falha: remover arquivo, não registrar em documents, registrar erro em audit_events/job_runs.", "status": "pending", "dependencies": [], "parentTaskId": 21},
+        {"id": 5, "title": "Registrar document DEC_GERADO e audit_event em sucesso", "description": "docType DEC_GERADO, source SISTEMA, version = número da geração.", "status": "pending", "dependencies": [], "parentTaskId": 21}
+      ]},
+      {"id": 22, "title": "Endpoint generate-dec e validação por campo/registro", "description": "POST /cases/:id/generate-dec. Validação por campo (RF-074): formato N/NN/C/A/I, tamanho, códigos. Validação por registro: tamanho linha, terminador 0x0D0x0A. Nome arquivo: {CPF}-IRPF-A-{EXERCÍCIO}-{ANO_BASE}-{ORIGI|RETIF}.DEC. RF-071, RF-076.", "details": "Retornar path e doc_id ou erro claro. Encoding Latin-1; determinismo (RF-078, RNF-040).", "testStrategy": "Chamar endpoint e verificar arquivo em 11_dec e registro documents.", "status": "pending", "dependencies": [21], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Implementar POST /cases/:id/generate-dec e retorno path/doc_id ou erro", "description": "RF-071; chamar orquestrador; retorno claro.", "status": "pending", "dependencies": [], "parentTaskId": 22},
+        {"id": 2, "title": "Validação por campo (RF-074): formato N/NN/C/A/I, tamanho, códigos", "description": "Rejeitar antes de escrever se campo inválido.", "status": "pending", "dependencies": [], "parentTaskId": 22},
+        {"id": 3, "title": "Validação por registro: tamanho linha, terminador 0x0D0x0A; nome arquivo padrão", "description": "RF-076; nome: {CPF}-IRPF-A-{EXERCÍCIO}-{ANO_BASE}-{ORIGI|RETIF}.DEC.", "status": "pending", "dependencies": [], "parentTaskId": 22}
+      ]},
+      {"id": 23, "title": "Testes automatizados do .DEC contra amostras DOC", "description": "Testes contra amostras DOC/*.DEC por exercício: estrutura, ordem de registros, tamanhos de linha, encoding. Critério de aceite seção 15 PRD.", "details": "Fixture com amostras; assert ordem IR→[01]→16→17/18 ou 19/20→...→R9; tamanhos e terminador.", "testStrategy": "Rodar suite de testes .DEC; falhar se layout divergir.", "status": "pending", "dependencies": [21, 22], "priority": "high", "subtasks": [
+        {"id": 1, "title": "Fixture com amostras DOC/*.DEC por exercício", "description": "Arquivos de referência para assert de estrutura e ordem.", "status": "pending", "dependencies": [], "parentTaskId": 23},
+        {"id": 2, "title": "Asserts: ordem de registros, tamanhos de linha, encoding Latin-1, terminador", "description": "Seção 15 PRD; falhar se layout divergir.", "status": "pending", "dependencies": [], "parentTaskId": 23}
+      ]},
+      {"id": 24, "title": "UX e copy (legendas, placeholders, empty states)", "description": "Implementar diretrizes 11.6 PRD: legendas curtas, placeholders úteis, mensagens de erro que orientem, empty states com CTA, status em português amigável, feedback loading/sucesso.", "details": "Checklist de revisão de tela (11.6); acessibilidade (contraste, aria-label).", "testStrategy": "Revisar telas principais com checklist PRD.", "status": "pending", "dependencies": [1, 4, 6, 7], "priority": "medium", "subtasks": [
+        {"id": 1, "title": "Legendas curtas, placeholders úteis, mensagens de erro que orientem (11.6 PRD)", "description": "Copy em português; feedback claro.", "status": "pending", "dependencies": [], "parentTaskId": 24},
+        {"id": 2, "title": "Empty states com CTA e status em português amigável", "description": "Telas vazias com ação sugerida; status legíveis.", "status": "pending", "dependencies": [], "parentTaskId": 24},
+        {"id": 3, "title": "Feedback loading/sucesso; acessibilidade (contraste, aria-label)", "description": "Checklist 11.6; revisar telas principais.", "status": "pending", "dependencies": [], "parentTaskId": 24}
+      ]}
+    ],
+    "metadata": {
+      "created": "2026-02-13T17:00:14.299Z",
+      "updated": "2026-02-13T17:00:14.299Z",
+      "description": "Módulo IRPF Produção — Sistema interno de produção de declarações IRPF integrado ao DCTF: cases, documentos, extração dinâmica, fluxos Node/OCR, checklist, geração .DEC e validações em camadas"
     }
   }
 }

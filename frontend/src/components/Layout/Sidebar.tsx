@@ -29,6 +29,7 @@ const navigation = [
   { name: 'SPED Validação', href: '/sped', icon: DocumentCheckIcon },
   { name: 'SPED Validação v2.0', href: '/sped/v2', icon: DocumentCheckIcon },
   { name: 'IRPF 2026', href: '/irpf-2026', icon: CurrencyDollarIcon },
+  { name: 'IRPF Produção', href: '/irpf-producao', icon: DocumentCheckIcon },
 ];
 
 interface SidebarProps {

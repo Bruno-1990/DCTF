@@ -1,0 +1,25 @@
+# Task ID: 15
+# Title: Dossiê final (inventário + hashes + histórico)
+# Status: pending
+# Dependencies: 4, 6, 8
+# Priority: medium
+# Description: Export dossiê: inventário de documentos, hashes SHA-256, histórico do case. RF-062.
+# Details:
+Endpoint ou ação para gerar dossiê; gate: não fechar CLOSED sem inventário.
+
+# Test Strategy:
+Gerar dossiê e verificar conteúdo.
+
+# Subtasks:
+## 1. Endpoint ou ação para export: inventário de documentos + hashes SHA-256 [pending]
+### Dependencies: None
+### Description: RF-062; listar todos os documentos do case com hash.
+### Details:
+
+
+## 2. Incluir histórico do case (audit, status, eventos) no dossiê [pending]
+### Dependencies: None
+### Description: Linha do tempo ou resumo; gate: não permitir CLOSED sem inventário.
+### Details:
+
+

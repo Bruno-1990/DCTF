@@ -1,0 +1,31 @@
+# Task ID: 7
+# Title: Checklist e pendências (INFO/WARN/BLOCKER)
+# Status: pending
+# Dependencies: 4, 5
+# Priority: high
+# Description: Checklist automático por perfil e marcadores (Anexo B). Pendências com severidade, dono, prazo, status. BLOCKER bloqueia avanço (gates). RF-030 a RF-034.
+# Details:
+Itens por causa de malha fina; fontes pagadoras esperadas e informe conferido; limites de dedução configuráveis.
+
+# Test Strategy:
+Gerar checklist; criar pendência BLOCKER e tentar avançar status.
+
+# Subtasks:
+## 1. Geração de checklist automático por perfil e marcadores (Anexo B) [pending]
+### Dependencies: None
+### Description: Itens por causa de malha fina; fontes esperadas e informe conferido.
+### Details:
+
+
+## 2. Modelo de pendências: severidade INFO/WARN/BLOCKER, dono, prazo, status [pending]
+### Dependencies: None
+### Description: RF-030 a RF-034; BLOCKER impede transição para READY_FOR_REVIEW.
+### Details:
+
+
+## 3. Integrar gates de workflow com existência de BLOCKER [pending]
+### Dependencies: None
+### Description: Validação antes de avançar status; limites de dedução configuráveis.
+### Details:
+
+

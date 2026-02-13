@@ -19,6 +19,8 @@ import SpedValidacao from '../pages/SpedValidacao';
 import SpedValidacaoV2 from '../pages/SpedValidacaoV2';
 import SpedKnowledgeBase from '../pages/SpedKnowledgeBase';
 import Irpf2025 from '../pages/Irpf2025';
+import IrpfProducaoKanban from '../pages/IrpfProducao/IrpfProducaoKanban';
+import IrpfProducaoCase from '../pages/IrpfProducao/IrpfProducaoCase';
 
 const router = createBrowserRouter([
   {
@@ -97,6 +99,14 @@ const router = createBrowserRouter([
       {
         path: 'irpf-2026',
         element: <Irpf2025 />,
+      },
+      {
+        path: 'irpf-producao',
+        element: <IrpfProducaoKanban />,
+      },
+      {
+        path: 'irpf-producao/cases/:id',
+        element: <IrpfProducaoCase />,
       },
     ],
   },

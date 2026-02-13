@@ -1,0 +1,31 @@
+# Task ID: 16
+# Title: Revisão e aprovação (revisor, justificativa, override)
+# Status: pending
+# Dependencies: 4, 7, 8
+# Priority: high
+# Description: Revisor aprova/reprova com justificativa obrigatória. Override controlado com motivo e anexos. Revisor sênior para alto risco (policy). RF-050 a RF-052.
+# Details:
+Transição para APPROVED; gates antes de READY_FOR_REVIEW; política P-004.
+
+# Test Strategy:
+Aprovar/reprovar com justificativa; tentar aprovar case de alto risco sem sênior.
+
+# Subtasks:
+## 1. Fluxo de aprovação/reprovação com justificativa obrigatória [pending]
+### Dependencies: None
+### Description: RF-050, RF-051; transição para APPROVED; gates antes de READY_FOR_REVIEW.
+### Details:
+
+
+## 2. Override controlado com motivo e anexos; auditoria [pending]
+### Dependencies: None
+### Description: RF-052; registrar quem alterou e por quê.
+### Details:
+
+
+## 3. Política P-004: revisor sênior obrigatório para case de alto risco [pending]
+### Dependencies: None
+### Description: Validar perfil antes de aprovar; bloquear se não sênior.
+### Details:
+
+

@@ -1,0 +1,25 @@
+# Task ID: 23
+# Title: Testes automatizados do .DEC contra amostras DOC
+# Status: pending
+# Dependencies: 21, 22
+# Priority: high
+# Description: Testes contra amostras DOC/*.DEC por exercício: estrutura, ordem de registros, tamanhos de linha, encoding. Critério de aceite seção 15 PRD.
+# Details:
+Fixture com amostras; assert ordem IR→[01]→16→17/18 ou 19/20→...→R9; tamanhos e terminador.
+
+# Test Strategy:
+Rodar suite de testes .DEC; falhar se layout divergir.
+
+# Subtasks:
+## 1. Fixture com amostras DOC/*.DEC por exercício [pending]
+### Dependencies: None
+### Description: Arquivos de referência para assert de estrutura e ordem.
+### Details:
+
+
+## 2. Asserts: ordem de registros, tamanhos de linha, encoding Latin-1, terminador [pending]
+### Dependencies: None
+### Description: Seção 15 PRD; falhar se layout divergir.
+### Details:
+
+

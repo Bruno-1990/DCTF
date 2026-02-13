@@ -1,0 +1,25 @@
+# Task ID: 17
+# Title: Protocolos e pós-entrega
+# Status: pending
+# Dependencies: 4, 6
+# Priority: medium
+# Description: Upload de PROTOCOLO (recibo); vinculação ao case. Ocorrência pós-entrega (malha/retificação) com motivo catalogado e anexo. RF-060, RF-061. Gate: PROTOCOLO antes de SUBMITTED.
+# Details:
+DocType PROTOCOLO; lista fechada de motivos; pasta 10_protocolos.
+
+# Test Strategy:
+Anexar protocolo; registrar ocorrência pós-entrega.
+
+# Subtasks:
+## 1. Upload e vinculação de documento PROTOCOLO (recibo); pasta 10_protocolos [pending]
+### Dependencies: None
+### Description: RF-060; DocType PROTOCOLO; gate antes de SUBMITTED.
+### Details:
+
+
+## 2. Registro de ocorrência pós-entrega (malha/retificação) com motivo catalogado e anexo [pending]
+### Dependencies: None
+### Description: RF-061; lista fechada de motivos; anexo opcional.
+### Details:
+
+

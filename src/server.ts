@@ -29,6 +29,7 @@ import spedRoutes from './routes/sped';
 import spedV2KnowledgeRoutes from './routes/sped-v2-knowledge';
 import spedV2Routes from './routes/sped-v2';
 import irpfRoutes from './routes/irpf';
+import irpfProducaoRoutes from './routes/irpf-producao';
 import cfopRoutes from './routes/cfop';
 
 class Server {
@@ -178,6 +179,7 @@ class Server {
     this.app.use('/api/sped/v2/knowledge', spedV2KnowledgeRoutes);
     this.app.use('/api/sped/v2', spedV2Routes);
     this.app.use('/api/irpf', irpfRoutes);
+    this.app.use('/api/irpf-producao', irpfProducaoRoutes);
     this.app.use('/api/cfop', cfopRoutes);
 
     // Root endpoint

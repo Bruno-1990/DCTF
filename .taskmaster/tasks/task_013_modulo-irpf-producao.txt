@@ -1,0 +1,31 @@
+# Task ID: 13
+# Title: Reprocessamento manual de extração e monitoramento
+# Status: pending
+# Dependencies: 9, 11, 12
+# Priority: medium
+# Description: Ação 'reprocessar extração' para EXTRACTION_ERROR/REQUIRES_REVIEW (RF-049a). Tela de monitoramento de jobs e falhas (RNF-032). Health check GET /health (RNF-033).
+# Details:
+Reenfileirar ou reenviar ao webhook; extraction_attempts; endpoint /api/irpf-producao/health (MySQL + share).
+
+# Test Strategy:
+Reprocessar documento; chamar /health.
+
+# Subtasks:
+## 1. Ação 'reprocessar extração' para EXTRACTION_ERROR/REQUIRES_REVIEW (RF-049a) [pending]
+### Dependencies: None
+### Description: Reenfileirar extract_text ou reenviar ao webhook; incrementar extraction_attempts.
+### Details:
+
+
+## 2. Tela de monitoramento de jobs e falhas (RNF-032) [pending]
+### Dependencies: None
+### Description: Listar jobs recentes, status, erros; filtros por case/documento.
+### Details:
+
+
+## 3. Health check GET /api/irpf-producao/health (RNF-033) [pending]
+### Dependencies: None
+### Description: Verificar MySQL e acesso ao share; retorno 200/503.
+### Details:
+
+

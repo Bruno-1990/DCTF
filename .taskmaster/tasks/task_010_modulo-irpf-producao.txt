@@ -1,0 +1,31 @@
+# Task ID: 10
+# Title: Extração dinâmica (regras e pipeline no Node)
+# Status: pending
+# Dependencies: 2, 6, 9
+# Priority: high
+# Description: Tabelas document_extraction_config e document_extracted_data. Pipeline: obter texto → normalizar → extratores (regex/posição/tabela) → validar → persistir com confidence_score. RF-044 a RF-048, 8.7.
+# Details:
+Regras por docType (e fonte); versionamento; documento sem regra grava raw_text e EXTRACTED. Override humano com auditoria.
+
+# Test Strategy:
+Regra de teste para um docType; upload PDF texto e verificar document_extracted_data.
+
+# Subtasks:
+## 1. Tabelas document_extraction_config e document_extracted_data [pending]
+### Dependencies: None
+### Description: Regras por docType/fonte; versionamento; resultado com rule_version, confidence_score, override.
+### Details:
+
+
+## 2. Pipeline: obter texto → normalizar → extratores (regex/posição) → persistir [pending]
+### Dependencies: None
+### Description: Aplicar regras configuradas; validar tipos; gravar em document_extracted_data.
+### Details:
+
+
+## 3. Documento sem regra: gravar raw_text e EXTRACTED/REQUIRES_REVIEW [pending]
+### Dependencies: None
+### Description: Não criar linhas em document_extracted_data; permitir reprocessamento quando regras forem adicionadas.
+### Details:
+
+
