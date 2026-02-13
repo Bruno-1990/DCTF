@@ -54,4 +54,30 @@ describe('IRPF Produção API - Rotas e sub-rotas', () => {
       expect([200, 401, 403, 500]).toContain(withAuth.status);
     });
   });
+
+  describe('Controllers e services base (Task 1.3)', () => {
+    it('deve ter CasesController em src/controllers/irpf-producao/', () => {
+      const path = require('path');
+      const fs = require('fs');
+      const p = path.join(__dirname, '../../src/controllers/irpf-producao/CasesController.ts');
+      expect(fs.existsSync(p)).toBe(true);
+    });
+
+    it('CasesController deve ter métodos list, getById, create, update, updateStatus', () => {
+      const { CasesController } = require('../../src/controllers/irpf-producao/CasesController');
+      const c = new CasesController();
+      expect(typeof c.list).toBe('function');
+      expect(typeof c.getById).toBe('function');
+      expect(typeof c.create).toBe('function');
+      expect(typeof c.update).toBe('function');
+      expect(typeof c.updateStatus).toBe('function');
+    });
+
+    it('deve existir estrutura src/services/irpf-producao (storage/serviços)', () => {
+      const path = require('path');
+      const fs = require('fs');
+      const dir = path.join(__dirname, '../../src/services/irpf-producao');
+      expect(fs.existsSync(dir)).toBe(true);
+    });
+  });
 });
