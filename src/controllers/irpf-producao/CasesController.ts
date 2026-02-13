@@ -99,7 +99,7 @@ export class CasesController {
       }
       const [people, issues] = await Promise.all([
         executeQuery<any>('SELECT * FROM irpf_producao_case_people WHERE case_id = ?', [id]),
-        executeQuery<any>('SELECT id, case_id, severity, status, code, message, created_at FROM irpf_producao_issues WHERE case_id = ? ORDER BY severity DESC, id ASC', [id])
+        executeQuery<any>('SELECT id, case_id, severity, status, code, message, created_at, created_by AS owner, due_date FROM irpf_producao_issues WHERE case_id = ? ORDER BY severity DESC, id ASC', [id])
       ]);
       res.json({ success: true, data: { ...rows[0], people, issues: issues || [] } });
     } catch (error: any) {
