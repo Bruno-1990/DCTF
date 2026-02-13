@@ -77,10 +77,10 @@ export class CasesController {
       }
       const conn = await getConnection();
       try {
-        const [maxRows] = await conn.execute<{ maxId: number }[]>(
+        const [maxRows] = (await conn.execute(
           'SELECT COALESCE(MAX(id), 0) AS maxId FROM irpf_producao_cases'
-        );
-        const maxId = Array.isArray(maxRows) && maxRows[0] ? (maxRows[0] as any).maxId : 0;
+        )) as [ { maxId: number }[], unknown ];
+        const maxId = Array.isArray(maxRows) && maxRows[0] ? maxRows[0].maxId : 0;
         const case_code = nextCaseCode([{ maxId }]);
         await conn.execute(
           `INSERT INTO irpf_producao_cases (case_code, exercicio, ano_base, status, perfil, assigned_to, cliente_id)
