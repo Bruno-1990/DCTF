@@ -3216,7 +3216,7 @@
         "description": "Criar tabelas cases, case_people, documents (com extraction_*), issues, audit_events, jobs/job_runs no MySQL com prefixo irpf_producao_; índices conforme seção 12 do PRD.",
         "details": "Campos documents: extraction_status, extraction_flow, extraction_error_message, extraction_attempts. Índices: documents(extraction_status), documents(case_id, doc_type, source, version), documents(sha256).",
         "testStrategy": "Migrações aplicam sem erro; inserção/consulta de case e document.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           1
         ],
@@ -3226,7 +3226,7 @@
             "id": 1,
             "title": "Criar tabelas cases, case_people, documents (com extraction_*)",
             "description": "Campos extraction_status, extraction_flow, extraction_error_message, extraction_attempts em documents.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 2
           },
@@ -3234,7 +3234,7 @@
             "id": 2,
             "title": "Criar tabelas issues, audit_events, jobs, job_runs",
             "description": "Índices issues(case_id, severity, status); audit_events(case_id, created_at).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 2
           },
@@ -3242,7 +3242,7 @@
             "id": 3,
             "title": "Índices documents e config_rules (opcional)",
             "description": "documents(extraction_status), documents(case_id, doc_type, source, version), documents(sha256).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 2
           }
@@ -4090,7 +4090,7 @@
     ],
     "metadata": {
       "created": "2026-02-13T17:00:14.299Z",
-      "updated": "2026-02-13T18:01:13.246Z",
+      "updated": "2026-02-13T18:05:34.011Z",
       "description": "Módulo IRPF Produção — Sistema interno de produção de declarações IRPF integrado ao DCTF: cases, documentos, extração dinâmica, fluxos Node/OCR, checklist, geração .DEC e validações em camadas"
     }
   }
