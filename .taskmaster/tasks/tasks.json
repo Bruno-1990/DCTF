@@ -3473,7 +3473,7 @@
             "id": 1,
             "title": "Registrar audit_event em toda ação sensível (quem, quando, o quê, de/para, motivo)",
             "description": "Inserção em audit_events; padrão de payload.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 8
           },
@@ -4090,7 +4090,7 @@
     ],
     "metadata": {
       "created": "2026-02-13T17:00:14.299Z",
-      "updated": "2026-02-13T19:06:38.236Z",
+      "updated": "2026-02-13T19:18:06.345Z",
       "description": "Módulo IRPF Produção — Sistema interno de produção de declarações IRPF integrado ao DCTF: cases, documentos, extração dinâmica, fluxos Node/OCR, checklist, geração .DEC e validações em camadas"
     }
   }
