@@ -1,0 +1,64 @@
+/**
+ * Testes do módulo Storage IRPF Produção (Task 3)
+ * Subtask 3.1: resolver path por ANO/CASEID e criar subpastas 00-11, 99
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { mkdirSync, rmSync, existsSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+
+// Módulo a ser implementado em src/services/irpf-producao/storage.ts
+const SUBFOLDERS = [
+  '00_cadastro',
+  '01_rendimentos',
+  '02_bancos',
+  '03_investimentos',
+  '04_saude',
+  '05_educacao',
+  '06_pensao_dependentes',
+  '07_bens_direitos',
+  '08_dividas_onus',
+  '09_especiais',
+  '10_protocolos',
+  '11_dec',
+  '99_auditoria',
+];
+
+describe('IRPF Produção - Storage (Task 3.1)', () => {
+  let basePath: string;
+
+  beforeEach(() => {
+    basePath = join(tmpdir(), `irpf-storage-test-${Date.now()}`);
+  });
+
+  afterEach(() => {
+    if (existsSync(basePath)) {
+      try {
+        rmSync(basePath, { recursive: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('resolveCasePath(ano, caseId) retorna path terminando em {ANO}{sep}{CASEID}', async () => {
+    const { resolveCasePath } = await import('../../src/services/irpf-producao/storage');
+    const path = resolveCasePath(2025, 'C0001842');
+    expect(path).toBeDefined();
+    expect(typeof path).toBe('string');
+    expect(path.length).toBeGreaterThan(0);
+    expect(path).toMatch(/2025[\\/]C0001842$/);
+  });
+
+  it('ensureSubfolders(path) cria subpastas 00_cadastro a 11_dec e 99_auditoria', async () => {
+    mkdirSync(basePath, { recursive: true });
+    const { ensureSubfolders } = await import('../../src/services/irpf-producao/storage');
+    await ensureSubfolders(basePath);
+    const entries = readdirSync(basePath);
+    for (const sub of SUBFOLDERS) {
+      expect(entries).toContain(sub);
+      expect(existsSync(join(basePath, sub))).toBe(true);
+    }
+  });
+});

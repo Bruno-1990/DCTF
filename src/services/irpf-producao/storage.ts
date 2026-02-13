@@ -1,0 +1,50 @@
+/**
+ * Storage IRPF Produção (PRD 8.1, 8.2)
+ * Path por ANO/CASEID; subpastas 00_cadastro a 11_dec, 99_auditoria.
+ * RNF-001: sem CPF/nome no path.
+ */
+
+import { mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
+
+const SUBFOLDERS = [
+  '00_cadastro',
+  '01_rendimentos',
+  '02_bancos',
+  '03_investimentos',
+  '04_saude',
+  '05_educacao',
+  '06_pensao_dependentes',
+  '07_bens_direitos',
+  '08_dividas_onus',
+  '09_especiais',
+  '10_protocolos',
+  '11_dec',
+  '99_auditoria',
+] as const;
+
+function getBasePath(): string {
+  const base = process.env.IRPF_STORAGE_PATH;
+  if (base) return base.trim().replace(/\/*$/, '');
+  return join(process.cwd(), 'irpf_storage');
+}
+
+/**
+ * Monta o path da pasta do case: {BASE}/{ANO}/{CASEID}
+ */
+export function resolveCasePath(ano: number, caseId: string): string {
+  const base = getBasePath();
+  return join(base, String(ano), String(caseId));
+}
+
+/**
+ * Cria as subpastas 00_cadastro a 11_dec e 99_auditoria sob o path do case.
+ */
+export async function ensureSubfolders(casePath: string): Promise<void> {
+  for (const sub of SUBFOLDERS) {
+    const full = join(casePath, sub);
+    if (!existsSync(full)) {
+      mkdirSync(full, { recursive: true });
+    }
+  }
+}
