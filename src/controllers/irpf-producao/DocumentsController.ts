@@ -5,7 +5,7 @@
 
 import { Request, Response } from 'express';
 import { join } from 'path';
-import { getConnection } from '../../config/mysql';
+import { getConnection, executeQuery } from '../../config/mysql';
 import { resolveCasePath, ensureSubfolders, saveFileAtomically, computeSha256 } from '../../services/irpf-producao/storage';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB (PRD 8.4)
@@ -170,6 +170,12 @@ export class DocumentsController {
           [id, docTypeStr, sourceStr, version, sha256, file_path, file.size, (req as any).user?.id ?? (req as any).user?.email ?? null]
         );
         const document_id = Number((insertResult as { insertId: number }).insertId);
+        const actor = (req as any).user?.email ?? (req as any).user?.id ?? (req as any).irpfAuth?.userId ?? req.headers['x-user-id'] ?? null;
+        await executeQuery(
+          `INSERT INTO irpf_producao_audit_events (case_id, event_type, actor, payload)
+           VALUES (?, 'document_upload', ?, ?)`,
+          [id, actor, JSON.stringify({ document_id, doc_type: docTypeStr, source: sourceStr, version, file_path, deduplicated: !!existingDoc })]
+        );
 
         return res.status(201).json({
           success: true,
