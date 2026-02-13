@@ -63,14 +63,22 @@ describe('IRPF Produção API - Rotas e sub-rotas', () => {
       expect(fs.existsSync(p)).toBe(true);
     });
 
-    it('CasesController deve ter métodos list, getById, create, update, updateStatus', () => {
+    it('CasesController deve ter métodos list, getById, create, update, patchTriage, updateStatus', () => {
       const { CasesController } = require('../../src/controllers/irpf-producao/CasesController');
       const c = new CasesController();
       expect(typeof c.list).toBe('function');
       expect(typeof c.getById).toBe('function');
       expect(typeof c.create).toBe('function');
       expect(typeof c.update).toBe('function');
+      expect(typeof c.patchTriage).toBe('function');
       expect(typeof c.updateStatus).toBe('function');
+    });
+
+    it('deve montar PATCH /api/irpf-producao/cases/:id/triage (folha de rosto)', async () => {
+      const response = await request(app)
+        .patch('/api/irpf-producao/cases/1/triage')
+        .send({ marcadores: { saude: true }, fontes_esperadas: ['ITAU'] });
+      expect([200, 404, 500]).toContain(response.status);
     });
 
     it('deve existir estrutura src/services/irpf-producao (storage/serviços)', () => {

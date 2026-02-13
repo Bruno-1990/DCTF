@@ -3254,7 +3254,7 @@
         "description": "Módulo Storage: resolver pasta por ANO/CASEID, escrita atômica (.uploading → rename), cálculo SHA-256, nome padrão sem CPF. Variável IRPF_STORAGE_PATH.",
         "details": "Estrutura \\\\SERVIDOR\\IRPF\\{ANO}\\{CASEID}\\ com 00_cadastro a 11_dec, 99_auditoria. RNF-001: sem CPF/nome no path. 8.1 e 8.2 PRD.",
         "testStrategy": "Salvar arquivo de teste e verificar nome/pasta e hash.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2
         ],
@@ -3264,7 +3264,7 @@
             "id": 1,
             "title": "Resolver path por ANO e CASEID e criar subpastas 00-11, 99",
             "description": "Função que monta \\\\SERVIDOR\\IRPF\\{ANO}\\{CASEID}\\; criar 00_cadastro a 11_dec, 99_auditoria.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 3
           },
@@ -3272,7 +3272,7 @@
             "id": 2,
             "title": "Escrita atômica: gravar .uploading e rename para nome final",
             "description": "Evitar arquivo incompleto; nome padrão sem CPF (RNF-001).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 3
           },
@@ -3280,7 +3280,7 @@
             "id": 3,
             "title": "Cálculo SHA-256 do arquivo e variável IRPF_STORAGE_PATH",
             "description": "Hash após escrita; config por env para path do share.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 3
           }
@@ -3292,7 +3292,7 @@
         "description": "CRUD de cases (ano, exercício, contribuinte, perfil, responsável). Máquina de estados (NEW → INTAKE_* → PROCESSING → READY_FOR_REVIEW → APPROVED → SUBMITTED → CLOSED). Gates: BLOCKER impede READY_FOR_REVIEW.",
         "details": "RF-001 a RF-005. Transições com validação; audit_event em mudança de status. Políticas P-005, P-015 (concorrência).",
         "testStrategy": "Criar case, alterar status respeitando gates; verificar audit.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2
         ],
@@ -3302,7 +3302,7 @@
             "id": 1,
             "title": "CRUD de cases (ano, exercício, contribuinte, perfil, responsável)",
             "description": "Endpoints e serviços para criar, listar, atualizar case; campos obrigatórios.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 4
           },
@@ -3310,7 +3310,7 @@
             "id": 2,
             "title": "Máquina de estados e transições com validação",
             "description": "NEW → INTAKE_* → PROCESSING → READY_FOR_REVIEW → APPROVED → SUBMITTED → CLOSED; validar gate BLOCKER.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 4
           },
@@ -3318,7 +3318,7 @@
             "id": 3,
             "title": "Registrar audit_event em toda mudança de status",
             "description": "Quem, quando, de/para; política P-005/P-015 para concorrência.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 4
           }
@@ -3330,7 +3330,7 @@
         "description": "Form de triagem com marcadores (saúde, educação, bens, investimentos, exterior, pensão) e fontes pagadoras esperadas. Marcadores ajustam checklist e risco. RF-010, RF-011, RF-012.",
         "details": "Dados em case ou tabela de triagem; alimentar checklist (Anexo B) e risco inicial.",
         "testStrategy": "Salvar triagem e verificar checklist atualizado.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4
         ],
@@ -3340,7 +3340,7 @@
             "id": 1,
             "title": "Form de triagem com marcadores (saúde, educação, bens, investimentos, exterior, pensão)",
             "description": "Campos booleanos ou tags; persistir em case ou tabela de triagem.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 5
           },
@@ -3348,7 +3348,7 @@
             "id": 2,
             "title": "Fontes pagadoras esperadas e alimentar checklist (Anexo B)",
             "description": "Lista de fontes; gerar itens de checklist conforme perfil e marcadores.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 5
           },
@@ -3356,7 +3356,7 @@
             "id": 3,
             "title": "Cálculo de risco inicial a partir dos marcadores",
             "description": "RF-012; risco inicial para políticas de revisão.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 5
           }
@@ -4090,7 +4090,7 @@
     ],
     "metadata": {
       "created": "2026-02-13T17:00:14.299Z",
-      "updated": "2026-02-13T18:05:34.011Z",
+      "updated": "2026-02-13T18:24:44.530Z",
       "description": "Módulo IRPF Produção — Sistema interno de produção de declarações IRPF integrado ao DCTF: cases, documentos, extração dinâmica, fluxos Node/OCR, checklist, geração .DEC e validações em camadas"
     }
   }
