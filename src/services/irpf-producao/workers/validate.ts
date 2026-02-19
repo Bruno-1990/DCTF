@@ -6,6 +6,7 @@
 import { Worker, Job } from 'bullmq';
 import { getRedisConnectionOptions } from '../queues/config';
 import { startRun, completeRun, failRun } from '../job-runs';
+import { enqueueScoreRisk } from '../enqueue-score-risk';
 
 export interface ValidateJobData {
   mysql_job_id: number;
@@ -30,6 +31,11 @@ async function processValidateJob(job: Job<ValidateJobData, void>): Promise<void
     // Placeholder: futura lógica (ex.: validar extracted_data, consistência, marcar REQUIRES_REVIEW)
     void document_id;
     await completeRun(runId);
+    try {
+      await enqueueScoreRisk(document_id, { caseId: job.data.case_id ?? undefined });
+    } catch (e) {
+      console.error('[IRPF Produção] enqueueScoreRisk após validate:', e);
+    }
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
     if (runId != null) await failRun(runId, msg);
