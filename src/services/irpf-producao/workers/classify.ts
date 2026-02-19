@@ -6,6 +6,7 @@
 import { Worker, Job } from 'bullmq';
 import { getRedisConnectionOptions } from '../queues/config';
 import { startRun, completeRun, failRun } from '../job-runs';
+import { enqueueValidate } from '../enqueue-validate';
 
 export interface ClassifyJobData {
   mysql_job_id: number;
@@ -30,6 +31,11 @@ async function processClassifyJob(job: Job<ClassifyJobData, void>): Promise<void
     // Placeholder: futura lógica (ex.: validar doc_type a partir de extracted_data, marcar REQUIRES_REVIEW)
     void document_id;
     await completeRun(runId);
+    try {
+      await enqueueValidate(document_id, { caseId: job.data.case_id ?? undefined });
+    } catch (e) {
+      console.error('[IRPF Produção] enqueueValidate após classify:', e);
+    }
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
     if (runId != null) await failRun(runId, msg);
