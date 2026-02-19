@@ -6,6 +6,7 @@
 import { Worker, Job } from 'bullmq';
 import { getRedisConnectionOptions } from '../queues/config';
 import { startRun, completeRun, failRun } from '../job-runs';
+import { enqueueGenerateCaseSummary } from '../enqueue-generate-case-summary';
 
 export interface ScoreRiskJobData {
   mysql_job_id: number;
@@ -30,6 +31,11 @@ async function processScoreRiskJob(job: Job<ScoreRiskJobData, void>): Promise<vo
     // Placeholder: futura lógica (ex.: calcular score de risco do case/documento, persistir)
     void document_id;
     await completeRun(runId);
+    try {
+      await enqueueGenerateCaseSummary({ caseId: job.data.case_id ?? undefined, documentId: document_id });
+    } catch (e) {
+      console.error('[IRPF Produção] enqueueGenerateCaseSummary após score_risk:', e);
+    }
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
     if (runId != null) await failRun(runId, msg);
