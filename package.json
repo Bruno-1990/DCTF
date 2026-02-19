@@ -33,6 +33,7 @@
     "create:banco-horas-table": "ts-node src/scripts/create-banco-horas-table.ts",
     "create:sped-v2-legal-docs": "ts-node src/scripts/create-sped-v2-legal-documents-tables.ts",
     "create:irpf-producao-tables": "ts-node src/scripts/create-irpf-producao-tables.ts",
+    "workers:irpf-producao": "ts-node src/scripts/run-irpf-producao-workers.ts",
     "migrate:sitf-extracted": "ts-node src/scripts/run-sitf-migration.ts",
     "migrate:teste-png": "ts-node src/scripts/run-teste-png-migration.ts",
     "migrate:clientes-receitaws": "ts-node src/scripts/migrate-clientes-receitaws-fields.ts",
