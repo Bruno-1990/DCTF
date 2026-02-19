@@ -7,6 +7,8 @@ import { Request, Response } from 'express';
 import { join } from 'path';
 import { getConnection, executeQuery } from '../../config/mysql';
 import { resolveCasePath, ensureSubfolders, saveFileAtomically, computeSha256 } from '../../services/irpf-producao/storage';
+import { classifyExtractionFlow } from '../../services/irpf-producao/extraction-flow';
+import { enqueueExtractText } from '../../services/irpf-producao/enqueue-extract-text';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB (PRD 8.4)
 const ALLOWED_MIMES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
@@ -170,11 +172,25 @@ export class DocumentsController {
           [id, docTypeStr, sourceStr, version, sha256, file_path, file.size, (req as any).user?.id ?? (req as any).user?.email ?? null]
         );
         const document_id = Number((insertResult as { insertId: number }).insertId);
+
+        const extractionFlow = classifyExtractionFlow(file.mimetype);
+        await conn.execute(
+          `UPDATE irpf_producao_documents SET extraction_status = 'PENDING', extraction_flow = ? WHERE id = ?`,
+          [extractionFlow, document_id]
+        );
+        if (extractionFlow === 'NATIVE_TEXT') {
+          await enqueueExtractText(document_id, { caseId: id });
+          await conn.execute(
+            `UPDATE irpf_producao_documents SET extraction_status = 'EXTRACTING' WHERE id = ?`,
+            [document_id]
+          );
+        }
+
         const actor = (req as any).user?.email ?? (req as any).user?.id ?? (req as any).irpfAuth?.userId ?? req.headers['x-user-id'] ?? null;
         await executeQuery(
           `INSERT INTO irpf_producao_audit_events (case_id, event_type, actor, payload)
            VALUES (?, 'document_upload', ?, ?)`,
-          [id, actor, JSON.stringify({ document_id, doc_type: docTypeStr, source: sourceStr, version, file_path, deduplicated: !!existingDoc })]
+          [id, actor, JSON.stringify({ document_id, doc_type: docTypeStr, source: sourceStr, version, file_path, deduplicated: !!existingDoc, extraction_flow: extractionFlow })]
         );
 
         return res.status(201).json({
@@ -183,6 +199,8 @@ export class DocumentsController {
           file_path,
           version,
           deduplicated: !!existingDoc,
+          extraction_status: extractionFlow === 'NATIVE_TEXT' ? 'EXTRACTING' : 'PENDING',
+          extraction_flow: extractionFlow,
         });
       } finally {
         conn.release();

@@ -57,6 +57,10 @@ async function processExtractTextJob(job: Job<ExtractTextJobData, void>): Promis
 
     if (!filePath) {
       await failRun(runId, `Documento ${document_id} sem file_path`);
+      await executeQuery(
+        `UPDATE irpf_producao_documents SET extraction_status = 'EXTRACTION_ERROR', extraction_error_message = ? WHERE id = ?`,
+        ['Documento sem file_path', document_id]
+      );
       return;
     }
 
@@ -64,7 +68,12 @@ async function processExtractTextJob(job: Job<ExtractTextJobData, void>): Promis
     const { text, numpages } = await extractTextFromPdf(buffer);
 
     if (numpages === 0) {
-      await failRun(runId, 'PDF sem páginas ou não editável');
+      const msg = 'PDF sem páginas ou não editável';
+      await failRun(runId, msg);
+      await executeQuery(
+        `UPDATE irpf_producao_documents SET extraction_status = 'EXTRACTION_ERROR', extraction_error_message = ? WHERE id = ?`,
+        [msg, document_id]
+      );
       return;
     }
 
@@ -73,6 +82,10 @@ async function processExtractTextJob(job: Job<ExtractTextJobData, void>): Promis
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
     if (runId != null) await failRun(runId, msg);
+    await executeQuery(
+      `UPDATE irpf_producao_documents SET extraction_status = 'EXTRACTION_ERROR', extraction_error_message = ? WHERE id = ?`,
+      [msg.slice(0, 65535), document_id]
+    );
     throw err;
   }
 }

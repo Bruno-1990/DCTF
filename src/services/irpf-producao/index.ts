@@ -11,3 +11,4 @@ export {
   type ExtractionConfigRow,
   type DocumentInfo,
 } from './extraction-pipeline';
+export { classifyExtractionFlow, type ExtractionFlowType } from './extraction-flow';
