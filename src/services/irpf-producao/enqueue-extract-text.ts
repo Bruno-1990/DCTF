@@ -31,10 +31,15 @@ export async function enqueueExtractText(
     );
     const header = result as { insertId: number };
     const mysqlJobId = header.insertId;
+    const [runResult] = await conn.execute(
+      `INSERT INTO irpf_producao_job_runs (job_id, status, attempts) VALUES (?, 'PENDING', 0)`,
+      [mysqlJobId]
+    );
+    const mysqlRunId = (runResult as { insertId: number }).insertId;
     const queue = getQueue('extract_text');
     await queue.add(
       'extract',
-      { mysql_job_id: mysqlJobId, document_id: documentId, version: JOB_VERSION },
+      { mysql_job_id: mysqlJobId, mysql_run_id: mysqlRunId, document_id: documentId, version: JOB_VERSION },
       jobId ? { jobId } : undefined
     );
     return mysqlJobId;

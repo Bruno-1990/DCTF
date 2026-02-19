@@ -15,6 +15,8 @@ const pdfParse = require('pdf-parse');
 
 export interface ExtractTextJobData {
   mysql_job_id: number;
+  /** Run criado ao enfileirar (PENDING); worker atualiza para RUNNING/SUCCESS/FAILED */
+  mysql_run_id?: number;
   document_id: number;
 }
 
@@ -30,11 +32,11 @@ async function extractTextFromPdf(buffer: Buffer): Promise<{ text: string; numpa
 
 /** Processa um job extract_text: lê documento, extrai texto, grava job_runs */
 async function processExtractTextJob(job: Job<ExtractTextJobData, void>): Promise<void> {
-  const { mysql_job_id, document_id } = job.data;
+  const { mysql_job_id, mysql_run_id, document_id } = job.data;
   let runId: number | null = null;
 
   try {
-    runId = await startRun(mysql_job_id);
+    runId = await startRun(mysql_job_id, mysql_run_id);
   } catch (e) {
     throw new Error(`Falha ao registrar run: ${(e as Error).message}`);
   }

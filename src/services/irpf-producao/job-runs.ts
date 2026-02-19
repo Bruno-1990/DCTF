@@ -6,8 +6,15 @@ import { executeQuery, getConnection } from '../../config/mysql';
 
 export type JobRunStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED';
 
-/** Inicia uma execução (run) para o job e retorna o id do run */
-export async function startRun(jobId: number): Promise<number> {
+/** Inicia uma execução (run): se runId informado, atualiza run existente para RUNNING; senão insere novo run (retrocompat). */
+export async function startRun(jobId: number, runId?: number): Promise<number> {
+  if (runId != null) {
+    await executeQuery(
+      `UPDATE irpf_producao_job_runs SET status = 'RUNNING', attempts = 1, started_at = CURRENT_TIMESTAMP WHERE id = ? AND job_id = ?`,
+      [runId, jobId]
+    );
+    return runId;
+  }
   const conn = await getConnection();
   try {
     const [result] = await conn.execute(
