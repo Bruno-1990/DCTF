@@ -12,3 +12,10 @@ export {
   type DocumentInfo,
 } from './extraction-pipeline';
 export { classifyExtractionFlow, type ExtractionFlowType } from './extraction-flow';
+export {
+  getOcrWebhookConfig,
+  buildOcrWebhookPayload,
+  notifyOcrWebhook,
+  type OcrWebhookConfig,
+  type OcrWebhookPayload,
+} from './ocr-webhook';

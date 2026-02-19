@@ -64,4 +64,8 @@ router.post(
   (req, res) => documentsController.upload(req, res)
 );
 
+// Task 12: Webhook OCR — callback (8.9) e download do arquivo para o serviço externo
+router.post('/documents/process-callback', (req, res) => documentsController.processCallback(req, res));
+router.get('/documents/:id/file', (req, res) => documentsController.getFile(req, res));
+
 export default router;

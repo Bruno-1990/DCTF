@@ -9,6 +9,8 @@ import { getConnection, executeQuery } from '../../config/mysql';
 import { resolveCasePath, ensureSubfolders, saveFileAtomically, computeSha256 } from '../../services/irpf-producao/storage';
 import { classifyExtractionFlow } from '../../services/irpf-producao/extraction-flow';
 import { enqueueExtractText } from '../../services/irpf-producao/enqueue-extract-text';
+import { getOcrWebhookConfig, buildOcrWebhookPayload, notifyOcrWebhook } from '../../services/irpf-producao/ocr-webhook';
+import { readFile } from 'fs/promises';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB (PRD 8.4)
 const ALLOWED_MIMES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
@@ -178,12 +180,36 @@ export class DocumentsController {
           `UPDATE irpf_producao_documents SET extraction_status = 'PENDING', extraction_flow = ? WHERE id = ?`,
           [extractionFlow, document_id]
         );
+        let ocrConfig: ReturnType<typeof getOcrWebhookConfig> = null;
+        let ocrOk = false;
         if (extractionFlow === 'NATIVE_TEXT') {
           await enqueueExtractText(document_id, { caseId: id });
           await conn.execute(
             `UPDATE irpf_producao_documents SET extraction_status = 'EXTRACTING' WHERE id = ?`,
             [document_id]
           );
+        } else if (extractionFlow === 'OCR_WEBHOOK') {
+          ocrConfig = getOcrWebhookConfig();
+          if (ocrConfig?.webhookUrl && ocrConfig?.appBaseUrl) {
+            const payload = buildOcrWebhookPayload(document_id, ocrConfig.appBaseUrl, docTypeStr, sourceStr);
+            const result = await notifyOcrWebhook(payload, ocrConfig);
+            ocrOk = result.ok;
+            await conn.execute(
+              `UPDATE irpf_producao_documents SET extraction_status = ? WHERE id = ?`,
+              [ocrOk ? 'EXTRACTING' : 'EXTRACTION_ERROR', document_id]
+            );
+            if (!ocrOk) {
+              await conn.execute(
+                `UPDATE irpf_producao_documents SET extraction_error_message = ?, extraction_attempts = extraction_attempts + 1 WHERE id = ?`,
+                [result.lastError?.slice(0, 65535) ?? 'Webhook OCR falhou', document_id]
+              );
+            }
+          } else {
+            await conn.execute(
+              `UPDATE irpf_producao_documents SET extraction_status = 'EXTRACTION_ERROR', extraction_error_message = ? WHERE id = ?`,
+              ['Webhook OCR não configurado (IRPF_OCR_WEBHOOK_URL / IRPF_APP_BASE_URL)', document_id]
+            );
+          }
         }
 
         const actor = (req as any).user?.email ?? (req as any).user?.id ?? (req as any).irpfAuth?.userId ?? req.headers['x-user-id'] ?? null;
@@ -193,13 +219,14 @@ export class DocumentsController {
           [id, actor, JSON.stringify({ document_id, doc_type: docTypeStr, source: sourceStr, version, file_path, deduplicated: !!existingDoc, extraction_flow: extractionFlow })]
         );
 
+        let responseExtractionStatus = extractionFlow === 'NATIVE_TEXT' ? 'EXTRACTING' : (extractionFlow === 'OCR_WEBHOOK' ? (ocrConfig?.webhookUrl && ocrConfig?.appBaseUrl ? (ocrOk ? 'EXTRACTING' : 'EXTRACTION_ERROR') : 'EXTRACTION_ERROR') : 'PENDING');
         return res.status(201).json({
           success: true,
           document_id,
           file_path,
           version,
           deduplicated: !!existingDoc,
-          extraction_status: extractionFlow === 'NATIVE_TEXT' ? 'EXTRACTING' : 'PENDING',
+          extraction_status: responseExtractionStatus,
           extraction_flow: extractionFlow,
         });
       } finally {
@@ -208,6 +235,108 @@ export class DocumentsController {
     } catch (error: any) {
       console.error('[IRPF Produção] documents upload:', error);
       res.status(500).json({ success: false, error: error.message || 'Erro no upload' });
+    }
+  }
+
+  /** POST /api/irpf-producao/documents/process-callback — Callback do webhook OCR (Task 12, 8.9, idempotente) */
+  async processCallback(req: Request, res: Response) {
+    try {
+      const body = req.body as {
+        document_id?: number;
+        status?: string;
+        extracted_fields?: Array<{ campo_destino: string; valor_extraido?: string; valor_normalizado?: string; confidence_score?: number }>;
+        raw_text?: string;
+        error_message?: string;
+      };
+      const documentId = body?.document_id != null ? Number(body.document_id) : NaN;
+      if (!Number.isInteger(documentId) || documentId < 1) {
+        return res.status(400).json({ success: false, error: 'document_id obrigatório e deve ser inteiro positivo', code: 'INVALID_PAYLOAD' });
+      }
+      const status = String(body?.status ?? '').toLowerCase();
+      if (status !== 'success' && status !== 'error') {
+        return res.status(400).json({ success: false, error: 'status deve ser success ou error', code: 'INVALID_PAYLOAD' });
+      }
+
+      const conn = await getConnection();
+      try {
+        const [rows] = await conn.execute<any>('SELECT id, extraction_flow FROM irpf_producao_documents WHERE id = ?', [documentId]);
+        const doc = Array.isArray(rows) ? rows[0] : rows;
+        if (!doc) {
+          return res.status(404).json({ success: false, error: 'Documento não encontrado', code: 'DOCUMENT_NOT_FOUND' });
+        }
+
+        const rawText = body.raw_text != null ? String(body.raw_text).slice(0, 16_777_215) : null;
+        const errorMessage = body.error_message != null ? String(body.error_message).slice(0, 65535) : null;
+
+        if (status === 'error') {
+          await conn.execute(
+            `UPDATE irpf_producao_documents SET extraction_status = 'EXTRACTION_ERROR', extraction_error_message = ?, raw_text = ?, extraction_attempts = extraction_attempts + 1 WHERE id = ?`,
+            [errorMessage ?? 'OCR retornou erro', rawText, documentId]
+          );
+          return res.status(200).json({ success: true, document_id: documentId, status: 'error' });
+        }
+
+        await conn.execute(
+          `UPDATE irpf_producao_documents SET extraction_status = 'EXTRACTED', extraction_error_message = NULL, raw_text = ?, extraction_attempts = extraction_attempts + 1 WHERE id = ?`,
+          [rawText, documentId]
+        );
+
+        const fields = Array.isArray(body.extracted_fields) ? body.extracted_fields : [];
+        if (fields.length > 0) {
+          await conn.execute('DELETE FROM irpf_producao_document_extracted_data WHERE document_id = ?', [documentId]);
+          const ruleVersion = 0;
+          for (const f of fields) {
+            const campo = String(f?.campo_destino ?? '').slice(0, 80);
+            if (!campo) continue;
+            const valor = (f?.valor_extraido != null ? String(f.valor_extraido) : '').slice(0, 65535);
+            const normalizado = (f?.valor_normalizado != null ? String(f.valor_normalizado) : valor).slice(0, 500);
+            const score = f?.confidence_score != null ? Math.min(1, Math.max(0, Number(f.confidence_score))) : null;
+            await conn.execute(
+              `INSERT INTO irpf_producao_document_extracted_data (document_id, rule_version, config_id, campo_destino, valor_extraido, valor_normalizado, confidence_score) VALUES (?, ?, NULL, ?, ?, ?, ?)`,
+              [documentId, ruleVersion, campo, valor, normalizado, score]
+            );
+          }
+        }
+
+        return res.status(200).json({ success: true, document_id: documentId, status: 'success' });
+      } finally {
+        conn.release();
+      }
+    } catch (error: any) {
+      console.error('[IRPF Produção] process-callback:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro no callback' });
+    }
+  }
+
+  /** GET /api/irpf-producao/documents/:id/file — Download do arquivo para o webhook OCR (8.9) */
+  async getFile(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id) || id < 1) {
+        return res.status(400).json({ success: false, error: 'ID inválido', code: 'INVALID_DOCUMENT_ID' });
+      }
+      const conn = await getConnection();
+      let filePath: string;
+      try {
+        const [rows] = await conn.execute<any>('SELECT file_path FROM irpf_producao_documents WHERE id = ?', [id]);
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        filePath = row?.file_path;
+        conn.release();
+      } catch (e) {
+        conn.release();
+        throw e;
+      }
+      if (!filePath) {
+        return res.status(404).json({ success: false, error: 'Documento ou arquivo não encontrado', code: 'FILE_NOT_FOUND' });
+      }
+      const buffer = await readFile(filePath);
+      const ext = filePath.split('.').pop()?.toLowerCase() ?? 'bin';
+      const contentType: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+      res.setHeader('Content-Type', contentType[ext] || 'application/octet-stream');
+      res.send(buffer);
+    } catch (error: any) {
+      console.error('[IRPF Produção] getFile:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao obter arquivo' });
     }
   }
 }
