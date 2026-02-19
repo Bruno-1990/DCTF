@@ -8,6 +8,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { CasesController } from '../controllers/irpf-producao/CasesController';
 import { DocumentsController } from '../controllers/irpf-producao/DocumentsController';
+import * as HealthController from '../controllers/irpf-producao/HealthController';
 import { sanitizeData } from '../middleware/validation';
 
 const router = Router();
@@ -67,5 +68,10 @@ router.post(
 // Task 12: Webhook OCR — callback (8.9) e download do arquivo para o serviço externo
 router.post('/documents/process-callback', (req, res) => documentsController.processCallback(req, res));
 router.get('/documents/:id/file', (req, res) => documentsController.getFile(req, res));
+
+// Task 13: Reprocessamento (RF-049a), monitoramento (RNF-032), health (RNF-033)
+router.post('/documents/:id/reprocess-extraction', requireProfile, (req, res) => documentsController.reprocessExtraction(req, res));
+router.get('/health', (req, res) => HealthController.getHealth(req, res));
+router.get('/jobs', requireProfile, (req, res) => HealthController.listJobRuns(req, res));
 
 export default router;

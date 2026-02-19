@@ -308,6 +308,95 @@ export class DocumentsController {
     }
   }
 
+  /** POST /api/irpf-producao/documents/:id/reprocess-extraction — Reprocessar extração (Task 13, RF-049a) */
+  async reprocessExtraction(req: Request, res: Response) {
+    const MAX_EXTRACTION_ATTEMPTS = parseInt(process.env['IRPF_MAX_EXTRACTION_ATTEMPTS'] || '10', 10) || 10;
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id) || id < 1) {
+        return res.status(400).json({ success: false, error: 'ID de documento inválido', code: 'INVALID_DOCUMENT_ID' });
+      }
+      const conn = await getConnection();
+      let doc: { id: number; case_id: number; extraction_status: string; extraction_flow: string; extraction_attempts: number; doc_type: string; source: string };
+      try {
+        const [rows] = await conn.execute<any>(
+          'SELECT id, case_id, extraction_status, extraction_flow, extraction_attempts, doc_type, source FROM irpf_producao_documents WHERE id = ?',
+          [id]
+        );
+        doc = Array.isArray(rows) ? rows[0] : rows;
+      } finally {
+        conn.release();
+      }
+      if (!doc) {
+        return res.status(404).json({ success: false, error: 'Documento não encontrado', code: 'DOCUMENT_NOT_FOUND' });
+      }
+      const status = String(doc.extraction_status || '');
+      if (status !== 'EXTRACTION_ERROR' && status !== 'REQUIRES_REVIEW') {
+        return res.status(400).json({
+          success: false,
+          error: 'Reprocessamento permitido apenas para documentos com status EXTRACTION_ERROR ou REQUIRES_REVIEW',
+          code: 'INVALID_STATUS',
+        });
+      }
+      if (doc.extraction_attempts >= MAX_EXTRACTION_ATTEMPTS) {
+        return res.status(400).json({
+          success: false,
+          error: `Limite de tentativas de extração atingido (${MAX_EXTRACTION_ATTEMPTS})`,
+          code: 'MAX_ATTEMPTS_EXCEEDED',
+        });
+      }
+      const flow = String(doc.extraction_flow || '');
+      if (flow === 'NATIVE_TEXT') {
+        await enqueueExtractText(id, { caseId: doc.case_id });
+        const conn2 = await getConnection();
+        try {
+          await conn2.execute('UPDATE irpf_producao_documents SET extraction_status = ? WHERE id = ?', ['EXTRACTING', id]);
+        } finally {
+          conn2.release();
+        }
+        return res.status(200).json({ success: true, document_id: id, extraction_status: 'EXTRACTING', message: 'Reenfileirado para extração' });
+      }
+      if (flow === 'OCR_WEBHOOK') {
+        const ocrConfig = getOcrWebhookConfig();
+        if (!ocrConfig?.webhookUrl || !ocrConfig?.appBaseUrl) {
+          return res.status(503).json({
+            success: false,
+            error: 'Webhook OCR não configurado (IRPF_OCR_WEBHOOK_URL / IRPF_APP_BASE_URL)',
+            code: 'OCR_NOT_CONFIGURED',
+          });
+        }
+        const payload = buildOcrWebhookPayload(id, ocrConfig.appBaseUrl, doc.doc_type || 'OUTROS', doc.source || '');
+        const result = await notifyOcrWebhook(payload, ocrConfig);
+        const conn2 = await getConnection();
+        try {
+          await conn2.execute(
+            'UPDATE irpf_producao_documents SET extraction_status = ?, extraction_error_message = ? WHERE id = ?',
+            [result.ok ? 'EXTRACTING' : 'EXTRACTION_ERROR', result.ok ? null : (result.lastError?.slice(0, 65535) ?? 'Webhook falhou'), id]
+          );
+          if (!result.ok) {
+            await conn2.execute('UPDATE irpf_producao_documents SET extraction_attempts = extraction_attempts + 1 WHERE id = ?', [id]);
+          }
+        } finally {
+          conn2.release();
+        }
+        return res.status(200).json({
+          success: true,
+          document_id: id,
+          extraction_status: result.ok ? 'EXTRACTING' : 'EXTRACTION_ERROR',
+          message: result.ok ? 'Webhook OCR acionado' : (result.lastError || 'Falha ao notificar webhook'),
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'Fluxo de extração não suportado para reprocessamento',
+        code: 'INVALID_FLOW',
+      });
+    } catch (error: any) {
+      console.error('[IRPF Produção] reprocessExtraction:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao reprocessar' });
+    }
+  }
+
   /** GET /api/irpf-producao/documents/:id/file — Download do arquivo para o webhook OCR (8.9) */
   async getFile(req: Request, res: Response) {
     try {
