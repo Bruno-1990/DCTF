@@ -9,6 +9,7 @@ import { executeQuery, getConnection } from '../../../config/mysql';
 import { getRedisConnectionOptions } from '../queues/config';
 import { startRun, completeRun, failRun } from '../job-runs';
 import { runExtractionPipeline } from '../extraction-pipeline';
+import { enqueueClassify } from '../enqueue-classify';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require('pdf-parse');
@@ -44,13 +45,15 @@ async function processExtractTextJob(job: Job<ExtractTextJobData, void>): Promis
   try {
     const conn = await getConnection();
     let filePath: string;
+    let caseId: number | null = null;
     try {
       const [rows] = await conn.execute<any>(
-        'SELECT file_path FROM irpf_producao_documents WHERE id = ?',
+        'SELECT file_path, case_id FROM irpf_producao_documents WHERE id = ?',
         [document_id]
       );
       const row = Array.isArray(rows) ? rows[0] : rows;
       filePath = row?.file_path;
+      caseId = row?.case_id ?? null;
       conn.release();
     } catch (e) {
       conn.release();
@@ -81,6 +84,11 @@ async function processExtractTextJob(job: Job<ExtractTextJobData, void>): Promis
 
     await runExtractionPipeline(document_id, text || '');
     await completeRun(runId);
+    try {
+      await enqueueClassify(document_id, { caseId: caseId ?? undefined });
+    } catch (e) {
+      console.error('[IRPF Produção] enqueueClassify após extract_text:', e);
+    }
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
     if (runId != null) await failRun(runId, msg);
