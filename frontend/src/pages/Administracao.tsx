@@ -4,7 +4,7 @@ import axios from 'axios';
 import { dctfService } from '../services/dctf';
 import { relatoriosService } from '../services/relatorios';
 import { clientesService } from '../services/clientes';
-import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentMagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentMagnifyingGlassIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 
 const ADMIN_CREDENTIALS = {
@@ -38,6 +38,8 @@ const Administracao: React.FC = () => {
     inserted: number;
     updated: number;
     errors: number;
+    skippedDuplicate?: number;
+    skippedIds?: string[];
     currentBatch: number;
     totalBatches: number;
     errorLog?: string[];
@@ -54,6 +56,8 @@ const Administracao: React.FC = () => {
   
   const [retrying, setRetrying] = useState(false);
   const [lastSyncErrors, setLastSyncErrors] = useState<string[]>([]);
+  const [lastBackup, setLastBackup] = useState<{ dateFormatted: string } | null>(null);
+  const [restoring, setRestoring] = useState(false);
   
   // Estados para envio de email (destino dinâmico: usuário digita nome, sufixo @central-rnc.com.br)
   const EMAIL_SUFFIX = '@central-rnc.com.br';
@@ -472,14 +476,13 @@ const Administracao: React.FC = () => {
       const result = await dctfService.syncFromSupabase();
       if (result.success) {
         const message = result.message || 
-          `Sincronização concluída: ${result.data?.inserted || 0} inseridos, ${result.data?.updated || 0} atualizados, ${result.data?.errors || 0} erros`;
+          `Sincronização concluída: ${result.data?.inserted ?? 0} inseridos${(result.data?.errors ?? 0) > 0 ? `, ${result.data?.errors} erros` : ''}`;
         setSyncSuccess(message);
         setSyncProgress(result.data || null);
         if (result.data?.errorLog) {
           setLastSyncErrors(result.data.errorLog);
         }
-        // NÃO recarregar a página - manter dados na tela
-        // Os dados de progresso já estão sendo exibidos
+        fetchLastBackup(); // atualiza data do último backup (criado antes do sync)
       } else {
         setSyncError(result.error || 'Erro ao sincronizar declarações');
       }
@@ -510,6 +513,26 @@ const Administracao: React.FC = () => {
     }
   };
 
+  const handleRestore = async () => {
+    if (!lastBackup) return;
+    if (!window.confirm(`Restaurar a tabela dctf_declaracoes para o backup de ${lastBackup.dateFormatted}? Os dados atuais serão substituídos.`)) return;
+    setRestoring(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+    try {
+      const result = await dctfService.restoreFromBackup();
+      if (result.success) {
+        setSyncSuccess(result.message || `Restauração concluída: ${result.data?.restored ?? 0} registros.`);
+      } else {
+        setSyncError(result.error || 'Erro ao restaurar');
+      }
+    } catch (err: any) {
+      setSyncError(err.response?.data?.error || err.message || 'Erro ao restaurar');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   const handleRetrySyncErrors = async () => {
     setRetrying(true);
     setSyncError(null);
@@ -520,7 +543,7 @@ const Administracao: React.FC = () => {
       const result = await dctfService.retrySyncErrors();
       if (result.success) {
         const message = result.message || 
-          `Retry concluído: ${result.data?.inserted || 0} inseridos, ${result.data?.updated || 0} atualizados, ${result.data?.errors || 0} erros`;
+          `Retry concluído: ${result.data?.inserted ?? 0} inseridos${(result.data?.errors ?? 0) > 0 ? `, ${result.data?.errors} erros` : ''}`;
         setSyncSuccess(message);
         setSyncProgress(result.data || null);
         if (result.data?.errorLog) {
@@ -674,6 +697,23 @@ const Administracao: React.FC = () => {
   useEffect(() => {
     buscarTotalPendentes();
   }, []);
+
+  const fetchLastBackup = async () => {
+    try {
+      const res = await dctfService.getLastBackup();
+      if (res.success && res.data) {
+        setLastBackup({ dateFormatted: res.data.dateFormatted });
+      } else {
+        setLastBackup(null);
+      }
+    } catch {
+      setLastBackup(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) fetchLastBackup();
+  }, [isAuthenticated]);
 
   // Se não estiver autenticado, mostrar modal de login
   if (!isAuthenticated || showLoginModal) {
@@ -1222,7 +1262,7 @@ const Administracao: React.FC = () => {
             <h2 className="text-xl font-semibold text-green-900 mb-2">Sincronização de Declarações DCTF (Supabase → MySQL)</h2>
             <p className="text-sm text-green-700 mb-4">
               Esta operação irá <strong>buscar todas as declarações DCTF</strong> da tabela <code className="bg-green-100 px-1 rounded">dctf_declaracoes</code> do <strong>Supabase</strong>
-              e <strong>sincronizar</strong> para a tabela de mesmo nome no <strong>MySQL</strong>. Registros existentes serão atualizados, novos registros serão inseridos.
+              e <strong>sincronizar</strong> para a tabela de mesmo nome no <strong>MySQL</strong>. Apenas <strong>novos</strong> registros são inseridos; só é ignorado quem já existe com o <strong>mesmo ID</strong>. Mesmo CNPJ e período com outros campos diferentes (ex.: Original vs Retificadora) são inseridos como registros distintos.
             </p>
             
             {(syncError && syncError.includes('cannot be null') || syncError?.includes('foreign key')) && (
@@ -1244,9 +1284,11 @@ const Administracao: React.FC = () => {
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
                 <li>O sistema busca todos os registros da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code> no Supabase</li>
                 <li>Processa os registros em lotes de 100 para não sobrecarregar o sistema</li>
-                <li>Registros existentes (mesmo ID) são atualizados no MySQL</li>
-                <li>Registros novos são inseridos no MySQL</li>
+                <li><strong>Antes de sincronizar</strong>, é criado um backup automático da tabela (para poder restaurar depois)</li>
+                <li>Registros já existentes no MySQL (mesmo ID) são ignorados; mesmo CNPJ + período com outros campos diferentes = registros distintos, inseridos</li>
+                <li>Apenas registros novos são inseridos no MySQL</li>
                 <li>O processo mostra progresso em tempo real</li>
+                <li>Use o botão <strong>Restaurar</strong> (com a data do último backup) para reverter a tabela ao estado anterior</li>
               </ul>
               
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
@@ -1315,7 +1357,26 @@ const Administracao: React.FC = () => {
                     <div className="text-gray-600">Atualizados</div>
                     <div className="text-2xl font-bold text-purple-600">{syncProgress.updated}</div>
                   </div>
+                  {syncProgress.skippedDuplicate != null && syncProgress.skippedDuplicate > 0 && (
+                    <div>
+                      <div className="text-gray-600">Ignorados (já existia)</div>
+                      <div className="text-2xl font-bold text-amber-600">{syncProgress.skippedDuplicate}</div>
+                    </div>
+                  )}
                 </div>
+                {syncProgress.skippedDuplicate != null && syncProgress.skippedDuplicate > 0 && (
+                  <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-2">
+                    {syncProgress.skippedDuplicate} registro(s) ignorado(s): já existia no MySQL (mesmo ID).
+                    {syncProgress.skippedIds && syncProgress.skippedIds.length > 0 && (
+                      <div className="mt-1 font-mono text-xs break-all">
+                        IDs ignorados: {syncProgress.skippedIds.join(', ')}
+                      </div>
+                    )}
+                    <div className="mt-1">
+                      Se o MySQL estava limpo antes do sync, esses IDs estão <strong>duplicados no Supabase</strong> (mesmo UUID em mais de um registro). Só o primeiro de cada ID é inserido; para inserir os 925 é preciso corrigir ou remover as duplicatas no Supabase.
+                    </div>
+                  </div>
+                )}
                 {syncProgress.errors > 0 && (
                   <div className="text-sm text-red-600 mb-2 bg-red-50 border border-red-200 rounded p-2">
                     <strong>⚠️ Erros:</strong> {syncProgress.errors} registro(s) com erro durante a sincronização.
@@ -1404,7 +1465,7 @@ const Administracao: React.FC = () => {
               </div>
             )}
 
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3 items-center">
               <button
                 onClick={handleFixSchema}
                 disabled={fixingSchema || syncing || clearing}
@@ -1421,6 +1482,15 @@ const Administracao: React.FC = () => {
               >
                 <ArrowPathIcon className="h-5 w-5" />
                 {syncing ? 'Sincronizando...' : 'Sincronizar do Supabase para MySQL'}
+              </button>
+              <button
+                onClick={handleRestore}
+                disabled={restoring || !lastBackup || syncing || clearing}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                title="Restaura a tabela dctf_declaracoes a partir do backup mais recente (criado antes da última sincronização)"
+              >
+                <ArrowUturnLeftIcon className="h-5 w-5" />
+                {restoring ? 'Restaurando...' : lastBackup ? `Restaurar (${lastBackup.dateFormatted})` : 'Restaurar'}
               </button>
             </div>
           </div>

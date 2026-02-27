@@ -31,6 +31,7 @@ import spedV2Routes from './routes/sped-v2';
 import irpfRoutes from './routes/irpf';
 import irpfProducaoRoutes from './routes/irpf-producao';
 import cfopRoutes from './routes/cfop';
+import dirfRoutes from './routes/dirf';
 
 class Server {
   private app: express.Application;
@@ -47,7 +48,7 @@ class Server {
     this.setupRoutes();
     this.setupErrorHandling();
     this.setupWebSocket();
-    this.setupScheduler();
+    // Scheduler de faturamento IRPF desabilitado: consulta ao banco apenas manual (quando o usuário clica em atualizar).
   }
 
   private setupMiddleware(): void {
@@ -181,6 +182,7 @@ class Server {
     this.app.use('/api/irpf', irpfRoutes);
     this.app.use('/api/irpf-producao', irpfProducaoRoutes);
     this.app.use('/api/cfop', cfopRoutes);
+    this.app.use('/api/dirf', dirfRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {
@@ -207,20 +209,7 @@ class Server {
     });
   }
 
-  private setupScheduler(): void {
-    // Inicializar scheduler de atualização noturna do cache IRPF
-    import('./services/IrpfScheduler')
-      .then(({ IrpfScheduler }) => {
-        const scheduler = new IrpfScheduler();
-        scheduler.start();
-        console.log('[Server] IRPF Scheduler inicializado.');
-      })
-      .catch((error) => {
-        console.error('[Server] Erro ao inicializar IRPF Scheduler:', error);
-      });
-  }
-
-    public start(): void {
+  public start(): void {
     const host = process.env['HOST'] || '0.0.0.0';
     this.httpServer.listen(this.port, host, () => {
       const displayHost = host === '0.0.0.0' ? '192.168.0.47' : host;

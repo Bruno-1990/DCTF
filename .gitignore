@@ -111,6 +111,9 @@ Thumbs.db
 uploads/
 public/uploads/
 
+# Backups (DCTF sync)
+data/backups/
+
 # Database
 *.db
 *.sqlite

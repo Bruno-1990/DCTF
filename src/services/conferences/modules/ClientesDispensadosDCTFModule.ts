@@ -1,18 +1,18 @@
 /**
  * MÓDULO: Clientes Dispensados de Transmitir DCTF
- * 
+ *
  * Identifica clientes que NÃO têm obrigação de transmitir DCTF na competência vigente porque:
  * 1. Têm uma DCTF do tipo "Original sem movimento" em uma vigência passada
  * 2. E não tiveram movimentação no mês atual (competência vigente)
- * 
- * Conforme IN RFB 2.237/2024, Art. 3º, § 3º: após transmitir "Original sem movimento",
- * os meses seguintes não terão obrigação até retomar movimento.
- * 
+ *
+ * Base legal: ver BASE_LEGAL_DISPENSADOS em ../legislacao-dctf (IN RFB 2.237/2024, Art. 3º, § 3º).
+ *
  * Exemplo: Se transmitiu "Original sem movimento" em 10/2025, está dispensado de transmitir
  * DCTF em 11/2025, 12/2025, 01/2026, etc., até que tenha movimentação novamente.
  */
 
 import { randomUUID } from 'crypto';
+import { BASE_LEGAL_DISPENSADOS } from '../legislacao-dctf';
 import { executeQuery } from '../../../config/mysql';
 import { calcularCompetenciaVigente, parsePeriodo, formatarPeriodo } from '../utils/dateUtils';
 import { normalizarCNPJ, formatarCNPJ } from '../utils/cnpjUtils';
@@ -371,7 +371,7 @@ export async function listarClientesDispensadosDCTF(): Promise<ClienteDispensado
         data_transmissao_original: clienteInfo.data_transmissao_original,
         competencia_vigente: competencia,
         tem_movimentacao_atual: false,
-        mensagem: `Cliente dispensado de transmitir DCTF para ${competencia}. Já transmitiu "Original sem movimento" em ${clienteInfo.periodo_original_sem_movimento} e não teve movimentação no mês atual.`,
+        mensagem: `Cliente dispensado de transmitir DCTF para ${competencia}. Já transmitiu "Original sem movimento" em ${clienteInfo.periodo_original_sem_movimento} e não teve movimentação no mês atual (${BASE_LEGAL_DISPENSADOS.norma}).`,
       });
     }
 

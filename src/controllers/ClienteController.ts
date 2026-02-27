@@ -145,21 +145,32 @@ export class ClienteController {
       let data = result.data || [];
 
       // Filtros (compatível com 'search' legado e novos 'nome'/'cnpj')
-      // Se 'search' for fornecido, busca tanto em razão social quanto em CNPJ
+      // Regra do campo de busca: até 3 números = Código SCI; acima de 3 dígitos = CNPJ; texto = Razão Social
       if (search && typeof search === 'string' && search.trim()) {
         const searchTerm = search.trim();
         const searchDigits = searchTerm.replace(/\D/g, '');
         const searchLower = searchTerm.toLowerCase();
-        
+        const soNumeros = searchTerm === searchDigits; // termo contém apenas dígitos
+
         data = data.filter((c: any) => {
-          // Buscar por razão social (case-insensitive)
+          // Apenas números: até 3 dígitos = busca por Código SCI; mais de 3 = CNPJ
+          if (soNumeros && searchDigits.length > 0) {
+            if (searchDigits.length <= 3) {
+              const codigoSci = String(c.codigo_sci ?? c.codigoSci ?? '').replace(/\D/g, '');
+              return codigoSci === searchDigits || codigoSci.startsWith(searchDigits);
+            }
+            const cnpjLimpo = String(c.cnpj_limpo || '').replace(/\D/g, '');
+            return cnpjLimpo.includes(searchDigits);
+          }
+
+          // Texto (ou misto): busca por razão social (case-insensitive)
           const razaoSocial = (c.razao_social || c.nome || '').toLowerCase();
           const matchRazaoSocial = razaoSocial.includes(searchLower);
-          
-          // Buscar por CNPJ (apenas dígitos)
+
+          // Se tiver dígitos no termo e mais de 3, também considerar CNPJ
           const cnpjLimpo = String(c.cnpj_limpo || '').replace(/\D/g, '');
-          const matchCNPJ = searchDigits && cnpjLimpo.includes(searchDigits);
-          
+          const matchCNPJ = searchDigits.length > 3 && cnpjLimpo.includes(searchDigits);
+
           return matchRazaoSocial || matchCNPJ;
         });
       } else {
@@ -539,6 +550,8 @@ export class ClienteController {
       // Definir grupos com suas palavras-chave
       const gruposDefinidos: Array<{ nome: string; palavrasChave: string[] }> = [
         { nome: 'Aluguel e Locação', palavrasChave: ['aluguel', 'locação', 'locacao', 'arrendamento', 'leasing', 'locar', 'alugar'] },
+        { nome: 'Atacadista', palavrasChave: ['atacadista', 'atacado'] },
+        { nome: 'Varejista', palavrasChave: ['varejista', 'varejo'] },
         { nome: 'Comércio', palavrasChave: ['comércio', 'comercio', 'venda', 'comercialização'] },
         { nome: 'Serviços', palavrasChave: ['serviço', 'servico', 'prestação', 'prestacao'] },
         { nome: 'Indústria', palavrasChave: ['indústria', 'industria', 'fabricação', 'fabricacao', 'produção', 'producao'] },
@@ -2225,6 +2238,31 @@ export class ClienteController {
         });
       }
 
+      // Aplicar filtro por sócio se necessário
+      if (filtros?.socio && typeof filtros.socio === 'string' && filtros.socio.trim()) {
+        const idsResp = await this.clienteModel.buscarClienteIdsPorSocioNome(filtros.socio.trim());
+        if (idsResp.success && idsResp.data && idsResp.data.length > 0) {
+          const idsSet = new Set(idsResp.data);
+          clientes = clientes.filter((c: any) => idsSet.has(String(c.id)));
+        } else {
+          clientes = [];
+        }
+      }
+
+      // Carregar sócios para cada cliente se o campo 'socios' foi solicitado
+      const temSocios = campos.includes('socios');
+      let maxSocios = 0;
+      if (temSocios && clientes.length > 0) {
+        for (const cliente of clientes) {
+          const sociosResult = await this.clienteModel.listarSocios(cliente.id);
+          const socios = sociosResult.success ? (sociosResult.data || []) : [];
+          (cliente as any).socios = socios;
+          if (socios.length > maxSocios) {
+            maxSocios = socios.length;
+          }
+        }
+      }
+
       // Mapear labels dos campos
       const campoLabels: Record<string, string> = {
         razao_social: 'Razão Social',
@@ -2257,6 +2295,7 @@ export class ClienteController {
         atividade_principal_code: 'CNAE Principal',
         atividade_principal_text: 'Atividade Principal',
         atividades_secundarias: 'Atividades Secundárias',
+        socios: 'Sócios',
         receita_ws_status: 'Status ReceitaWS',
         receita_ws_consulta_em: 'Última Consulta ReceitaWS',
         receita_ws_ultima_atualizacao: 'Última Atualização ReceitaWS',
@@ -2294,8 +2333,8 @@ export class ClienteController {
       const dadosExportacao = clientes.map((cliente: any) => {
         const row: any = {};
         campos.forEach(campo => {
-          // Pular atividades_secundarias aqui - será processado separadamente
-          if (campo === 'atividades_secundarias') {
+          // Pular atividades_secundarias e socios aqui - serão processados separadamente
+          if (campo === 'atividades_secundarias' || campo === 'socios') {
             return;
           }
 
@@ -2378,6 +2417,20 @@ export class ClienteController {
           }
         }
 
+        // Processar sócios em colunas dinâmicas (Nome, Qual, Participação %)
+        if (temSocios) {
+          const socios: any[] = (cliente as any).socios || [];
+          for (let i = 0; i < maxSocios; i++) {
+            const socio = socios[i];
+            row[`socio_${i}_nome`] = socio?.nome ?? '';
+            row[`socio_${i}_qual`] = socio?.qual ?? '';
+            row[`socio_${i}_participacao`] =
+              socio?.participacao_percentual != null
+                ? `${Number(socio.participacao_percentual).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
+                : '';
+          }
+        }
+
         return row;
       });
 
@@ -2385,14 +2438,16 @@ export class ClienteController {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Clientes');
 
-      // Preparar cabeçalhos (incluindo colunas dinâmicas de atividades)
+      // Preparar cabeçalhos (incluindo colunas dinâmicas de atividades e sócios)
       const headers: string[] = [];
       campos.forEach(campo => {
         if (campo === 'atividades_secundarias') {
-          // Adicionar colunas dinâmicas para atividades secundárias
-          // Cada coluna terá o formato "CNAE - Atividade" como cabeçalho
           for (let i = 0; i < maxAtividades; i++) {
             headers.push('CNAE - Atividade');
+          }
+        } else if (campo === 'socios') {
+          for (let i = 0; i < maxSocios; i++) {
+            headers.push('Sócio (Nome)', 'Sócio (Qual)', 'Sócio (Participação %)');
           }
         } else {
           headers.push(campoLabels[campo] || campo);
@@ -2416,10 +2471,13 @@ export class ClienteController {
         const rowData: any[] = [];
         campos.forEach(campo => {
           if (campo === 'atividades_secundarias') {
-            // Adicionar dados das colunas dinâmicas de atividades
             for (let i = 0; i < maxAtividades; i++) {
               const chave = `atividade_secundaria_${i}`;
               rowData.push(row[chave] || '');
+            }
+          } else if (campo === 'socios') {
+            for (let i = 0; i < maxSocios; i++) {
+              rowData.push(row[`socio_${i}_nome`] || '', row[`socio_${i}_qual`] || '', row[`socio_${i}_participacao`] || '');
             }
           } else {
             const label = campoLabels[campo] || campo;

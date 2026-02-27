@@ -46,11 +46,16 @@ function requireProfile(req: Request, res: Response, next: NextFunction): void {
 // Cases
 router.get('/cases', (req, res) => casesController.list(req, res));
 router.get('/cases/:id/audit', (req, res) => casesController.getAudit(req, res));
+router.get('/cases/:id/dossie', (req, res) => casesController.getDossie(req, res));
 router.get('/cases/:id', (req, res) => casesController.getById(req, res));
 router.post('/cases', (req, res) => casesController.create(req, res));
 router.patch('/cases/:id', (req, res) => casesController.update(req, res));
+router.delete('/cases/:id', (req, res) => casesController.delete(req, res));
 router.patch('/cases/:id/triage', requireProfile, (req, res) => casesController.patchTriage(req, res));
 router.post('/cases/:id/status', requireProfile, (req, res) => casesController.updateStatus(req, res));
+router.post('/cases/:id/review', requireProfile, (req, res) => casesController.submitReview(req, res));
+router.get('/cases/:id/post-delivery-occurrences', (req, res) => casesController.getPostDeliveryOccurrences(req, res));
+router.post('/cases/:id/post-delivery-occurrences', requireProfile, (req, res) => casesController.addPostDeliveryOccurrence(req, res));
 
 router.post(
   '/cases/:id/documents',
@@ -73,5 +78,11 @@ router.get('/documents/:id/file', (req, res) => documentsController.getFile(req,
 router.post('/documents/:id/reprocess-extraction', requireProfile, (req, res) => documentsController.reprocessExtraction(req, res));
 router.get('/health', (req, res) => HealthController.getHealth(req, res));
 router.get('/jobs', requireProfile, (req, res) => HealthController.listJobRuns(req, res));
+
+// Task 14: Validações iniciais e divergências — disparar processamento do case (job process_case)
+router.post('/cases/:id/process', requireProfile, (req, res) => casesController.enqueueProcessCase(req, res));
+router.post('/cases/:id/sync-declaration', requireProfile, (req, res) => casesController.syncDeclaration(req, res));
+router.post('/cases/:id/generate-dec', requireProfile, (req, res) => casesController.generateDec(req, res));
+router.post('/cases/:id/recalculate-totals', requireProfile, (req, res) => casesController.recalculateTotals(req, res));
 
 export default router;

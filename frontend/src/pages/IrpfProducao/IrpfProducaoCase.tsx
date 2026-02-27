@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ArrowDownTrayIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { irpfProducaoService, type IrpfProducaoCase } from '../../services/irpfProducao';
 
 const TABS = [
@@ -25,6 +25,8 @@ const IrpfProducaoCase: React.FC = () => {
   const [activeTab, setActiveTab] = useState('triagem');
   const [newStatus, setNewStatus] = useState('');
   const [updating, setUpdating] = useState(false);
+  const [generatingDec, setGeneratingDec] = useState(false);
+  const [downloadingDec, setDownloadingDec] = useState(false);
 
   const load = async () => {
     if (!id) return;
@@ -56,6 +58,34 @@ const IrpfProducaoCase: React.FC = () => {
       setError(e.response?.data?.error || e.message || 'Erro ao atualizar status');
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const decDocument = caseData?.documents?.find((d) => d.doc_type === 'DEC_GERADO');
+
+  const handleGenerateDec = async () => {
+    if (!id) return;
+    setGeneratingDec(true);
+    setError(null);
+    try {
+      await irpfProducaoService.generateDec(parseInt(id, 10));
+      await load();
+    } catch (e: any) {
+      setError(e.response?.data?.error || e.message || 'Erro ao gerar .dec');
+    } finally {
+      setGeneratingDec(false);
+    }
+  };
+
+  const handleDownloadDec = async () => {
+    if (!decDocument || !caseData) return;
+    setDownloadingDec(true);
+    try {
+      await irpfProducaoService.downloadDocument(decDocument.id, `${caseData.case_code}.dec`);
+    } catch (e: any) {
+      setError(e.response?.data?.error || e.message || 'Erro ao baixar .dec');
+    } finally {
+      setDownloadingDec(false);
     }
   };
 
@@ -141,8 +171,9 @@ const IrpfProducaoCase: React.FC = () => {
           <div>
             <h3 className="font-medium text-gray-900 mb-2">Folha de rosto (triagem)</h3>
             <p className="text-sm text-gray-500">
-              Marcadores e fontes pagadoras serão preenchidos aqui. (Em implementação.)
+              Marcadores e fontes pagadoras serão preenchidos aqui.
             </p>
+            <span className="inline-block mt-2 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Em breve</span>
             {caseData.triagem_json && (
               <pre className="mt-4 overflow-auto rounded bg-white p-4 text-xs">
                 {JSON.stringify(caseData.triagem_json, null, 2)}
@@ -151,19 +182,66 @@ const IrpfProducaoCase: React.FC = () => {
           </div>
         )}
         {activeTab === 'documentos' && (
-          <p className="text-sm text-gray-500">Upload e lista de documentos por categoria. (Em implementação.)</p>
+          <div>
+            <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50/80 p-4">
+              <h3 className="font-medium text-emerald-900 mb-1">Arquivo .dec para importar na Receita</h3>
+              <p className="text-sm text-emerald-700 mb-3">
+                Ao final do fluxo, use o arquivo .dec para importar na Receita Federal.
+              </p>
+              {decDocument ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-emerald-800">
+                    Arquivo gerado em {new Date(decDocument.created_at).toLocaleString('pt-BR')}.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadDec}
+                    disabled={downloadingDec}
+                    className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    <ArrowDownTrayIcon className="h-4 w-4" />
+                    {downloadingDec ? 'Baixando...' : 'Baixar .dec'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleGenerateDec}
+                  disabled={generatingDec}
+                  className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  <DocumentDuplicateIcon className="h-4 w-4" />
+                  {generatingDec ? 'Gerando...' : 'Gerar arquivo .dec'}
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-gray-500">Upload e lista de documentos por categoria.</p>
+            <span className="inline-block mt-2 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Em breve</span>
+          </div>
         )}
         {activeTab === 'checklist' && (
-          <p className="text-sm text-gray-500">Checklist por perfil e pendências INFO/WARN/BLOCKER. (Em implementação.)</p>
+          <div>
+            <p className="text-sm text-gray-500">Checklist por perfil e pendências INFO/WARN/BLOCKER.</p>
+            <span className="inline-block mt-2 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Em breve</span>
+          </div>
         )}
         {activeTab === 'validacoes' && (
-          <p className="text-sm text-gray-500">Validações e divergências. (Em implementação.)</p>
+          <div>
+            <p className="text-sm text-gray-500">Validações e divergências.</p>
+            <span className="inline-block mt-2 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Em breve</span>
+          </div>
         )}
         {activeTab === 'aprovacao' && (
-          <p className="text-sm text-gray-500">Aprovação/reprovação com justificativa. (Em implementação.)</p>
+          <div>
+            <p className="text-sm text-gray-500">Aprovação e reprovação com justificativa.</p>
+            <span className="inline-block mt-2 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Em breve</span>
+          </div>
         )}
         {activeTab === 'auditoria' && (
-          <p className="text-sm text-gray-500">Trilha de auditoria (eventos). (Em implementação.)</p>
+          <div>
+            <p className="text-sm text-gray-500">Trilha de auditoria (eventos do case).</p>
+            <span className="inline-block mt-2 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Em breve</span>
+          </div>
         )}
       </div>
     </div>

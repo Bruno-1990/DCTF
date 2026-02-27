@@ -3,8 +3,10 @@
  * Ponto de entrada do sistema
  */
 
-// Carregar variáveis de ambiente do arquivo .env
-import 'dotenv/config';
+// Carregar .env da raiz do backend (mesmo que scripts em src/scripts/)
+import * as path from 'path';
+import * as dotenv from 'dotenv';
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 import Server from './server';
 import config from './config';

@@ -3,7 +3,9 @@
  * Migration 020: irpf_producao_cases, irpf_producao_case_people
  */
 
-import 'dotenv/config';
+import * as path from 'path';
+import * as dotenv from 'dotenv';
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 import { readFileSync } from 'fs';
 import { join } from 'path';

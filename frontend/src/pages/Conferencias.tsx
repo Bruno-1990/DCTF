@@ -1,10 +1,11 @@
 /**
  * PÁGINA: Conferências
- * 
+ *
  * Exibe todas as conferências do sistema de forma organizada e dinâmica.
+ * As seções podem ser reordenadas por arrastar e soltar (estilo Kanban); a ordem é salva no localStorage.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchConferenceSummary } from '../services/conferences-modules';
 import type { ConferenceSummary } from '../services/conferences-modules';
 import { ClientesSemDCTFVigenteSection } from '../components/conferences/ClientesSemDCTFVigenteSection';
@@ -12,7 +13,7 @@ import { ClientesSemDCTFComMovimentoSection } from '../components/conferences/Cl
 import { DCTFsForaDoPrazoSection } from '../components/conferences/DCTFsForaDoPrazoSection';
 import { DCTFsPeriodoInconsistenteSection } from '../components/conferences/DCTFsPeriodoInconsistenteSection';
 import { ClientesSemMovimentacaoSection } from '../components/conferences/ClientesSemMovimentacaoSection';
-import { ClientesHistoricoAtrasoSection } from '../components/conferences/ClientesHistoricoAtrasoSection';
+import { ClientesEmAndamentoSection } from '../components/conferences/ClientesEmAndamentoSection';
 import { ClientesDispensadosDCTFSection } from '../components/conferences/ClientesDispensadosDCTFSection';
 import {
   ExclamationTriangleIcon,
@@ -25,12 +26,50 @@ import {
   InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 
+const STORAGE_KEY_SECTION_ORDER = 'conferencias-section-order';
+
+const DEFAULT_SECTION_ORDER = [
+  'clientesSemDCTFVigente',
+  'clientesSemDCTFComMovimento',
+  'clientesDispensadosDCTF',
+  'dctfsForaDoPrazo',
+  'dctfsPeriodoInconsistente',
+  'clientesSemMovimentacao',
+  'clientesEmAndamento',
+] as const;
+
+type SectionKey = (typeof DEFAULT_SECTION_ORDER)[number];
+
+function loadSectionOrder(): SectionKey[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SECTION_ORDER);
+    if (!raw) return [...DEFAULT_SECTION_ORDER];
+    const parsed = JSON.parse(raw) as string[];
+    const validSet = new Set(DEFAULT_SECTION_ORDER as unknown as string[]);
+    const fromStorage = parsed.filter((k) => validSet.has(k)) as SectionKey[];
+    const missing = (DEFAULT_SECTION_ORDER as unknown as SectionKey[]).filter((k) => !fromStorage.includes(k));
+    return fromStorage.length ? [...fromStorage, ...missing] : [...DEFAULT_SECTION_ORDER];
+  } catch {
+    return [...DEFAULT_SECTION_ORDER];
+  }
+}
+
+function saveSectionOrder(order: SectionKey[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY_SECTION_ORDER, JSON.stringify(order));
+  } catch {
+    // ignore
+  }
+}
+
 export default function Conferencias() {
   const [summary, setSummary] = useState<ConferenceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  
+  const [sectionOrder, setSectionOrder] = useState<SectionKey[]>(() => loadSectionOrder());
+  const [draggingKey, setDraggingKey] = useState<SectionKey | null>(null);
+
   // Estado para controlar quais seções estão expandidas
   const [expandedSections, setExpandedSections] = useState<{
     clientesSemDCTFVigente: boolean;
@@ -38,7 +77,7 @@ export default function Conferencias() {
     dctfsForaDoPrazo: boolean;
     dctfsPeriodoInconsistente: boolean;
     clientesSemMovimentacao: boolean;
-    clientesHistoricoAtraso: boolean;
+    clientesEmAndamento: boolean;
     clientesDispensadosDCTF: boolean;
   }>({
     clientesSemDCTFVigente: false,
@@ -46,7 +85,7 @@ export default function Conferencias() {
     dctfsForaDoPrazo: false,
     dctfsPeriodoInconsistente: false,
     clientesSemMovimentacao: false,
-    clientesHistoricoAtraso: false,
+    clientesEmAndamento: false,
     clientesDispensadosDCTF: false,
   });
 
@@ -64,10 +103,51 @@ export default function Conferencias() {
       dctfsForaDoPrazo: true,
       dctfsPeriodoInconsistente: true,
       clientesSemMovimentacao: true,
-      clientesHistoricoAtraso: true,
+      clientesEmAndamento: true,
       clientesDispensadosDCTF: true,
     });
   };
+
+  const handleSectionDragStart = useCallback((e: React.DragEvent, key: SectionKey) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, a, select, textarea, [contenteditable="true"]')) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData('text/plain', key);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/json', JSON.stringify({ key }));
+    setDraggingKey(key);
+  }, []);
+
+  const handleSectionDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const handleSectionDrop = useCallback(
+    (e: React.DragEvent, dropKey: SectionKey) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDraggingKey(null);
+      const raw = e.dataTransfer.getData('text/plain') as SectionKey | '';
+      if (!raw || raw === dropKey) return;
+      const fromIndex = sectionOrder.indexOf(raw);
+      const toIndex = sectionOrder.indexOf(dropKey);
+      if (fromIndex === -1 || toIndex === -1) return;
+      const next = [...sectionOrder];
+      const [removed] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, removed);
+      setSectionOrder(next);
+      saveSectionOrder(next);
+    },
+    [sectionOrder]
+  );
+
+  const handleSectionDragEnd = useCallback(() => {
+    setDraggingKey(null);
+  }, []);
 
   const loadData = async (isRefresh = false) => {
     try {
@@ -147,7 +227,7 @@ export default function Conferencias() {
     );
   }
 
-  const { modulos, estatisticas, competenciaVigente } = summary;
+  const { modulos, modulosMeta, estatisticas, competenciaVigente } = summary;
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl min-h-screen">
@@ -170,12 +250,12 @@ export default function Conferencias() {
                               </button>
                           </div>
                           
-        {/* Estatísticas */}
-        <div className="flex flex-wrap gap-4 mt-6">
+        {/* Estatísticas: 4 cartões em cima, 4 em baixo */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           {/* Card 1: Total de Pendências (visão geral - sempre primeiro) */}
           <button
             onClick={expandAllSections}
-            className="glow-card-blue bg-white rounded-xl p-6 shadow-md border-3 border-blue-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-blue-50 transition-colors cursor-pointer flex-1 min-w-[180px]"
+            className="glow-card-blue bg-white rounded-xl p-6 shadow-md border-3 border-blue-500 text-center flex flex-col items-center justify-center h-[170px] hover:bg-blue-50 transition-colors cursor-pointer"
           >
             <ChartBarIcon className="h-8 w-8 text-blue-600 mb-3" />
             <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Total de Pendências</p>
@@ -185,7 +265,7 @@ export default function Conferencias() {
           {/* Card 2: Sem DCTF Vigente (crítico - sempre visível) */}
           <button
             onClick={() => toggleSection('clientesSemDCTFVigente')}
-            className="glow-card-red bg-white rounded-xl p-6 shadow-md border-3 border-red-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-red-50 transition-colors cursor-pointer flex-1 min-w-[180px]"
+            className="glow-card-red bg-white rounded-xl p-6 shadow-md border-3 border-red-500 text-center flex flex-col items-center justify-center h-[170px] hover:bg-red-50 transition-colors cursor-pointer"
           >
             <BuildingOfficeIcon className="h-8 w-8 text-red-600 mb-3" />
             <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem DCTF Vigente</p>
@@ -195,7 +275,7 @@ export default function Conferencias() {
           {/* Card 3: Sem DCTF c/ Movimento (crítico - sempre visível) */}
           <button
             onClick={() => toggleSection('clientesSemDCTFComMovimento')}
-            className="glow-card-orange bg-white rounded-xl p-6 shadow-md border-3 border-orange-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-orange-50 transition-colors cursor-pointer flex-1 min-w-[180px]"
+            className="glow-card-orange bg-white rounded-xl p-6 shadow-md border-3 border-orange-500 text-center flex flex-col items-center justify-center h-[170px] hover:bg-orange-50 transition-colors cursor-pointer"
           >
             <ExclamationTriangleIcon className="h-8 w-8 text-orange-600 mb-3" />
             <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem DCTF c/ Movimento</p>
@@ -205,7 +285,7 @@ export default function Conferencias() {
           {/* Card 4: Período Inconsistente (atenção - sempre visível) */}
           <button
             onClick={() => toggleSection('dctfsPeriodoInconsistente')}
-            className="glow-card-purple bg-white rounded-xl p-6 shadow-md border-3 border-purple-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-purple-50 transition-colors cursor-pointer flex-1 min-w-[180px]"
+            className="glow-card-purple bg-white rounded-xl p-6 shadow-md border-3 border-purple-500 text-center flex flex-col items-center justify-center h-[170px] hover:bg-purple-50 transition-colors cursor-pointer"
           >
             <DocumentTextIcon className="h-8 w-8 text-purple-600 mb-3" />
             <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Período Inconsistente</p>
@@ -215,7 +295,8 @@ export default function Conferencias() {
           {/* Card 5: Clientes Sem Obrigação (informativo - sempre visível) */}
           <button
             onClick={() => toggleSection('clientesDispensadosDCTF')}
-            className="glow-card-green bg-white rounded-xl p-6 shadow-md border-3 border-green-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-green-50 transition-colors cursor-pointer flex-1 min-w-[180px]"
+            className="glow-card-green bg-white rounded-xl p-6 shadow-md border-3 border-green-500 text-center flex flex-col items-center justify-center h-[170px] hover:bg-green-50 transition-colors cursor-pointer"
+            title="Clientes que transmitiram DCTF 'Original sem movimento' e não tiveram movimentação na competência vigente. Dispensados de transmitir conforme IN RFB 2.237/2024, Art. 3º, § 3º."
           >
             <InformationCircleIcon className="h-8 w-8 text-green-600 mb-3" />
             <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Sem Obrigação</p>
@@ -228,7 +309,7 @@ export default function Conferencias() {
           {estatisticas.totalDCTFsForaDoPrazo > 0 && (
             <button
               onClick={() => toggleSection('dctfsForaDoPrazo')}
-              className="glow-card-yellow bg-white rounded-xl p-6 shadow-md border-3 border-yellow-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-yellow-50 transition-colors cursor-pointer flex-1 min-w-[180px]"
+              className="glow-card-yellow bg-white rounded-xl p-6 shadow-md border-3 border-yellow-500 text-center flex flex-col items-center justify-center h-[170px] hover:bg-yellow-50 transition-colors cursor-pointer"
             >
               <ClockIcon className="h-8 w-8 text-yellow-600 mb-3" />
               <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Fora do Prazo</p>
@@ -240,7 +321,7 @@ export default function Conferencias() {
           {estatisticas.totalClientesSemMovimentacao > 0 && (
             <button
               onClick={() => toggleSection('clientesSemMovimentacao')}
-              className="glow-card-indigo bg-white rounded-xl p-6 shadow-md border-3 border-indigo-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-indigo-50 transition-colors cursor-pointer flex-1 min-w-[180px]"
+              className="glow-card-indigo bg-white rounded-xl p-6 shadow-md border-3 border-indigo-500 text-center flex flex-col items-center justify-center h-[170px] hover:bg-indigo-50 transition-colors cursor-pointer"
             >
               <XCircleIcon className="h-8 w-8 text-indigo-600 mb-3" />
               <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Sem Movimentação</p>
@@ -248,95 +329,110 @@ export default function Conferencias() {
             </button>
           )}
 
-          {/* Card 8: Histórico de Atraso (condicional - aparece quando tem dados) */}
-          {estatisticas.totalClientesHistoricoAtraso > 0 && (
-            <button
-              onClick={() => toggleSection('clientesHistoricoAtraso')}
-              className="glow-card-pink bg-white rounded-xl p-6 shadow-md border-3 border-pink-500 text-center flex flex-col items-center justify-center min-h-[140px] hover:bg-pink-50 transition-colors cursor-pointer flex-1 min-w-[180px]"
-            >
-              <ClockIcon className="h-8 w-8 text-pink-600 mb-3" />
-              <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Histórico de Atraso</p>
-              <p className="text-4xl font-bold text-pink-600">{estatisticas.totalClientesHistoricoAtraso}</p>
-            </button>
-          )}
+          {/* Card 8: Em Andamento - SEMPRE VISÍVEL (apenas registros em andamento) */}
+          <button
+            onClick={() => toggleSection('clientesEmAndamento')}
+            className="glow-card-pink bg-white rounded-xl p-6 shadow-md border-3 border-blue-500 text-center flex flex-col items-center justify-center h-[170px] hover:bg-blue-50 transition-colors cursor-pointer"
+          >
+            <ArrowPathIcon className="h-8 w-8 text-blue-600 mb-3" />
+            <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Em Andamento</p>
+            <p className="text-4xl font-bold text-blue-600">{estatisticas.totalDCTFsEmAndamento}</p>
+          </button>
 
         </div>
               </div>
 
-          {/* Módulos de Conferência */}
-          <div className="space-y-6">
-            {/* Módulo 1: Clientes sem DCTF Vigente */}
-            <ClientesSemDCTFVigenteSection
-              clientes={modulos.clientesSemDCTFVigente}
-              competenciaVigente={competenciaVigente.competencia}
-              loading={false}
-              error={null}
-              expanded={expandedSections.clientesSemDCTFVigente}
-              onToggle={() => toggleSection('clientesSemDCTFVigente')}
-            />
-
-            {/* Módulo 2: Clientes sem DCTF com Movimento */}
-            <ClientesSemDCTFComMovimentoSection
-              clientes={modulos.clientesSemDCTFComMovimento}
-              competenciaVigente={competenciaVigente.competencia}
-              loading={false}
-              error={null}
-              expanded={expandedSections.clientesSemDCTFComMovimento}
-              onToggle={() => toggleSection('clientesSemDCTFComMovimento')}
-            />
-
-            {/* Módulo 3: Clientes Dispensados de Transmitir DCTF - SEMPRE VISÍVEL */}
-            <ClientesDispensadosDCTFSection
-              clientes={modulos.clientesDispensadosDCTF}
-              loading={false}
-              error={null}
-              expanded={expandedSections.clientesDispensadosDCTF}
-              onToggle={() => toggleSection('clientesDispensadosDCTF')}
-            />
-
-            {/* Módulo 4: DCTFs Enviadas Fora do Prazo (oculto quando zerado) */}
-            {modulos.dctfsForaDoPrazo.length > 0 && (
-              <DCTFsForaDoPrazoSection
-                dctfs={modulos.dctfsForaDoPrazo}
-                loading={false}
-                error={null}
-                expanded={expandedSections.dctfsForaDoPrazo}
-                onToggle={() => toggleSection('dctfsForaDoPrazo')}
-              />
-            )}
-
-            {/* Módulo 5: DCTFs com Período Inconsistente */}
-            <DCTFsPeriodoInconsistenteSection
-              dctfs={modulos.dctfsPeriodoInconsistente}
-              loading={false}
-              error={null}
-              expanded={expandedSections.dctfsPeriodoInconsistente}
-              onToggle={() => toggleSection('dctfsPeriodoInconsistente')}
-            />
-
-            {/* Módulo 6: Clientes sem Movimentação há mais de 12 meses */}
-            {modulos.clientesSemMovimentacao.length > 0 && (
-              <ClientesSemMovimentacaoSection
-                clientes={modulos.clientesSemMovimentacao}
-                loading={false}
-                error={null}
-                expanded={expandedSections.clientesSemMovimentacao}
-                onToggle={() => toggleSection('clientesSemMovimentacao')}
-              />
-            )}
-
-            {/* Módulo 7: Clientes com Histórico de Atraso */}
-            {modulos.clientesHistoricoAtraso.length > 0 && (
-              <ClientesHistoricoAtrasoSection
-                clientes={modulos.clientesHistoricoAtraso}
-                loading={false}
-                error={null}
-                expanded={expandedSections.clientesHistoricoAtraso}
-                onToggle={() => toggleSection('clientesHistoricoAtraso')}
-              />
-            )}
-
-        </div>
+          {/* Módulos de Conferência – ordem tipo Kanban (arraste o card para reordenar) */}
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500 mb-2">
+              Arraste um card para cima ou para baixo para reordenar. A ordem é salva automaticamente.
+            </p>
+            {sectionOrder.map((sectionKey) => {
+              const isDragging = draggingKey === sectionKey;
+              return (
+                <div
+                  key={sectionKey}
+                  onDragOver={handleSectionDragOver}
+                  onDrop={(e) => handleSectionDrop(e, sectionKey)}
+                  className={isDragging ? 'rounded-xl border-2 border-blue-400 bg-blue-50/50 opacity-80 transition-all duration-200' : 'transition-all duration-200'}
+                >
+                  <div
+                    draggable
+                    onDragStart={(e) => handleSectionDragStart(e, sectionKey)}
+                    onDragEnd={handleSectionDragEnd}
+                    className="cursor-grab active:cursor-grabbing outline-none"
+                    title="Arraste para reordenar"
+                  >
+                      {sectionKey === 'clientesSemDCTFVigente' && (
+                        <ClientesSemDCTFVigenteSection
+                          clientes={modulos.clientesSemDCTFVigente}
+                          competenciaVigente={competenciaVigente.competencia}
+                          loading={false}
+                          error={null}
+                          expanded={expandedSections.clientesSemDCTFVigente}
+                          onToggle={() => toggleSection('clientesSemDCTFVigente')}
+                        />
+                      )}
+                      {sectionKey === 'clientesSemDCTFComMovimento' && (
+                        <ClientesSemDCTFComMovimentoSection
+                          clientes={modulos.clientesSemDCTFComMovimento}
+                          competenciaVigente={competenciaVigente.competencia}
+                          loading={false}
+                          error={null}
+                          expanded={expandedSections.clientesSemDCTFComMovimento}
+                          onToggle={() => toggleSection('clientesSemDCTFComMovimento')}
+                        />
+                      )}
+                      {sectionKey === 'clientesDispensadosDCTF' && (
+                        <ClientesDispensadosDCTFSection
+                          clientes={modulos.clientesDispensadosDCTF}
+                          loading={false}
+                          error={null}
+                          expanded={expandedSections.clientesDispensadosDCTF}
+                          onToggle={() => toggleSection('clientesDispensadosDCTF')}
+                        />
+                      )}
+                      {sectionKey === 'dctfsForaDoPrazo' && (
+                        <DCTFsForaDoPrazoSection
+                          dctfs={modulos.dctfsForaDoPrazo}
+                          loading={false}
+                          error={null}
+                          expanded={expandedSections.dctfsForaDoPrazo}
+                          onToggle={() => toggleSection('dctfsForaDoPrazo')}
+                        />
+                      )}
+                      {sectionKey === 'dctfsPeriodoInconsistente' && (
+                        <DCTFsPeriodoInconsistenteSection
+                          dctfs={modulos.dctfsPeriodoInconsistente}
+                          loading={false}
+                          error={null}
+                          expanded={expandedSections.dctfsPeriodoInconsistente}
+                          onToggle={() => toggleSection('dctfsPeriodoInconsistente')}
+                        />
+                      )}
+                      {sectionKey === 'clientesSemMovimentacao' && (
+                        <ClientesSemMovimentacaoSection
+                          clientes={modulos.clientesSemMovimentacao}
+                          loading={false}
+                          error={null}
+                          expanded={expandedSections.clientesSemMovimentacao}
+                          onToggle={() => toggleSection('clientesSemMovimentacao')}
+                        />
+                      )}
+                      {sectionKey === 'clientesEmAndamento' && (
+                        <ClientesEmAndamentoSection
+                          dctfs={modulos.dctfsEmAndamento}
+                          loading={false}
+                          error={null}
+                          expanded={expandedSections.clientesEmAndamento}
+                          onToggle={() => toggleSection('clientesEmAndamento')}
+                        />
+                      )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
     </div>
   );
 }

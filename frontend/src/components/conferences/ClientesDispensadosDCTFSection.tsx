@@ -6,7 +6,7 @@
  * movimentação no mês atual.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   CheckCircleIcon,
@@ -19,6 +19,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../Pagination';
 import { exportToExcel } from '../../utils/exportExcel';
+import { FiltroConferencias, filtrarPorCnpjOuRazao, filtrarPorProcuracao } from './FiltroConferencias';
 
 interface ClienteDispensadoDCTF {
   id: string;
@@ -59,16 +60,24 @@ function formatCNPJ(cnpj?: string | null) {
   return cnpj;
 }
 
-export function ClientesDispensadosDCTFSection({ 
-  clientes, 
+export function ClientesDispensadosDCTFSection({
+  clientes,
   loading = false,
   error = null,
   expanded: expandedProp,
-  onToggle
+  onToggle,
 }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = expandedProp !== undefined ? expandedProp : internalExpanded;
-  
+  const [filtro, setFiltro] = useState('');
+  const [mostrarTodosComProcuracao, setMostrarTodosComProcuracao] = useState(false);
+  const clientesPorProcuracao = mostrarTodosComProcuracao ? clientes : filtrarPorProcuracao(clientes);
+  const clientesFiltrados = filtrarPorCnpjOuRazao(clientesPorProcuracao, filtro);
+
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtro, mostrarTodosComProcuracao]);
+
   const handleToggle = () => {
     if (onToggle) {
       onToggle();
@@ -105,14 +114,15 @@ export function ClientesDispensadosDCTFSection({
   };
 
   const handleExportar = async () => {
-    if (clientes.length === 0) {
+    const listaExportar = clientesFiltrados;
+    if (listaExportar.length === 0) {
       alert('Não há dados para exportar');
       return;
     }
 
     try {
       setExporting(true);
-      const data = clientes.map((cliente) => [
+      const data = listaExportar.map((cliente) => [
         cliente.razao_social || '—',
         formatCNPJ(cliente.cnpj) || '—',
         cliente.periodo_original_sem_movimento,
@@ -130,7 +140,7 @@ export function ClientesDispensadosDCTFSection({
         title: 'Clientes Dispensados de Transmitir DCTF',
         metadata: {
           'Data de Exportação': new Date().toLocaleString('pt-BR'),
-          'Total de Clientes': clientes.length.toString(),
+          'Total de Clientes': listaExportar.length.toString(),
         },
       });
     } catch (err: any) {
@@ -170,10 +180,14 @@ export function ClientesDispensadosDCTFSection({
               <span className="text-gray-500">Carregando...</span>
             ) : (
               <>
-                Total: <span className="text-gray-900 font-bold">{clientes.length}</span> clientes
+                Total: <span className="text-gray-900 font-bold">{clientesPorProcuracao.length}</span>
+                {filtro.trim() ? ` (${clientesFiltrados.length} filtrado${clientesFiltrados.length !== 1 ? 's' : ''})` : ' clientes'}
               </>
             )}
           </div>
+          {!loading && clientes.length > 0 && (
+            <FiltroConferencias value={filtro} onChange={setFiltro} />
+          )}
           {!loading && clientes.length > 0 && (
             <motion.button
               onClick={handleExportar}
@@ -192,6 +206,30 @@ export function ClientesDispensadosDCTFSection({
 
       {expanded && (
         <>
+          {!loading && clientes.length > 0 && (
+            <FiltroConferencias value={filtro} onChange={setFiltro} />
+          )}
+          {!loading && clientes.length > 0 && (
+            <div className="flex items-center px-6 py-3 border-b border-gray-200 bg-gray-50/70" onClick={(e) => e.stopPropagation()}>
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={mostrarTodosComProcuracao}
+                  onChange={(e) => {
+                    setMostrarTodosComProcuracao(e.target.checked);
+                    setPaginaAtual(1);
+                  }}
+                  className="w-5 h-5 text-amber-500 border-2 border-gray-300 rounded focus:ring-2 focus:ring-amber-400 focus:ring-offset-0 cursor-pointer transition-all duration-200 checked:bg-amber-500 checked:border-amber-500"
+                />
+                <span className="text-sm font-medium text-gray-700 group-hover:text-amber-600 transition-colors select-none">
+                  Todos com procuração
+                </span>
+                <span className="text-xs text-gray-500 italic">
+                  (Desmarcado: apenas clientes com Razão Social e CNPJ)
+                </span>
+              </label>
+            </div>
+          )}
           {loading ? (
             <div className="px-6 py-8 text-center">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -203,15 +241,18 @@ export function ClientesDispensadosDCTFSection({
                 <strong>Erro:</strong> {error}
               </div>
             </div>
-          ) : clientes.length === 0 ? (
+          ) : clientesFiltrados.length === 0 ? (
             <div className="px-6 py-8 text-center">
               <InformationCircleIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
               <p className="text-sm text-gray-600 mb-2">
-                Nenhum cliente dispensado encontrado.
+                {filtro.trim() ? 'Nenhum resultado para o filtro informado.' : 'Nenhum cliente dispensado encontrado.'}
               </p>
-              <p className="text-xs text-gray-500">
-                Todos os clientes têm obrigação de transmitir DCTF ou não se enquadram nos critérios de dispensa conforme IN RFB 2.237/2024.
-              </p>
+              {filtro.trim() && <p className="text-xs text-gray-500 mt-2">Tente outro CNPJ ou Razão Social.</p>}
+              {!filtro.trim() && (
+                <p className="text-xs text-gray-500">
+                  Todos os clientes têm obrigação de transmitir DCTF ou não se enquadram nos critérios de dispensa conforme IN RFB 2.237/2024.
+                </p>
+              )}
             </div>
           ) : (
             <>
@@ -243,7 +284,7 @@ export function ClientesDispensadosDCTFSection({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {clientes
+                    {clientesFiltrados
                       .slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina)
                       .map((cliente) => (
                         <tr key={cliente.id} className="hover:bg-gray-50">
@@ -301,12 +342,12 @@ export function ClientesDispensadosDCTFSection({
                   </tbody>
                 </table>
               </div>
-              {clientes.length > itensPorPagina && (
+              {clientesFiltrados.length > itensPorPagina && (
                 <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
                   <Pagination
                     currentPage={paginaAtual}
-                    totalPages={Math.ceil(clientes.length / itensPorPagina)}
-                    totalItems={clientes.length}
+                    totalPages={Math.ceil(clientesFiltrados.length / itensPorPagina)}
+                    totalItems={clientesFiltrados.length}
                     itemsPerPage={itensPorPagina}
                     onPageChange={setPaginaAtual}
                     itemLabel="cliente"

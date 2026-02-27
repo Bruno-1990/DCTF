@@ -9,6 +9,7 @@ export const IRPF_QUEUE_NAMES = [
   'validate',
   'score_risk',
   'generate_case_summary',
+  'process_case',
 ] as const;
 
 export type IrpfQueueName = (typeof IRPF_QUEUE_NAMES)[number];

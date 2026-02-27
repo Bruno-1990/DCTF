@@ -27,3 +27,23 @@ O painel administrativo permite importar declarações DCTF a partir de **imagen
 
 - **POST** `/api/dctf/admin/import-from-png`
 - **Body:** `multipart/form-data`, campo `images` (até 20 arquivos PNG, 10 MB cada).
+
+## Verificação: dados nas imagens x MySQL (teste_png)
+
+Para conferir se os dados inseridos no MySQL batem com o que está nas imagens (principalmente **data de transmissão** e **período de apuração**), use o script que re-executa o OCR em todas as imagens da pasta DCTF_WEB e compara com a tabela `teste_png`:
+
+```bash
+# Usar pasta padrão (Pictures/DCTF_WEB no Windows)
+npm run verify:ocr-vs-mysql
+
+# Ou informar a pasta das imagens
+npx ts-node src/scripts/verificar-ocr-vs-mysql-dctf.ts "C:\caminho\para\DCTF_WEB"
+```
+
+Variável de ambiente opcional: `DCTF_WEB_IMAGES_PATH` — caminho da pasta que contém os PNGs.
+
+O script lista:
+- **Divergência em data de transmissão:** valor na imagem (OCR) x valor no MySQL
+- **Divergência em período de apuração:** valor na imagem x valor no MySQL
+- **Registros no MySQL** sem correspondência em nenhuma imagem (mesmo CNPJ + período)
+- **Linhas extraídas das imagens** sem registro correspondente no MySQL

@@ -183,6 +183,26 @@ export const dctfService = {
     return response.data;
   },
 
+  /** Último backup (criado antes da sincronização) para exibir no botão Restaurar */
+  async getLastBackup(): Promise<{
+    success: boolean;
+    data?: { filename: string; date: string; dateFormatted: string } | null;
+  }> {
+    const response = await api.get('/dctf/admin/last-backup');
+    return response.data;
+  },
+
+  /** Restaura a tabela dctf_declaracoes a partir do backup mais recente */
+  async restoreFromBackup(): Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    data?: { restored: number };
+  }> {
+    const response = await api.post('/dctf/admin/restore');
+    return response.data;
+  },
+
   async processSpreadsheet(file: File): Promise<{ dctfId: string; message: string }> {
     const formData = new FormData();
     formData.append('file', file);

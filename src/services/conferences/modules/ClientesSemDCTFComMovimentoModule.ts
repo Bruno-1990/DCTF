@@ -14,6 +14,7 @@ import { HostDadosObrigacaoService } from '../../HostDadosObrigacaoService';
 export interface ClienteSemDCTFComMovimento {
   cnpj: string;
   razao_social: string;
+  regime_tributario?: string | null;
   cod_emp: number | null;
   competencia_obrigacao: string; // Competência que deveria ter DCTF
   competencia_movimento: string; // Competência do movimento

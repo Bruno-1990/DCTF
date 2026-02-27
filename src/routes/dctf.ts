@@ -64,6 +64,16 @@ router.post('/admin/clear', (req, res) => {
   dctfController.limparTodasDeclaracoes(req, res);
 });
 
+// GET /api/dctf/admin/last-backup - Último backup (para botão Restaurar)
+router.get('/admin/last-backup', (req, res) => {
+  dctfController.getLastBackup(req, res);
+});
+
+// POST /api/dctf/admin/restore - Restaurar tabela a partir do backup mais recente
+router.post('/admin/restore', (req, res) => {
+  dctfController.restoreFromBackup(req, res);
+});
+
 // POST /api/dctf/admin/sync - Sincronizar declarações do Supabase para MySQL (operação administrativa)
 router.post('/admin/sync', (req, res) => {
   dctfController.sincronizarDoSupabase(req, res);

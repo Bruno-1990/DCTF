@@ -814,7 +814,7 @@ const Clientes: React.FC = () => {
           displayUppercase((cliente as any).email, '-'),
           displayUppercase((cliente as any).telefone, '-'),
           displayUppercase((cliente as any).endereco, '-'),
-          (cliente as any).regime_tributario || '-',
+          displayUppercase((cliente as any).regime_tributario, '-'),
           cnaePrincipal || '-',
           cnaePrincipalText || '-',
           atividadesSecundarias.length || 0,
@@ -4098,7 +4098,7 @@ const Clientes: React.FC = () => {
             )}
 
             {/* Informações Financeiras e Tributárias */}
-            {((visualizandoCliente as any).capital_social || (visualizandoCliente as any).regime_tributario) && (
+            {visualizandoCliente && (
               <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
                 <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Informações Financeiras e Tributárias</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -4110,14 +4110,37 @@ const Clientes: React.FC = () => {
                       </div>
                     </div>
                   )}
-                  {(visualizandoCliente as any).regime_tributario && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Regime Tributário</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).regime_tributario}
-                      </div>
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Regime tributário</label>
+                    {(() => {
+                      const regime = (visualizandoCliente as any).regime_tributario || '';
+                      const opcoes = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
+                      const valorSelect = opcoes.includes(regime) ? regime : '';
+                      return (
+                        <select
+                          value={valorSelect}
+                          onChange={async (e) => {
+                            const v = e.target.value;
+                            if (!visualizandoCliente?.id) return;
+                            const valorSalvar = v === '' ? 'A Definir' : v;
+                            try {
+                              await updateClienteById(visualizandoCliente.id, { regime_tributario: valorSalvar } as Partial<Cliente>);
+                              setVisualizandoCliente(prev => prev ? { ...prev, regime_tributario: valorSalvar } as Cliente : null);
+                              toast.success('Regime tributário atualizado.');
+                            } catch (err: any) {
+                              toast.error(err?.response?.data?.error ?? err?.message ?? 'Erro ao salvar.');
+                            }
+                          }}
+                          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900 uppercase"
+                        >
+                          <option value="">SELECIONE</option>
+                          <option value="Simples Nacional">SIMPLES NACIONAL</option>
+                          <option value="Lucro Presumido">LUCRO PRESUMIDO</option>
+                          <option value="Lucro Real">LUCRO REAL</option>
+                        </select>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             )}
@@ -4199,7 +4222,7 @@ const Clientes: React.FC = () => {
                 type="text"
                 placeholder={
                   activeTab === 'clientes' 
-                    ? 'Buscar por Razão Social ou CNPJ' 
+                    ? 'Razão Social, Código SCI (até 3 dígitos) ou CNPJ' 
                     : activeTab === 'participacao'
                     ? 'Digite o CNPJ ou Razão Social para filtrar...'
                     : activeTab === 'faturamento-sci'
@@ -4962,12 +4985,12 @@ const Clientes: React.FC = () => {
                       <select
                         value={(formData as any).regime_tributario || ((formData as any).simples_optante === true || (formData as any).simples_optante === 1 ? 'Simples Nacional' : 'A Definir')}
                         onChange={(e) => setFormData({ ...formData, regime_tributario: e.target.value } as any)}
-                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all uppercase"
                       >
-                        <option value="A Definir">A Definir</option>
-                        <option value="Simples Nacional">Simples Nacional</option>
-                        <option value="Lucro Presumido">Lucro Presumido</option>
-                        <option value="Lucro Real">Lucro Real</option>
+                        <option value="A Definir">A DEFINIR</option>
+                        <option value="Simples Nacional">SIMPLES NACIONAL</option>
+                        <option value="Lucro Presumido">LUCRO PRESUMIDO</option>
+                        <option value="Lucro Real">LUCRO REAL</option>
                       </select>
                     </div>
                   </div>
@@ -7709,11 +7732,11 @@ const Clientes: React.FC = () => {
                   <select
                     value={regimeSelecionado}
                     onChange={(e) => setRegimeSelecionado(e.target.value)}
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm hover:border-gray-400"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm hover:border-gray-400 uppercase"
                   >
-                    <option value="">Selecione uma opção...</option>
-                    <option value="Lucro Presumido">Lucro Presumido</option>
-                    <option value="Lucro Real">Lucro Real</option>
+                    <option value="">SELECIONE UMA OPÇÃO...</option>
+                    <option value="Lucro Presumido">LUCRO PRESUMIDO</option>
+                    <option value="Lucro Real">LUCRO REAL</option>
                   </select>
                 </div>
 

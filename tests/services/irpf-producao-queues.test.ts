@@ -13,7 +13,7 @@ const MockQueue = jest.fn().mockImplementation(() => ({
 }));
 
 jest.mock('../../src/services/irpf-producao/queues/config', () => ({
-  IRPF_QUEUE_NAMES: ['extract_text', 'classify', 'validate', 'score_risk', 'generate_case_summary'],
+  IRPF_QUEUE_NAMES: ['extract_text', 'classify', 'validate', 'score_risk', 'generate_case_summary', 'process_case'],
   getRedisConnectionOptions: jest.fn().mockReturnValue({ host: 'localhost', port: 6379 }),
 }));
 
@@ -30,7 +30,7 @@ describe('IRPF Produção - Filas BullMQ (Task 9.1)', () => {
     jest.clearAllMocks();
   });
 
-  it('deve exportar as 5 filas: extract_text, classify, validate, score_risk, generate_case_summary', async () => {
+  it('deve exportar as 6 filas incluindo process_case', async () => {
     const { IRPF_QUEUE_NAMES } = await import('../../src/services/irpf-producao/queues/index');
     expect(IRPF_QUEUE_NAMES).toEqual([
       'extract_text',
@@ -38,6 +38,7 @@ describe('IRPF Produção - Filas BullMQ (Task 9.1)', () => {
       'validate',
       'score_risk',
       'generate_case_summary',
+      'process_case',
     ]);
   });
 

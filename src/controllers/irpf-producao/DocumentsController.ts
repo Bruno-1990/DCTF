@@ -407,9 +407,14 @@ export class DocumentsController {
       const conn = await getConnection();
       let filePath: string;
       try {
-        const [rows] = await conn.execute<any>('SELECT file_path FROM irpf_producao_documents WHERE id = ?', [id]);
+        const [rows] = await conn.execute<any>(
+          'SELECT d.file_path, d.doc_type, c.case_code FROM irpf_producao_documents d JOIN irpf_producao_cases c ON c.id = d.case_id WHERE d.id = ?',
+          [id]
+        );
         const row = Array.isArray(rows) ? rows[0] : rows;
         filePath = row?.file_path;
+        const docType = row?.doc_type;
+        const caseCode = row?.case_code;
         conn.release();
       } catch (e) {
         conn.release();
@@ -420,8 +425,12 @@ export class DocumentsController {
       }
       const buffer = await readFile(filePath);
       const ext = filePath.split('.').pop()?.toLowerCase() ?? 'bin';
-      const contentType: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+      const contentType: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', dec: 'application/octet-stream' };
       res.setHeader('Content-Type', contentType[ext] || 'application/octet-stream');
+      if (docType === 'DEC_GERADO' && caseCode) {
+        const filename = `${String(caseCode).trim()}.dec`;
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      }
       res.send(buffer);
     } catch (error: any) {
       console.error('[IRPF Produção] getFile:', error);

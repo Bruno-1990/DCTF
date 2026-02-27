@@ -96,7 +96,7 @@ const DCTFPage: React.FC = () => {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [tiposDisponiveis, setTiposDisponiveis] = useState<string[]>([]);
   const [periodosTransmissaoDisponiveis, setPeriodosTransmissaoDisponiveis] = useState<string[]>([]);
-  const [mostrarTodosComProcuracao, setMostrarTodosComProcuracao] = useState(true);
+  const [mostrarTodosComProcuracao, setMostrarTodosComProcuracao] = useState(false);
 
   // Ler parâmetro de busca da URL ao carregar a página (vindo do Dashboard)
   useEffect(() => {
@@ -427,20 +427,15 @@ const DCTFPage: React.FC = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {items
               .filter((d) => {
-                // Se o checkbox estiver marcado, mostra todos
-                if (mostrarTodosComProcuracao) {
-                  return true;
-                }
-                // Se desmarcado, mostra apenas os que têm razão social E CNPJ
+                if (mostrarTodosComProcuracao) return true;
                 const temRazaoSocial = d.cliente?.razao_social && d.cliente.razao_social.trim() !== '';
-                const numeroIdentificacao = 
+                const numeroIdentificacao =
                   d.numeroIdentificacao ||
                   d.cnpj ||
                   d.cliente?.cnpj ||
                   d.cliente?.cnpj_limpo ||
                   undefined;
                 const temCNPJ = numeroIdentificacao && numeroIdentificacao.replace(/\D/g, '').length === 14;
-                
                 return temRazaoSocial && temCNPJ;
               })
               .map((d) => {

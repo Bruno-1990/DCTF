@@ -9,6 +9,7 @@ import { createClassifyWorker } from '../services/irpf-producao/workers/classify
 import { createValidateWorker } from '../services/irpf-producao/workers/validate';
 import { createScoreRiskWorker } from '../services/irpf-producao/workers/score-risk';
 import { createGenerateCaseSummaryWorker } from '../services/irpf-producao/workers/generate-case-summary';
+import { createProcessCaseWorker } from '../services/irpf-producao/workers/process-case';
 
 const workers = [
   createExtractTextWorker(),
@@ -16,6 +17,7 @@ const workers = [
   createValidateWorker(),
   createScoreRiskWorker(),
   createGenerateCaseSummaryWorker(),
+  createProcessCaseWorker(),
 ];
 
 function shutdown(): void {
@@ -34,4 +36,4 @@ function shutdown(): void {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-console.log('[IRPF Produção] Workers ativos: extract_text, classify, validate, score_risk, generate_case_summary');
+console.log('[IRPF Produção] Workers ativos: extract_text, classify, validate, score_risk, generate_case_summary, process_case');

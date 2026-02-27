@@ -7,7 +7,9 @@
  *   docs/migrations/mysql/018_drop_receita_pagamentos.sql
  */
 
-import 'dotenv/config';
+import * as path from 'path';
+import * as dotenv from 'dotenv';
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 async function main() {
   console.log('⚠️  Tabelas de receita_pagamentos foram descontinuadas.');

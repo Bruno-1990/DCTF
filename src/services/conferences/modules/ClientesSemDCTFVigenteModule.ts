@@ -4,8 +4,9 @@
  * Objetivo: Listar todos os clientes cadastrados que NÃO têm DCTF enviada
  * para a competência vigente (mês anterior à data atual).
  * 
- * IMPORTANTE: Considera apenas DCTFs do tipo "Original". 
- * DCTFs do tipo "Retificadora" são desconsideradas.
+ * IMPORTANTE: Ao verificar se o cliente TEM DCTF, consideramos tanto declarações
+ * do tipo "Original" quanto "Retificadora". Se há lançamento de retificadora
+ * na competência, o cliente NÃO deve aparecer na lista de "sem DCTF".
  * 
  * Fonte de dados: MySQL (tabelas clientes e dctf_declaracoes)
  */
@@ -19,8 +20,12 @@ export interface ClienteSemDCTFVigente {
   id: string;
   cnpj: string;
   razao_social: string;
+  /** Regime tributário do cliente (apenas informativo; obrigatoriedade por regime pode ser evolução futura). */
+  regime_tributario?: string | null;
   competencia_vigente: string;
   vencimento: string;
+  /** Dias até o vencimento (negativo se já vencido). */
+  diasAteVencimento: number;
   severidade: 'high' | 'medium' | 'low';
   mensagem: string;
 }
@@ -102,33 +107,30 @@ export async function listarClientesSemDCTFVigente(): Promise<ClienteSemDCTFVige
     console.log(`[Conferência Módulo 1] 📊 Total de clientes: ${todosClientes.length}`);
     
     // 2. Buscar CNPJs que TÊM DCTF na competência vigente
-    // IMPORTANTE: Considerar tanto Original quanto Retificadora para verificar se TEM DCTF
-    // Se tem retificadora, significa que já enviou original antes
+    // Considerar Original E Retificadora: quem tem qualquer um dos dois não aparece em "sem DCTF"
     const dctfsComCNPJ = await executeQuery<{ cnpj_normalizado: string }>(
       `
       SELECT DISTINCT 
-        REPLACE(REPLACE(REPLACE(
-          COALESCE(c.cnpj_limpo, d.cnpj),
-          '.', ''), '/', ''), '-', ''
-        ) as cnpj_normalizado
+        REPLACE(REPLACE(REPLACE(REPLACE(
+          TRIM(COALESCE(c.cnpj_limpo, d.cnpj, '')),
+          '.', ''), '/', ''), '-', ''), ' ', ''
+        ) AS cnpj_normalizado
       FROM dctf_declaracoes d
       LEFT JOIN clientes c ON d.cliente_id = c.id
       WHERE (
         TRIM(d.periodo_apuracao) = ?
         OR TRIM(d.periodo_apuracao) = ?
       )
-      AND (
-        c.id IS NOT NULL
-        OR d.cnpj IS NOT NULL
-      )
+      AND (c.id IS NOT NULL OR d.cnpj IS NOT NULL)
+      -- Qualquer tipo de declaração conta como "tem DCTF" (Original, Retificadora, etc.)
       `,
       [periodoSql, competencia]
     );
     
     const cnpjsComDCTF = new Set(
       dctfsComCNPJ
-        .map(r => r.cnpj_normalizado)
-        .filter(cnpj => cnpj && cnpj.length >= 11) as string[]
+        .map(r => (r.cnpj_normalizado || '').replace(/\D/g, ''))
+        .filter(cnpj => cnpj.length >= 11) as string[]
     );
     
     console.log(`[Conferência Módulo 1] ✅ Clientes COM DCTF: ${cnpjsComDCTF.size}`);
@@ -161,8 +163,10 @@ export async function listarClientesSemDCTFVigente(): Promise<ClienteSemDCTFVige
           id: randomUUID(),
           cnpj: cliente.cnpj_limpo || '',
           razao_social: cliente.razao_social || '',
+          regime_tributario: (cliente as any).regime_tributario ?? null,
           competencia_vigente: competencia,
           vencimento: vencimento.toISOString(),
+          diasAteVencimento,
           severidade,
           mensagem: `Cliente sem DCTF na competência ${competencia}. Verificar se houve movimento para o mês seguinte.`,
         };

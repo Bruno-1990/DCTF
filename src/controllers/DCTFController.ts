@@ -10,6 +10,7 @@ import { ApiResponse } from '../types';
 import { DCTFDados } from '../models/DCTFDados';
 import { DCTFAnalysisService } from '../services/DCTFAnalysisService';
 import { DCTFSyncService } from '../services/DCTFSyncService';
+import { DCTFBackupService } from '../services/DCTFBackupService';
 import EmailService from '../services/EmailService';
 import { mysqlPool } from '../config/mysql';
 
@@ -18,12 +19,14 @@ export class DCTFController {
   private dctfDadosModel: DCTFDados;
   private analysisService: DCTFAnalysisService;
   private syncService: DCTFSyncService;
+  private backupService: DCTFBackupService;
 
   constructor() {
     this.dctfModel = new DCTF();
     this.dctfDadosModel = new DCTFDados();
     this.analysisService = new DCTFAnalysisService();
     this.syncService = new DCTFSyncService();
+    this.backupService = new DCTFBackupService();
   }
 
   private formatDateISO(dateValue: unknown): string | undefined {
@@ -427,33 +430,36 @@ export class DCTFController {
         console.log('[DCTF Controller] ========================================');
       }
 
-      // Filtro de busca por CNPJ/CPF
+      // Filtro de busca por razão social e/ou CNPJ/CPF
       if (search && typeof search === 'string' && search.trim()) {
-        const searchDigits = search.replace(/\D/g, ''); // Remove caracteres não numéricos para busca de CNPJ
-        
-        if (searchDigits) {
-          filteredData = filteredData.filter((d: any) => {
-            // Buscar CNPJ/CPF em vários campos possíveis
+        const searchTrim = search.trim();
+        const searchLower = searchTrim.toLowerCase();
+        const searchDigits = searchTrim.replace(/\D/g, '');
+
+        filteredData = filteredData.filter((d: any) => {
+          // Busca por razão social (texto, case-insensitive, parcial)
+          const razaoSocial = (d.cliente?.razao_social || d.cliente?.nome || d.razao_social || d.razaoSocial || '').toString().trim();
+          const matchRazaoSocial = searchLower.length >= 2 && razaoSocial.toLowerCase().includes(searchLower);
+
+          // Busca por CNPJ/CPF (dígitos) quando há pelo menos 4 dígitos no termo
+          let matchCnpj = false;
+          if (searchDigits.length >= 4) {
             const cnpj = (
-              d.cliente?.cnpj_limpo || 
-              d.cnpj_limpo || 
+              d.cliente?.cnpj_limpo ||
+              d.cnpj_limpo ||
               ''
             ).replace(/\D/g, '');
-            
             const numeroIdentificacao = (
-              d.numeroIdentificacao || 
-              d.numero_identificacao || 
-              d.identificacao || 
+              d.numeroIdentificacao ||
+              d.numero_identificacao ||
+              d.identificacao ||
               ''
             ).replace(/\D/g, '');
-            
-            // Busca por CNPJ/CPF (apenas dígitos)
-            const matchCnpj = cnpj && cnpj.includes(searchDigits);
-            const matchNumero = numeroIdentificacao && numeroIdentificacao.includes(searchDigits);
-            
-            return matchCnpj || matchNumero;
-          });
-        }
+            matchCnpj = (cnpj && cnpj.includes(searchDigits)) || (numeroIdentificacao && numeroIdentificacao.includes(searchDigits));
+          }
+
+          return matchRazaoSocial || matchCnpj;
+        });
       }
 
       // Se houver filtro (search, situacao, tipo ou periodoTransmissao) e não houver orderBy, ordenar por data de transmissão (mais recentes primeiro)
@@ -764,7 +770,8 @@ export class DCTFController {
   }
 
   /**
-   * Sincronizar declarações do Supabase para MySQL (operação administrativa)
+   * Sincronizar declarações do Supabase para MySQL (operação administrativa).
+   * Sempre cria backup da tabela dctf_declaracoes ANTES de sincronizar.
    */
   async sincronizarDoSupabase(req: Request, res: Response): Promise<void> {
     try {
@@ -777,7 +784,19 @@ export class DCTFController {
         return;
       }
 
-      // Iniciar sincronização
+      // 1. Backup automático ANTES da atualização (obrigatório)
+      const backupResult = await this.backupService.createBackup();
+      if (!backupResult.success) {
+        res.status(500).json({
+          success: false,
+          error: 'Falha ao criar backup antes da sincronização',
+          message: backupResult.error,
+        });
+        return;
+      }
+      console.log('[DCTF Sync] Backup criado:', backupResult.filename);
+
+      // 2. Iniciar sincronização
       const result = await this.syncService.syncFromSupabase((progress) => {
         // Enviar progresso via Server-Sent Events se o cliente suportar
         // Por enquanto, apenas log
@@ -794,6 +813,60 @@ export class DCTFController {
       res.status(500).json({
         success: false,
         error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Retorna informações do último backup (para exibir no botão Restaurar).
+   */
+  async getLastBackup(req: Request, res: Response): Promise<void> {
+    try {
+      const last = this.backupService.getLastBackup();
+      if (!last) {
+        res.json({ success: true, data: null });
+        return;
+      }
+      res.json({
+        success: true,
+        data: {
+          filename: last.filename,
+          date: last.date,
+          dateFormatted: last.dateFormatted,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao obter último backup',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * Restaura a tabela dctf_declaracoes a partir do backup mais recente.
+   */
+  async restoreFromBackup(req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.backupService.restoreFromLastBackup();
+      if (!result.success) {
+        res.status(400).json({
+          success: false,
+          error: result.error || 'Falha ao restaurar',
+        });
+        return;
+      }
+      res.json({
+        success: true,
+        message: `Restauração concluída: ${result.restored} registros restaurados.`,
+        data: { restored: result.restored },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao restaurar',
         message: error instanceof Error ? error.message : 'Erro desconhecido',
       });
     }

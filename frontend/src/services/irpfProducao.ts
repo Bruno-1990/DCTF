@@ -5,6 +5,16 @@
 
 import api from './api';
 
+export interface IrpfProducaoCaseDocument {
+  id: number;
+  doc_type: string;
+  source: string | null;
+  version: number;
+  file_path: string | null;
+  file_size: number | null;
+  created_at: string;
+}
+
 export interface IrpfProducaoCase {
   id: number;
   case_code: string;
@@ -19,6 +29,7 @@ export interface IrpfProducaoCase {
   created_at: string;
   updated_at: string;
   people?: IrpfProducaoCasePerson[];
+  documents?: IrpfProducaoCaseDocument[];
 }
 
 export interface IrpfProducaoCasePerson {
@@ -57,5 +68,34 @@ export const irpfProducaoService = {
 
   updateCaseStatus(id: number, status: string) {
     return api.post<{ success: boolean; data: IrpfProducaoCase }>(`/irpf-producao/cases/${id}/status`, { status }).then(r => r.data);
+  },
+
+  deleteCase(id: number) {
+    return api.delete<{ success: boolean; message?: string }>(`/irpf-producao/cases/${id}`).then(r => r.data);
+  },
+
+  /** Gera o arquivo .dec do case (para importar na Receita depois). Retorna file_path e document_id. */
+  generateDec(caseId: number, retificacao = false) {
+    return api.post<{ success: boolean; file_path?: string; document_id?: number }>(`/irpf-producao/cases/${caseId}/generate-dec`, retificacao ? { retificacao: true } : {}).then(r => r.data);
+  },
+
+  /** Retorna a URL para download do documento (arquivo .dec ou outro). Use em <a href download> ou fetch. */
+  getDocumentFileUrl(documentId: number): string {
+    const base = api.defaults.baseURL || '';
+    return `${base.replace(/\/$/, '')}/irpf-producao/documents/${documentId}/file`;
+  },
+
+  /** Baixa o documento (ex.: .dec) disparando o download no navegador. */
+  async downloadDocument(documentId: number, suggestedFilename?: string) {
+    const res = await api.get(`/irpf-producao/documents/${documentId}/file`, { responseType: 'blob' });
+    const blob = res.data as Blob;
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = suggestedFilename || `documento-${documentId}.dec`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
   },
 };

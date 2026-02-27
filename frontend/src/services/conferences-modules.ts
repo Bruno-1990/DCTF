@@ -8,8 +8,10 @@ export interface ClienteSemDCTFVigente {
   id: string;
   cnpj: string;
   razao_social: string;
+  regime_tributario?: string | null;
   competencia_vigente: string;
   vencimento: string;
+  diasAteVencimento: number;
   severidade: 'high' | 'medium' | 'low';
   mensagem: string;
 }
@@ -17,6 +19,7 @@ export interface ClienteSemDCTFVigente {
 export interface ClienteSemDCTFComMovimento {
   cnpj: string;
   razao_social: string;
+  regime_tributario?: string | null;
   cod_emp: number | null;
   competencia_obrigacao: string;
   competencia_movimento: string;
@@ -68,17 +71,14 @@ export interface ClienteSemMovimentacao {
   mensagem: string;
 }
 
-export interface ClienteHistoricoAtraso {
+export interface DCTFEmAndamento {
   id: string;
   cnpj: string;
   razao_social: string | null;
-  total_dctfs_atrasadas: number;
-  total_dctfs: number;
-  percentual_atraso: number;
-  ultima_dctf_atrasada: string | null;
-  dias_atraso_medio: number;
-  severidade: 'high' | 'medium' | 'low';
-  mensagem: string;
+  periodo_apuracao: string;
+  situacao: string | null;
+  tipo: string | null;
+  data_transmissao: string | null;
 }
 
 export interface ClienteDispensadoDCTF {
@@ -90,6 +90,16 @@ export interface ClienteDispensadoDCTF {
   competencia_vigente: string;
   tem_movimentacao_atual: boolean;
   mensagem: string;
+}
+
+export interface BaseLegal {
+  norma: string;
+  descricao: string;
+}
+
+export interface ModuloMeta {
+  baseLegal?: BaseLegal;
+  recomendacao?: string;
 }
 
 export interface ConferenceSummary {
@@ -105,8 +115,17 @@ export interface ConferenceSummary {
     dctfsForaDoPrazo: DCTFForaDoPrazo[];
     dctfsPeriodoInconsistente: DCTFPeriodoInconsistente[];
     clientesSemMovimentacao: ClienteSemMovimentacao[];
-    clientesHistoricoAtraso: ClienteHistoricoAtraso[];
+    dctfsEmAndamento: DCTFEmAndamento[];
     clientesDispensadosDCTF: ClienteDispensadoDCTF[];
+  };
+  modulosMeta?: {
+    clientesSemDCTFVigente: ModuloMeta;
+    clientesSemDCTFComMovimento: ModuloMeta;
+    dctfsForaDoPrazo: ModuloMeta;
+    dctfsPeriodoInconsistente: ModuloMeta;
+    clientesSemMovimentacao: ModuloMeta;
+    dctfsEmAndamento: ModuloMeta;
+    clientesDispensadosDCTF: ModuloMeta;
   };
   estatisticas: {
     totalClientesSemDCTFVigente: number;
@@ -114,7 +133,7 @@ export interface ConferenceSummary {
     totalDCTFsForaDoPrazo: number;
     totalDCTFsPeriodoInconsistente: number;
     totalClientesSemMovimentacao: number;
-    totalClientesHistoricoAtraso: number;
+    totalDCTFsEmAndamento: number;
     totalClientesDispensadosDCTF: number;
     totalIssues: number;
   };

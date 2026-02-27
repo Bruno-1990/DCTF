@@ -1,6 +1,6 @@
 /**
  * SERVIÇO PRINCIPAL DE CONFERÊNCIAS - ESTRUTURA MODULAR
- * 
+ *
  * Este serviço orquestra todos os módulos de conferência de forma organizada.
  * Cada módulo é responsável por uma verificação específica.
  */
@@ -10,8 +10,31 @@ import { listarClientesSemDCTFComMovimento, ClienteSemDCTFComMovimento } from '.
 import { listarDCTFsForaDoPrazo, DCTFForaDoPrazo } from './modules/DCTFsForaDoPrazoModule';
 import { listarDCTFsPeriodoInconsistente, DCTFPeriodoInconsistente } from './modules/DCTFsPeriodoInconsistenteModule';
 import { listarClientesSemMovimentacao, ClienteSemMovimentacao } from './modules/ClientesSemMovimentacaoModule';
-import { listarClientesHistoricoAtraso, ClienteHistoricoAtraso } from './modules/ClientesHistoricoAtrasoModule';
+import { listarDCTFsEmAndamento, DCTFEmAndamento } from './modules/ClientesEmAndamentoModule';
 import { listarClientesDispensadosDCTF, ClienteDispensadoDCTF } from './modules/ClientesDispensadosDCTFModule';
+import type { BaseLegal } from './legislacao-dctf';
+import {
+  BASE_LEGAL_SEM_DCTF_VIGENTE,
+  BASE_LEGAL_SEM_DCTF_COM_MOVIMENTO,
+  BASE_LEGAL_FORA_DO_PRAZO,
+  BASE_LEGAL_PERIODO_INCONSISTENTE,
+  BASE_LEGAL_SEM_MOVIMENTACAO,
+  BASE_LEGAL_EM_ANDAMENTO,
+  BASE_LEGAL_DISPENSADOS,
+  getRecomendacaoSemDCTFVigente,
+  RECOMENDACAO_SEM_DCTF_COM_MOVIMENTO,
+  RECOMENDACAO_FORA_DO_PRAZO,
+  RECOMENDACAO_PERIODO_INCONSISTENTE,
+  RECOMENDACAO_SEM_MOVIMENTACAO,
+  RECOMENDACAO_EM_ANDAMENTO,
+  RECOMENDACAO_DISPENSADOS,
+} from './legislacao-dctf';
+import { calcularVencimento } from './utils/dateUtils';
+
+export interface ModuloMeta {
+  baseLegal?: BaseLegal;
+  recomendacao?: string;
+}
 
 export interface ConferenceSummary {
   generatedAt: string;
@@ -26,8 +49,18 @@ export interface ConferenceSummary {
     dctfsForaDoPrazo: DCTFForaDoPrazo[];
     dctfsPeriodoInconsistente: DCTFPeriodoInconsistente[];
     clientesSemMovimentacao: ClienteSemMovimentacao[];
-    clientesHistoricoAtraso: ClienteHistoricoAtraso[];
+    dctfsEmAndamento: DCTFEmAndamento[];
     clientesDispensadosDCTF: ClienteDispensadoDCTF[];
+  };
+  /** Base legal e recomendação por módulo, para exibição no frontend. */
+  modulosMeta: {
+    clientesSemDCTFVigente: ModuloMeta;
+    clientesSemDCTFComMovimento: ModuloMeta;
+    dctfsForaDoPrazo: ModuloMeta;
+    dctfsPeriodoInconsistente: ModuloMeta;
+    clientesSemMovimentacao: ModuloMeta;
+    dctfsEmAndamento: ModuloMeta;
+    clientesDispensadosDCTF: ModuloMeta;
   };
   estatisticas: {
     totalClientesSemDCTFVigente: number;
@@ -35,7 +68,7 @@ export interface ConferenceSummary {
     totalDCTFsForaDoPrazo: number;
     totalDCTFsPeriodoInconsistente: number;
     totalClientesSemMovimentacao: number;
-    totalClientesHistoricoAtraso: number;
+    totalDCTFsEmAndamento: number;
     totalClientesDispensadosDCTF: number;
     totalIssues: number;
   };
@@ -63,7 +96,7 @@ export async function gerarResumoConferencias(): Promise<ConferenceSummary> {
     listarDCTFsForaDoPrazo(),
     listarDCTFsPeriodoInconsistente(),
     listarClientesSemMovimentacao(),
-    listarClientesHistoricoAtraso(),
+    listarDCTFsEmAndamento(),
     listarClientesDispensadosDCTF(),
   ]);
 
@@ -82,7 +115,7 @@ export async function gerarResumoConferencias(): Promise<ConferenceSummary> {
   const dctfsForaDoPrazo = getResult<DCTFForaDoPrazo[]>(results[2], 'DCTFsForaDoPrazo');
   const dctfsPeriodoInconsistente = getResult<DCTFPeriodoInconsistente[]>(results[3], 'DCTFsPeriodoInconsistente');
   const clientesSemMovimentacao = getResult<ClienteSemMovimentacao[]>(results[4], 'ClientesSemMovimentacao');
-  const clientesHistoricoAtraso = getResult<ClienteHistoricoAtraso[]>(results[5], 'ClientesHistoricoAtraso');
+  const dctfsEmAndamento = getResult<DCTFEmAndamento[]>(results[5], 'DCTFsEmAndamento');
   const clientesDispensadosDCTF = getResult<ClienteDispensadoDCTF[]>(results[6], 'ClientesDispensadosDCTF');
   
   const totalIssues = 
@@ -91,7 +124,7 @@ export async function gerarResumoConferencias(): Promise<ConferenceSummary> {
     dctfsForaDoPrazo.length +
     dctfsPeriodoInconsistente.length +
     clientesSemMovimentacao.length +
-    clientesHistoricoAtraso.length;
+    dctfsEmAndamento.length;
   // Nota: clientesDispensadosDCTF não conta como "issue", é apenas informativo
   
   console.log('\n========== RESUMO DAS CONFERÊNCIAS ==========');
@@ -100,11 +133,19 @@ export async function gerarResumoConferencias(): Promise<ConferenceSummary> {
   console.log(`[Conferências] 📊 Módulo 2.1 - DCTFs enviadas fora do prazo: ${dctfsForaDoPrazo.length}`);
   console.log(`[Conferências] 📊 Módulo 2.2 - DCTFs com período inconsistente: ${dctfsPeriodoInconsistente.length}`);
   console.log(`[Conferências] 📊 Módulo 5.1 - Clientes sem movimentação há mais de 12 meses: ${clientesSemMovimentacao.length}`);
-  console.log(`[Conferências] 📊 Módulo 6.2 - Clientes com histórico de atraso: ${clientesHistoricoAtraso.length}`);
+  console.log(`[Conferências] 📊 Módulo 6.2 - Em Andamento: ${dctfsEmAndamento.length}`);
   console.log(`[Conferências] 📊 Módulo 7 - Clientes dispensados de DCTF: ${clientesDispensadosDCTF.length}`);
   console.log(`[Conferências] 📊 Total de issues: ${totalIssues}`);
   console.log('========== FIM DAS CONFERÊNCIAS ==========\n');
-  
+
+  const vencimentoDate = calcularVencimento(competenciaAno, competenciaMes);
+  const vencimentoFormatado =
+    String(vencimentoDate.getUTCDate()).padStart(2, '0') +
+    '/' +
+    String(vencimentoDate.getUTCMonth() + 1).padStart(2, '0') +
+    '/' +
+    vencimentoDate.getUTCFullYear();
+
   return {
     generatedAt: today.toISOString(),
     competenciaVigente: {
@@ -118,8 +159,38 @@ export async function gerarResumoConferencias(): Promise<ConferenceSummary> {
       dctfsForaDoPrazo,
       dctfsPeriodoInconsistente,
       clientesSemMovimentacao,
-      clientesHistoricoAtraso,
+      dctfsEmAndamento,
       clientesDispensadosDCTF,
+    },
+    modulosMeta: {
+      clientesSemDCTFVigente: {
+        baseLegal: BASE_LEGAL_SEM_DCTF_VIGENTE,
+        recomendacao: getRecomendacaoSemDCTFVigente(competencia, vencimentoFormatado),
+      },
+      clientesSemDCTFComMovimento: {
+        baseLegal: BASE_LEGAL_SEM_DCTF_COM_MOVIMENTO,
+        recomendacao: RECOMENDACAO_SEM_DCTF_COM_MOVIMENTO,
+      },
+      dctfsForaDoPrazo: {
+        baseLegal: BASE_LEGAL_FORA_DO_PRAZO,
+        recomendacao: RECOMENDACAO_FORA_DO_PRAZO,
+      },
+      dctfsPeriodoInconsistente: {
+        baseLegal: BASE_LEGAL_PERIODO_INCONSISTENTE,
+        recomendacao: RECOMENDACAO_PERIODO_INCONSISTENTE,
+      },
+      clientesSemMovimentacao: {
+        baseLegal: BASE_LEGAL_SEM_MOVIMENTACAO,
+        recomendacao: RECOMENDACAO_SEM_MOVIMENTACAO,
+      },
+      dctfsEmAndamento: {
+        baseLegal: BASE_LEGAL_EM_ANDAMENTO,
+        recomendacao: RECOMENDACAO_EM_ANDAMENTO,
+      },
+      clientesDispensadosDCTF: {
+        baseLegal: BASE_LEGAL_DISPENSADOS,
+        recomendacao: RECOMENDACAO_DISPENSADOS,
+      },
     },
     estatisticas: {
       totalClientesSemDCTFVigente: clientesSemDCTFVigente.length,
@@ -127,7 +198,7 @@ export async function gerarResumoConferencias(): Promise<ConferenceSummary> {
       totalDCTFsForaDoPrazo: dctfsForaDoPrazo.length,
       totalDCTFsPeriodoInconsistente: dctfsPeriodoInconsistente.length,
       totalClientesSemMovimentacao: clientesSemMovimentacao.length,
-      totalClientesHistoricoAtraso: clientesHistoricoAtraso.length,
+      totalDCTFsEmAndamento: dctfsEmAndamento.length,
       totalClientesDispensadosDCTF: clientesDispensadosDCTF.length,
       totalIssues,
     },

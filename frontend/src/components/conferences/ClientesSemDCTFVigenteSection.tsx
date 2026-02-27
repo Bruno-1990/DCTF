@@ -5,7 +5,7 @@
  * enviada para a competência vigente (mês anterior à data atual).
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -21,13 +21,16 @@ import {
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../Pagination';
 import { exportToExcel } from '../../utils/exportExcel';
+import { FiltroConferencias, filtrarPorCnpjOuRazao, filtrarPorProcuracao } from './FiltroConferencias';
 
 interface ClienteSemDCTFVigente {
   id: string;
   cnpj: string;
   razao_social: string;
+  regime_tributario?: string | null;
   competencia_vigente: string;
   vencimento: string;
+  diasAteVencimento?: number;
   severidade: 'high' | 'medium' | 'low';
   mensagem: string;
 }
@@ -81,17 +84,25 @@ function SeverityTag({ severity }: { severity: 'high' | 'medium' | 'low' }) {
   );
 }
 
-export function ClientesSemDCTFVigenteSection({ 
-  clientes, 
+export function ClientesSemDCTFVigenteSection({
+  clientes,
   competenciaVigente,
   loading = false,
   error = null,
   expanded: expandedProp,
-  onToggle
+  onToggle,
 }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = expandedProp !== undefined ? expandedProp : internalExpanded;
-  
+  const [filtro, setFiltro] = useState('');
+  const [mostrarTodosComProcuracao, setMostrarTodosComProcuracao] = useState(false);
+  const clientesPorProcuracao = mostrarTodosComProcuracao ? clientes : filtrarPorProcuracao(clientes);
+  const clientesFiltrados = filtrarPorCnpjOuRazao(clientesPorProcuracao, filtro);
+
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtro, mostrarTodosComProcuracao]);
+
   const handleToggle = () => {
     if (onToggle) {
       onToggle();
@@ -132,18 +143,25 @@ export function ClientesSemDCTFVigenteSection({
   };
 
   const handleExportar = async () => {
-    if (clientes.length === 0) {
+    const listaExportar = clientesFiltrados;
+    if (listaExportar.length === 0) {
       alert('Não há dados para exportar');
       return;
     }
 
     try {
       setExporting(true);
-      const data = clientes.map((cliente) => [
+      const data = listaExportar.map((cliente) => [
         cliente.razao_social || '—',
         formatCNPJ(cliente.cnpj) || '—',
+        (cliente.regime_tributario ?? '—').toUpperCase(),
         cliente.competencia_vigente,
         formatDate(cliente.vencimento),
+        typeof cliente.diasAteVencimento === 'number'
+          ? cliente.diasAteVencimento < 0
+            ? `${Math.abs(cliente.diasAteVencimento)} dias vencido`
+            : `${cliente.diasAteVencimento} dias`
+          : '—',
         cliente.severidade === 'high' ? 'Alta' : cliente.severidade === 'medium' ? 'Média' : 'Baixa',
         cliente.mensagem,
       ]);
@@ -151,12 +169,12 @@ export function ClientesSemDCTFVigenteSection({
       await exportToExcel({
         filename: `clientes-sem-dctf-${competenciaVigente.replace('/', '-')}-${new Date().toISOString().split('T')[0]}.xlsx`,
         sheetName: 'Clientes sem DCTF',
-        headers: ['Empresa', 'CNPJ', 'Competência', 'Vencimento', 'Severidade', 'Mensagem'],
+        headers: ['Empresa', 'CNPJ', 'Regime', 'Competência', 'Vencimento', 'Dias', 'Severidade', 'Mensagem'],
         data,
         title: `Clientes sem DCTF - Competência ${competenciaVigente}`,
         metadata: {
           'Data de Exportação': new Date().toLocaleString('pt-BR'),
-          'Total de Clientes': clientes.length.toString(),
+          'Total de Clientes': listaExportar.length.toString(),
           'Competência Vigente': competenciaVigente,
         },
       });
@@ -216,7 +234,7 @@ export function ClientesSemDCTFVigenteSection({
                   <span className="font-mono text-sm font-medium text-gray-900">{formatCNPJ(modalCliente.cnpj)}</span>
                   <button
                     onClick={() => copyToClipboard(modalCliente.cnpj, 'modal')}
-                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                     title="Copiar CNPJ"
                   >
                     {copiedId === 'modal' ? (
@@ -253,6 +271,20 @@ export function ClientesSemDCTFVigenteSection({
                       <p className="text-xs text-gray-500 mb-1">Vencimento</p>
                       <p className="text-base font-semibold text-gray-900">{formatDate(modalCliente.vencimento)}</p>
                     </div>
+                    {typeof modalCliente.diasAteVencimento === 'number' && (
+                      <div className="bg-white border border-gray-200 rounded-lg p-3 col-span-2">
+                        <p className="text-xs text-gray-500 mb-1">Dias até vencimento</p>
+                        <p className="text-base font-semibold">
+                          {modalCliente.diasAteVencimento < 0 ? (
+                            <span className="text-red-600">
+                              {Math.abs(modalCliente.diasAteVencimento)} dias vencido
+                            </span>
+                          ) : (
+                            <span className="text-gray-900">{modalCliente.diasAteVencimento} dias</span>
+                          )}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -304,7 +336,7 @@ export function ClientesSemDCTFVigenteSection({
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
               >
                 <InformationCircleIcon className="h-4 w-4" />
-                Ver Detalhes
+                Ver
               </button>
             </div>
           </motion.div>
@@ -344,10 +376,14 @@ export function ClientesSemDCTFVigenteSection({
               <span className="text-gray-500">Carregando...</span>
             ) : (
               <>
-                Total: <span className="text-gray-900 font-bold">{clientes.length}</span> clientes
+                Total: <span className="text-gray-900 font-bold">{clientesPorProcuracao.length}</span>
+                {filtro.trim() ? ` (${clientesFiltrados.length} filtrado${clientesFiltrados.length !== 1 ? 's' : ''})` : ' clientes'}
               </>
             )}
           </div>
+          {!loading && clientes.length > 0 && (
+            <FiltroConferencias value={filtro} onChange={setFiltro} />
+          )}
           {!loading && clientes.length > 0 && (
             <motion.button
               onClick={handleExportar}
@@ -366,6 +402,27 @@ export function ClientesSemDCTFVigenteSection({
 
       {expanded && (
         <>
+          {!loading && clientes.length > 0 && (
+            <div className="flex items-center px-6 py-3 border-b border-gray-200 bg-gray-50/70" onClick={(e) => e.stopPropagation()}>
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={mostrarTodosComProcuracao}
+                  onChange={(e) => {
+                    setMostrarTodosComProcuracao(e.target.checked);
+                    setPaginaAtual(1);
+                  }}
+                  className="w-5 h-5 text-amber-500 border-2 border-gray-300 rounded focus:ring-2 focus:ring-amber-400 focus:ring-offset-0 cursor-pointer transition-all duration-200 checked:bg-amber-500 checked:border-amber-500"
+                />
+                <span className="text-sm font-medium text-gray-700 group-hover:text-amber-600 transition-colors select-none">
+                  Todos com procuração
+                </span>
+                <span className="text-xs text-gray-500 italic">
+                  (Desmarcado: apenas clientes com Razão Social e CNPJ)
+                </span>
+              </label>
+            </div>
+          )}
           {loading ? (
             <div className="px-6 py-8 text-center">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -377,15 +434,24 @@ export function ClientesSemDCTFVigenteSection({
                 <strong>Erro:</strong> {error}
               </div>
             </div>
-          ) : clientes.length === 0 ? (
+          ) : clientesFiltrados.length === 0 ? (
             <div className="px-6 py-8 text-center">
               <InformationCircleIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
               <p className="text-sm text-gray-600">
-                Nenhum cliente encontrado sem DCTF na competência {competenciaVigente}.
+                {filtro.trim()
+                  ? 'Nenhum resultado para o filtro informado.'
+                  : `Nenhum cliente encontrado sem DCTF na competência ${competenciaVigente}.`}
               </p>
-              <p className="text-xs text-gray-500 mt-2">
-                Todos os clientes cadastrados têm DCTF enviada para esta competência.
-              </p>
+              {filtro.trim() && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Tente outro CNPJ ou Razão Social.
+                </p>
+              )}
+              {!filtro.trim() && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Todos os clientes cadastrados têm DCTF enviada para esta competência.
+                </p>
+              )}
             </div>
           ) : (
             <>
@@ -393,33 +459,35 @@ export function ClientesSemDCTFVigenteSection({
                 <table className="min-w-full divide-y divide-gray-200 text-xs">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Empresa</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">CNPJ</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Competência</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Vencimento</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Severidade</th>
-                      <th className="px-4 py-3 text-left font-medium text-gray-600">Ações</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-600">Empresa</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-600">CNPJ</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-600">Regime</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-600">Competência</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-600">Vencimento</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-600">Dias</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-600">Severidade</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-600">Lançamentos</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {clientes
+                    {clientesFiltrados
                       .slice((paginaAtual - 1) * itensPorPagina, paginaAtual * itensPorPagina)
                       .map((cliente) => (
                         <tr key={cliente.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-gray-800 font-medium text-xs">
                             <button
                               onClick={() => setModalCliente(cliente)}
-                              className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left transition-colors"
+                              className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left transition-colors cursor-pointer"
                             >
                               {cliente.razao_social || '—'}
                             </button>
                           </td>
                           <td className="px-4 py-3 text-gray-600 text-xs">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono">{formatCNPJ(cliente.cnpj)}</span>
+                              <span className="font-mono whitespace-nowrap">{formatCNPJ(cliente.cnpj)}</span>
                               <button
                                 onClick={() => copyToClipboard(cliente.cnpj, cliente.id)}
-                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 cursor-pointer"
                                 title="Copiar CNPJ"
                               >
                                 {copiedId === cliente.id ? (
@@ -431,18 +499,34 @@ export function ClientesSemDCTFVigenteSection({
                             </div>
                           </td>
                           <td className="px-4 py-3 text-gray-600 text-xs">
+                            {cliente.regime_tributario ? String(cliente.regime_tributario).toUpperCase() : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-gray-600 text-xs">
                             <span className="font-semibold text-amber-600">{cliente.competencia_vigente}</span>
                           </td>
                           <td className="px-4 py-3 text-gray-600 text-xs">{formatDate(cliente.vencimento)}</td>
+                          <td className="px-4 py-3 text-xs">
+                            {typeof cliente.diasAteVencimento === 'number' ? (
+                              cliente.diasAteVencimento < 0 ? (
+                                <span className="font-medium text-red-600">
+                                  {Math.abs(cliente.diasAteVencimento)} dias vencido
+                                </span>
+                              ) : (
+                                <span className="font-medium text-gray-700">{cliente.diasAteVencimento} dias</span>
+                              )
+                            ) : (
+                              '—'
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <SeverityTag severity={cliente.severidade} />
                           </td>
                           <td className="px-4 py-3 text-xs">
                             <button
                               onClick={() => navigate(`/clientes/${cliente.cnpj}`)}
-                              className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                              className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 cursor-pointer"
                             >
-                              Ver Detalhes
+                              Ver
                             </button>
                           </td>
                         </tr>
@@ -450,12 +534,12 @@ export function ClientesSemDCTFVigenteSection({
                   </tbody>
                 </table>
               </div>
-              {clientes.length > itensPorPagina && (
+              {clientesFiltrados.length > itensPorPagina && (
                 <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
                   <Pagination
                     currentPage={paginaAtual}
-                    totalPages={Math.ceil(clientes.length / itensPorPagina)}
-                    totalItems={clientes.length}
+                    totalPages={Math.ceil(clientesFiltrados.length / itensPorPagina)}
+                    totalItems={clientesFiltrados.length}
                     itemsPerPage={itensPorPagina}
                     onPageChange={setPaginaAtual}
                     itemLabel="cliente"

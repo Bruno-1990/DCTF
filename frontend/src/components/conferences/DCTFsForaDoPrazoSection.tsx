@@ -4,7 +4,7 @@
  * Módulo 2.1: Lista DCTFs que foram enviadas após o prazo legal de vencimento.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   DocumentTextIcon,
@@ -17,6 +17,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../Pagination';
 import { exportToExcel } from '../../utils/exportExcel';
+import { FiltroConferencias, filtrarPorCnpjOuRazao, filtrarPorProcuracao } from './FiltroConferencias';
 
 interface DCTFForaDoPrazo {
   id: string;
@@ -83,7 +84,15 @@ function SeverityTag({ severity }: { severity: 'high' | 'medium' | 'low' }) {
 export function DCTFsForaDoPrazoSection({ dctfs, loading = false, error = null, expanded: expandedProp, onToggle }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = expandedProp !== undefined ? expandedProp : internalExpanded;
-  
+  const [filtro, setFiltro] = useState('');
+  const [mostrarTodosComProcuracao, setMostrarTodosComProcuracao] = useState(false);
+  const dctfsPorProcuracao = mostrarTodosComProcuracao ? dctfs : filtrarPorProcuracao(dctfs);
+  const dctfsFiltrados = filtrarPorCnpjOuRazao(dctfsPorProcuracao, filtro);
+
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtro, mostrarTodosComProcuracao]);
+
   const handleToggle = () => {
     if (onToggle) {
       onToggle();
@@ -129,14 +138,15 @@ export function DCTFsForaDoPrazoSection({ dctfs, loading = false, error = null, 
   };
 
   const handleExportar = async () => {
-    if (dctfs.length === 0) {
+    const listaExportar = dctfsFiltrados;
+    if (listaExportar.length === 0) {
       alert('Não há dados para exportar');
       return;
     }
 
     try {
       setExporting(true);
-      const data = dctfs.map((dctf) => [
+      const data = listaExportar.map((dctf) => [
         dctf.razao_social || '—',
         formatCNPJ(dctf.cnpj) || '—',
         dctf.periodo_apuracao,
@@ -157,7 +167,7 @@ export function DCTFsForaDoPrazoSection({ dctfs, loading = false, error = null, 
         title: 'DCTFs Enviadas Fora do Prazo',
         metadata: {
           'Data de Exportação': new Date().toLocaleString('pt-BR'),
-          'Total de DCTFs': dctfs.length.toString(),
+          'Total de DCTFs': listaExportar.length.toString(),
         },
       });
     } catch (err: any) {
@@ -170,8 +180,8 @@ export function DCTFsForaDoPrazoSection({ dctfs, loading = false, error = null, 
 
   const inicio = (paginaAtual - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina;
-  const dctfsPaginadas = dctfs.slice(inicio, fim);
-  const totalPaginas = Math.ceil(dctfs.length / itensPorPagina);
+  const dctfsPaginadas = dctfsFiltrados.slice(inicio, fim);
+  const totalPaginas = Math.ceil(dctfsFiltrados.length / itensPorPagina);
 
   if (loading) {
     return (
@@ -214,12 +224,12 @@ export function DCTFsForaDoPrazoSection({ dctfs, loading = false, error = null, 
               DCTFs Enviadas Fora do Prazo
             </h2>
             <p className="text-sm text-gray-600">
-              {dctfs.length} DCTF{dctfs.length !== 1 ? 's' : ''} enviada{dctfs.length !== 1 ? 's' : ''} após o prazo legal
+              {dctfsPorProcuracao.length} DCTF{dctfsPorProcuracao.length !== 1 ? 's' : ''} enviada{dctfsPorProcuracao.length !== 1 ? 's' : ''} após o prazo legal
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-          <SeverityTag severity={dctfs.length > 0 ? (dctfs.length > 10 ? 'high' : 'medium') : 'low'} />
+          <SeverityTag severity={dctfsPorProcuracao.length > 0 ? (dctfsPorProcuracao.length > 10 ? 'high' : 'medium') : 'low'} />
           {!loading && dctfs.length > 0 && (
             <motion.button
               onClick={handleExportar}
@@ -237,10 +247,39 @@ export function DCTFsForaDoPrazoSection({ dctfs, loading = false, error = null, 
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-200">
-          {dctfs.length === 0 ? (
+        <>
+          {!loading && dctfs.length > 0 && (
+            <FiltroConferencias value={filtro} onChange={setFiltro} />
+          )}
+          {!loading && dctfs.length > 0 && (
+            <div className="flex items-center px-6 py-3 border-b border-gray-200 bg-gray-50/70" onClick={(e) => e.stopPropagation()}>
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={mostrarTodosComProcuracao}
+                  onChange={(e) => {
+                    setMostrarTodosComProcuracao(e.target.checked);
+                    setPaginaAtual(1);
+                  }}
+                  className="w-5 h-5 text-amber-500 border-2 border-gray-300 rounded focus:ring-2 focus:ring-amber-400 focus:ring-offset-0 cursor-pointer transition-all duration-200 checked:bg-amber-500 checked:border-amber-500"
+                />
+                <span className="text-sm font-medium text-gray-700 group-hover:text-amber-600 transition-colors select-none">
+                  Todos com procuração
+                </span>
+                <span className="text-xs text-gray-500 italic">
+                  (Desmarcado: apenas clientes com Razão Social e CNPJ)
+                </span>
+              </label>
+            </div>
+          )}
+          <p className="mx-6 mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            Transmissão após o prazo pode sujeitar a multa conforme legislação (Lei 10.168/2000).
+          </p>
+          <div className="border-t border-gray-200">
+          {dctfsFiltrados.length === 0 ? (
             <div className="p-6 text-center text-gray-500">
-              <p>Nenhuma DCTF enviada fora do prazo encontrada.</p>
+              <p>{filtro.trim() ? 'Nenhum resultado para o filtro informado.' : 'Nenhuma DCTF enviada fora do prazo encontrada.'}</p>
+              {filtro.trim() && <p className="text-xs mt-2">Tente outro CNPJ ou Razão Social.</p>}
             </div>
           ) : (
             <>
@@ -330,7 +369,8 @@ export function DCTFsForaDoPrazoSection({ dctfs, loading = false, error = null, 
               )}
             </>
           )}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

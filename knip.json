@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["src/index.ts", "src/server.ts"],
+  "project": ["src/**/*.ts", "!src/scripts/**"],
+  "ignore": [
+    "src/scripts/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "dist/**"
+  ],
+  "ignoreDependencies": [
+    "task-master-ai"
+  ],
+  "jest": {
+    "entry": ["tests/**/*.test.ts", "tests/**/*.spec.ts"]
+  }
+}

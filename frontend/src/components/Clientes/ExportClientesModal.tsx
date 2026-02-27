@@ -104,6 +104,14 @@ const ExportClientesModal: React.FC<ExportClientesModalProps> = ({ onClose, onEx
       ],
     },
     {
+      id: 'participacao',
+      nome: 'Participação',
+      icon: '👥',
+      campos: [
+        { key: 'socios', label: 'Sócios', description: 'Nome, qualificação e participação percentual' },
+      ],
+    },
+    {
       id: 'receita',
       nome: 'Dados ReceitaWS',
       icon: '🔍',

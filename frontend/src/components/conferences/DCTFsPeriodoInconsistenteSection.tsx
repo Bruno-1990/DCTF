@@ -4,7 +4,7 @@
  * Módulo 2.2: Lista DCTFs cujo período de apuração não corresponde ao esperado.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   DocumentTextIcon,
@@ -17,6 +17,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../Pagination';
 import { exportToExcel } from '../../utils/exportExcel';
+import { FiltroConferencias, filtrarPorCnpjOuRazao, filtrarPorProcuracao } from './FiltroConferencias';
 
 interface DCTFPeriodoInconsistente {
   id: string;
@@ -82,7 +83,15 @@ function SeverityTag({ severity }: { severity: 'high' | 'medium' | 'low' }) {
 export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error = null, expanded: expandedProp, onToggle }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = expandedProp !== undefined ? expandedProp : internalExpanded;
-  
+  const [filtro, setFiltro] = useState('');
+  const [mostrarTodosComProcuracao, setMostrarTodosComProcuracao] = useState(false);
+  const dctfsPorProcuracao = mostrarTodosComProcuracao ? dctfs : filtrarPorProcuracao(dctfs);
+  const dctfsFiltrados = filtrarPorCnpjOuRazao(dctfsPorProcuracao, filtro);
+
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtro, mostrarTodosComProcuracao]);
+
   const handleToggle = () => {
     if (onToggle) {
       onToggle();
@@ -128,14 +137,15 @@ export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error
   };
 
   const handleExportar = async () => {
-    if (dctfs.length === 0) {
+    const listaExportar = dctfsFiltrados;
+    if (listaExportar.length === 0) {
       alert('Não há dados para exportar');
       return;
     }
 
     try {
       setExporting(true);
-      const data = dctfs.map((dctf) => [
+      const data = listaExportar.map((dctf) => [
         dctf.razao_social || '—',
         formatCNPJ(dctf.cnpj) || '—',
         dctf.periodo_apuracao,
@@ -155,7 +165,7 @@ export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error
         title: 'DCTFs com Período de Apuração Inconsistente',
         metadata: {
           'Data de Exportação': new Date().toLocaleString('pt-BR'),
-          'Total de DCTFs': dctfs.length.toString(),
+          'Total de DCTFs': listaExportar.length.toString(),
         },
       });
     } catch (err: any) {
@@ -168,8 +178,8 @@ export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error
 
   const inicio = (paginaAtual - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina;
-  const dctfsPaginadas = dctfs.slice(inicio, fim);
-  const totalPaginas = Math.ceil(dctfs.length / itensPorPagina);
+  const dctfsPaginadas = dctfsFiltrados.slice(inicio, fim);
+  const totalPaginas = Math.ceil(dctfsFiltrados.length / itensPorPagina);
 
   if (loading) {
     return (
@@ -212,7 +222,7 @@ export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error
               DCTFs com Período Inconsistente
             </h2>
             <p className="text-sm text-gray-600">
-              {dctfs.length} DCTF{dctfs.length !== 1 ? 's' : ''} com período que não corresponde ao esperado
+              {dctfsPorProcuracao.length} DCTF{dctfsPorProcuracao.length !== 1 ? 's' : ''} com período que não corresponde ao esperado
             </p>
           </div>
         </div>
@@ -222,10 +232,14 @@ export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error
               <span className="text-gray-500">Carregando...</span>
             ) : (
               <>
-                Total: <span className="text-gray-900 font-bold">{dctfs.length}</span> DCTF{dctfs.length !== 1 ? 's' : ''}
+                Total: <span className="text-gray-900 font-bold">{dctfsPorProcuracao.length}</span>
+                {filtro.trim() ? ` (${dctfsFiltrados.length} filtrado${dctfsFiltrados.length !== 1 ? 's' : ''})` : ` DCTF${dctfsPorProcuracao.length !== 1 ? 's' : ''}`}
               </>
             )}
           </div>
+          {!loading && dctfs.length > 0 && (
+            <FiltroConferencias value={filtro} onChange={setFiltro} />
+          )}
           {!loading && dctfs.length > 0 && (
             <motion.button
               onClick={handleExportar}
@@ -243,10 +257,36 @@ export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-200">
-          {dctfs.length === 0 ? (
+        <>
+          {!loading && dctfs.length > 0 && (
+            <FiltroConferencias value={filtro} onChange={setFiltro} />
+          )}
+          {!loading && dctfs.length > 0 && (
+            <div className="flex items-center px-6 py-3 border-b border-gray-200 bg-gray-50/70" onClick={(e) => e.stopPropagation()}>
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={mostrarTodosComProcuracao}
+                  onChange={(e) => {
+                    setMostrarTodosComProcuracao(e.target.checked);
+                    setPaginaAtual(1);
+                  }}
+                  className="w-5 h-5 text-amber-500 border-2 border-gray-300 rounded focus:ring-2 focus:ring-amber-400 focus:ring-offset-0 cursor-pointer transition-all duration-200 checked:bg-amber-500 checked:border-amber-500"
+                />
+                <span className="text-sm font-medium text-gray-700 group-hover:text-amber-600 transition-colors select-none">
+                  Todos com procuração
+                </span>
+                <span className="text-xs text-gray-500 italic">
+                  (Desmarcado: apenas clientes com Razão Social e CNPJ)
+                </span>
+              </label>
+            </div>
+          )}
+          <div className="border-t border-gray-200">
+          {dctfsFiltrados.length === 0 ? (
             <div className="p-6 text-center text-gray-500">
-              <p>Nenhuma DCTF com período inconsistente encontrada.</p>
+              <p>{filtro.trim() ? 'Nenhum resultado para o filtro informado.' : 'Nenhuma DCTF com período inconsistente encontrada.'}</p>
+              {filtro.trim() && <p className="text-xs mt-2">Tente outro CNPJ ou Razão Social.</p>}
             </div>
           ) : (
             <>
@@ -332,7 +372,8 @@ export function DCTFsPeriodoInconsistenteSection({ dctfs, loading = false, error
               )}
             </>
           )}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

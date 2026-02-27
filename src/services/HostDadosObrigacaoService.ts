@@ -296,6 +296,7 @@ export class HostDadosObrigacaoService {
   async listarClientesSemDCTFComMovimento(ano?: number, mes?: number): Promise<{
     cnpj: string;
     razao_social: string;
+    regime_tributario?: string | null;
     cod_emp: number | null;
     competencia_obrigacao: string; // Competência que deveria ter DCTF (mês subsequente ao movimento)
     competencia_movimento: string; // Competência do movimento (mês anterior)
@@ -353,6 +354,7 @@ export class HostDadosObrigacaoService {
       const rows = await executeQuery<{
         cnpj: string;
         razao_social: string;
+        regime_tributario: string | null;
         cod_emp: number | null;
         tipos_movimento: string | null;
         total_movimentacoes: number;
@@ -362,6 +364,7 @@ export class HostDadosObrigacaoService {
         SELECT 
           c.cnpj_limpo AS cnpj,
           c.razao_social,
+          c.regime_tributario,
           MAX(h.cod_emp) AS cod_emp,
           GROUP_CONCAT(DISTINCT h.relatorio SEPARATOR ',') AS tipos_movimento,
           SUM(h.movimentacao) AS total_movimentacoes,
@@ -578,6 +581,7 @@ export class HostDadosObrigacaoService {
         return {
           cnpj: row.cnpj,
           razao_social: row.razao_social || '',
+          regime_tributario: row.regime_tributario ?? null,
           cod_emp: row.cod_emp,
           competencia_obrigacao: competenciaObrigacao,
           competencia_movimento: competenciaMovimento,

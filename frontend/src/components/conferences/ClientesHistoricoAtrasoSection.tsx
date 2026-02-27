@@ -4,7 +4,7 @@
  * Módulo 6.2: Lista clientes que têm histórico de envio de DCTF após o prazo legal.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   BuildingOfficeIcon,
@@ -17,6 +17,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { Pagination } from '../Pagination';
 import { exportToExcel } from '../../utils/exportExcel';
+import { FiltroConferencias, filtrarPorCnpjOuRazao } from './FiltroConferencias';
 
 interface ClienteHistoricoAtraso {
   id: string;
@@ -82,7 +83,13 @@ function SeverityTag({ severity }: { severity: 'high' | 'medium' | 'low' }) {
 export function ClientesHistoricoAtrasoSection({ clientes, loading = false, error = null, expanded: expandedProp, onToggle }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = expandedProp !== undefined ? expandedProp : internalExpanded;
-  
+  const [filtro, setFiltro] = useState('');
+  const clientesFiltrados = filtrarPorCnpjOuRazao(clientes, filtro);
+
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [filtro]);
+
   const handleToggle = () => {
     if (onToggle) {
       onToggle();
@@ -128,14 +135,15 @@ export function ClientesHistoricoAtrasoSection({ clientes, loading = false, erro
   };
 
   const handleExportar = async () => {
-    if (clientes.length === 0) {
+    const listaExportar = filtro.trim() ? clientesFiltrados : clientes;
+    if (listaExportar.length === 0) {
       alert('Não há dados para exportar');
       return;
     }
 
     try {
       setExporting(true);
-      const data = clientes.map((cliente) => [
+      const data = listaExportar.map((cliente) => [
         cliente.razao_social || '—',
         formatCNPJ(cliente.cnpj) || '—',
         cliente.total_dctfs_atrasadas.toString(),
@@ -154,7 +162,7 @@ export function ClientesHistoricoAtrasoSection({ clientes, loading = false, erro
         title: 'Clientes com Histórico de Atraso',
         metadata: {
           'Data de Exportação': new Date().toLocaleString('pt-BR'),
-          'Total de Clientes': clientes.length.toString(),
+          'Total de Clientes': listaExportar.length.toString(),
         },
       });
     } catch (err: any) {
@@ -167,8 +175,8 @@ export function ClientesHistoricoAtrasoSection({ clientes, loading = false, erro
 
   const inicio = (paginaAtual - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina;
-  const clientesPaginados = clientes.slice(inicio, fim);
-  const totalPaginas = Math.ceil(clientes.length / itensPorPagina);
+  const clientesPaginados = clientesFiltrados.slice(inicio, fim);
+  const totalPaginas = Math.ceil(clientesFiltrados.length / itensPorPagina);
 
   if (loading) {
     return (
@@ -221,10 +229,14 @@ export function ClientesHistoricoAtrasoSection({ clientes, loading = false, erro
               <span className="text-gray-500">Carregando...</span>
             ) : (
               <>
-                Total: <span className="text-gray-900 font-bold">{clientes.length}</span> cliente{clientes.length !== 1 ? 's' : ''}
+                Total: <span className="text-gray-900 font-bold">{clientes.length}</span>
+                {filtro.trim() ? ` (${clientesFiltrados.length} filtrado${clientesFiltrados.length !== 1 ? 's' : ''})` : ` cliente${clientes.length !== 1 ? 's' : ''}`}
               </>
             )}
           </div>
+          {!loading && clientes.length > 0 && (
+            <FiltroConferencias value={filtro} onChange={setFiltro} />
+          )}
           {!loading && clientes.length > 0 && (
             <motion.button
               onClick={handleExportar}
@@ -242,10 +254,12 @@ export function ClientesHistoricoAtrasoSection({ clientes, loading = false, erro
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-200">
-          {clientes.length === 0 ? (
+        <>
+          <div className="border-t border-gray-200">
+          {clientesFiltrados.length === 0 ? (
             <div className="p-6 text-center text-gray-500">
-              <p>Nenhum cliente com histórico de atraso encontrado.</p>
+              <p>{filtro.trim() ? 'Nenhum resultado para o filtro informado.' : 'Nenhum cliente com histórico de atraso encontrado.'}</p>
+              {filtro.trim() && <p className="text-xs mt-2">Tente outro CNPJ ou Razão Social.</p>}
             </div>
           ) : (
             <>
@@ -329,15 +343,19 @@ export function ClientesHistoricoAtrasoSection({ clientes, loading = false, erro
               {totalPaginas > 1 && (
                 <div className="px-6 py-4 border-t border-gray-200">
                   <Pagination
-                    paginaAtual={paginaAtual}
-                    totalPaginas={totalPaginas}
+                    currentPage={paginaAtual}
+                    totalPages={totalPaginas}
+                    totalItems={clientesFiltrados.length}
+                    itemsPerPage={itensPorPagina}
                     onPageChange={setPaginaAtual}
+                    itemLabel="cliente"
                   />
                 </div>
               )}
             </>
           )}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

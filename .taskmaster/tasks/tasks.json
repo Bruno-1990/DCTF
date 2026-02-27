@@ -3462,7 +3462,7 @@
         "description": "Toda ação sensível gera audit_event (quem, quando, o quê, de/para, motivo). RBAC por perfil (Operador, Preparador, Revisor, Auditor, Admin). RF-005.",
         "details": "Tabela audit_events; middleware RBAC; listagem de trilha por case.",
         "testStrategy": "Alterar case e documento; listar auditoria do case.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2,
           4
@@ -3481,7 +3481,7 @@
             "id": 2,
             "title": "Middleware RBAC por perfil (Operador, Preparador, Revisor, Auditor, Admin)",
             "description": "RF-005; verificar perfil antes de ações críticas.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 8
           },
@@ -3489,7 +3489,7 @@
             "id": 3,
             "title": "Endpoint ou tela de listagem de trilha de auditoria por case",
             "description": "Ordenação por data; filtros opcionais.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 8
           }
@@ -3501,7 +3501,7 @@
         "description": "Configurar BullMQ + Redis; jobs: extract_text (Node), classify, validate, score_risk, generate_case_summary. Persistência job_runs no MySQL. 11.3 PRD.",
         "details": "extract_text apenas para PDF editável (8.8). Fluxo OCR é via webhook. Jobs versionados e idempotentes.",
         "testStrategy": "Enfileirar job e verificar execução e job_runs.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2,
           6
@@ -3512,7 +3512,7 @@
             "id": 1,
             "title": "Configurar BullMQ + Redis e filas do módulo IRPF",
             "description": "Conexão Redis; filas: extract_text, classify, validate, score_risk, generate_case_summary.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 9
           },
@@ -3520,7 +3520,7 @@
             "id": 2,
             "title": "Implementar job extract_text (Node) e persistir job_runs no MySQL",
             "description": "Worker que lê PDF editável; gravar execução em job_runs; 8.8.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 9
           },
@@ -3528,7 +3528,7 @@
             "id": 3,
             "title": "Jobs versionados e idempotentes; demais jobs (classify, validate, score_risk, summary)",
             "description": "Evitar duplicação; retry seguro.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 9
           }
@@ -3540,7 +3540,7 @@
         "description": "Tabelas document_extraction_config e document_extracted_data. Pipeline: obter texto → normalizar → extratores (regex/posição/tabela) → validar → persistir com confidence_score. RF-044 a RF-048, 8.7.",
         "details": "Regras por docType (e fonte); versionamento; documento sem regra grava raw_text e EXTRACTED. Override humano com auditoria.",
         "testStrategy": "Regra de teste para um docType; upload PDF texto e verificar document_extracted_data.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2,
           6,
@@ -3580,7 +3580,7 @@
         "description": "Pós-upload: classificar texto nativo vs requer OCR (amostra de texto ou MIME). Texto nativo: enfileirar extract_text (Node). Campos extraction_status, extraction_flow. RF-049, 8.8.",
         "details": "Classificação assíncrona; extraction_status PENDING → EXTRACTING → EXTRACTED/EXTRACTION_ERROR/REQUIRES_REVIEW; extraction_flow NATIVE_TEXT.",
         "testStrategy": "Upload PDF editável e verificar status e document_extracted_data.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           6,
           9,
@@ -3620,7 +3620,7 @@
         "description": "Para PDF não editável e imagens: POST ao webhook com document_id, file_url, callback_url. Endpoint POST /documents/process-callback; contrato 8.9; timeout e retry (RNF-043).",
         "details": "Payload backend→webhook e callback (extracted_fields, status). Idempotência do callback. extraction_flow OCR_WEBHOOK; EXTRACTION_ERROR em timeout/falha.",
         "testStrategy": "Simular webhook e callback; timeout e retry.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           6,
           10
@@ -3659,7 +3659,7 @@
         "description": "Ação 'reprocessar extração' para EXTRACTION_ERROR/REQUIRES_REVIEW (RF-049a). Tela de monitoramento de jobs e falhas (RNF-032). Health check GET /health (RNF-033).",
         "details": "Reenfileirar ou reenviar ao webhook; extraction_attempts; endpoint /api/irpf-producao/health (MySQL + share).",
         "testStrategy": "Reprocessar documento; chamar /health.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           9,
           11,
@@ -3699,7 +3699,7 @@
         "description": "Disparar processamento do case; gerar divergências e pendências automaticamente. Validações iniciais (completude, informes). RF-040 a RF-043.",
         "details": "Job processar case; comparar fontes esperadas x recebidas; criar pendências.",
         "testStrategy": "Processar case e verificar pendências geradas.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           7,
           9
@@ -3710,7 +3710,7 @@
             "id": 1,
             "title": "Job que dispara processamento do case (completude, informes)",
             "description": "RF-040 a RF-043; validações iniciais automatizadas.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 14
           },
@@ -3718,7 +3718,7 @@
             "id": 2,
             "title": "Comparar fontes pagadoras esperadas x recebidas e gerar divergências",
             "description": "Criar pendências automaticamente; severidade conforme regra.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 14
           }
@@ -3730,7 +3730,7 @@
         "description": "Export dossiê: inventário de documentos, hashes SHA-256, histórico do case. RF-062.",
         "details": "Endpoint ou ação para gerar dossiê; gate: não fechar CLOSED sem inventário.",
         "testStrategy": "Gerar dossiê e verificar conteúdo.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           6,
@@ -3742,7 +3742,7 @@
             "id": 1,
             "title": "Endpoint ou ação para export: inventário de documentos + hashes SHA-256",
             "description": "RF-062; listar todos os documentos do case com hash.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 15
           },
@@ -3750,7 +3750,7 @@
             "id": 2,
             "title": "Incluir histórico do case (audit, status, eventos) no dossiê",
             "description": "Linha do tempo ou resumo; gate: não permitir CLOSED sem inventário.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 15
           }
@@ -3762,7 +3762,7 @@
         "description": "Revisor aprova/reprova com justificativa obrigatória. Override controlado com motivo e anexos. Revisor sênior para alto risco (policy). RF-050 a RF-052.",
         "details": "Transição para APPROVED; gates antes de READY_FOR_REVIEW; política P-004.",
         "testStrategy": "Aprovar/reprovar com justificativa; tentar aprovar case de alto risco sem sênior.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           7,
@@ -3774,7 +3774,7 @@
             "id": 1,
             "title": "Fluxo de aprovação/reprovação com justificativa obrigatória",
             "description": "RF-050, RF-051; transição para APPROVED; gates antes de READY_FOR_REVIEW.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 16
           },
@@ -3782,7 +3782,7 @@
             "id": 2,
             "title": "Override controlado com motivo e anexos; auditoria",
             "description": "RF-052; registrar quem alterou e por quê.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 16
           },
@@ -3790,7 +3790,7 @@
             "id": 3,
             "title": "Política P-004: revisor sênior obrigatório para case de alto risco",
             "description": "Validar perfil antes de aprovar; bloquear se não sênior.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 16
           }
@@ -3802,7 +3802,7 @@
         "description": "Upload de PROTOCOLO (recibo); vinculação ao case. Ocorrência pós-entrega (malha/retificação) com motivo catalogado e anexo. RF-060, RF-061. Gate: PROTOCOLO antes de SUBMITTED.",
         "details": "DocType PROTOCOLO; lista fechada de motivos; pasta 10_protocolos.",
         "testStrategy": "Anexar protocolo; registrar ocorrência pós-entrega.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4,
           6
@@ -3813,7 +3813,7 @@
             "id": 1,
             "title": "Upload e vinculação de documento PROTOCOLO (recibo); pasta 10_protocolos",
             "description": "RF-060; DocType PROTOCOLO; gate antes de SUBMITTED.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 17
           },
@@ -3821,7 +3821,7 @@
             "id": 2,
             "title": "Registro de ocorrência pós-entrega (malha/retificação) com motivo catalogado e anexo",
             "description": "RF-061; lista fechada de motivos; anexo opcional.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 17
           }
@@ -3833,7 +3833,7 @@
         "description": "Tabelas declaration_income_pj/pf/exempt/exclusive, declaration_dependents, declaration_payments, declaration_assets, declaration_debts, declaration_totals, dec_layout_version. Mapeamento bloco .DEC → origem (Anexo C).",
         "details": "Popular declaration_* a partir de case_people, triagem, documentos e formulários. dec_layout_version por exercício. Nenhum campo .DEC sem origem (P-014).",
         "testStrategy": "Inserir dados de teste e verificar mapeamento Anexo C.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2,
           4,
@@ -3846,7 +3846,7 @@
             "id": 1,
             "title": "Criar tabelas declaration_income_*, declaration_dependents, declaration_payments, declaration_assets, declaration_debts, declaration_totals, dec_layout_version",
             "description": "Schema conforme Anexo C; dec_layout_version por exercício.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 18
           },
@@ -3854,7 +3854,7 @@
             "id": 2,
             "title": "Mapeamento bloco .DEC → origem (Anexo C); popular a partir de case_people, triagem, documentos",
             "description": "P-014: nenhum campo .DEC sem origem definida.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 18
           }
@@ -3866,7 +3866,7 @@
         "description": "Carregar leiaute (DOC/IRPF-LeiauteTXT-20XX.pdf ou config) por tipo de registro: Inicio, Fim, Tam, Formato N/NN/C/A/I. Writers: WriterIR, Writer01, Writer16, Writer17-20, 21-92, 84/88, T9, HR, DR, R9. 11.4 PRD.",
         "details": "API interna por tipo de registro; encoding fixo (Latin-1); ordem conforme Anexo D.",
         "testStrategy": "Gerar linha de teste por tipo de registro e validar tamanho/formato.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           18
         ],
@@ -3876,7 +3876,7 @@
             "id": 1,
             "title": "Carregar leiaute por exercício (DOC/IRPF-LeiauteTXT-20XX.pdf ou config): Inicio, Fim, Tam, Formato N/NN/C/A/I",
             "description": "11.4 PRD; um registro de layout por tipo.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 19
           },
@@ -3884,7 +3884,7 @@
             "id": 2,
             "title": "Implementar writers: WriterIR, Writer01, Writer16, Writer17-20, 21-92, 84/88, T9, HR, DR, R9",
             "description": "Um writer por tipo de registro; encoding Latin-1; ordem Anexo D.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 19
           }
@@ -3896,7 +3896,7 @@
         "description": "Calcular base, imposto, deduções (simplificada 20% vs completa); totais de rendimentos e pagamentos. Validação: tipo simplificada/completa coerente com blocos 17/18 ou 19/20; T9 = totais calculados. RF-075.",
         "details": "declaration_totals; fórmulas conforme leiaute e Anexo A (limites).",
         "testStrategy": "Calcular totais para case simplificado e completo; validar consistência.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           18
         ],
@@ -3906,7 +3906,7 @@
             "id": 1,
             "title": "Calcular base, imposto, deduções (simplificada 20% vs completa) e totais de rendimentos/pagamentos",
             "description": "declaration_totals; fórmulas e limites Anexo A.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 20
           },
@@ -3914,7 +3914,7 @@
             "id": 2,
             "title": "Validação: tipo simplificada/completa coerente com blocos 17/18 ou 19/20; T9 = totais calculados",
             "description": "RF-075; bloquear geração se inconsistente.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 20
           }
@@ -3926,7 +3926,7 @@
         "description": "Fluxo: carregar case + declaration_* + layout → validar pré-condições (RF-072, RF-070) → writers na ordem Anexo D → escrever em 11_dec → validação pós-geração (RF-076) → registrar DEC_GERADO ou rollback.",
         "details": "Pré: APPROVED, sem BLOCKER, totais consistentes. Pós: releitura, T9 count, NR_HASH. Falha em pós: remover arquivo, não registrar, audit erro.",
         "testStrategy": "Gerar .DEC em case aprovado; falhar pré ou pós e verificar rollback.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           16,
           18,
@@ -3939,7 +3939,7 @@
             "id": 1,
             "title": "Carregar case, declaration_* e layout; validar pré-condições RF-072/RF-070",
             "description": "APPROVED, sem BLOCKER, totais consistentes, dados mínimos IR/16/17-18 ou 19-20.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 21
           },
@@ -3947,7 +3947,7 @@
             "id": 2,
             "title": "Chamar writers na ordem Anexo D (IR, [01], 16, 17/18 ou 19/20, 21-92, 84/88, T9, HR, DR, R9)",
             "description": "Buffer/stream com encoding fixo; um writer por tipo de registro.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 21
           },
@@ -3955,7 +3955,7 @@
             "id": 3,
             "title": "Escrever arquivo em 11_dec com nome padrão {CPF}-IRPF-A-{EXERCÍCIO}-{ANO_BASE}-{ORIGI|RETIF}.DEC",
             "description": "Encoding Latin-1; terminador 0x0D0x0A.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 21
           },
@@ -3963,7 +3963,7 @@
             "id": 4,
             "title": "Validação pós-geração: releitura, T9 count, NR_HASH",
             "description": "Se falha: remover arquivo, não registrar em documents, registrar erro em audit_events/job_runs.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 21
           },
@@ -3971,7 +3971,7 @@
             "id": 5,
             "title": "Registrar document DEC_GERADO e audit_event em sucesso",
             "description": "docType DEC_GERADO, source SISTEMA, version = número da geração.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 21
           }
@@ -3983,7 +3983,7 @@
         "description": "POST /cases/:id/generate-dec. Validação por campo (RF-074): formato N/NN/C/A/I, tamanho, códigos. Validação por registro: tamanho linha, terminador 0x0D0x0A. Nome arquivo: {CPF}-IRPF-A-{EXERCÍCIO}-{ANO_BASE}-{ORIGI|RETIF}.DEC. RF-071, RF-076.",
         "details": "Retornar path e doc_id ou erro claro. Encoding Latin-1; determinismo (RF-078, RNF-040).",
         "testStrategy": "Chamar endpoint e verificar arquivo em 11_dec e registro documents.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           21
         ],
@@ -3993,7 +3993,7 @@
             "id": 1,
             "title": "Implementar POST /cases/:id/generate-dec e retorno path/doc_id ou erro",
             "description": "RF-071; chamar orquestrador; retorno claro.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 22
           },
@@ -4001,7 +4001,7 @@
             "id": 2,
             "title": "Validação por campo (RF-074): formato N/NN/C/A/I, tamanho, códigos",
             "description": "Rejeitar antes de escrever se campo inválido.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 22
           },
@@ -4009,7 +4009,7 @@
             "id": 3,
             "title": "Validação por registro: tamanho linha, terminador 0x0D0x0A; nome arquivo padrão",
             "description": "RF-076; nome: {CPF}-IRPF-A-{EXERCÍCIO}-{ANO_BASE}-{ORIGI|RETIF}.DEC.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 22
           }
@@ -4021,7 +4021,7 @@
         "description": "Testes contra amostras DOC/*.DEC por exercício: estrutura, ordem de registros, tamanhos de linha, encoding. Critério de aceite seção 15 PRD.",
         "details": "Fixture com amostras; assert ordem IR→[01]→16→17/18 ou 19/20→...→R9; tamanhos e terminador.",
         "testStrategy": "Rodar suite de testes .DEC; falhar se layout divergir.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           21,
           22
@@ -4032,7 +4032,7 @@
             "id": 1,
             "title": "Fixture com amostras DOC/*.DEC por exercício",
             "description": "Arquivos de referência para assert de estrutura e ordem.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 23
           },
@@ -4040,7 +4040,7 @@
             "id": 2,
             "title": "Asserts: ordem de registros, tamanhos de linha, encoding Latin-1, terminador",
             "description": "Seção 15 PRD; falhar se layout divergir.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 23
           }
@@ -4052,7 +4052,7 @@
         "description": "Implementar diretrizes 11.6 PRD: legendas curtas, placeholders úteis, mensagens de erro que orientem, empty states com CTA, status em português amigável, feedback loading/sucesso.",
         "details": "Checklist de revisão de tela (11.6); acessibilidade (contraste, aria-label).",
         "testStrategy": "Revisar telas principais com checklist PRD.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           1,
           4,
@@ -4065,7 +4065,7 @@
             "id": 1,
             "title": "Legendas curtas, placeholders úteis, mensagens de erro que orientem (11.6 PRD)",
             "description": "Copy em português; feedback claro.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 24
           },
@@ -4073,7 +4073,7 @@
             "id": 2,
             "title": "Empty states com CTA e status em português amigável",
             "description": "Telas vazias com ação sugerida; status legíveis.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 24
           },
@@ -4081,7 +4081,7 @@
             "id": 3,
             "title": "Feedback loading/sucesso; acessibilidade (contraste, aria-label)",
             "description": "Checklist 11.6; revisar telas principais.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 24
           }
