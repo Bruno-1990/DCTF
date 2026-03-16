@@ -134,18 +134,31 @@ const Irpf2025: React.FC = () => {
     try {
       const promises = clientesComCodigoSCI.map(async (cliente) => {
         try {
-          const faturamento = await irpfService.buscarApenasCache(cliente.id, anosParaBuscar);
-          
-          // Garantir que sempre temos os 2 anos, preenchendo com zeros se necessário
-          const faturamentoCompleto = anosParaBuscar.map((ano) => {
-            const encontrado = faturamento.find((f) => f.ano === ano);
-            return encontrado || {
-              ano,
-              valorTotal: 0,
-              mediaMensal: 0,
-              meses: [],
-            };
-          });
+          const result = await irpfService.buscarApenasCache(cliente.id, anosParaBuscar);
+          const data = result.data || [];
+          const empresas = result.empresas;
+
+          // Somar matriz + filiais quando houver múltiplos estabelecimentos (mesmo critério da aba Faturamento SCI)
+          const faturamentoCompleto = (() => {
+            if (empresas && empresas.length > 0) {
+              return anosParaBuscar.map((ano) => {
+                let valorTotal = 0;
+                let mediaMensal = 0;
+                for (const emp of empresas) {
+                  const item = emp.data?.find((f: FaturamentoAnual) => f.ano === ano);
+                  if (item) {
+                    valorTotal += item.valorTotal ?? 0;
+                    mediaMensal += item.mediaMensal ?? 0;
+                  }
+                }
+                return { ano, valorTotal, mediaMensal, meses: [] };
+              });
+            }
+            return anosParaBuscar.map((ano) => {
+              const encontrado = data.find((f: FaturamentoAnual) => f.ano === ano);
+              return encontrado || { ano, valorTotal: 0, mediaMensal: 0, meses: [] };
+            });
+          })();
 
           setClientesComDados((prev) => {
             const novo = new Map(prev);

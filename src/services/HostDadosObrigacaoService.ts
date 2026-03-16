@@ -288,6 +288,89 @@ export class HostDadosObrigacaoService {
   }
 
   /**
+   * Retorna os tipos de movimentação (fiscal, trabalhista, contábil) por CNPJ
+   * no mesmo mês da competência informada.
+   * Usado pelo relatório DCTF para exibir movimentação na competência.
+   */
+  async listarMovimentacaoPorCompetencia(
+    ano: number,
+    mes: number,
+  ): Promise<{ cnpj: string; tipos_movimento: string[]; total_movimentacoes: number }[]> {
+    try {
+      const rows = await executeQuery<{ cnpj: string; tipos_movimento: string | null; total_movimentacoes: number }>(
+        `
+        SELECT
+          h.cnpj,
+          GROUP_CONCAT(DISTINCT h.relatorio SEPARATOR ',') AS tipos_movimento,
+          COALESCE(SUM(h.movimentacao), 0) AS total_movimentacoes
+        FROM host_dados h
+        WHERE h.ano = ? AND h.mes = ?
+          AND (h.movimentacao IS NULL OR h.movimentacao > 0)
+        GROUP BY h.cnpj, h.ano, h.mes
+        ORDER BY h.cnpj ASC
+        `,
+        [ano, mes],
+      );
+      return rows.map((row) => ({
+        cnpj: row.cnpj,
+        tipos_movimento: row.tipos_movimento
+          ? row.tipos_movimento.split(',').map((t) => t.trim()).filter(Boolean)
+          : [],
+        total_movimentacoes: Number(row.total_movimentacoes) || 0,
+      }));
+    } catch (error: any) {
+      console.error('[HostDadosObrigacaoService] Erro ao listar movimentação por competência:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Retorna movimentação por cliente na competência (ano/mes), usando o MESMO cruzamento
+   * da conferência e da tela Cliente > Lançamentos SCI: clientes + host_dados por
+   * cnpj_limpo normalizado ou cod_emp. Garante que quantidade e áreas (tipos) batem
+   * com o que a conferência e a tela de lançamentos exibem.
+   */
+  async listarMovimentacaoPorCompetenciaPorCliente(
+    ano: number,
+    mes: number,
+  ): Promise<{ cnpj: string; tipos_movimento: string[]; total_movimentacoes: number }[]> {
+    try {
+      const rows = await executeQuery<{
+        cnpj_limpo: string;
+        tipos_movimento: string | null;
+        total_movimentacoes: number;
+      }>(
+        `
+        SELECT
+          c.cnpj_limpo,
+          GROUP_CONCAT(DISTINCT h.relatorio SEPARATOR ',') AS tipos_movimento,
+          COALESCE(SUM(h.movimentacao), 0) AS total_movimentacoes
+        FROM clientes c
+        INNER JOIN host_dados h ON (
+          REPLACE(REPLACE(REPLACE(h.cnpj, '.', ''), '/', ''), '-', '') = c.cnpj_limpo
+          OR (h.cod_emp = c.cod_emp AND h.cod_emp IS NOT NULL AND c.cod_emp IS NOT NULL)
+        )
+        WHERE h.ano = ? AND h.mes = ?
+          AND (h.movimentacao IS NULL OR h.movimentacao > 0)
+        GROUP BY c.id, c.cnpj_limpo
+        ORDER BY c.cnpj_limpo ASC
+        `,
+        [ano, mes],
+      );
+      return rows.map((row) => ({
+        cnpj: row.cnpj_limpo,
+        tipos_movimento: row.tipos_movimento
+          ? row.tipos_movimento.split(',').map((t) => t.trim()).filter(Boolean)
+          : [],
+        total_movimentacoes: Number(row.total_movimentacoes) || 0,
+      }));
+    } catch (error: any) {
+      console.error('[HostDadosObrigacaoService] Erro ao listar movimentação por competência por cliente:', error);
+      return [];
+    }
+  }
+
+  /**
    * Lista clientes que NÃO têm DCTF na competência vigente,
    * mas TÊM movimento no Banco SCI no mês anterior.
    * 

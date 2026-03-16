@@ -20,8 +20,13 @@ export const clientesService = {
   },
 
   async getById(id: string): Promise<Cliente> {
-    const response = await api.get<Cliente>(`/clientes/${id}`);
-    return response.data;
+    const response = await api.get<{ success?: boolean; data?: Cliente } | Cliente>(`/clientes/${String(id)}`);
+    const body = response.data as any;
+    // Backend retorna { success, data: Cliente }; normalizar para sempre retornar o Cliente
+    if (body && typeof body === 'object' && body.data !== undefined) {
+      return body.data as Cliente;
+    }
+    return body as Cliente;
   },
 
   async create(cliente: Partial<Cliente>): Promise<Cliente> {

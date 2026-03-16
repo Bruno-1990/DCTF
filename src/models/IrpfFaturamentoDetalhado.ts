@@ -109,6 +109,12 @@ export class IrpfFaturamentoDetalhado extends DatabaseService<IrpfFaturamentoDet
     try {
       await this.ensureTable();
 
+      // Remover dados existentes para (cliente, empresa, ano) para evitar duplicatas ao atualizar
+      await this.executeCustomQuery(
+        `DELETE FROM \`irpf_faturamento_detalhado\` WHERE \`cliente_id\` = ? AND \`codigo_empresa\` = ? AND \`ano\` = ?`,
+        [clienteId, codigoEmpresa, ano]
+      );
+
       let salvos = 0;
 
       for (const item of dadosMensais) {

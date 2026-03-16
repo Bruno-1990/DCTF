@@ -22,6 +22,12 @@ export interface Cliente extends BaseEntity {
   endereco?: string;
   /** Nome da pasta do cliente na rede (ex.: servidor de arquivos). Label na UI: Rede. */
   nome_pasta_rede?: string | null;
+  /** Indica se o cliente possui movimentação fiscal. */
+  movimentacao_fiscal?: boolean | null;
+  /** Indica se o cliente possui movimentação trabalhista. */
+  movimentacao_trabalhista?: boolean | null;
+  /** Indica se o cliente possui movimentação contábil. */
+  movimentacao_contabil?: boolean | null;
 
   // Campos ampliados (ReceitaWS / cadastro robusto)
   fantasia?: string;
@@ -390,12 +396,31 @@ export interface DCTFReportItem {
   dataPagamento?: string | null;
 }
 
+/** Item do relatório DCTF para conferência: uma linha por cliente. */
+export interface DCTFConferenciaReportItem {
+  cnpj: string;
+  razaoSocial?: string;
+  codSci?: string;
+  statusDctf: 'OK' | 'REVISAR';
+  descricao: string;
+  /** Competência de referência (ex.: 02/2025). */
+  competencia?: string;
+  /** Período de apuração (ex.: 02/2025). */
+  periodoApuracao?: string;
+  /** Movimentação: indica se o cliente possui movimentação fiscal. */
+  movimentacaoFiscal?: boolean | string;
+  /** Movimentação: indica se o cliente possui movimentação trabalhista. */
+  movimentacaoTrabalhista?: boolean | string;
+  /** Movimentação: indica se o cliente possui movimentação contábil. */
+  movimentacaoContabil?: boolean | string;
+  /** Total de movimentações/lançamentos na competência (host_dados). */
+  totalMovimentacoes?: number;
+}
+
 export interface DCTFReportData {
-  items: DCTFReportItem[];
+  items: DCTFConferenciaReportItem[];
   totals: {
-    declaracoes: number;
-    debitoTotal: number;
-    saldoTotal: number;
+    clientes: number;
   };
 }
 
@@ -427,4 +452,59 @@ export interface PendentesReportData {
     totalPendentes: number;
     totalRegistros: number;
   };
+}
+
+// --- IRPF 2026 Área do Cliente ---
+export type Irpf2026Role = 'admin' | 'cliente';
+
+export interface Irpf2026Usuario {
+  id: string;
+  email: string;
+  senha_hash: string;
+  nome_exibicao?: string | null;
+  status_declaracao?: string | null;
+  ativo: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Irpf2026Admin {
+  id: string;
+  email: string;
+  senha_hash: string;
+  nome_exibicao?: string | null;
+  ativo: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Irpf2026Documento {
+  id: string;
+  usuario_id: string;
+  nome_original: string;
+  nome_arquivo: string;
+  categoria: string;
+  tamanho_bytes?: number | null;
+  mime_type?: string | null;
+  caminho_arquivo: string;
+  created_at: string;
+}
+
+export interface Irpf2026Mensagem {
+  id: string;
+  usuario_id: string;
+  admin_id?: string | null;
+  tipo: string;
+  titulo: string;
+  texto: string;
+  lida: number;
+  created_at: string;
+}
+
+export interface Irpf2026JwtPayload {
+  sub: string;
+  role: Irpf2026Role;
+  email?: string;
+  iat?: number;
+  exp?: number;
 }

@@ -71,6 +71,12 @@ export class IrpfFaturamentoConsolidado extends DatabaseService<IrpfFaturamentoC
     try {
       await this.ensureTable();
 
+      // Remover cache existente para (cliente, empresa, ano) para evitar duplicatas ao atualizar
+      await this.executeCustomQuery(
+        `DELETE FROM \`irpf_faturamento_consolidado\` WHERE \`cliente_id\` = ? AND \`codigo_empresa\` = ? AND \`ano\` = ?`,
+        [clienteId, codigoEmpresa, ano]
+      );
+
       const meses = [
         '',
         'Janeiro',

@@ -663,6 +663,11 @@ export class IrpfController {
                 faturamentoTotal = Number(row.FATURAMENTO_TOTAL || row.faturamento_total || 0);
               }
 
+              // Quando o SCI devolve BDCODEMP igual ao codigo_sci do cliente (ex.: 3), tratar como Matriz (1), não "Filial N"
+              if (codigoEmpresa === codigoSci && codigoSci !== 1) {
+                codigoEmpresa = 1;
+              }
+
               if (bdref > 0) {
                 const mes = bdref % 100;
                 const anoBdref = Math.floor(bdref / 100);

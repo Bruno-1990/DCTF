@@ -4,22 +4,12 @@
  */
 
 import { Router } from 'express';
-import multer from 'multer';
 import { DCTFController } from '../controllers/DCTFController';
 import { validate, validateParams, validateQuery, sanitizeData } from '../middleware/validation';
 import { dctfSchemas } from '../middleware/schemas';
 
 const router = Router();
 const dctfController = new DCTFController();
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  fileFilter: (_req, file, cb) => {
-    const ok = file.mimetype === 'image/png';
-    cb(null, !!ok);
-  },
-  limits: { fileSize: 10 * 1024 * 1024 },
-});
 
 // Middleware de sanitização global
 router.use(sanitizeData);
@@ -132,11 +122,6 @@ router.post('/admin/retry-sync-errors', (req, res) => {
 // POST /api/dctf/admin/send-email-pending - Enviar email com DCTFs em andamento
 router.post('/admin/send-email-pending', (req, res) => {
   dctfController.sendEmailPending(req, res);
-});
-
-// POST /api/dctf/admin/import-from-png - Importar declarações a partir de imagens PNG (OCR)
-router.post('/admin/import-from-png', upload.array('images', 20), (req, res) => {
-  dctfController.importFromPng(req, res);
 });
 
 // POST /api/dctf - Criar declaração

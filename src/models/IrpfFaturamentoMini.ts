@@ -54,7 +54,9 @@ export class IrpfFaturamentoMini extends DatabaseService<IrpfFaturamentoMiniData
   }
 
   /**
-   * Gerar cache mini a partir de dados detalhados
+   * Gerar cache mini a partir de dados detalhados.
+   * Usa apenas INSERT ... ON DUPLICATE KEY UPDATE (sem DELETE) para reduzir lock e risco de deadlock.
+   * Em caso de deadlock (concorrência 2024/2025), faz retry automático.
    */
   async gerarCache(
     clienteId: string,
@@ -76,7 +78,7 @@ export class IrpfFaturamentoMini extends DatabaseService<IrpfFaturamentoMiniData
 
       const id = require('uuid').v4();
       const sql = `
-        INSERT INTO \`irpf_faturamento_mini\` 
+        INSERT INTO \`irpf_faturamento_mini\`
           (\`id\`, \`cliente_id\`, \`codigo_sci\`, \`codigo_empresa\`, \`ano\`, \`valor_total\`, \`media_mensal\`)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
@@ -84,18 +86,31 @@ export class IrpfFaturamentoMini extends DatabaseService<IrpfFaturamentoMiniData
           \`media_mensal\` = VALUES(\`media_mensal\`),
           \`updated_at\` = CURRENT_TIMESTAMP
       `;
+      const params = [id, clienteId, codigoSci, codigoEmpresa, ano, valorTotal, mediaMensal];
 
-      await this.executeCustomQuery(sql, [
-        id,
-        clienteId,
-        codigoSci,
-        codigoEmpresa,
-        ano,
-        valorTotal,
-        mediaMensal,
-      ]);
+      const maxRetries = 3;
+      let lastError: unknown = null;
 
-      return { success: true, data: true };
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          await this.executeCustomQuery(sql, params);
+          return { success: true, data: true };
+        } catch (err: any) {
+          lastError = err;
+          const isDeadlock =
+            err?.code === 'ER_LOCK_DEADLOCK' ||
+            err?.errno === 1213 ||
+            err?.sqlState === '40001';
+          if (isDeadlock && attempt < maxRetries) {
+            const delayMs = 50 * attempt + Math.floor(Math.random() * 100);
+            await new Promise((r) => setTimeout(r, delayMs));
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      throw lastError;
     } catch (error) {
       return {
         success: false,

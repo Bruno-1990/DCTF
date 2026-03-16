@@ -161,8 +161,22 @@ export async function fetchConferenceSummary(): Promise<ConferenceSummary> {
   }
 }
 
-
-
+/**
+ * Envia email com o relatório "Clientes sem DCTF mas com Movimento" (corpo HTML formatado).
+ * Reutiliza a mesma lógica de validação de destinatário do envio de DCTFs em andamento.
+ * @param to - Email completo ou apenas o nome (sufixo @central-rnc.com.br aplicado no backend se faltar)
+ */
+export async function sendEmailSemDCTFComMovimento(to: string): Promise<{ success: boolean; message: string; total?: number }> {
+  const response = await api.post<{ success: boolean; message: string; data?: { total: number; destinatario: string } }>(
+    '/conferencias/send-email-sem-dctf-com-movimento',
+    { to: to.trim() }
+  );
+  return {
+    success: response.data.success,
+    message: response.data.message,
+    total: response.data.data?.total,
+  };
+}
 
 
 

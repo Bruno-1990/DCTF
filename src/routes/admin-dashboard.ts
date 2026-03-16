@@ -15,6 +15,7 @@ const upload = multer({
 
 router.get('/snapshot', (req, res) => AdminDashboardController.getSnapshot(req, res));
 router.get('/enhanced', (req, res) => AdminDashboardController.getEnhanced(req, res));
+router.get('/top-faturamento', (req, res) => AdminDashboardController.getTopFaturamento(req, res));
 router.get('/reports/history', (req, res) => AdminDashboardReportController.listHistory(req, res));
 router.post('/reports/history', upload.single('file'), (req, res) => AdminDashboardReportController.saveHistory(req, res));
 router.get('/reports/history/:id/download', (req, res) => AdminDashboardReportController.downloadHistory(req, res));

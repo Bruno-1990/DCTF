@@ -7,6 +7,7 @@ import {
   ClientesReportItem,
   ClientesReportStatusSummary,
   DCTFReportData,
+  DCTFConferenciaReportItem,
   DCTFReportItem,
   ConferenceReportData,
   PendentesReportData,
@@ -23,6 +24,8 @@ import {
   mapToDashboardRecord,
 } from '../AdminDashboardService';
 import { getConferenceSummary } from '../AdminDashboardConferenceService';
+import { gerarResumoConferencias } from '../conferences/ConferenceModulesService';
+import { HostDadosObrigacaoService } from '../HostDadosObrigacaoService';
 import { Cliente } from '../../models/Cliente';
 import { DCTF } from '../../models/DCTF';
 
@@ -244,50 +247,144 @@ export class ReportDataFactory {
     };
   }
 
+  /** Normaliza CNPJ para apenas dígitos (mesma regra da conferência). */
+  private static normalizarCnpj(cnpj: string | null | undefined): string | null {
+    if (!cnpj) return null;
+    const limpo = String(cnpj).replace(/\D/g, '');
+    return limpo.length >= 11 ? limpo : null;
+  }
+
+  /**
+   * Verifica se tipos_movimento contém o tipo (fiscal, trabalhista, contábil).
+   * Usa a mesma classificação da conferência e de Cliente > Lançamentos SCI:
+   * Fiscal: fiscal, FISE, FISS, FISCAL ENTRADA, FISCAL SAÍDA
+   * Trabalhista: trabalhista, FPG (folha)
+   * Contábil: contábil, contabil, CTB
+   */
+  private static temMovimentacaoTipo(tiposMovimento: string[], tipo: string): boolean {
+    const lower = tipo.toLowerCase();
+    const normalized = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+    const keywords: Record<string, string[]> = {
+      fiscal: ['fiscal', 'fise', 'fiss'],
+      trabalhista: ['trabalhista', 'fpg'],
+      contábil: ['contábil', 'contabil', 'ctb'],
+      contabil: ['contábil', 'contabil', 'ctb'],
+    };
+    const keys = keywords[lower] ?? [lower];
+    return tiposMovimento.some((t) => {
+      const n = normalized(t);
+      return keys.some((k) => n === k || n.includes(k));
+    });
+  }
+
   private static async buildDctfData(filters: ReportFilterOptions): Promise<ReportDataEnvelope<DCTFReportData>> {
-    const dctfResponse = await dctfModel.findAll();
-    const dctfRecords = dctfResponse.success && dctfResponse.data ? dctfResponse.data : [];
+    const today = new Date();
+    const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
+    const competenciaMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+    const competenciaYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+    const competenciaVigente = `${String(competenciaMonth).padStart(2, '0')}/${competenciaYear}`;
+    // Movimento que gera obrigação: mês anterior à competência (igual à lógica da conferência "sem DCTF com movimento")
+    const mesMovimento = competenciaMonth === 1 ? 12 : competenciaMonth - 1;
+    const anoMovimento = competenciaMonth === 1 ? competenciaYear - 1 : competenciaYear;
 
-    const normalizedRecords = dctfRecords
-      .map(record => this.normalizeDctfRecord(record))
-      .filter(record => record.identification.length > 0)
-      .filter(record => this.matchRecordFilters(record, filters));
+    const hostDados = new HostDadosObrigacaoService();
+    const [clientesResult, resumoConferencia, movimentacaoMes] = await Promise.all([
+      clienteModel.findAll(),
+      gerarResumoConferencias(),
+      hostDados.listarMovimentacaoPorCompetenciaPorCliente(anoMovimento, mesMovimento),
+    ]);
 
-    const items: DCTFReportItem[] = normalizedRecords
-      .map(record => ({
-        id: record.id,
-        identification: this.formatIdentifier(record.identification),
-        businessName: record.businessName,
-        period: record.period ?? '',
-        transmissionDate: record.transmissionDate,
-        status: record.status,
-        situation: record.situation ?? undefined,
-        debitAmount: record.debitAmount,
-        balanceDue: record.balanceDue,
-        origin: 'Plataforma',
-      }))
-      .sort((a, b) => {
-        const aPeriod = this.periodToOrder(a.period);
-        const bPeriod = this.periodToOrder(b.period);
-        if (aPeriod != null && bPeriod != null && aPeriod !== bPeriod) {
-          return bPeriod - aPeriod;
-        }
-        const aDate = a.transmissionDate ? Date.parse(a.transmissionDate) : 0;
-        const bDate = b.transmissionDate ? Date.parse(b.transmissionDate) : 0;
-        return bDate - aDate;
-      });
+    const clientes = clientesResult.success && clientesResult.data ? clientesResult.data : [];
+    const { clientesDispensadosDCTF, clientesSemDCTFComMovimento, clientesSemDCTFVigente, dctfsForaDoPrazo, dctfsPeriodoInconsistente } =
+      resumoConferencia.modulos;
 
-    const totals = items.reduce(
-      (acc, item) => {
-        acc.declaracoes += 1;
-        const debit = this.toNumber(item.debitAmount);
-        const balance = this.toNumber(item.balanceDue);
-        acc.debitoTotal += debit;
-        acc.saldoTotal += balance;
-        return acc;
-      },
-      { declaracoes: 0, debitoTotal: 0, saldoTotal: 0 },
-    );
+    const setOkDispensados = new Set<string>();
+    const mapDescricaoOk = new Map<string, string>();
+    for (const item of clientesDispensadosDCTF) {
+      const norm = this.normalizarCnpj(item.cnpj);
+      if (norm) {
+        setOkDispensados.add(norm);
+        mapDescricaoOk.set(norm, item.mensagem || 'Dispensado - Original sem movimento (obrigação retorna quando houver movimentação).');
+      }
+    }
+
+    const mapRevisar = new Map<string, string>();
+    for (const item of clientesSemDCTFComMovimento) {
+      const norm = this.normalizarCnpj(item.cnpj);
+      if (norm && !setOkDispensados.has(norm)) {
+        mapRevisar.set(norm, 'Cliente sem DCTF mas com movimento no mês anterior. Precisam enviar a declaração.');
+      }
+    }
+    for (const item of clientesSemDCTFVigente) {
+      const norm = this.normalizarCnpj(item.cnpj);
+      if (norm && !setOkDispensados.has(norm) && !mapRevisar.has(norm)) {
+        mapRevisar.set(norm, item.mensagem || 'Cliente sem DCTF na competência vigente. Verificar se houve movimento.');
+      }
+    }
+    for (const item of dctfsForaDoPrazo) {
+      const norm = this.normalizarCnpj(item.cnpj);
+      if (norm && !setOkDispensados.has(norm) && !mapRevisar.has(norm)) {
+        mapRevisar.set(norm, item.mensagem || 'DCTF enviada fora do prazo.');
+      }
+    }
+    for (const item of dctfsPeriodoInconsistente) {
+      const norm = this.normalizarCnpj(item.cnpj);
+      if (norm && !setOkDispensados.has(norm) && !mapRevisar.has(norm)) {
+        mapRevisar.set(norm, item.mensagem || 'DCTF com período inconsistente.');
+      }
+    }
+
+    const mapMovimentacao = new Map<string, { tipos: string[]; total: number }>();
+    for (const item of movimentacaoMes) {
+      const norm = this.normalizarCnpj(item.cnpj);
+      if (norm) {
+        mapMovimentacao.set(norm, {
+          tipos: item.tipos_movimento ?? [],
+          total: item.total_movimentacoes ?? 0,
+        });
+      }
+    }
+
+    const items: DCTFConferenciaReportItem[] = clientes.map((cliente) => {
+      const cnpjNorm = this.normalizarCnpj(cliente.cnpj_limpo);
+      const isDispensado = cnpjNorm ? setOkDispensados.has(cnpjNorm) : false;
+      const revisarMsg = cnpjNorm ? mapRevisar.get(cnpjNorm) : undefined;
+      const statusDctf: 'OK' | 'REVISAR' = isDispensado ? 'OK' : revisarMsg ? 'REVISAR' : 'OK';
+      const descricao = isDispensado
+        ? (cnpjNorm ? mapDescricaoOk.get(cnpjNorm) : null) ?? 'Dispensado - Original sem movimento (obrigação retorna quando houver movimentação).'
+        : revisarMsg ?? 'Sem pendências na competência vigente.';
+
+      const mov = cnpjNorm ? mapMovimentacao.get(cnpjNorm) : undefined;
+      const tiposMovimento = mov?.tipos ?? [];
+      let movimentacaoFiscal = this.temMovimentacaoTipo(tiposMovimento, 'fiscal');
+      let movimentacaoTrabalhista = this.temMovimentacaoTipo(tiposMovimento, 'trabalhista');
+      let movimentacaoContabil =
+        this.temMovimentacaoTipo(tiposMovimento, 'contábil') || this.temMovimentacaoTipo(tiposMovimento, 'contabil');
+      const totalMovimentacoes = mov?.total ?? 0;
+
+      // Se há total de movimentações mas nenhum tipo foi classificado (ex.: relatorio NULL no banco),
+      // marcar ao menos um como Sim para não exibir "Não" com total > 0
+      if (totalMovimentacoes > 0 && !movimentacaoFiscal && !movimentacaoTrabalhista && !movimentacaoContabil) {
+        movimentacaoContabil = true;
+      }
+
+      return {
+        cnpj: this.formatIdentifier(cliente.cnpj_limpo ?? ''),
+        razaoSocial: cliente.razao_social,
+        codSci: cliente.codigo_sci ?? undefined,
+        statusDctf,
+        descricao,
+        competencia: competenciaVigente,
+        periodoApuracao: competenciaVigente,
+        movimentacaoFiscal,
+        movimentacaoTrabalhista,
+        movimentacaoContabil,
+        totalMovimentacoes,
+      };
+    });
+
+    items.sort((a, b) => (a.razaoSocial ?? '').localeCompare(b.razaoSocial ?? '', 'pt-BR'));
 
     return {
       type: 'dctf',
@@ -295,7 +392,7 @@ export class ReportDataFactory {
       filters,
       data: {
         items,
-        totals,
+        totals: { clientes: items.length },
       },
     };
   }

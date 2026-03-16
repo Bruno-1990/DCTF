@@ -110,3 +110,18 @@ export async function fetchEnhancedDashboard(months = 6): Promise<EnhancedDashbo
   return response.data;
 }
 
+export interface TopFaturamentoItem {
+  clientId: string;
+  businessName: string;
+  cnpj: string;
+  faturamento: number;
+}export async function fetchTopFaturamento(ano: number, limit = 10): Promise<TopFaturamentoItem[]> {
+  const response = await api.get<{ success: boolean; data: TopFaturamentoItem[] }>(
+    "/dashboard/admin/top-faturamento",
+    { params: { ano, limit } }
+  );
+  if (!response.data.success || !Array.isArray(response.data.data)) {
+    return [];
+  }
+  return response.data.data;
+}

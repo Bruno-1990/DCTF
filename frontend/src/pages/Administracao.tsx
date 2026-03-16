@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { dctfService } from '../services/dctf';
+import { sendEmailSemDCTFComMovimento } from '../services/conferences-modules';
 import { relatoriosService } from '../services/relatorios';
 import { clientesService } from '../services/clientes';
-import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentMagnifyingGlassIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentTextIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 
 const ADMIN_CREDENTIALS = {
@@ -66,16 +67,11 @@ const Administracao: React.FC = () => {
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
 
-  // Estados para importação de imagens PNG (OCR)
-  const [uploadingPng, setUploadingPng] = useState(false);
-  const [pngResult, setPngResult] = useState<{
-    inserted: number;
-    updated: number;
-    errors: number;
-    details?: { perFile: { filename: string; rows: number; inserted: number; error?: string; insertError?: string }[] };
-  } | null>(null);
-  const [pngError, setPngError] = useState<string | null>(null);
-  const [selectedPngFiles, setSelectedPngFiles] = useState<File[]>([]);
+  // Estados para envio de email "Clientes sem DCTF mas com Movimento"
+  const [emailDestinoSemDCTFInput, setEmailDestinoSemDCTFInput] = useState('');
+  const [sendingEmailSemDCTF, setSendingEmailSemDCTF] = useState(false);
+  const [emailSuccessSemDCTF, setEmailSuccessSemDCTF] = useState<string | null>(null);
+  const [emailErrorSemDCTF, setEmailErrorSemDCTF] = useState<string | null>(null);
 
   const getEmailDestinoCompleto = (): string => {
     const v = emailDestinoInput.trim();
@@ -89,6 +85,20 @@ const Administracao: React.FC = () => {
   const aplicaAutocompleteEmail = () => {
     const v = emailDestinoInput.trim();
     if (v && !v.includes('@')) setEmailDestinoInput(`${v}${EMAIL_SUFFIX}`);
+  };
+
+  const getEmailDestinoSemDCTFCompleto = (): string => {
+    const v = emailDestinoSemDCTFInput.trim();
+    if (!v) return '';
+    return v.includes('@') ? v : `${v}${EMAIL_SUFFIX}`;
+  };
+  const emailDestinoSemDCTFValido = (): boolean => {
+    const full = getEmailDestinoSemDCTFCompleto();
+    return full.length > 0 && full.toLowerCase().endsWith(EMAIL_SUFFIX) && full.indexOf('@') > 0;
+  };
+  const aplicaAutocompleteEmailSemDCTF = () => {
+    const v = emailDestinoSemDCTFInput.trim();
+    if (v && !v.includes('@')) setEmailDestinoSemDCTFInput(`${v}${EMAIL_SUFFIX}`);
   };
   
   // Estados para atualização de clientes na ReceitaWS
@@ -583,24 +593,23 @@ const Administracao: React.FC = () => {
     }
   };
 
-  const handleImportFromPng = async () => {
-    if (!selectedPngFiles.length) return;
-    setUploadingPng(true);
-    setPngError(null);
-    setPngResult(null);
+  const handleSendEmailSemDCTFComMovimento = async () => {
+    const to = getEmailDestinoSemDCTFCompleto();
+    if (!to || !emailDestinoSemDCTFValido()) return;
+    setSendingEmailSemDCTF(true);
+    setEmailErrorSemDCTF(null);
+    setEmailSuccessSemDCTF(null);
     try {
-      const data = await dctfService.importFromPng(selectedPngFiles);
-      setPngResult({
-        inserted: data.inserted,
-        updated: data.updated ?? 0,
-        errors: data.errors,
-        details: data.details,
-      });
-      setSelectedPngFiles([]);
+      const result = await sendEmailSemDCTFComMovimento(to);
+      if (result.success) {
+        setEmailSuccessSemDCTF(`Email enviado com sucesso! ${result.total ?? 0} cliente(s) no relatório para ${to}`);
+      } else {
+        setEmailErrorSemDCTF(result.message || 'Erro ao enviar email');
+      }
     } catch (err: any) {
-      setPngError(err.response?.data?.message || err.response?.data?.error || err.message || 'Erro ao importar PNG.');
+      setEmailErrorSemDCTF(err.response?.data?.message || err.response?.data?.error || err.message || 'Erro ao enviar email');
     } finally {
-      setUploadingPng(false);
+      setSendingEmailSemDCTF(false);
     }
   };
 
@@ -1571,62 +1580,75 @@ const Administracao: React.FC = () => {
         </div>
       </div>
 
-      {/* Seção Importar de imagens PNG */}
-      <div className="bg-amber-50 border-2 border-amber-200 shadow-lg rounded-lg p-6 mb-6">
+      {/* Seção Envio de Email - Clientes sem DCTF mas com Movimento */}
+      <div className="bg-orange-50 border-2 border-orange-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
-          <DocumentMagnifyingGlassIcon className="h-6 w-6 text-amber-600 mr-3 mt-1" />
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-6 w-6 text-orange-600 mr-3 mt-1">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+          </svg>
           <div className="flex-1">
-            <h2 className="text-xl font-semibold text-amber-900 mb-2">Importar de imagens PNG</h2>
-            <p className="text-sm text-amber-700 mb-4">
-              Selecione uma ou mais imagens PNG (prints da tela oficial da Receita com a tabela de declarações).
-              O sistema extrai os dados via OCR e grava na tabela <code className="bg-amber-100 px-1 rounded">teste_png</code> (MySQL).
+            <h2 className="text-xl font-semibold text-orange-900 mb-2">Enviar Email - Clientes sem DCTF mas com Movimento</h2>
+            <p className="text-sm text-orange-700 mb-4">
+              Envia um email com corpo em HTML formatado contendo o relatório de <strong>clientes que tiveram movimento</strong> e ainda não enviaram a DCTF para a competência vigente.
+              Digite o nome do destinatário; o sufixo <strong>@central-rnc.com.br</strong> é preenchido automaticamente ao sair do campo ou ao pressionar Tab.
             </p>
-            <div className="flex flex-wrap items-center gap-4 mb-4">
-              <label className="cursor-pointer bg-white border-2 border-amber-400 text-amber-800 px-4 py-2 rounded-lg hover:bg-amber-50 font-medium">
+
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <label htmlFor="email-destino-sem-dctf" className="text-sm font-medium text-orange-900">Destinatário:</label>
+              <div className="flex items-center rounded-lg border-2 border-orange-300 bg-white focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-200">
                 <input
-                  type="file"
-                  accept="image/png"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const list = e.target.files ? Array.from(e.target.files) : [];
-                    setSelectedPngFiles(list);
-                    setPngResult(null);
-                    setPngError(null);
+                  id="email-destino-sem-dctf"
+                  type="text"
+                  value={emailDestinoSemDCTFInput}
+                  onChange={(e) => setEmailDestinoSemDCTFInput(e.target.value)}
+                  onBlur={aplicaAutocompleteEmailSemDCTF}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Tab') aplicaAutocompleteEmailSemDCTF();
                   }}
+                  placeholder="Ex: ti"
+                  className="px-3 py-2 rounded-l-md border-0 focus:ring-0 min-w-[120px] text-gray-900 placeholder-gray-400"
+                  autoComplete="off"
                 />
-                {selectedPngFiles.length ? `${selectedPngFiles.length} arquivo(s) selecionado(s)` : 'Selecionar PNG'}
-              </label>
+                <span className="px-3 py-2 text-gray-500 bg-gray-50 border-l border-orange-200 rounded-r-md text-sm select-none">
+                  @central-rnc.com.br
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 border border-orange-300 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será incluído:</h3>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>Empresa, CNPJ, Regime, Competência Obrigação, Movimento em</li>
+                <li>Tipos Movimento, Total Movimentações, Vencimento, Dias até Vencimento</li>
+                <li>Possível Obrigação de Envio</li>
+                <li>HTML formatado para fácil leitura</li>
+              </ul>
+            </div>
+
+            {emailSuccessSemDCTF && (
+              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
+                ✅ {emailSuccessSemDCTF}
+              </div>
+            )}
+
+            {emailErrorSemDCTF && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
+                ❌ {emailErrorSemDCTF}
+              </div>
+            )}
+
+            <div className="flex gap-3">
               <button
-                type="button"
-                onClick={handleImportFromPng}
-                disabled={uploadingPng || selectedPngFiles.length === 0}
-                className="flex items-center gap-2 bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                onClick={handleSendEmailSemDCTFComMovimento}
+                disabled={sendingEmailSemDCTF || !emailDestinoSemDCTFValido()}
+                className="flex items-center gap-2 bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
-                {uploadingPng ? `Processando ${selectedPngFiles.length} imagem(ns)...` : 'Importar'}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+                {sendingEmailSemDCTF ? 'Enviando Email...' : 'Enviar Email'}
               </button>
             </div>
-            {pngError && (
-              <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-800 text-sm">
-                {pngError}
-              </div>
-            )}
-            {pngResult && (
-              <div className="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg text-green-800 text-sm">
-                <p className="font-medium">Importação concluída: {pngResult.inserted} registro(s) inserido(s), {pngResult.errors} erro(s).</p>
-                {pngResult.details?.perFile?.length ? (
-                  <ul className="mt-2 list-disc list-inside text-xs">
-                    {pngResult.details.perFile.map((f, i) => (
-                      <li key={i}>
-                        {f.filename}: {f.rows} linha(s), {f.inserted} inserido(s)
-                        {f.error ? ` — ${f.error}` : ''}
-                        {f.insertError ? ` — Erro MySQL: ${f.insertError}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -1684,7 +1706,7 @@ const Administracao: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <DocumentMagnifyingGlassIcon className="h-4 w-4" />
+                    <DocumentTextIcon className="h-4 w-4" />
                     Iniciar Consulta
                   </>
                 )}
@@ -1703,7 +1725,7 @@ const Administracao: React.FC = () => {
       {/* Seção de Consulta em Lote de Situação Fiscal */}
       <div className="bg-emerald-50 border-2 border-emerald-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
-          <DocumentMagnifyingGlassIcon className="h-6 w-6 text-emerald-600 mr-3 mt-1" />
+          <DocumentTextIcon className="h-6 w-6 text-emerald-600 mr-3 mt-1" />
           <div className="flex-1">
             <h2 className="text-xl font-semibold text-emerald-900 mb-2">Consulta em Lote - Situação Fiscal (SITF)</h2>
             <p className="text-sm text-emerald-700 mb-4">
@@ -1929,7 +1951,7 @@ const Administracao: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <DocumentMagnifyingGlassIcon className="h-5 w-5" />
+                  <DocumentTextIcon className="h-5 w-5" />
                   <span>Iniciar Consulta de Situação Fiscal</span>
                 </>
               )}

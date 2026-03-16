@@ -98,13 +98,13 @@ const HeroSection: React.FC<HeroSectionProps> = ({ data }) => {
 
   return (
     <section className="mb-8">
-      <div className="bg-white shadow rounded-lg p-6">
+      <div className="bg-white shadow rounded-xl p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Visão Geral</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {cards.map((card) => (
             <div
               key={card.id}
-              className={`flex flex-col gap-2 p-4 rounded-lg border transition-all duration-200 hover:shadow-md ${getTrendBgColor(card.trend)}`}
+              className={`flex flex-col gap-2 p-4 rounded-xl border transition-all duration-200 hover:shadow-md ${getTrendBgColor(card.trend)}`}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">

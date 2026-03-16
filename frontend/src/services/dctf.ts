@@ -240,24 +240,6 @@ export const dctfService = {
       total: response.data.data?.total,
     };
   },
-
-  /**
-   * Importa declarações DCTF a partir de imagens PNG (OCR).
-   * Envia os arquivos para o backend que extrai a tabela e persiste em teste_png (MySQL).
-   */
-  async importFromPng(files: File[]): Promise<{
-    success: boolean;
-    inserted: number;
-    updated: number;
-    errors: number;
-    details?: { perFile: { filename: string; rows: number; inserted: number; error?: string }[] };
-  }> {
-    const formData = new FormData();
-    files.forEach((f) => formData.append('images', f));
-    // Não definir Content-Type: o axios define multipart/form-data com boundary automaticamente
-    const response = await api.post('/dctf/admin/import-from-png', formData);
-    return response.data;
-  },
 };
 
 function normalizeItem(item: any): DCTFListItem {

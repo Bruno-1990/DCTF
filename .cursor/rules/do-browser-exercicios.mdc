@@ -1,0 +1,23 @@
+---
+description: Ao dizer "Do", analisar questões no navegador e devolver lista Questão - Letra correta (uma por linha)
+globs: 
+alwaysApply: true
+---
+
+# Comando "Do" – Exercícios no navegador
+
+Quando o usuário disser **"Do"** (apenas essa palavra), o agente deve:
+
+1. **Obter o conteúdo da página** do exercício (snapshot ou screenshot do cursor-ide-browser).
+2. **Navegar por todas as questões** (clicando nos números 1, 2, 3… no painel ou em "Próxima"), se necessário, para ler cada enunciado e alternativas.
+3. **Para cada questão:** analisar enunciado e alternativas e determinar a **letra correta** (A, B, C, D, E).
+4. **Devolver apenas uma lista**, no formato abaixo, uma linha por questão:
+
+```
+Questão 1 - [letra]
+Questão 2 - [letra]
+Questão 3 - [letra]
+…
+```
+
+- **Não** é para marcar/clicar na página; **apenas** produzir essa lista **Questão - Letra correta**, uma abaixo da outra.

@@ -25,6 +25,9 @@ type SheetSchema = {
 
 const HEADER_BG = 'FF538DD5';
 const HEADER_TEXT = 'FFFFFFFF';
+const DCTF_OK_FILL = 'FFC6EFCE';      // verde claro
+const DCTF_REVISAR_FILL = 'FFFFF2CC'; // amarelo claro
+const LIGHT_BORDER = { style: 'thin' as const, color: { argb: 'FFD9D9D9' } };
 
 export class ReportXlsxService {
   static async generate(type: ReportType, options: XlsxReportOptions = {}): Promise<Buffer> {
@@ -36,9 +39,13 @@ export class ReportXlsxService {
 
     worksheet.views = [{ state: 'frozen', ySplit: 1 }];
 
+    const isDctf = type === 'dctf';
+    const headerHeight = isDctf ? 25 : 30;
+    const rowHeight = isDctf ? 20 : 25;
+
     worksheet.columns = schema.columns.map(column => ({ header: column.header, key: column.key, width: column.header.length + 4 }));
     const headerRow = worksheet.getRow(1);
-    headerRow.height = 30;
+    headerRow.height = headerHeight;
     headerRow.eachCell(cell => {
       cell.fill = {
         type: 'pattern',
@@ -51,13 +58,33 @@ export class ReportXlsxService {
         name: 'Calibri',
       };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
+      if (isDctf) {
+        cell.border = { top: LIGHT_BORDER, left: LIGHT_BORDER, bottom: LIGHT_BORDER, right: LIGHT_BORDER };
+      }
     });
 
-    schema.rows.forEach(rowData => {
+    const razaoSocialColIndex = schema.columns.findIndex(c => c.key === 'razaoSocial') + 1;
+    const descricaoColIndex = schema.columns.findIndex(c => c.key === 'descricao') + 1;
+
+    schema.rows.forEach((rowData, index) => {
       const row = worksheet.addRow(rowData);
-      row.height = 25;
-      row.eachCell(cell => {
-        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
+      row.height = rowHeight;
+      const statusDctf = isDctf && rowData && typeof rowData === 'object' && 'statusDctf' in rowData ? (rowData as { statusDctf?: string }).statusDctf : undefined;
+      const rowFill = isDctf && statusDctf === 'OK' ? DCTF_OK_FILL : isDctf && statusDctf === 'REVISAR' ? DCTF_REVISAR_FILL : undefined;
+      row.eachCell((cell, colNumber) => {
+        const isRazaoSocial = isDctf && razaoSocialColIndex > 0 && colNumber === razaoSocialColIndex;
+        const isDescricao = isDctf && descricaoColIndex > 0 && colNumber === descricaoColIndex;
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: isRazaoSocial || isDescricao ? 'left' : 'center',
+          wrapText: false,
+        };
+        if (rowFill) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowFill } };
+        }
+        if (isDctf) {
+          cell.border = { top: LIGHT_BORDER, left: LIGHT_BORDER, bottom: LIGHT_BORDER, right: LIGHT_BORDER };
+        }
       });
     });
 
@@ -161,27 +188,39 @@ export class ReportXlsxService {
     return { columns, rows };
   }
 
+  private static formatMovimentacao(value: boolean | string | undefined): string {
+    if (value === true || value === 'Sim' || value === 'sim' || value === 'S') return 'Sim';
+    if (value === false || value === 'Não' || value === 'nao' || value === 'N') return 'Não';
+    return '—';
+  }
+
   private static buildDctfSchema(envelope: ReportDataEnvelope<DCTFReportData>): SheetSchema {
     const columns: SheetColumn[] = [
-      { key: 'identification', header: 'Identificação' },
-      { key: 'businessName', header: 'Razão Social' },
-      { key: 'period', header: 'Competência' },
-      { key: 'transmissionDate', header: 'Entrega' },
-      { key: 'status', header: 'Status' },
-      { key: 'situation', header: 'Situação' },
-      { key: 'debitAmount', header: 'Débito Apurado' },
-      { key: 'balanceDue', header: 'Saldo em Aberto' },
+      { key: 'cnpj', header: 'CNPJ' },
+      { key: 'razaoSocial', header: 'Razão Social' },
+      { key: 'codSci', header: 'Cod SCI' },
+      { key: 'competencia', header: 'Competência' },
+      { key: 'periodoApuracao', header: 'Período de Apuração' },
+      { key: 'statusDctf', header: 'Status DCTF' },
+      { key: 'movimentacaoFiscal', header: 'Fisc.' },
+      { key: 'movimentacaoContabil', header: 'Cont.' },
+      { key: 'movimentacaoTrabalhista', header: 'Trab.' },
+      { key: 'totalMovimentacoes', header: 'QTD' },
+      { key: 'descricao', header: 'Descrição' },
     ];
 
     const rows = envelope.data.items.map(item => ({
-      identification: item.identification,
-      businessName: item.businessName ?? '—',
-      period: item.period ?? '—',
-      transmissionDate: this.formatDate(item.transmissionDate),
-      status: item.status ?? '—',
-      situation: item.situation ?? '—',
-      debitAmount: this.formatCurrency(item.debitAmount),
-      balanceDue: this.formatCurrency(item.balanceDue),
+      cnpj: item.cnpj ?? '—',
+      razaoSocial: item.razaoSocial ?? '—',
+      codSci: item.codSci ?? '—',
+      competencia: item.competencia ?? '—',
+      periodoApuracao: item.periodoApuracao ?? '—',
+      statusDctf: item.statusDctf,
+      movimentacaoFiscal: this.formatMovimentacao(item.movimentacaoFiscal),
+      movimentacaoTrabalhista: this.formatMovimentacao(item.movimentacaoTrabalhista),
+      movimentacaoContabil: this.formatMovimentacao(item.movimentacaoContabil),
+      totalMovimentacoes: item.totalMovimentacoes != null ? String(item.totalMovimentacoes) : '—',
+      descricao: item.descricao ?? '—',
     }));
 
     return { columns, rows };

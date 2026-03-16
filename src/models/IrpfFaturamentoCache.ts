@@ -323,5 +323,62 @@ export class IrpfFaturamentoCache extends DatabaseService<IrpfFaturamentoCacheDa
       };
     }
   }
+
+  /**
+   * Top empresas por faturamento anual (para dashboard)
+   * Usa irpf_faturamento_cache: soma valor dos meses ou valor_total quando mes = 0.
+   */
+  async buscarTopPorAno(
+    ano: number,
+    limit: number = 10
+  ): Promise<ApiResponse<Array<{ clientId: string; businessName: string; cnpj: string; faturamento: number }>>> {
+    try {
+      await this.ensureTable();
+
+      const sql = `
+        SELECT
+          c.id AS clientId,
+          c.razao_social AS businessName,
+          c.cnpj_limpo AS cnpj,
+          COALESCE(SUM(
+            CASE
+              WHEN f.mes = 0 THEN COALESCE(f.valor_total, 0)
+              ELSE f.valor
+            END
+          ), 0) AS faturamento
+        FROM \`irpf_faturamento_cache\` f
+        INNER JOIN \`clientes\` c ON c.id = f.cliente_id
+        WHERE f.ano = ?
+        GROUP BY f.cliente_id, c.id, c.razao_social, c.cnpj_limpo
+        HAVING faturamento > 0
+        ORDER BY faturamento DESC
+        LIMIT ?
+      `;
+
+      const result = await this.executeCustomQuery<any>(sql, [ano, limit]);
+
+      if (!result.success || !Array.isArray(result.data)) {
+        return { success: true, data: [] };
+      }
+
+      const data = result.data.map((row: Record<string, unknown>) => {
+        const r = row as Record<string, unknown>;
+        return {
+          clientId: String(r.clientId ?? r.clientid ?? ''),
+          businessName: String(r.businessName ?? r.businessname ?? ''),
+          cnpj: String(r.cnpj ?? ''),
+          faturamento: Number(r.faturamento ?? 0),
+        };
+      });
+
+      return { success: true, data };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar top faturamento',
+        data: [],
+      };
+    }
+  }
 }
 

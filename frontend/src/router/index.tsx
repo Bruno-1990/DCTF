@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Outlet, Navigate } from 'react-router-dom';
 import Layout from '../components/Layout/Layout';
 import Home from '../pages/Home';
 import Clientes from '../pages/Clientes';
@@ -20,98 +20,59 @@ import SpedValidacao from '../pages/SpedValidacao';
 import SpedValidacaoV2 from '../pages/SpedValidacaoV2';
 import SpedKnowledgeBase from '../pages/SpedKnowledgeBase';
 import Irpf2025 from '../pages/Irpf2025';
-import IrpfProducaoKanban from '../pages/IrpfProducao/IrpfProducaoKanban';
-import IrpfProducaoCase from '../pages/IrpfProducao/IrpfProducaoCase';
+import Irpf2026ProtectedAdmin from '../pages/Irpf2026/Irpf2026ProtectedAdmin';
+import Irpf2026AdminLayout from '../pages/Irpf2026/Irpf2026AdminLayout';
+import Irpf2026VisaoGeral from '../pages/Irpf2026/Irpf2026VisaoGeral';
+import Irpf2026LoginPage from '../pages/Irpf2026/Irpf2026LoginPage';
 
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <Layout />,
+    element: <Outlet />,
     errorElement: <ErrorPage />,
     children: [
       {
-        index: true,
-        element: <Home />,
-      },
-      {
-        path: 'dashboard',
-        element: <AdminDashboard />,
-      },
-      {
-        path: 'conferencias',
-        element: <Conferencias />,
-      },
-      {
-        path: 'clientes',
-        element: <Clientes />,
-      },
-      {
-        path: 'clientes/cnae',
-        element: <ClientesCNAE />,
-      },
-      {
-        path: 'dctf',
-        element: <DCTF />,
-      },
-      {
-        path: 'dctf/list',
-        element: <DCTFList />,
-      },
-      {
-        path: 'dctf/:id/dados',
-        element: <DCTFDadosPage />,
-      },
-      {
-        path: 'relatorios',
-        element: <Relatorios />,
-      },
-      {
-        path: 'situacao-fiscal',
-        element: <SituacaoFiscal />,
-      },
-      {
-        path: 'dirf',
-        element: <Dirf />,
-      },
-      {
-        path: 'administracao',
-        element: <Administracao />,
-      },
-      {
-        path: 'upload',
-        element: <UploadDCTF />,
-      },
-      {
-        path: 'sci/banco-horas',
-        element: <BancoHoras />,
-      },
-      {
-        path: 'sci/gerador-sql',
-        element: <GeradorSQL />,
-      },
-      {
-        path: 'sped',
-        element: <SpedValidacao />,
-      },
-      {
-        path: 'sped/v2',
-        element: <SpedValidacaoV2 />,
-      },
-      {
-        path: 'sped/knowledge',
-        element: <SpedKnowledgeBase />,
-      },
-      {
-        path: 'irpf-2026',
-        element: <Irpf2025 />,
-      },
-      {
-        path: 'irpf-producao',
-        element: <IrpfProducaoKanban />,
-      },
-      {
-        path: 'irpf-producao/cases/:id',
-        element: <IrpfProducaoCase />,
+        path: '*',
+        element: <Layout />,
+        children: [
+          { index: true, element: <Home /> },
+          { path: 'admin', element: <Navigate to="/irpf-2026/admin" replace /> },
+          { path: 'dashboard', element: <AdminDashboard /> },
+          { path: 'conferencias', element: <Conferencias /> },
+          { path: 'clientes', element: <Clientes /> },
+          { path: 'clientes/cnae', element: <ClientesCNAE /> },
+          { path: 'dctf', element: <DCTF /> },
+          { path: 'dctf/list', element: <DCTFList /> },
+          { path: 'dctf/:id/dados', element: <DCTFDadosPage /> },
+          { path: 'relatorios', element: <Relatorios /> },
+          { path: 'situacao-fiscal', element: <SituacaoFiscal /> },
+          { path: 'dirf', element: <Dirf /> },
+          { path: 'administracao', element: <Administracao /> },
+          { path: 'upload', element: <UploadDCTF /> },
+          { path: 'sci/banco-horas', element: <BancoHoras /> },
+          { path: 'sci/gerador-sql', element: <GeradorSQL /> },
+          { path: 'sped', element: <SpedValidacao /> },
+          { path: 'sped/v2', element: <SpedValidacaoV2 /> },
+          { path: 'sped/knowledge', element: <SpedKnowledgeBase /> },
+          {
+            path: 'irpf-2026',
+            element: <Outlet />,
+            children: [
+              { index: true, element: <Irpf2025 /> },
+              { path: 'cliente/login', element: <Irpf2026LoginPage /> },
+              {
+                path: 'admin',
+                element: <Irpf2026ProtectedAdmin />,
+                children: [
+                  {
+                    element: <Irpf2026AdminLayout />,
+                    children: [{ index: true, element: <Irpf2026VisaoGeral /> }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       },
     ],
   },

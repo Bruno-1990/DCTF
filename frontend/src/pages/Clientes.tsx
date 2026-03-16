@@ -29,6 +29,7 @@ import { api } from '../services/api';
 import type { AxiosError } from 'axios';
 import EProcessosTab from '../components/Clientes/EProcessosTab';
 import CFOPTab from '../components/Clientes/CFOPTab';
+import AcessoTab from '../components/Clientes/AcessoTab';
 import ExportClientesModal from '../components/Clientes/ExportClientesModal';
 import { clientesService } from '../services';
 import { useToast } from '../hooks/useToast';
@@ -406,7 +407,7 @@ const Clientes: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-processos' | 'cnae' | 'cfop'>(() => {
+  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-processos' | 'cnae' | 'cfop' | 'acesso'>(() => {
     // Inicializar pela URL/localStorage para evitar 1º render na aba errada (que dispara várias requisições/toasts)
     const params = new URLSearchParams(window.location.search);
     const tabFromQuery = params.get('tab');
@@ -418,6 +419,7 @@ const Clientes: React.FC = () => {
     if (tab === 'participacao') return 'participacao';
     if (tab === 'cnae') return 'cnae';
     if (tab === 'cfop') return 'cfop';
+    if (tab === 'acesso') return 'acesso';
     return 'clientes';
   });
   const [cnpjParaEProcessos, setCnpjParaEProcessos] = useState<string | undefined>(undefined);
@@ -912,7 +914,7 @@ const Clientes: React.FC = () => {
   };
 
   // Função para mudar de aba e atualizar URL (preserva cnpj/contexto ao trocar de aba)
-  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-processos' | 'cnae' | 'cfop') => {
+  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-processos' | 'cnae' | 'cfop' | 'acesso') => {
     setActiveTab(tab);
     const params = new URLSearchParams(location.search);
     if (tab === 'clientes') {
@@ -1003,27 +1005,20 @@ const Clientes: React.FC = () => {
     }
   };
 
-  // Detectar tab na query string (ou localStorage) ao entrar/alterar URL
+  // Detectar tab na query string ao entrar/alterar URL.
+  // Sem tab na URL (ex.: clicar em "Clientes" no menu) → sempre Cadastro por padrão.
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tabFromQuery = params.get('tab');
-    const tabFromStorage = window.localStorage.getItem('clientes_active_tab') as
-      | 'clientes'
-      | 'participacao'
-      | 'faturamento-sci'
-      | 'lancamentos'
-      | 'e-processos'
-      | 'cnae'
-      | 'cfop'
-      | null;
 
-    const tab = (tabFromQuery as any) || tabFromStorage || 'clientes';
+    const tab = (tabFromQuery as any) || 'clientes';
     if (tab === 'lancamentos') setActiveTab('lancamentos');
     else if (tab === 'e-processos') setActiveTab('e-processos');
     else if (tab === 'participacao') setActiveTab('participacao');
     else if (tab === 'faturamento-sci') setActiveTab('faturamento-sci');
     else if (tab === 'cnae') setActiveTab('cnae');
     else if (tab === 'cfop') setActiveTab('cfop');
+    else if (tab === 'acesso') setActiveTab('acesso');
     else setActiveTab('clientes');
     
     // Detectar CNPJ na query string para e-processos, lançamentos, clientes, faturamento-sci e cfop
@@ -1648,18 +1643,16 @@ const Clientes: React.FC = () => {
             }
           }
           
-          // Filtrar apenas matrizes com código SCI
-          const apenasMatrizesComSCI = todosClientes.filter(cliente => {
-            return cliente.tipo_empresa === 'Matriz' && 
-                   cliente.codigo_sci && 
-                   !isNaN(Number(cliente.codigo_sci));
+          // Listar todos os clientes com código SCI (matrizes e filiais)
+          const clientesComSCI = todosClientes.filter(cliente => {
+            return cliente.codigo_sci && !isNaN(Number(cliente.codigo_sci));
           });
           
-          setClientesFaturamento(apenasMatrizesComSCI);
+          setClientesFaturamento(clientesComSCI);
           
           // Carregar dados do cache automaticamente para todos os clientes
           try {
-            const promises = apenasMatrizesComSCI.map(async (cliente) => {
+            const promises = clientesComSCI.map(async (cliente) => {
               try {
                 const resultado = await irpfService.buscarApenasCache(cliente.id, anosParaBuscarFaturamento);
                 const faturamento = resultado.data;
@@ -2640,8 +2633,12 @@ const Clientes: React.FC = () => {
   };
 
   const handleEdit = async (cliente: Cliente) => {
+    if (!cliente?.id) {
+      toast.error('Cliente sem ID. Não é possível editar.');
+      return;
+    }
     try {
-      const full = await clientesService.getById(cliente.id);
+      const full = await clientesService.getById(String(cliente.id));
       setEditingCliente(full);
       const cnpjLimpo = full.cnpj_limpo || (full.cnpj ? full.cnpj.replace(/\D/g, '') : '');
       setFormData({
@@ -2650,22 +2647,28 @@ const Clientes: React.FC = () => {
         cnpj_limpo: cnpjLimpo,
         cnpj: formatCNPJ(cnpjLimpo),
       });
-      setMostrarCadastroCompleto(true);
-      setShowForm(true);
-    } catch {
-      // Fallback: usar os dados já carregados na listagem
-    setEditingCliente(cliente);
-    const cnpjLimpo = cliente.cnpj_limpo || (cliente.cnpj ? cliente.cnpj.replace(/\D/g, '') : '');
-    setFormData({ 
-      razao_social: cliente.razao_social || cliente.nome, 
-      cnpj_limpo: cnpjLimpo,
+      // Abrir a tela moderna (visualização) em vez do formulário antigo com fundo azulado
+      setVisualizandoCliente(full);
+      setShowForm(false);
+      const params = new URLSearchParams(location.search);
+      params.set('clienteId', String(full.id));
+      navigate({ search: params.toString() }, { replace: true });
+    } catch (e) {
+      console.warn('[Clientes] getById falhou, usando dados da listagem:', e);
+      const full = cliente;
+      setEditingCliente(full);
+      const cnpjLimpo = full.cnpj_limpo || (full.cnpj ? full.cnpj.replace(/\D/g, '') : '');
+      setFormData({
+        razao_social: full.razao_social || full.nome,
+        cnpj_limpo: cnpjLimpo,
         cnpj: formatCNPJ(cnpjLimpo),
-        ...cliente, // Incluir todos os dados do cliente (incluindo dados ReceitaWS)
-    });
-      // Exibir dados cadastrais automaticamente se o cliente tiver dados da ReceitaWS
-      const hasReceitaWSData = !!(cliente as any).fantasia || !!(cliente as any).situacao_cadastral || !!(cliente as any).receita_ws_status;
-      setMostrarCadastroCompleto(hasReceitaWSData);
-    setShowForm(true);
+        ...full,
+      });
+      setVisualizandoCliente(full);
+      setShowForm(false);
+      const params = new URLSearchParams(location.search);
+      params.set('clienteId', String(full.id));
+      navigate({ search: params.toString() }, { replace: true });
     }
   };
 
@@ -3423,6 +3426,20 @@ const Clientes: React.FC = () => {
                 <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
               )}
             </button>
+            <button
+              type="button"
+              onClick={() => handleTabChange('acesso')}
+              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+                activeTab === 'acesso'
+                  ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/30 transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+              }`}
+            >
+              Acesso T.I
+              {activeTab === 'acesso' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -3689,17 +3706,30 @@ const Clientes: React.FC = () => {
               navigate({ search: params.toString() }, { replace: true });
             }}
           />
-          {/* Card do cliente */}
+          {/* Card do cliente - layout moderno */}
           <div 
-            className="relative z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden mb-6"
+            className="relative z-50 bg-white rounded-2xl shadow-xl border border-gray-200/80 overflow-hidden mb-6"
             onClick={(e) => e.stopPropagation()}
           >
-          <div className="px-8 py-5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">
-                {displayUppercase(visualizandoCliente.razao_social || visualizandoCliente.nome, 'Cliente')}
-              </h2>
-              <div className="flex items-center gap-3">
+          {/* Header moderno: fundo neutro, tipografia clara, botões em destaque */}
+          <div className="px-6 sm:px-8 py-6 bg-slate-50 border-b border-slate-200/80">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+                  <BuildingOfficeIcon className="w-6 h-6 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">
+                    {displayUppercase(visualizandoCliente.razao_social || visualizandoCliente.nome, 'Cliente')}
+                  </h2>
+                  {(visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj) && (
+                    <p className="text-sm text-slate-500 font-mono mt-0.5">
+                      {displayCNPJ(visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj || '')}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                 <button
                   onClick={async () => {
                     if (!visualizandoCliente?.cnpj_limpo && !visualizandoCliente?.cnpj) {
@@ -3776,9 +3806,9 @@ const Clientes: React.FC = () => {
                     }
                   }}
                   disabled={atualizandoCliente}
-                  className="px-5 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-green-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-all duration-300 flex items-center gap-2 shadow-md hover:shadow-lg border-2 border-green-400 hover:border-green-500"
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow"
                 >
-                  <ArrowPathIcon className={`h-5 w-5 ${atualizandoCliente ? 'animate-spin' : ''}`} />
+                  <ArrowPathIcon className={`h-4 w-4 ${atualizandoCliente ? 'animate-spin' : ''}`} />
                   {atualizandoCliente ? 'Atualizando...' : 'Atualizar'}
                 </button>
                 <button
@@ -3792,185 +3822,24 @@ const Clientes: React.FC = () => {
                     params.delete('cnpj');
                     navigate({ search: params.toString() }, { replace: true });
                   }}
-                  className="px-6 py-2.5 bg-white text-blue-600 hover:bg-blue-50 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2 shadow-md hover:shadow-lg border-2 border-white hover:border-blue-200"
+                  className="px-4 py-2.5 bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2"
                 >
-                  <ArrowLeftIcon className="h-5 w-5" />
+                  <ArrowLeftIcon className="h-4 w-4" />
                   Voltar
                 </button>
               </div>
             </div>
           </div>
-          <div className="p-8 bg-gradient-to-br from-gray-50 to-white">
-            {/* Informações Básicas */}
-            <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
-              <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Informações Básicas</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">Razão Social</label>
-                  <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                    {displayUppercase(visualizandoCliente.razao_social || visualizandoCliente.nome, '—')}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">CNPJ</label>
-                  <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900 font-mono">
-                    {displayCNPJ(visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj || '')}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">Código SCI</label>
-                  <div className="flex gap-2">
-                    <div className={`flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white ${
-                      visualizandoCliente.codigo_sci 
-                        ? 'text-gray-900 font-semibold text-blue-600' 
-                        : 'text-gray-400 italic'
-                    }`}>
-                      {visualizandoCliente.codigo_sci || 'Não cadastrado'}
-                    </div>
-                    {visualizandoCliente?.id && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!visualizandoCliente?.id) return;
-                          
-                            setAtualizandoCodigoSCI(true);
-                            try {
-                              const result = await clientesService.atualizarCodigoSCI(visualizandoCliente.id);
-                              if (result.success && result.data) {
-                                // Atualizar apenas o codigo_sci no estado atual, preservando todos os outros campos
-                                setVisualizandoCliente({
-                                  ...visualizandoCliente,
-                                  codigo_sci: result.data.codigo_sci || result.data.cliente?.codigo_sci
-                                });
-                                // Recarregar a lista de clientes em background
-                                loadClientes().catch(err => console.error('[Clientes] Erro ao recarregar lista:', err));
-                                toast.success(result.message || 'Código SCI atualizado com sucesso');
-                              } else {
-                                toast.error(result.error || 'Erro ao atualizar código SCI');
-                              }
-                            } catch (error: any) {
-                              console.error('[Clientes] Erro ao atualizar código SCI:', error);
-                              toast.error(error.response?.data?.error || error.message || 'Erro ao atualizar código SCI');
-                            } finally {
-                              setAtualizandoCodigoSCI(false);
-                            }
-                        }}
-                        disabled={atualizandoCodigoSCI}
-                        className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 font-semibold text-sm"
-                      >
-                        <ArrowPathIcon className={`h-4 w-4 ${atualizandoCodigoSCI ? 'animate-spin' : ''}`} />
-                        Atualizar
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {(visualizandoCliente as any).fantasia && (
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Fantasia</label>
-                    <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                      {displayUppercase((visualizandoCliente as any).fantasia)}
-                    </div>
-                  </div>
-                )}
-                {(visualizandoCliente as any).tipo_empresa && (
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Tipo de Empresa</label>
-                    <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                      {(visualizandoCliente as any).tipo_empresa}
-                    </div>
-                  </div>
-                )}
+          <div className="p-6 sm:p-8 bg-white">
+            {/* Rede - card moderno (primeiro) */}
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6 border-l-4 border-l-sky-500">
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                <h3 className="text-sm font-semibold text-slate-800">Rede</h3>
               </div>
-            </div>
-
-            {/* Dados Cadastrais */}
-            {((visualizandoCliente as any).situacao_cadastral || (visualizandoCliente as any).porte || (visualizandoCliente as any).natureza_juridica) && (
-              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
-                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Dados Cadastrais</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {(visualizandoCliente as any).situacao_cadastral && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Situação</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).situacao_cadastral}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).porte && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Porte</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).porte}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).natureza_juridica && (
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Natureza Jurídica</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).natureza_juridica}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).atividade_principal_text && (
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Atividade Principal</label>
-                      <div className="flex items-start gap-2">
-                        <div className="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                          {(visualizandoCliente as any).atividade_principal_text}
-                        </div>
-                        {(visualizandoCliente as any).atividade_principal_code && (
-                          <span className="px-3 py-2.5 text-xs font-mono text-gray-600 bg-gray-100 rounded-lg border-2 border-gray-200 whitespace-nowrap">
-                            {(visualizandoCliente as any).atividade_principal_code}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Datas e Situação */}
-            {((visualizandoCliente as any).abertura || (visualizandoCliente as any).data_situacao || (visualizandoCliente as any).receita_ws_consulta_em) && (
-              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
-                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Datas e Situação</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {(visualizandoCliente as any).abertura && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Abertura</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {formatDateABNT((visualizandoCliente as any).abertura)}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).data_situacao && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Data Situação</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {formatDateABNT((visualizandoCliente as any).data_situacao)}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).receita_ws_consulta_em && (
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Última consulta (Receita)</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {formatDateTimeABNT((visualizandoCliente as any).receita_ws_consulta_em)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Rede - sempre visível e editável na visualização */}
-            <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
-              <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Rede</h3>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Nome da pasta na Rede</label>
-                <div className="flex flex-wrap items-stretch rounded-lg border-2 border-gray-200 bg-white overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
-                  <span className="inline-flex items-center px-3 py-2.5 text-sm text-gray-600 bg-gray-50 border-r border-gray-200 whitespace-nowrap">
+              <div className="p-5">
+                <label className="block text-xs font-medium text-slate-500 mb-2">Nome da pasta na Rede</label>
+                <div className="flex flex-wrap items-stretch rounded-xl border border-slate-200 bg-slate-50/50 overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500">
+                  <span className="inline-flex items-center px-3 py-2.5 text-sm text-slate-500 bg-slate-100 border-r border-slate-200 whitespace-nowrap">
                     {PREFIXO_PASTA_REDE}
                   </span>
                   <input
@@ -3990,12 +3859,12 @@ const Clientes: React.FC = () => {
                         toast.error(isMigration ? 'Não foi possível salvar a pasta na Rede. Execute a migration 019 no banco (coluna nome_pasta_rede).' : msg);
                       }
                     }}
-                    className="flex-1 min-w-0 px-3 py-2.5 text-sm text-gray-900 focus:outline-none"
+                    className="flex-1 min-w-[140px] px-3 py-2.5 text-sm text-slate-800 bg-white focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => abrirPastaRede((visualizandoCliente as any).nome_pasta_rede, toast)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-blue-700 bg-blue-50 border-l border-gray-200 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+                    className="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-indigo-600 bg-indigo-50 border-l border-slate-200 hover:bg-indigo-100 focus:outline-none"
                     title="Abrir pasta no Windows Explorer (ou copiar caminho)"
                   >
                     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -4007,163 +3876,348 @@ const Clientes: React.FC = () => {
               </div>
             </div>
 
-            {/* Endereço */}
-            {((visualizandoCliente as any).logradouro || (visualizandoCliente as any).municipio || (visualizandoCliente as any).cep) && (
-              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
-                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Endereço</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {(visualizandoCliente as any).logradouro && (
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Logradouro</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).logradouro}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).numero && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Número</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).numero}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).complemento && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Complemento</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).complemento}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).bairro && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Bairro</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).bairro}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).municipio && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Município</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).municipio}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).uf && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">UF</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).uf}
-                      </div>
-                    </div>
-                  )}
-                  {(visualizandoCliente as any).cep && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">CEP</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).cep}
-                      </div>
-                    </div>
-                  )}
-                </div>
+            {/* Informações Básicas - card moderno */}
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6 border-l-4 border-l-indigo-500">
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                <h3 className="text-sm font-semibold text-slate-800">Informações Básicas</h3>
               </div>
-            )}
-
-            {/* Contato */}
-            {((visualizandoCliente as any).receita_email || (visualizandoCliente as any).receita_telefone) && (
-              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
-                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Contato</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {(visualizandoCliente as any).receita_email && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">E-mail (Receita)</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {displayUppercase((visualizandoCliente as any).receita_email)}
-                      </div>
+              <div className="p-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                  <div className="group">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Razão Social</label>
+                    <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm font-medium">
+                      {displayUppercase(visualizandoCliente.razao_social || visualizandoCliente.nome, '—')}
                     </div>
-                  )}
-                  {(visualizandoCliente as any).receita_telefone && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Telefone (Receita)</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {displayUppercase((visualizandoCliente as any).receita_telefone)}
-                      </div>
+                  </div>
+                  <div className="group">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">CNPJ</label>
+                    <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm font-mono">
+                      {displayCNPJ(visualizandoCliente.cnpj_limpo || visualizandoCliente.cnpj || '')}
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Informações Financeiras e Tributárias */}
-            {visualizandoCliente && (
-              <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm mb-6">
-                <h3 className="text-sm font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-300">Informações Financeiras e Tributárias</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {(visualizandoCliente as any).capital_social && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Capital Social</label>
-                      <div className="px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900">
-                        {(visualizandoCliente as any).capital_social}
+                  </div>
+                  <div className="group md:col-span-2">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Código SCI</label>
+                    <div className="flex gap-2 flex-wrap items-center">
+                      <div className={`flex-1 min-w-[120px] px-3 py-2 rounded-lg text-sm ${
+                        visualizandoCliente.codigo_sci 
+                          ? 'bg-indigo-50 text-indigo-700 font-semibold' 
+                          : 'bg-slate-50 text-slate-400 italic'
+                      }`}>
+                        {visualizandoCliente.codigo_sci || 'Não cadastrado'}
                       </div>
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Regime tributário</label>
-                    {(() => {
-                      const regime = (visualizandoCliente as any).regime_tributario || '';
-                      const opcoes = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
-                      const valorSelect = opcoes.includes(regime) ? regime : '';
-                      return (
-                        <select
-                          value={valorSelect}
-                          onChange={async (e) => {
-                            const v = e.target.value;
+                      {visualizandoCliente?.id && (
+                        <button
+                          type="button"
+                          onClick={async () => {
                             if (!visualizandoCliente?.id) return;
-                            const valorSalvar = v === '' ? 'A Definir' : v;
+                            setAtualizandoCodigoSCI(true);
                             try {
-                              await updateClienteById(visualizandoCliente.id, { regime_tributario: valorSalvar } as Partial<Cliente>);
-                              setVisualizandoCliente(prev => prev ? { ...prev, regime_tributario: valorSalvar } as Cliente : null);
-                              toast.success('Regime tributário atualizado.');
-                            } catch (err: any) {
-                              toast.error(err?.response?.data?.error ?? err?.message ?? 'Erro ao salvar.');
+                              const result = await clientesService.atualizarCodigoSCI(visualizandoCliente.id);
+                              if (result.success && result.data) {
+                                setVisualizandoCliente({
+                                  ...visualizandoCliente,
+                                  codigo_sci: result.data.codigo_sci || result.data.cliente?.codigo_sci
+                                });
+                                loadClientes().catch(err => console.error('[Clientes] Erro ao recarregar lista:', err));
+                                toast.success(result.message || 'Código SCI atualizado com sucesso');
+                              } else {
+                                toast.error(result.error || 'Erro ao atualizar código SCI');
+                              }
+                            } catch (error: any) {
+                              console.error('[Clientes] Erro ao atualizar código SCI:', error);
+                              toast.error(error.response?.data?.error || error.message || 'Erro ao atualizar código SCI');
+                            } finally {
+                              setAtualizandoCodigoSCI(false);
                             }
                           }}
-                          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white text-gray-900 uppercase"
+                          disabled={atualizandoCodigoSCI}
+                          className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2 text-sm font-medium"
                         >
-                          <option value="">SELECIONE</option>
-                          <option value="Simples Nacional">SIMPLES NACIONAL</option>
-                          <option value="Lucro Presumido">LUCRO PRESUMIDO</option>
-                          <option value="Lucro Real">LUCRO REAL</option>
-                        </select>
-                      );
-                    })()}
+                          <ArrowPathIcon className={`h-4 w-4 ${atualizandoCodigoSCI ? 'animate-spin' : ''}`} />
+                          Atualizar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {(visualizandoCliente as any).fantasia && (
+                    <div className="group">
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Fantasia</label>
+                      <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                        {displayUppercase((visualizandoCliente as any).fantasia)}
+                      </div>
+                    </div>
+                  )}
+                  {(visualizandoCliente as any).tipo_empresa && (
+                    <div className="group">
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Tipo de Empresa</label>
+                      <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                        {(visualizandoCliente as any).tipo_empresa}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Dados Cadastrais - card moderno */}
+            {((visualizandoCliente as any).situacao_cadastral || (visualizandoCliente as any).porte || (visualizandoCliente as any).natureza_juridica) && (
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6 border-l-4 border-l-violet-500">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-sm font-semibold text-slate-800">Dados Cadastrais</h3>
+                </div>
+                <div className="p-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    {(visualizandoCliente as any).situacao_cadastral && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Situação</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).situacao_cadastral}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).porte && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Porte</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).porte}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).natureza_juridica && (
+                      <div className="group md:col-span-2">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Natureza Jurídica</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).natureza_juridica}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).atividade_principal_text && (
+                      <div className="group md:col-span-2">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Atividade Principal</label>
+                        <div className="flex flex-wrap items-stretch gap-2">
+                          <div className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                            {(visualizandoCliente as any).atividade_principal_text}
+                          </div>
+                          {(visualizandoCliente as any).atividade_principal_code && (
+                            <span className="px-3 py-2 text-xs font-mono text-slate-600 bg-slate-100 rounded-lg whitespace-nowrap">
+                              {(visualizandoCliente as any).atividade_principal_code}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Sócios / QSA */}
-            <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
-              <div className="flex items-center justify-between mb-4 pb-2 border-b-2 border-blue-300">
-                <h3 className="text-sm font-bold text-gray-800">Participação</h3>
+            {/* Datas e Situação - card moderno */}
+            {((visualizandoCliente as any).abertura || (visualizandoCliente as any).data_situacao || (visualizandoCliente as any).receita_ws_consulta_em) && (
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6 border-l-4 border-l-emerald-500">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-sm font-semibold text-slate-800">Datas e Situação</h3>
+                </div>
+                <div className="p-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    {(visualizandoCliente as any).abertura && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Abertura</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {formatDateABNT((visualizandoCliente as any).abertura)}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).data_situacao && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Data Situação</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {formatDateABNT((visualizandoCliente as any).data_situacao)}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).receita_ws_consulta_em && (
+                      <div className="group md:col-span-2">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Última consulta (Receita)</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {formatDateTimeABNT((visualizandoCliente as any).receita_ws_consulta_em)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
+            )}
+
+            {/* Endereço - card moderno */}
+            {((visualizandoCliente as any).logradouro || (visualizandoCliente as any).municipio || (visualizandoCliente as any).cep) && (
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6 border-l-4 border-l-amber-500">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-sm font-semibold text-slate-800">Endereço</h3>
+                </div>
+                <div className="p-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    {(visualizandoCliente as any).logradouro && (
+                      <div className="group md:col-span-2">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Logradouro</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).logradouro}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).numero && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Número</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).numero}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).complemento && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Complemento</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).complemento}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).bairro && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Bairro</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).bairro}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).municipio && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Município</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).municipio}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).uf && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">UF</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).uf}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).cep && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">CEP</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm font-mono">
+                          {(visualizandoCliente as any).cep}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Contato - card moderno */}
+            {((visualizandoCliente as any).receita_email || (visualizandoCliente as any).receita_telefone) && (
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6 border-l-4 border-l-rose-500">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-sm font-semibold text-slate-800">Contato</h3>
+                </div>
+                <div className="p-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    {(visualizandoCliente as any).receita_email && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">E-mail (Receita)</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {displayUppercase((visualizandoCliente as any).receita_email)}
+                        </div>
+                      </div>
+                    )}
+                    {(visualizandoCliente as any).receita_telefone && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Telefone (Receita)</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {displayUppercase((visualizandoCliente as any).receita_telefone)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Informações Financeiras e Tributárias - card moderno */}
+            {visualizandoCliente && (
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6 border-l-4 border-l-teal-500">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-sm font-semibold text-slate-800">Informações Financeiras e Tributárias</h3>
+                </div>
+                <div className="p-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    {(visualizandoCliente as any).capital_social && (
+                      <div className="group">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Capital Social</label>
+                        <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm">
+                          {(visualizandoCliente as any).capital_social}
+                        </div>
+                      </div>
+                    )}
+                    <div className="group">
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Regime tributário</label>
+                      {(() => {
+                        const regime = (visualizandoCliente as any).regime_tributario || '';
+                        const opcoes = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
+                        const valorSelect = opcoes.includes(regime) ? regime : '';
+                        return (
+                          <select
+                            value={valorSelect}
+                            onChange={async (e) => {
+                              const v = e.target.value;
+                              if (!visualizandoCliente?.id) return;
+                              const valorSalvar = v === '' ? 'A Definir' : v;
+                              try {
+                                await updateClienteById(visualizandoCliente.id, { regime_tributario: valorSalvar } as Partial<Cliente>);
+                                setVisualizandoCliente(prev => prev ? { ...prev, regime_tributario: valorSalvar } as Cliente : null);
+                                toast.success('Regime tributário atualizado.');
+                              } catch (err: any) {
+                                toast.error(err?.response?.data?.error ?? err?.message ?? 'Erro ao salvar.');
+                              }
+                            }}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 uppercase"
+                          >
+                            <option value="">SELECIONE</option>
+                            <option value="Simples Nacional">SIMPLES NACIONAL</option>
+                            <option value="Lucro Presumido">LUCRO PRESUMIDO</option>
+                            <option value="Lucro Real">LUCRO REAL</option>
+                          </select>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sócios / QSA - card moderno */}
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden border-l-4 border-l-slate-500">
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                <h3 className="text-sm font-semibold text-slate-800">Participação</h3>
+              </div>
+              <div className="p-5">
               {Array.isArray((visualizandoCliente as any).socios) && (visualizandoCliente as any).socios.length > 0 ? (
                 <div 
-                  className="border-2 border-blue-200 rounded-lg overflow-hidden bg-white shadow-sm"
+                  className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50/30"
                   key={`socios-${visualizandoCliente.id}-${sociosRefreshKey}`}
                 >
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gradient-to-r from-blue-100 to-indigo-100">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-100/80">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nome</th>
-                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Porcentagem (%)</th>
-                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Valor</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Nome</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Porcentagem (%)</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Valor</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200 bg-white">
+                    <tbody className="divide-y divide-slate-200 bg-white">
                       {((visualizandoCliente as any).socios || []).map((s: any, idx: number) => {
                         const participacaoPercentual = s.participacao_percentual !== null && s.participacao_percentual !== undefined 
                           ? parseFloat(String(s.participacao_percentual)) 
@@ -4189,10 +4243,10 @@ const Clientes: React.FC = () => {
                         };
 
                         return (
-                          <tr key={s.id || idx} className="hover:bg-blue-50 transition-colors">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{s.nome || s.Nome || s.name || '—'}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{formatPercent(participacaoPercentual)}</td>
-                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatCurrency(participacaoValor)}</td>
+                          <tr key={s.id || idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 text-sm font-medium text-slate-800">{s.nome || s.Nome || s.name || '—'}</td>
+                            <td className="px-4 py-3 text-sm text-slate-600">{formatPercent(participacaoPercentual)}</td>
+                            <td className="px-4 py-3 text-sm font-semibold text-slate-800">{formatCurrency(participacaoValor)}</td>
                           </tr>
                         );
                       })}
@@ -4200,18 +4254,19 @@ const Clientes: React.FC = () => {
                   </table>
                 </div>
               ) : (
-                <div className="px-4 py-3 text-sm text-gray-500 text-center bg-white border-2 border-blue-200 rounded-lg">
+                <div className="px-4 py-6 text-sm text-slate-500 text-center bg-slate-50 rounded-xl border border-slate-200">
                   Nenhum sócio cadastrado
                 </div>
               )}
             </div>
           </div>
-        </div>
+          </div>
+          </div>
         </>
       )}
 
-      {/* Barra de Busca e Ações - Não exibir nas abas de E-Processos e CNAE, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
-      {activeTab !== 'e-processos' && activeTab !== 'cnae' && !showForm && !visualizandoCliente && (
+      {/* Barra de Busca e Ações - Não exibir nas abas E-Processos, CNAE e Acesso, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
+      {activeTab !== 'e-processos' && activeTab !== 'cnae' && activeTab !== 'acesso' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div className={`flex-1 ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
@@ -4578,8 +4633,15 @@ const Clientes: React.FC = () => {
             </h2>
           </div>
           <form onSubmit={handleSubmit} className="p-8 bg-gradient-to-br from-gray-50 to-white">
+            {/* Aviso para novo cliente: usar mesmo layout da tela de cadastro */}
+            {!editingCliente && !(formData.razao_social || formData.nome) && (
+              <div className="mb-6 md:col-span-2">
+                <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-lg px-4 py-3 text-sm">
+                  Para criar um novo cliente, informe o CNPJ e clique em <span className="font-semibold">Importar Receita</span> para preencher automaticamente os dados (incluindo Razão Social).
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              {editingCliente ? (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Razão Social</label>
                 <div className="relative">
@@ -4588,24 +4650,11 @@ const Clientes: React.FC = () => {
                     type="text"
                     value={formData.razao_social || formData.nome || ''}
                     onChange={(e) => setFormData({ ...formData, razao_social: e.target.value, nome: e.target.value })}
-                      className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
                     required
                   />
                 </div>
               </div>
-              ) : (
-                <div className="md:col-span-2">
-                  <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-lg px-4 py-3 text-sm">
-                    Para criar um novo cliente, informe o CNPJ e clique em <span className="font-semibold">Importar Receita</span> para preencher automaticamente os dados (incluindo Razão Social).
-                  </div>
-                  {(formData.razao_social || formData.nome) && (
-                    <div className="mt-3 text-sm text-gray-700">
-                      <span className="font-semibold">Razão Social (importada):</span>{' '}
-                      <span>{String(formData.razao_social || formData.nome)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">CNPJ</label>
                 <div className="flex gap-2">
@@ -5185,7 +5234,7 @@ const Clientes: React.FC = () => {
                             onClick={() => {
                               navigate(`/situacao-fiscal?cnpj=${cnpjValue}`);
                             }}
-                            className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 border-2 border-blue-300 hover:border-blue-600"
+                            className="px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-blue-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow uppercase tracking-wide"
                             title="Consultar Situação Fiscal"
                           >
                             Sit. Fis
@@ -5194,7 +5243,7 @@ const Clientes: React.FC = () => {
                             onClick={() => {
                               navigate(`/clientes?tab=faturamento-sci&cnpj=${cnpjValue}`);
                             }}
-                            className="px-3 py-1.5 text-xs font-semibold text-purple-600 hover:text-white hover:bg-purple-600 rounded-lg transition-all duration-300 border-2 border-purple-300 hover:border-purple-600"
+                            className="px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-violet-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow uppercase tracking-wide"
                             title="Ver Faturamento SCI"
                           >
                             Fat
@@ -5203,7 +5252,7 @@ const Clientes: React.FC = () => {
                             onClick={() => {
                               navigate(`/dctf?search=${cnpjValue}`);
                             }}
-                            className="px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:text-white hover:bg-indigo-600 rounded-lg transition-all duration-300 border-2 border-indigo-300 hover:border-indigo-600"
+                            className="px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-indigo-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow uppercase tracking-wide"
                             title="Ver DCTF"
                           >
                             DCTF
@@ -5213,18 +5262,23 @@ const Clientes: React.FC = () => {
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
                           <button
-                            onClick={() => handleEdit(cliente)}
-                            className="px-3 py-1.5 text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 border-2 border-blue-300 hover:border-blue-600 flex items-center justify-center"
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleEdit(cliente);
+                            }}
+                            className="p-2.5 text-slate-500 bg-slate-100 hover:bg-blue-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
                             title="Editar cliente"
                           >
-                            <PencilIcon className="h-4 w-4" />
+                            <PencilIcon className="h-4 w-4" strokeWidth={2} />
                           </button>
                           <button
                             onClick={() => handleDeleteClick(cliente)}
-                            className="px-3 py-1.5 text-red-600 hover:text-white hover:bg-red-600 rounded-lg transition-all duration-300 border-2 border-red-300 hover:border-red-600 flex items-center justify-center"
+                            className="p-2.5 text-slate-500 bg-slate-100 hover:bg-red-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
                             title="Excluir cliente"
                           >
-                            <TrashIcon className="h-4 w-4" />
+                            <TrashIcon className="h-4 w-4" strokeWidth={2} />
                           </button>
                         </div>
                       </td>
@@ -5304,6 +5358,11 @@ const Clientes: React.FC = () => {
       {/* Aba de CFOP */}
       {activeTab === 'cfop' && (
         <CFOPTab />
+      )}
+
+      {/* Aba de Acesso - formulário para webhook n8n */}
+      {activeTab === 'acesso' && (
+        <AcessoTab />
       )}
 
       {/* Aba de CNAE */}
@@ -6062,29 +6121,14 @@ const Clientes: React.FC = () => {
           ) : (
             <>
               <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-cyan-50">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                      <CurrencyDollarIcon className="h-5 w-5 text-blue-600" />
-                      Faturamento SCI
-                    </h2>
-                    <p className="text-xs text-gray-600 mt-1">
-                      Gerencie o faturamento dos últimos 2 anos ({anosParaBuscarFaturamento.join(' e ')}) para declaração IRPF
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {!loadingFaturamento && clientesFaturamento.length > 0 && (
-                      <button
-                        onClick={atualizarTodosFaturamentos}
-                        disabled={loadingFaturamento}
-                        title="Atualizar faturamento direto do banco SCI para todos os clientes"
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                      >
-                        <ArrowPathIcon className={`h-4 w-4 ${loadingFaturamento ? 'animate-spin' : ''}`} />
-                        Atualizar Todos
-                      </button>
-                    )}
-                  </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <CurrencyDollarIcon className="h-5 w-5 text-blue-600" />
+                    Faturamento SCI
+                  </h2>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Gerencie o faturamento dos últimos 2 anos ({anosParaBuscarFaturamento.join(' e ')}) para declaração IRPF. Atualização apenas manual (ícone de atualizar em cada cliente).
+                  </p>
                 </div>
               </div>
 
@@ -6096,7 +6140,7 @@ const Clientes: React.FC = () => {
               </div>
             ) : clientesFaturamento.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
-                <p>Nenhuma matriz com código SCI encontrada.</p>
+                <p>Nenhum cliente (matriz ou filial) com código SCI encontrado.</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -6156,6 +6200,7 @@ const Clientes: React.FC = () => {
                         </div>
                       );
 
+                      const tipoEmpresaLabel = (cliente as any).tipo_empresa === 'Filial' ? 'Filial' : 'Matriz';
                       const cabecalhoCliente = (
                         <div className="flex items-center justify-between mb-4">
                           <div>
@@ -6190,6 +6235,10 @@ const Clientes: React.FC = () => {
                                 })()}
                               </div>
                               <span>Código SCI: {cliente.codigo_sci || '-'}</span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
+                                <BuildingOfficeIcon className="h-4 w-4" />
+                                {tipoEmpresaLabel}
+                              </span>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
@@ -6214,29 +6263,39 @@ const Clientes: React.FC = () => {
                         </div>
                       );
 
+                      // Aba Faturamento SCI: exibir Matriz e Filial SEPARADOS (um bloco por estabelecimento)
                       if (exibirPorEmpresa) {
-                        return empresas!.map((emp) => (
-                          <div
-                            key={`${cliente.id}-${emp.codigo_empresa}`}
-                            className="bg-gray-50 rounded-lg border border-gray-200 p-4"
-                          >
-                            {cabecalhoCliente}
-                            {data?.error && (
-                              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                                <strong>Erro:</strong> {data.error}
+                        const usarTipoCadastro = empresas!.length === 1;
+                        return empresas!.map((emp) => {
+                          const labelEstabelecimento = usarTipoCadastro ? tipoEmpresaLabel : emp.tipo;
+                          return (
+                            <div
+                              key={`${cliente.id}-${emp.codigo_empresa}`}
+                              className="bg-gray-50 rounded-lg border border-gray-200 p-4"
+                            >
+                              {cabecalhoCliente}
+                              {data?.error && (
+                                <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                                  <strong>Erro:</strong> {data.error}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 mb-3">
+                                <BuildingOfficeIcon className="h-5 w-5 text-gray-500" />
+                                <h4 className="text-base font-semibold text-gray-800">{labelEstabelecimento}</h4>
                               </div>
-                            )}
-                            <div className="flex items-center gap-2 mb-3">
-                              <BuildingOfficeIcon className="h-5 w-5 text-gray-500" />
-                              <h4 className="text-base font-semibold text-gray-800">{emp.tipo}</h4>
+                              {emp.data.length > 0 ? (
+                                renderCardsFaturamento(emp.data, labelEstabelecimento)
+                              ) : (
+                                <p className="text-sm text-gray-500">Nenhum dado para este período.</p>
+                              )}
+                              {!data?.carregado && !data?.loading && (
+                                <div className="mt-4 bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg text-sm">
+                                  Clique em &quot;Atualizar&quot; para buscar o faturamento do SCI
+                                </div>
+                              )}
                             </div>
-                            {emp.data.length > 0 ? (
-                              renderCardsFaturamento(emp.data, emp.tipo)
-                            ) : (
-                              <p className="text-sm text-gray-500">Nenhum dado para este período.</p>
-                            )}
-                          </div>
-                        ));
+                          );
+                        });
                       }
 
                       return [
@@ -7186,10 +7245,10 @@ const Clientes: React.FC = () => {
                             setClienteEditandoParticipacao(cliente);
                             setShowModalEdicaoParticipacao(true);
                           }}
-                          className="p-2 text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-all duration-300 flex items-center justify-center border border-blue-200 hover:border-blue-600"
+                          className="p-2.5 text-slate-500 bg-slate-100 hover:bg-blue-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
                           title="Editar Capital Social e Participações dos Sócios"
                         >
-                          <PencilIcon className="h-4 w-4" />
+                          <PencilIcon className="h-4 w-4" strokeWidth={2} />
                         </button>
                         <button
                           onClick={async (e) => {
