@@ -197,7 +197,7 @@ export default function Irpf2026VisaoGeral() {
           <p className="text-slate-400 text-sm">Documentos</p>
           <p className="text-2xl font-semibold text-white">{visao?.total_documentos ?? 0}</p>
         </div>
-      </div>
+      </motion.section>
 
       {/* Pesquisa e filtros */}
       <motion.section

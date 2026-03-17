@@ -29,7 +29,6 @@ import spedRoutes from './routes/sped';
 import spedV2KnowledgeRoutes from './routes/sped-v2-knowledge';
 import spedV2Routes from './routes/sped-v2';
 import irpfRoutes from './routes/irpf';
-import irpf2026Routes from './routes/irpf2026';
 import cfopRoutes from './routes/cfop';
 import dirfRoutes from './routes/dirf';
 import n8nWebhookRoutes from './routes/n8n-webhook';
@@ -181,7 +180,6 @@ class Server {
     this.app.use('/api/sped/v2/knowledge', spedV2KnowledgeRoutes);
     this.app.use('/api/sped/v2', spedV2Routes);
     this.app.use('/api/irpf', irpfRoutes);
-    this.app.use('/api/irpf2026', irpf2026Routes);
     this.app.use('/api/cfop', cfopRoutes);
     this.app.use('/api/dirf', dirfRoutes);
     this.app.use('/api/n8n', n8nWebhookRoutes);
