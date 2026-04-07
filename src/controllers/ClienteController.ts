@@ -3006,16 +3006,106 @@ export class ClienteController {
   }
 
   // =====================================================================
+  //  Abrir pasta no Explorer (servidor local)
+  // =====================================================================
+
+  /**
+   * POST /api/clientes/abrir-pasta
+   * Abre uma pasta no Windows Explorer do servidor.
+   * Apenas para uso em rede local (desenvolvimento/intranet).
+   */
+  async abrirPasta(req: Request, res: Response): Promise<void> {
+    try {
+      const { caminho } = req.body;
+      if (!caminho || typeof caminho !== 'string') {
+        res.status(400).json({ success: false, error: 'Caminho é obrigatório' });
+        return;
+      }
+
+      // Sanitizar: só permitir caminhos UNC (\\server\...) ou drive letters (C:\...)
+      const caminhoTrimmed = caminho.trim();
+      const isUNC = caminhoTrimmed.startsWith('\\\\');
+      const isDrive = /^[a-zA-Z]:\\/.test(caminhoTrimmed);
+      if (!isUNC && !isDrive) {
+        res.status(400).json({ success: false, error: 'Caminho inválido. Deve ser UNC (\\\\server\\...) ou drive (C:\\...)' });
+        return;
+      }
+
+      const { exec } = require('child_process');
+      exec(`explorer "${caminhoTrimmed}"`, (err: any) => {
+        // explorer.exe retorna exit code 1 mesmo quando abre com sucesso, então ignoramos erros
+        if (err && err.code !== 1) {
+          console.error('[ClienteController] Erro ao abrir pasta:', err);
+        }
+      });
+
+      res.json({ success: true, message: 'Comando enviado ao Explorer' });
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao abrir pasta:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  // =====================================================================
   //  OneClick — Sincronizar clientes
   // =====================================================================
 
   /**
-   * POST /api/clientes/sincronizar-oneclick
+   * GET /api/clientes/oneclick/preview
+   * Lista clientes do OneClick (Mensais+Ativos) para seleção antes de importar.
+   * Indica quais já existem no DCTF_WEB.
    */
-  async sincronizarOneClick(_req: Request, res: Response): Promise<void> {
+  async previewOneClick(_req: Request, res: Response): Promise<void> {
     try {
-      console.log('[ClienteController] Iniciando sincronizacao com OneClick...');
-      const result = await this.clienteModel.sincronizarComOneClick();
+      const { OneClickService } = await import('../services/OneClickService');
+      const oneClick = new OneClickService();
+      const clientesOC = await oneClick.buscarClientesMensaisAtivos();
+
+      // Verificar quais já existem no DCTF_WEB
+      const preview = [];
+      for (const oc of clientesOC) {
+        const cnpjLimpo = (oc.cad_cli_cnpj || '').replace(/\D/g, '');
+        if (cnpjLimpo.length !== 14) continue;
+
+        const existente = await this.clienteModel.findBy({ cnpj_limpo: cnpjLimpo });
+        const jaExiste = existente.success && existente.data && existente.data.length > 0;
+
+        preview.push({
+          id: oc.id,
+          cnpj: oc.cad_cli_cnpj,
+          cnpj_limpo: cnpjLimpo,
+          razao_social: oc.cad_cli_razao || '',
+          email: oc.cad_cli_email || '',
+          telefone: oc.cad_cli_tel || '',
+          cidade: oc.cad_cli_cidade || '',
+          uf: oc.cad_cli_estado || '',
+          regime: oc.cad_cli_regime,
+          ja_existe: jaExiste,
+        });
+      }
+
+      res.json({
+        success: true,
+        data: preview,
+        message: `${preview.length} cliente(s) encontrado(s) no OneClick. ${preview.filter(p => p.ja_existe).length} já cadastrado(s).`,
+      });
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao listar preview OneClick:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao conectar com OneClick' });
+    }
+  }
+
+  /**
+   * POST /api/clientes/sincronizar-oneclick
+   * Importa clientes selecionados do OneClick.
+   * Body: { ids: number[] } — IDs do OneClick a importar. Se vazio, importa todos.
+   */
+  async sincronizarOneClick(req: Request, res: Response): Promise<void> {
+    try {
+      const { ids } = req.body || {};
+      const idsArray = Array.isArray(ids) ? ids : undefined;
+      console.log(`[ClienteController] Iniciando sincronizacao com OneClick... (${idsArray ? idsArray.length + ' selecionados' : 'todos'})`);
+      const result = await this.clienteModel.sincronizarComOneClick(idsArray);
       if (!result.success) {
         res.status(500).json(result);
         return;

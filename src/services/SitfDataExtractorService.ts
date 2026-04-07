@@ -500,6 +500,9 @@ export async function updateExtractedSitfData(
             } else {
               console.error('[Sitf Data Extractor] ❌ Erro ao atualizar sócios (UPDATE):', updateResult.error);
             }
+
+            // ✅ Atualizar dados financeiros/tributários na tabela clientes
+            await atualizarDadosFinanceirosCliente(clienteModel, cliente, extractedData);
           } else {
             console.warn('[Sitf Data Extractor] ⚠️ Cliente não encontrado para CNPJ (UPDATE):', cnpjLimpo);
           }
@@ -512,6 +515,81 @@ export async function updateExtractedSitfData(
   } catch (error: any) {
     console.error('[Sitf Data Extractor] ❌ Erro ao atualizar dados estruturados:', error);
     throw error;
+  }
+}
+
+/**
+ * Atualiza dados financeiros/tributários na tabela clientes a partir da extração SITF.
+ * Só atualiza campos que estejam vazios/null no cadastro atual (não sobrescreve ReceitaWS).
+ */
+async function atualizarDadosFinanceirosCliente(
+  clienteModel: Cliente,
+  cliente: any,
+  extractedData: SitfExtractedData
+): Promise<void> {
+  try {
+    const updates: Record<string, any> = {};
+    const empresa = extractedData.empresa;
+
+    if (empresa) {
+      // Situação Cadastral
+      if (empresa.situacao_cadastral) {
+        updates.situacao_cadastral = empresa.situacao_cadastral;
+      }
+      // Porte
+      if (empresa.porte && !cliente.porte) {
+        updates.porte = empresa.porte;
+      }
+      // Natureza Jurídica
+      if (empresa.natureza_juridica) {
+        const nj = typeof empresa.natureza_juridica === 'object'
+          ? `${empresa.natureza_juridica.codigo || ''} - ${empresa.natureza_juridica.descricao || ''}`.trim().replace(/^- /, '')
+          : String(empresa.natureza_juridica);
+        if (nj && !cliente.natureza_juridica) {
+          updates.natureza_juridica = nj;
+        }
+      }
+      // CNAE Principal
+      if (empresa.cnae_principal) {
+        const cnae = typeof empresa.cnae_principal === 'object'
+          ? empresa.cnae_principal.codigo || null
+          : null;
+        const cnaeText = typeof empresa.cnae_principal === 'object'
+          ? empresa.cnae_principal.descricao || null
+          : null;
+        if (cnae && !cliente.atividade_principal_code) {
+          updates.atividade_principal_code = cnae;
+        }
+        if (cnaeText && !cliente.atividade_principal_text) {
+          updates.atividade_principal_text = cnaeText;
+        }
+      }
+    }
+
+    // Simples Nacional
+    if (extractedData.simples_nacional) {
+      if (extractedData.simples_nacional.data_inclusao && !extractedData.simples_nacional.data_exclusao) {
+        if (!cliente.simples_optante) {
+          updates.simples_optante = true;
+        }
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      console.log('[Sitf Data Extractor] ℹ️ Sem campos financeiros para atualizar na tabela clientes');
+      return;
+    }
+
+    const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
+    const values = [...Object.values(updates), cliente.id];
+    await executeQuery(`UPDATE \`clientes\` SET ${setClauses} WHERE \`id\` = ?`, values);
+
+    console.log('[Sitf Data Extractor] ✅ Dados financeiros atualizados na tabela clientes:', {
+      clienteId: cliente.id,
+      campos: Object.keys(updates),
+    });
+  } catch (err: any) {
+    console.error('[Sitf Data Extractor] ❌ Erro ao atualizar dados financeiros (não crítico):', err?.message);
   }
 }
 
@@ -785,6 +863,9 @@ export async function saveExtractedSitfData(
             } else {
               console.error('[Sitf Data Extractor] ❌ Erro ao atualizar sócios:', updateResult.error);
             }
+
+            // ✅ Atualizar dados financeiros/tributários na tabela clientes
+            await atualizarDadosFinanceirosCliente(clienteModel, cliente, extractedData);
           } else {
             console.warn('[Sitf Data Extractor] ⚠️ Cliente não encontrado para CNPJ:', cnpjLimpo);
           }

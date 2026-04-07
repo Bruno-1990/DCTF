@@ -42,4 +42,22 @@ export class OneClickService {
     );
     return rows as OneClickCliente[];
   }
+
+  /**
+   * Busca clientes por IDs específicos.
+   */
+  async buscarClientesPorIds(ids: number[]): Promise<OneClickCliente[]> {
+    if (ids.length === 0) return [];
+    const pool = getOneClickPool();
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await pool.query<any[]>(
+      `SELECT id, cad_cli_cnpj, cad_cli_razao, cad_cli_email, cad_cli_tel,
+              cad_cli_end, cad_cli_num, cad_cli_bairro, cad_cli_cidade,
+              cad_cli_estado, cad_cli_cep, cad_cli_complemento, cad_cli_regime
+       FROM ger_cad_cli
+       WHERE id IN (${placeholders})`,
+      ids
+    );
+    return rows as OneClickCliente[];
+  }
 }

@@ -65,24 +65,20 @@ function abrirPastaRede(pathRede: string | undefined | null, toast: { success: (
     toast.error('Informe o nome da pasta na Rede antes de abrir.');
     return;
   }
-  const copyAndNotify = () => {
-    navigator.clipboard.writeText(path).then(
-      () => toast.success('Caminho copiado. Cole no Explorer (Win+E) ou em Executar (Win+R) para abrir a pasta.'),
-      () => toast.error('Não foi possível copiar o caminho.')
-    );
-  };
-  try {
-    const protocolUrl = 'dctf-openfolder://' + encodeURIComponent(path).replace(/%2F/g, '/');
-    const w = window.open(protocolUrl, '_blank', 'noopener');
-    navigator.clipboard.writeText(path).catch(() => {});
-    if (!w || w.closed) {
-      copyAndNotify();
-    } else {
-      toast.success('Abrindo pasta no Explorer. Caminho também copiado — se não abrir, cole em Win+R.');
-    }
-  } catch {
-    copyAndNotify();
-  }
+  // Copiar para clipboard
+  navigator.clipboard.writeText(path).catch(() => {});
+  // Pedir ao backend para abrir a pasta via explorer.exe (servidor local)
+  clientesService.abrirPasta(path)
+    .then((res: any) => {
+      if (res.success) {
+        toast.success('Pasta aberta no Explorer. Caminho também copiado.');
+      } else {
+        toast.success('Caminho copiado. Cole no Explorer (Win+E) para abrir a pasta.');
+      }
+    })
+    .catch(() => {
+      toast.success('Caminho copiado. Cole no Explorer (Win+E) para abrir a pasta.');
+    });
 }
 
 // Componente moderno de seleção de Mês/Ano
@@ -430,6 +426,13 @@ const Clientes: React.FC = () => {
   const [manualDataFim, setManualDataFim] = useState<string>('');
   const [importandoReceita, setImportandoReceita] = useState(false);
   const [sincronizandoOneClick, setSincronizandoOneClick] = useState(false);
+  const [showOneClickModal, setShowOneClickModal] = useState(false);
+  const [oneClickPreview, setOneClickPreview] = useState<any[]>([]);
+  const [oneClickSelected, setOneClickSelected] = useState<Set<number>>(new Set());
+  const [oneClickLoading, setOneClickLoading] = useState(false);
+  const [oneClickConfirm, setOneClickConfirm] = useState(false);
+  const [oneClickSearch, setOneClickSearch] = useState('');
+  const [oneClickFiltro, setOneClickFiltro] = useState<'todos' | 'novos' | 'cadastrados'>('novos');
   const [mostrarCadastroCompleto, setMostrarCadastroCompleto] = useState(false);
   const [mostrarAtividadesSecundarias, setMostrarAtividadesSecundarias] = useState(false);
   // const [ultimaImportacaoMeta, setUltimaImportacaoMeta] = useState<any>(null); // Não utilizado no momento
@@ -2907,14 +2910,15 @@ const Clientes: React.FC = () => {
       // Mostrar mensagem de sucesso
       setSuccessMessage(`Cliente "${clienteNome}" excluído com sucesso!`);
       setShowSuccess(true);
-      
+
       // Ocultar mensagem após 5 segundos
       setTimeout(() => {
         setShowSuccess(false);
       }, 5000);
-      
-      // Recarregar lista de clientes
-      loadClientes();
+
+      // Recarregar lista de clientes mantendo filtros ativos
+      const paramLimit = ordenacaoClientes === 'sem-cod-sci' ? 500 : limit;
+      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' ? 1 : page, limit: paramLimit, search: debouncedSearch });
     } catch (error) {
       // Erro já é tratado pelo hook useClientes
       setShowError(true);
@@ -4505,26 +4509,32 @@ const Clientes: React.FC = () => {
                   <button
                     onClick={async () => {
                       try {
-                        setSincronizandoOneClick(true);
-                        const res = await clientesService.sincronizarOneClick();
+                        setOneClickLoading(true);
+                        setShowOneClickModal(true);
+                        setOneClickSearch('');
+                        setOneClickFiltro('novos');
+                        const res = await clientesService.previewOneClick();
                         if (res.success) {
-                          const d = res.data || {};
-                          toast.success(`OneClick: ${d.novos || 0} novo(s), ${d.atualizados || 0} atualizado(s), ${d.ignorados || 0} sem alteracao, ${d.erros || 0} erro(s)`, 8000);
-                          loadClientes();
+                          setOneClickPreview(res.data || []);
+                          // Pré-selecionar apenas os que NÃO existem ainda
+                          const novos = (res.data || []).filter((c: any) => !c.ja_existe);
+                          setOneClickSelected(new Set(novos.map((c: any) => c.id)));
                         } else {
-                          toast.error(res.error || 'Erro ao sincronizar com OneClick');
+                          toast.error(res.error || 'Erro ao buscar clientes do OneClick');
+                          setShowOneClickModal(false);
                         }
                       } catch (err: any) {
-                        toast.error(err.message || 'Erro ao sincronizar com OneClick');
+                        toast.error(err.message || 'Erro ao conectar com OneClick');
+                        setShowOneClickModal(false);
                       } finally {
-                        setSincronizandoOneClick(false);
+                        setOneClickLoading(false);
                       }
                     }}
                     disabled={sincronizandoOneClick}
                     className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:scale-105 transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
                   >
                     <ArrowPathIcon className={`h-5 w-5 ${sincronizandoOneClick ? 'animate-spin' : ''}`} />
-                    {sincronizandoOneClick ? 'Sincronizando...' : 'OneClick'}
+                    {sincronizandoOneClick ? 'Importando...' : 'OneClick'}
                   </button>
                   <button
                     onClick={() => setShowExportModal(true)}
@@ -5154,6 +5164,7 @@ const Clientes: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-1/4">Razão Social</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Código SCI</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Cadastro</th>
                 {socioFiltro && (
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Participação</th>
                 )}
@@ -5194,7 +5205,7 @@ const Clientes: React.FC = () => {
 
                 return clientesOrdenados.length === 0 ? (
                   <tr>
-                    <td colSpan={socioFiltro ? 6 : 5} className="px-6 py-12 text-center">
+                    <td colSpan={socioFiltro ? 7 : 6} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <UserGroupIcon className="h-12 w-12 text-gray-400" />
                         <p className="text-gray-500 font-medium">Nenhum cliente encontrado</p>
@@ -5255,6 +5266,13 @@ const Clientes: React.FC = () => {
                         ) : (
                           <span className="text-sm text-gray-400">—</span>
                         )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs text-gray-500">
+                          {cliente.createdAt
+                            ? new Date(cliente.createdAt).toLocaleDateString('pt-BR')
+                            : '—'}
+                        </span>
                       </td>
                       {socioFiltro && (
                       <td className="px-6 py-4">
@@ -7897,6 +7915,222 @@ const Clientes: React.FC = () => {
           onClose={() => setShowExportModal(false)}
           onExport={handleExportarClientes}
         />
+      )}
+
+      {/* Modal OneClick — Seleção de clientes para importar */}
+      {showOneClickModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50" onClick={() => { if (!sincronizandoOneClick) { setShowOneClickModal(false); setOneClickConfirm(false); } }} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-amber-500 to-orange-500 rounded-t-2xl">
+                <h2 className="text-lg font-bold text-white">Importar Clientes do OneClick</h2>
+                <p className="text-sm text-white/80 mt-0.5">
+                  {oneClickLoading ? 'Carregando...' : `${oneClickPreview.length} cliente(s) Mensais/Ativos encontrados`}
+                </p>
+              </div>
+
+              {!oneClickConfirm ? (
+                <>
+                  {/* Filtros + Busca */}
+                  <div className="px-6 py-3 border-b border-gray-100 space-y-2">
+                    <div className="flex items-center gap-2">
+                      {(['novos', 'cadastrados', 'todos'] as const).map(f => {
+                        const labels = { novos: 'Novos', cadastrados: 'Já cadastrados', todos: 'Todos' };
+                        const counts = {
+                          novos: oneClickPreview.filter(c => !c.ja_existe).length,
+                          cadastrados: oneClickPreview.filter(c => c.ja_existe).length,
+                          todos: oneClickPreview.length,
+                        };
+                        return (
+                          <button
+                            key={f}
+                            onClick={() => setOneClickFiltro(f)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                              oneClickFiltro === f
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {labels[f]} ({counts[f]})
+                          </button>
+                        );
+                      })}
+                      <div className="flex-1" />
+                      <span className="text-xs text-gray-500 font-medium">
+                        {oneClickSelected.size} selecionado(s)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const filtered = oneClickPreview.filter(c => {
+                            if (oneClickFiltro === 'novos') return !c.ja_existe;
+                            if (oneClickFiltro === 'cadastrados') return c.ja_existe;
+                            return true;
+                          }).filter(c => {
+                            const s = oneClickSearch.toLowerCase();
+                            if (!s) return true;
+                            return (c.razao_social || '').toLowerCase().includes(s) || (c.cnpj || '').includes(s);
+                          });
+                          const allSelected = filtered.every(c => oneClickSelected.has(c.id));
+                          const next = new Set(oneClickSelected);
+                          filtered.forEach(c => { if (allSelected) next.delete(c.id); else next.add(c.id); });
+                          setOneClickSelected(next);
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
+                      >
+                        Marcar/Desmarcar visíveis
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MagnifyingGlassIcon className="h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={oneClickSearch}
+                        onChange={e => setOneClickSearch(e.target.value)}
+                        placeholder="Buscar por razão social ou CNPJ..."
+                        className="flex-1 text-sm border-0 focus:ring-0 outline-none bg-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Lista */}
+                  <div className="flex-1 overflow-auto">
+                    {oneClickLoading ? (
+                      <div className="flex justify-center py-12"><ArrowPathIcon className="h-8 w-8 text-amber-500 animate-spin" /></div>
+                    ) : (
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-2 w-10"></th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Razão Social</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">CNPJ</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cidade/UF</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {oneClickPreview
+                            .filter(c => {
+                              if (oneClickFiltro === 'novos') return !c.ja_existe;
+                              if (oneClickFiltro === 'cadastrados') return c.ja_existe;
+                              return true;
+                            })
+                            .filter(c => {
+                              const s = oneClickSearch.toLowerCase();
+                              if (!s) return true;
+                              return (c.razao_social || '').toLowerCase().includes(s) || (c.cnpj || '').includes(s);
+                            })
+                            .sort((a, b) => {
+                              // Novos primeiro, depois cadastrados
+                              if (a.ja_existe !== b.ja_existe) return a.ja_existe ? 1 : -1;
+                              return (a.razao_social || '').localeCompare(b.razao_social || '');
+                            })
+                            .map(c => (
+                              <tr
+                                key={c.id}
+                                className={`hover:bg-amber-50/50 cursor-pointer transition-colors ${oneClickSelected.has(c.id) ? 'bg-amber-50/30' : ''}`}
+                                onClick={() => {
+                                  const next = new Set(oneClickSelected);
+                                  if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
+                                  setOneClickSelected(next);
+                                }}
+                              >
+                                <td className="px-4 py-2.5 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={oneClickSelected.has(c.id)}
+                                    onChange={() => {}}
+                                    className="h-4 w-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500"
+                                  />
+                                </td>
+                                <td className="px-4 py-2.5 text-sm text-gray-800 font-medium">{c.razao_social}</td>
+                                <td className="px-4 py-2.5 text-sm text-gray-600 font-mono">{c.cnpj}</td>
+                                <td className="px-4 py-2.5 text-sm text-gray-600">{[c.cidade, c.uf?.toUpperCase()].filter(Boolean).join('/')}</td>
+                                <td className="px-4 py-2.5">
+                                  {c.ja_existe ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Cadastrado</span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Novo</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+                    <button
+                      onClick={() => { setShowOneClickModal(false); setOneClickConfirm(false); }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => setOneClickConfirm(true)}
+                      disabled={oneClickSelected.size === 0}
+                      className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Importar {oneClickSelected.size} cliente(s)
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* Tela de Confirmação */
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mb-4">
+                    <ArrowPathIcon className={`h-8 w-8 text-amber-600 ${sincronizandoOneClick ? 'animate-spin' : ''}`} />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Confirmar Importação</h3>
+                  <p className="text-sm text-gray-500 mb-6">
+                    Deseja importar <strong>{oneClickSelected.size} cliente(s)</strong> do OneClick para o DCTF?
+                    <br />Clientes já cadastrados terão apenas campos vazios preenchidos.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setOneClickConfirm(false)}
+                      disabled={sincronizandoOneClick}
+                      className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          setSincronizandoOneClick(true);
+                          const ids = Array.from(oneClickSelected);
+                          const res = await clientesService.sincronizarOneClick(ids);
+                          if (res.success) {
+                            const d = res.data || {};
+                            toast.success(`OneClick: ${d.novos || 0} novo(s), ${d.atualizados || 0} atualizado(s), ${d.erros || 0} erro(s)`, 8000);
+                            const paramLimit = ordenacaoClientes === 'sem-cod-sci' ? 500 : limit;
+                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' ? 1 : page, limit: paramLimit, search: debouncedSearch });
+                          } else {
+                            toast.error(res.error || 'Erro ao importar');
+                          }
+                        } catch (err: any) {
+                          toast.error(err.message || 'Erro ao importar');
+                        } finally {
+                          setSincronizandoOneClick(false);
+                          setShowOneClickModal(false);
+                          setOneClickConfirm(false);
+                        }
+                      }}
+                      disabled={sincronizandoOneClick}
+                      className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50"
+                    >
+                      {sincronizandoOneClick ? 'Importando...' : 'Confirmar'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {/* Modal de Edição Manual de Participação */}

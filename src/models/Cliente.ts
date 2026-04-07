@@ -1964,12 +1964,14 @@ export class Cliente extends DatabaseService<ICliente> {
    * Read-only no OneClick. Dedup por cnpj_limpo.
    * Campos já preenchidos no DCTF_WEB não são sobrescritos.
    */
-  async sincronizarComOneClick(): Promise<ApiResponse<any>> {
+  async sincronizarComOneClick(ids?: number[]): Promise<ApiResponse<any>> {
     const oneClick = new OneClickService();
     const resumo = { total: 0, novos: 0, atualizados: 0, ignorados: 0, erros: 0, detalhes: [] as any[] };
 
     try {
-      const clientesOC = await oneClick.buscarClientesMensaisAtivos();
+      const clientesOC = ids && ids.length > 0
+        ? await oneClick.buscarClientesPorIds(ids)
+        : await oneClick.buscarClientesMensaisAtivos();
       resumo.total = clientesOC.length;
 
       for (const oc of clientesOC) {

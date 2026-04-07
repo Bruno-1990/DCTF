@@ -95,7 +95,11 @@ router.get('/ebef/progresso', (req, res) => clienteController.obterProgressoEBEF
 router.post('/ebef/lote', (req, res) => clienteController.iniciarLoteEBEF(req, res));
 router.post('/ebef/consultar', (req, res) => clienteController.consultarEBEFFilhoUnico(req, res));
 
+// ── Abrir pasta no Explorer (servidor local) ──
+router.post('/abrir-pasta', (req, res) => clienteController.abrirPasta(req, res));
+
 // ── OneClick (Sincronizar clientes) ──
+router.get('/oneclick/preview', (req, res) => clienteController.previewOneClick(req, res));
 router.post('/sincronizar-oneclick', (req, res) => clienteController.sincronizarOneClick(req, res));
 
 // GET /api/clientes/:id - Obter cliente por ID (DEVE ser a última rota GET com :id)

@@ -158,10 +158,20 @@ export const clientesService = {
     return response.data; // { success, data: { clienteId, message } }
   },
 
+  async abrirPasta(caminho: string) {
+    const response = await api.post('/clientes/abrir-pasta', { caminho });
+    return response.data;
+  },
+
   // ── OneClick (Sincronizar clientes) ──
 
-  async sincronizarOneClick() {
-    const response = await api.post('/clientes/sincronizar-oneclick');
+  async previewOneClick() {
+    const response = await api.get('/clientes/oneclick/preview');
+    return response.data; // { success, data: OneClickPreviewItem[] }
+  },
+
+  async sincronizarOneClick(ids?: number[]) {
+    const response = await api.post('/clientes/sincronizar-oneclick', ids ? { ids } : {});
     return response.data; // { success, data: { total, novos, atualizados, ignorados, erros }, message }
   },
 
