@@ -20,44 +20,6 @@ export class ConsultaReceitaController {
   }
 
   /**
-   * GET /api/receita/e-processos
-   * Consulta processos eletrônicos (E-Processos) na Receita Federal por CNPJ
-   */
-  async consultarEProcessos(req: Request, res: Response): Promise<void> {
-    try {
-      const { cnpj } = req.query;
-
-      if (!cnpj || typeof cnpj !== 'string') {
-        const response: ApiResponse = {
-          success: false,
-          error: 'CNPJ não fornecido',
-        };
-        res.status(400).json(response);
-        return;
-      }
-
-      const { ReceitaFederalService } = await import('../services/ReceitaFederalService');
-      const receitaService = new ReceitaFederalService();
-
-      const processos = await receitaService.consultarEProcessos(cnpj);
-
-      const response: ApiResponse = {
-        success: true,
-        data: processos,
-        message: 'E-Processos consultados com sucesso',
-      };
-      res.json(response);
-    } catch (error: any) {
-      console.error('[ConsultaReceitaController] Erro ao consultar E-Processos:', error);
-      const response: ApiResponse = {
-        success: false,
-        error: error.message || 'Erro ao consultar E-Processos na Receita Federal',
-      };
-      res.status(500).json(response);
-    }
-  }
-
-  /**
    * GET /api/receita/validar-token
    * Valida o token de acesso configurado (e opcionalmente a autorização para um CNPJ)
    * Query params:

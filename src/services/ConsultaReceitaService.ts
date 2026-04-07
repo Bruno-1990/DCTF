@@ -1,6 +1,5 @@
 /**
  * Serviço para validação de token e acesso à Receita Federal.
- * Usado por validar-token e e-processos.
  */
 
 import { ReceitaFederalService } from './ReceitaFederalService';
@@ -22,7 +21,7 @@ export class ConsultaReceitaService {
       if (!cnpj) {
         return { ok: true, mensagem: 'Token válido' };
       }
-      return { ok: true, mensagem: 'Token válido. Para validar autorização por CNPJ, use a aba E-Processos ou Situação Fiscal.' };
+      return { ok: true, mensagem: 'Token válido. Para validar autorização por CNPJ, use a aba Situação Fiscal.' };
     } catch (err: any) {
       return { ok: false, mensagem: err?.message || 'Falha ao obter token de acesso da Receita.' };
     }

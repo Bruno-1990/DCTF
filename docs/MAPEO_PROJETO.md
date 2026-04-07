@@ -72,7 +72,6 @@ DCTF_MPC/
 - **Página Principal**: `frontend/src/pages/Clientes.tsx`
 - **Componentes**: `frontend/src/components/Clientes/`
   - `PagamentosTab.tsx` - Aba de pagamentos
-  - `EProcessosTab.tsx` - Aba de e-processos
   - `ExportClientesModal.tsx` - Modal de exportação
 - **Serviços**: `frontend/src/services/clientes.ts`
 - **Hooks**: `frontend/src/hooks/useClientes.ts`

@@ -27,7 +27,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import type { AxiosError } from 'axios';
-import EProcessosTab from '../components/Clientes/EProcessosTab';
 import CFOPTab from '../components/Clientes/CFOPTab';
 import AcessoTab from '../components/Clientes/AcessoTab';
 import ExportClientesModal from '../components/Clientes/ExportClientesModal';
@@ -394,7 +393,7 @@ const Clientes: React.FC = () => {
   const [showModalResultado, setShowModalResultado] = useState(false);
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
-  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente'>('a-z');
+  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente' | 'e-bef'>('a-z');
   const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci'>('a-z');
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
@@ -407,7 +406,7 @@ const Clientes: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-processos' | 'cnae' | 'cfop' | 'acesso'>(() => {
+  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-bef' | 'cnae' | 'cfop' | 'acesso'>(() => {
     // Inicializar pela URL/localStorage para evitar 1º render na aba errada (que dispara várias requisições/toasts)
     const params = new URLSearchParams(window.location.search);
     const tabFromQuery = params.get('tab');
@@ -415,14 +414,13 @@ const Clientes: React.FC = () => {
     const tab = (tabFromQuery as any) || tabFromStorage || 'clientes';
 
     if (tab === 'lancamentos') return 'lancamentos';
-    if (tab === 'e-processos') return 'e-processos';
+    if (tab === 'e-bef') return 'e-bef';
     if (tab === 'participacao') return 'participacao';
     if (tab === 'cnae') return 'cnae';
     if (tab === 'cfop') return 'cfop';
     if (tab === 'acesso') return 'acesso';
     return 'clientes';
   });
-  const [cnpjParaEProcessos, setCnpjParaEProcessos] = useState<string | undefined>(undefined);
   const [hostLancamentos, setHostLancamentos] = useState<any[]>([]);
   const [hostLoading, setHostLoading] = useState(false);
   const [hostError, setHostError] = useState<string | null>(null);
@@ -914,7 +912,7 @@ const Clientes: React.FC = () => {
   };
 
   // Função para mudar de aba e atualizar URL (preserva cnpj/contexto ao trocar de aba)
-  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-processos' | 'cnae' | 'cfop' | 'acesso') => {
+  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-bef' | 'cnae' | 'cfop' | 'acesso') => {
     setActiveTab(tab);
     const params = new URLSearchParams(location.search);
     if (tab === 'clientes') {
@@ -1013,22 +1011,20 @@ const Clientes: React.FC = () => {
 
     const tab = (tabFromQuery as any) || 'clientes';
     if (tab === 'lancamentos') setActiveTab('lancamentos');
-    else if (tab === 'e-processos') setActiveTab('e-processos');
+    else if (tab === 'e-bef') setActiveTab('e-bef');
     else if (tab === 'participacao') setActiveTab('participacao');
     else if (tab === 'faturamento-sci') setActiveTab('faturamento-sci');
     else if (tab === 'cnae') setActiveTab('cnae');
     else if (tab === 'cfop') setActiveTab('cfop');
     else if (tab === 'acesso') setActiveTab('acesso');
     else setActiveTab('clientes');
-    
-    // Detectar CNPJ na query string para e-processos, lançamentos, clientes, faturamento-sci e cfop
+
+    // Detectar CNPJ na query string para lançamentos, clientes, faturamento-sci e cfop
     const cnpjFromQuery = params.get('cnpj');
     if (cnpjFromQuery) {
       const cnpjLimpo = cnpjFromQuery.replace(/\D/g, '');
       if (cnpjLimpo.length === 14) {
-        if (tab === 'e-processos') {
-          setCnpjParaEProcessos(cnpjLimpo);
-        } else if (tab === 'lancamentos' || tab === 'clientes' || tab === 'faturamento-sci' || tab === 'cfop') {
+        if (tab === 'lancamentos' || tab === 'clientes' || tab === 'faturamento-sci' || tab === 'cfop') {
           // Preencher o campo de busca (contexto) com o CNPJ formatado
           const cnpjFormatado = cnpjLimpo
             .replace(/(\d{2})(\d)/, '$1.$2')
@@ -1209,6 +1205,13 @@ const Clientes: React.FC = () => {
           // Tolerância de R$ 0.10 para arredondamentos em múltiplos cálculos
           const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.10;
           return !percentuaisOk || !valoresOk;
+        } else if (ordenacaoParticipacao === 'e-bef') {
+          // Empresas com ao menos um sócio PJ (CNPJ) no quadro societário
+          const socios = c.socios || [];
+          return socios.some(s => {
+            const doc = (s.cpf || '').replace(/\D/g, '');
+            return doc.length === 14; // CNPJ tem 14 dígitos
+          });
         }
         return true;
       }).length;
@@ -3400,15 +3403,15 @@ const Clientes: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => handleTabChange('e-processos')}
+              onClick={() => handleTabChange('e-bef')}
               className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
-                activeTab === 'e-processos'
+                activeTab === 'e-bef'
                   ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg shadow-indigo-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
               }`}
             >
-              E-Processos
-              {activeTab === 'e-processos' && (
+              e-BEF
+              {activeTab === 'e-bef' && (
                 <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
               )}
             </button>
@@ -4265,8 +4268,8 @@ const Clientes: React.FC = () => {
         </>
       )}
 
-      {/* Barra de Busca e Ações - Não exibir nas abas E-Processos, CNAE e Acesso, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
-      {activeTab !== 'e-processos' && activeTab !== 'cnae' && activeTab !== 'acesso' && !showForm && !visualizandoCliente && (
+      {/* Barra de Busca e Ações - Não exibir nas abas e-BEF, CNAE e Acesso, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
+      {activeTab !== 'e-bef' && activeTab !== 'cnae' && activeTab !== 'acesso' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div className={`flex-1 ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
@@ -4393,6 +4396,7 @@ const Clientes: React.FC = () => {
                     <option value="sem-registro">Sem Registro</option>
                     <option value="capital-zerado">Capital Social Zerado</option>
                     <option value="divergente">Divergente</option>
+                    <option value="e-bef">e-BEF</option>
                   </select>
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <FunnelIcon className="h-5 w-5 text-amber-500" />
@@ -5350,9 +5354,17 @@ const Clientes: React.FC = () => {
         </button>
       )}
 
-      {/* Aba de E-Processos */}
-      {activeTab === 'e-processos' && (
-        <EProcessosTab cnpjPreenchido={cnpjParaEProcessos} />
+      {/* Aba e-BEF */}
+      {activeTab === 'e-bef' && (
+        <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-12 text-center">
+          <div className="text-gray-400 mb-4">
+            <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.97-5.97m0 0L3.07 6.82a1.5 1.5 0 010-2.12l1.63-1.63a1.5 1.5 0 012.12 0L9.2 5.45m-3.75 3.75L9.2 5.45m2.22 9.72l5.97 5.97m0 0l2.38 2.38a1.5 1.5 0 002.12 0l1.63-1.63a1.5 1.5 0 000-2.12l-2.38-2.38m-5.75-2.22l5.75 2.22" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">e-BEF</h3>
+          <p className="text-gray-500">Em construção</p>
+        </div>
       )}
 
       {/* Aba de CFOP */}
@@ -7006,6 +7018,13 @@ const Clientes: React.FC = () => {
                   
                   // Retornar true se houver divergência (percentuais OU valores não batem)
                   return !percentuaisOk || !valoresOk;
+                } else if (ordenacaoParticipacao === 'e-bef') {
+                  // Empresas com ao menos um sócio PJ (CNPJ) no quadro societário
+                  const socios = c.socios || [];
+                  return socios.some(s => {
+                    const doc = (s.cpf || '').replace(/\D/g, '');
+                    return doc.length === 14; // CNPJ tem 14 dígitos
+                  });
                 }
                 return true; // Outros casos: sem filtro especial
               })
