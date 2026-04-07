@@ -137,3 +137,48 @@ export interface Relatorio {
   updatedAt: Date;
 }
 
+// ── e-BEF (Beneficiários Finais) ──
+
+export interface EBEFSocioFilho {
+  id: string;
+  nome: string;
+  qual?: string | null;
+}
+
+export interface EBEFConsulta {
+  id: string;
+  cnpj_filho: string;
+  nome_filho?: string | null;
+  situacao_filho?: string | null;
+  capital_social_filho?: number | null;
+  status: 'pendente' | 'processando' | 'concluido' | 'erro';
+  erro_mensagem?: string | null;
+  consultado_em?: string | null;
+  socios: EBEFSocioFilho[];
+}
+
+export interface EBEFSocioPJ {
+  socio_id: string;
+  nome: string;
+  cnpj_filho: string;
+  qual?: string | null;
+  consulta?: EBEFConsulta | null;
+}
+
+export interface EBEFParent {
+  id: string;
+  razao_social: string;
+  cnpj_limpo: string;
+  socios_pj: EBEFSocioPJ[];
+}
+
+export interface EBEFProgress {
+  total: number;
+  concluidos: number;
+  pendentes: number;
+  processando: number;
+  erros: number;
+  em_andamento: boolean;
+  cnpj_atual?: string | null;
+}
+

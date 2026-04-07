@@ -16,7 +16,7 @@ export const useClientes = () => {
     setError,
   } = useStore();
 
-  const loadClientes = async (params?: { page?: number; limit?: number; nome?: string; cnpj?: string; search?: string; socio?: string }): Promise<ClientesListResponse> => {
+  const loadClientes = async (params?: { page?: number; limit?: number; nome?: string; cnpj?: string; search?: string; socio?: string; semCodigoSci?: boolean }): Promise<ClientesListResponse> => {
     try {
       setLoading(true);
       setError(null);

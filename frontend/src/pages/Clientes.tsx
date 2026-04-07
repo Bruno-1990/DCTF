@@ -29,6 +29,7 @@ import { api } from '../services/api';
 import type { AxiosError } from 'axios';
 import CFOPTab from '../components/Clientes/CFOPTab';
 import AcessoTab from '../components/Clientes/AcessoTab';
+import EBEFTab from '../components/Clientes/EBEFTab';
 import ExportClientesModal from '../components/Clientes/ExportClientesModal';
 import { clientesService } from '../services';
 import { useToast } from '../hooks/useToast';
@@ -394,7 +395,7 @@ const Clientes: React.FC = () => {
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
   const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente' | 'e-bef'>('a-z');
-  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci'>('a-z');
+  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci'>('a-z');
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
   // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
@@ -428,6 +429,7 @@ const Clientes: React.FC = () => {
   const [manualDataIni, setManualDataIni] = useState<string>('');
   const [manualDataFim, setManualDataFim] = useState<string>('');
   const [importandoReceita, setImportandoReceita] = useState(false);
+  const [sincronizandoOneClick, setSincronizandoOneClick] = useState(false);
   const [mostrarCadastroCompleto, setMostrarCadastroCompleto] = useState(false);
   const [mostrarAtividadesSecundarias, setMostrarAtividadesSecundarias] = useState(false);
   // const [ultimaImportacaoMeta, setUltimaImportacaoMeta] = useState<any>(null); // Não utilizado no momento
@@ -1320,11 +1322,13 @@ const Clientes: React.FC = () => {
     }
     
     // Não aplicar filtro de sócio fora da aba participação
-    loadClientes({ page, limit, search: debouncedSearch, socio: undefined }).then(({ pagination }) => {
+    // Quando filtro "Sem Cod SCI" ativo, buscar todos para filtrar no frontend
+    const paramLimit = ordenacaoClientes === 'sem-cod-sci' ? 500 : limit;
+    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
-  }, [page, limit, debouncedSearch, activeTab]);
+  }, [page, limit, debouncedSearch, activeTab, ordenacaoClientes]);
 
   // Carregar todos os clientes para a aba Participação
   useEffect(() => {
@@ -4358,13 +4362,14 @@ const Clientes: React.FC = () => {
               <div className="relative">
                 <select
                   value={ordenacaoClientes}
-                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'z-a' | 'cnpj' | 'codigo-sci')}
+                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci')}
                   className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
                 >
                   <option value="a-z">A → Z</option>
                   <option value="z-a">Z → A</option>
                   <option value="cnpj">CNPJ ↑</option>
                   <option value="codigo-sci">Código SCI ↑</option>
+                  <option value="sem-cod-sci">Sem Cód SCI</option>
                 </select>
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FunnelIcon className="h-5 w-5 text-blue-500" />
@@ -4496,6 +4501,30 @@ const Clientes: React.FC = () => {
                   >
                     <PlusIcon className="h-5 w-5" />
                     Novo Cliente
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        setSincronizandoOneClick(true);
+                        const res = await clientesService.sincronizarOneClick();
+                        if (res.success) {
+                          const d = res.data || {};
+                          toast.success(`OneClick: ${d.novos || 0} novo(s), ${d.atualizados || 0} atualizado(s), ${d.ignorados || 0} sem alteracao, ${d.erros || 0} erro(s)`, 8000);
+                          loadClientes();
+                        } else {
+                          toast.error(res.error || 'Erro ao sincronizar com OneClick');
+                        }
+                      } catch (err: any) {
+                        toast.error(err.message || 'Erro ao sincronizar com OneClick');
+                      } finally {
+                        setSincronizandoOneClick(false);
+                      }
+                    }}
+                    disabled={sincronizandoOneClick}
+                    className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:scale-105 transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    <ArrowPathIcon className={`h-5 w-5 ${sincronizandoOneClick ? 'animate-spin' : ''}`} />
+                    {sincronizandoOneClick ? 'Sincronizando...' : 'OneClick'}
                   </button>
                   <button
                     onClick={() => setShowExportModal(true)}
@@ -5149,8 +5178,18 @@ const Clientes: React.FC = () => {
                     const cnpjA = (a.cnpj_limpo || a.cnpj || '').replace(/\D/g, '');
                     const cnpjB = (b.cnpj_limpo || b.cnpj || '').replace(/\D/g, '');
                     return cnpjA.localeCompare(cnpjB);
+                  } else if (ordenacaoClientes === 'codigo-sci') {
+                    const sciA = parseInt(String(a.codigo_sci || '').trim(), 10) || 0;
+                    const sciB = parseInt(String(b.codigo_sci || '').trim(), 10) || 0;
+                    return sciA - sciB;
                   }
                   return 0;
+                }).filter(c => {
+                  if (ordenacaoClientes === 'sem-cod-sci') {
+                    const sci = String(c.codigo_sci ?? '').trim();
+                    return !sci || sci === '0';
+                  }
+                  return true;
                 });
 
                 return clientesOrdenados.length === 0 ? (
@@ -5356,15 +5395,7 @@ const Clientes: React.FC = () => {
 
       {/* Aba e-BEF */}
       {activeTab === 'e-bef' && (
-        <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-12 text-center">
-          <div className="text-gray-400 mb-4">
-            <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.97-5.97m0 0L3.07 6.82a1.5 1.5 0 010-2.12l1.63-1.63a1.5 1.5 0 012.12 0L9.2 5.45m-3.75 3.75L9.2 5.45m2.22 9.72l5.97 5.97m0 0l2.38 2.38a1.5 1.5 0 002.12 0l1.63-1.63a1.5 1.5 0 000-2.12l-2.38-2.38m-5.75-2.22l5.75 2.22" />
-            </svg>
-          </div>
-          <h3 className="text-xl font-semibold text-gray-700 mb-2">e-BEF</h3>
-          <p className="text-gray-500">Em construção</p>
-        </div>
+        <EBEFTab />
       )}
 
       {/* Aba de CFOP */}
@@ -7044,7 +7075,9 @@ const Clientes: React.FC = () => {
                 } else if (ordenacaoParticipacao === 'cnpj') {
                   return cnpjA.localeCompare(cnpjB);
                 } else if (ordenacaoParticipacao === 'codigo-sci') {
-                  return codigoSciA.localeCompare(codigoSciB);
+                  const numA = parseInt(codigoSciA, 10) || 0;
+                  const numB = parseInt(codigoSciB, 10) || 0;
+                  return numA - numB;
                 }
                 return 0; // Filtros especiais mantêm ordem original
               })

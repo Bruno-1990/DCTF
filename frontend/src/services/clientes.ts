@@ -7,7 +7,7 @@ export type ClientesListResponse = {
 };
 
 export const clientesService = {
-  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string; socio?: string; payments?: 'all' | 'with' | 'without' }): Promise<ClientesListResponse> {
+  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string; socio?: string; payments?: 'all' | 'with' | 'without'; semCodigoSci?: boolean }): Promise<ClientesListResponse> {
     const response = await api.get<any>('/clientes', { params });
     const body = response.data;
     if (Array.isArray(body)) {
@@ -156,6 +156,35 @@ export const clientesService = {
       socios,
     });
     return response.data; // { success, data: { clienteId, message } }
+  },
+
+  // ── OneClick (Sincronizar clientes) ──
+
+  async sincronizarOneClick() {
+    const response = await api.post('/clientes/sincronizar-oneclick');
+    return response.data; // { success, data: { total, novos, atualizados, ignorados, erros }, message }
+  },
+
+  // ── e-BEF (Beneficiários Finais) ──
+
+  async listarEBEF() {
+    const response = await api.get('/clientes/ebef');
+    return response.data; // { success, data: EBEFParent[] }
+  },
+
+  async obterProgressoEBEF() {
+    const response = await api.get('/clientes/ebef/progresso');
+    return response.data; // { success, data: EBEFProgress }
+  },
+
+  async iniciarLoteEBEF() {
+    const response = await api.post('/clientes/ebef/lote');
+    return response.data; // { success, data: { total, inseridos }, message }
+  },
+
+  async consultarEBEFFilho(consultaId: string) {
+    const response = await api.post('/clientes/ebef/consultar', { consultaId });
+    return response.data; // { success, data }
   },
 
 };

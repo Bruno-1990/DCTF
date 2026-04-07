@@ -3004,5 +3004,151 @@ export class ClienteController {
       });
     }
   }
+
+  // =====================================================================
+  //  OneClick — Sincronizar clientes
+  // =====================================================================
+
+  /**
+   * POST /api/clientes/sincronizar-oneclick
+   */
+  async sincronizarOneClick(_req: Request, res: Response): Promise<void> {
+    try {
+      console.log('[ClienteController] Iniciando sincronizacao com OneClick...');
+      const result = await this.clienteModel.sincronizarComOneClick();
+      if (!result.success) {
+        res.status(500).json(result);
+        return;
+      }
+      console.log(`[ClienteController] OneClick sync: ${result.message}`);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao sincronizar com OneClick:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao sincronizar com OneClick' });
+    }
+  }
+
+  // =====================================================================
+  //  e-BEF — Beneficiários Finais
+  // =====================================================================
+
+  private static ebefBatchRunning = false;
+  private static ebefCnpjAtual: string | null = null;
+
+  /**
+   * GET /api/clientes/ebef
+   */
+  async listarEBEF(_req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.clienteModel.listarEBEF();
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao listar e-BEF:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao listar e-BEF' });
+    }
+  }
+
+  /**
+   * GET /api/clientes/ebef/progresso
+   */
+  async obterProgressoEBEF(_req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.clienteModel.obterProgressoEBEF();
+      const data = result.success ? result.data : {};
+      res.json({
+        success: true,
+        data: {
+          ...data,
+          em_andamento: ClienteController.ebefBatchRunning,
+          cnpj_atual: ClienteController.ebefCnpjAtual,
+        },
+      });
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao obter progresso e-BEF:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * POST /api/clientes/ebef/lote
+   * Inicia processamento em lote (background). Responde 202 imediatamente.
+   */
+  async iniciarLoteEBEF(_req: Request, res: Response): Promise<void> {
+    if (ClienteController.ebefBatchRunning) {
+      res.status(409).json({ success: false, error: 'Processamento e-BEF em lote já está em andamento' });
+      return;
+    }
+
+    try {
+      // Popular pendentes
+      const popResult = await this.clienteModel.popularEBEFPendentes();
+      const inseridos = popResult.success ? popResult.data?.inseridos || 0 : 0;
+
+      // Buscar lista de pendentes
+      const pendentesResult = await this.clienteModel.listarEBEFPendentes();
+      const pendentes = pendentesResult.success ? (pendentesResult.data || []) : [];
+
+      if (pendentes.length === 0) {
+        res.json({ success: true, data: { total: 0, inseridos }, message: 'Nenhum CNPJ filho pendente para consultar' });
+        return;
+      }
+
+      // Responder 202 e processar em background
+      res.status(202).json({
+        success: true,
+        data: { total: pendentes.length, inseridos },
+        message: `Iniciando consulta de ${pendentes.length} CNPJ(s) filho. Acompanhe o progresso em /ebef/progresso`,
+      });
+
+      // Background processing
+      ClienteController.ebefBatchRunning = true;
+      const model = this.clienteModel;
+
+      (async () => {
+        try {
+          for (let i = 0; i < pendentes.length; i++) {
+            const p = pendentes[i];
+            ClienteController.ebefCnpjAtual = p.cnpj_filho;
+            console.log(`[e-BEF Lote] Consultando ${i + 1}/${pendentes.length}: ${p.cnpj_filho}`);
+
+            await model.consultarEBEFFilho(p.id);
+
+            // Aguardar 21s entre consultas (exceto na última)
+            if (i < pendentes.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 21000));
+            }
+          }
+          console.log(`[e-BEF Lote] Concluído. ${pendentes.length} consulta(s) processada(s).`);
+        } catch (err: any) {
+          console.error('[e-BEF Lote] Erro no processamento em lote:', err);
+        } finally {
+          ClienteController.ebefBatchRunning = false;
+          ClienteController.ebefCnpjAtual = null;
+        }
+      })();
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao iniciar lote e-BEF:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * POST /api/clientes/ebef/consultar
+   * Consulta individual de um CNPJ filho.
+   */
+  async consultarEBEFFilhoUnico(req: Request, res: Response): Promise<void> {
+    try {
+      const { consultaId } = req.body;
+      if (!consultaId) {
+        res.status(400).json({ success: false, error: 'consultaId é obrigatório' });
+        return;
+      }
+      const result = await this.clienteModel.consultarEBEFFilho(consultaId);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao consultar e-BEF filho:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
 }
 

@@ -89,6 +89,15 @@ router.post('/cnae-busca', (req, res) => {
   clienteController.buscarPorMultiplosCNAEsEGrupos(req, res);
 });
 
+// ── e-BEF (Beneficiários Finais) ──
+router.get('/ebef', (req, res) => clienteController.listarEBEF(req, res));
+router.get('/ebef/progresso', (req, res) => clienteController.obterProgressoEBEF(req, res));
+router.post('/ebef/lote', (req, res) => clienteController.iniciarLoteEBEF(req, res));
+router.post('/ebef/consultar', (req, res) => clienteController.consultarEBEFFilhoUnico(req, res));
+
+// ── OneClick (Sincronizar clientes) ──
+router.post('/sincronizar-oneclick', (req, res) => clienteController.sincronizarOneClick(req, res));
+
 // GET /api/clientes/:id - Obter cliente por ID (DEVE ser a última rota GET com :id)
 router.get('/:id', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.obterCliente(req, res);

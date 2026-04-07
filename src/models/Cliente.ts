@@ -8,6 +8,7 @@ import { Cliente as ICliente, ClienteSocio, ApiResponse } from '../types';
 import Joi from 'joi';
 import { v4 as uuidv4 } from 'uuid';
 import { ReceitaWSService, ReceitaWSResponseOk } from '../services/ReceitaWSService';
+import { OneClickService, OneClickCliente } from '../services/OneClickService';
 
 // Schema de validação para Cliente
 // IMPORTANTE: Apenas cnpj_limpo é salvo no banco. CNPJ formatado é gerado apenas na exibição.
@@ -1950,7 +1951,343 @@ export class Cliente extends DatabaseService<ICliente> {
       if (this.isNoSuchTableError(e)) {
         return { success: true, data: { atualizados: 0 } };
       }
-      return { success: false, error: e?.message || 'Erro ao recalcular valores de participação' };
+      return { success: false, error: e?.message || 'Erro ao recalcular valores' };
+    }
+  }
+
+  // =====================================================================
+  //  OneClick — Sincronizar clientes Mensais/Ativos
+  // =====================================================================
+
+  /**
+   * Sincroniza clientes do OneClick (Mensais + Ativos) com o DCTF_WEB.
+   * Read-only no OneClick. Dedup por cnpj_limpo.
+   * Campos já preenchidos no DCTF_WEB não são sobrescritos.
+   */
+  async sincronizarComOneClick(): Promise<ApiResponse<any>> {
+    const oneClick = new OneClickService();
+    const resumo = { total: 0, novos: 0, atualizados: 0, ignorados: 0, erros: 0, detalhes: [] as any[] };
+
+    try {
+      const clientesOC = await oneClick.buscarClientesMensaisAtivos();
+      resumo.total = clientesOC.length;
+
+      for (const oc of clientesOC) {
+        try {
+          const cnpjLimpo = (oc.cad_cli_cnpj || '').replace(/\D/g, '');
+          if (cnpjLimpo.length !== 14) {
+            resumo.ignorados++;
+            continue;
+          }
+
+          // Buscar no DCTF_WEB
+          const existente = await this.findBy({ cnpj_limpo: cnpjLimpo });
+          const clienteLocal = existente.success && existente.data?.length ? existente.data[0] : null;
+
+          // Mapear regime tributario (cad_reg: 1=Lucro Presumido, 2=Lucro Real, 4=Simples, 5=MEI, 6=Nao Informado)
+          const regimeMap: Record<number, string> = { 1: 'Lucro Presumido', 2: 'Lucro Real', 4: 'Simples Nacional', 5: 'Simples Nacional' };
+          const regime = oc.cad_cli_regime ? regimeMap[oc.cad_cli_regime] || null : null;
+
+          // Montar endereco
+          const endereco = [oc.cad_cli_end, oc.cad_cli_num].filter(Boolean).join(', ') || null;
+
+          // Email: pegar apenas o primeiro se tiver virgula
+          const email = oc.cad_cli_email ? oc.cad_cli_email.split(',')[0].trim() : null;
+
+          // Campos do OneClick
+          const camposOC: Record<string, any> = {
+            razao_social: oc.cad_cli_razao || null,
+            email,
+            telefone: oc.cad_cli_tel || null,
+            endereco,
+            bairro: oc.cad_cli_bairro || null,
+            municipio: oc.cad_cli_cidade || null,
+            uf: oc.cad_cli_estado ? oc.cad_cli_estado.toUpperCase() : null,
+            cep: oc.cad_cli_cep ? oc.cad_cli_cep.replace(/\D/g, '') : null,
+            complemento: oc.cad_cli_complemento || null,
+            regime_tributario: regime,
+          };
+
+          if (clienteLocal) {
+            // UPDATE apenas campos vazios/null no DCTF_WEB
+            const updates: Record<string, any> = {};
+            for (const [campo, valorOC] of Object.entries(camposOC)) {
+              if (!valorOC) continue; // OneClick sem valor, pular
+              const valorLocal = (clienteLocal as any)[campo];
+              const vazio = valorLocal === null || valorLocal === undefined || String(valorLocal).trim() === '';
+              if (vazio) {
+                updates[campo] = valorOC;
+              }
+            }
+
+            if (Object.keys(updates).length > 0) {
+              const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
+              const values = [...Object.values(updates), (clienteLocal as any).id];
+              await this.executeCustomQuery<any>(
+                `UPDATE \`clientes\` SET ${setClauses} WHERE \`id\` = ?`,
+                values
+              );
+              resumo.atualizados++;
+              resumo.detalhes.push({ cnpj: cnpjLimpo, razao: oc.cad_cli_razao, acao: 'atualizado', campos: Object.keys(updates) });
+            } else {
+              resumo.ignorados++;
+            }
+          } else {
+            // INSERT novo cliente
+            const id = uuidv4();
+            await this.executeCustomQuery<any>(
+              `INSERT INTO \`clientes\` (\`id\`, \`cnpj_limpo\`, \`razao_social\`, \`email\`, \`telefone\`,
+                \`endereco\`, \`bairro\`, \`municipio\`, \`uf\`, \`cep\`, \`complemento\`, \`regime_tributario\`)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                id, cnpjLimpo,
+                camposOC.razao_social || 'SEM RAZAO SOCIAL',
+                camposOC.email, camposOC.telefone,
+                camposOC.endereco, camposOC.bairro, camposOC.municipio,
+                camposOC.uf, camposOC.cep, camposOC.complemento,
+                camposOC.regime_tributario,
+              ]
+            );
+            resumo.novos++;
+            resumo.detalhes.push({ cnpj: cnpjLimpo, razao: oc.cad_cli_razao, acao: 'novo' });
+          }
+        } catch (err: any) {
+          resumo.erros++;
+          resumo.detalhes.push({ cnpj: oc.cad_cli_cnpj, razao: oc.cad_cli_razao, acao: 'erro', erro: err?.message });
+        }
+      }
+
+      return {
+        success: true,
+        data: resumo,
+        message: `Sincronizacao concluida: ${resumo.novos} novo(s), ${resumo.atualizados} atualizado(s), ${resumo.ignorados} sem alteracao, ${resumo.erros} erro(s)`,
+      };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erro ao sincronizar com OneClick' };
+    }
+  }
+
+  // =====================================================================
+  //  e-BEF — Beneficiários Finais
+  // =====================================================================
+
+  /**
+   * Lista empresas mãe com seus sócios PJ (CNPJ) e dados das consultas e-BEF.
+   */
+  async listarEBEF(): Promise<ApiResponse<any[]>> {
+    try {
+      // 1. Empresas mãe que possuem ao menos 1 sócio PJ
+      const parentResp = await this.executeCustomQuery<any>(
+        `SELECT DISTINCT c.id, c.razao_social, c.cnpj_limpo
+         FROM clientes c
+         INNER JOIN clientes_socios cs ON cs.cliente_id = c.id
+         WHERE LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14
+         ORDER BY c.razao_social ASC`
+      );
+      if (!parentResp.success) return parentResp as any;
+      const parents: any[] = parentResp.data || [];
+      if (parents.length === 0) return { success: true, data: [] };
+
+      // 2. Para cada mãe, buscar sócios PJ e suas consultas
+      const result: any[] = [];
+      for (const p of parents) {
+        const sociosResp = await this.executeCustomQuery<any>(
+          `SELECT cs.id AS socio_id, cs.nome, cs.cpf AS cnpj_filho, cs.qual
+           FROM clientes_socios cs
+           WHERE cs.cliente_id = ? AND LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14
+           ORDER BY cs.nome ASC`,
+          [p.id]
+        );
+        const sociosPJ = sociosResp.success ? (sociosResp.data || []) : [];
+
+        const sociosComConsulta: any[] = [];
+        for (const s of sociosPJ) {
+          const cnpjLimpo = (s.cnpj_filho || '').replace(/\D/g, '');
+          // Buscar consulta + socios do filho
+          const consultaResp = await this.executeCustomQuery<any>(
+            `SELECT ec.*, esf.id AS sf_id, esf.nome AS sf_nome, esf.qual AS sf_qual
+             FROM ebef_consultas ec
+             LEFT JOIN ebef_socios_filho esf ON esf.consulta_id = ec.id
+             WHERE ec.cliente_id = ? AND ec.cnpj_filho = ?`,
+            [p.id, cnpjLimpo]
+          );
+          let consulta: any = null;
+          if (consultaResp.success && consultaResp.data && consultaResp.data.length > 0) {
+            const rows = consultaResp.data;
+            consulta = {
+              id: rows[0].id,
+              cnpj_filho: rows[0].cnpj_filho,
+              nome_filho: rows[0].nome_filho,
+              situacao_filho: rows[0].situacao_filho,
+              capital_social_filho: rows[0].capital_social_filho ? parseFloat(String(rows[0].capital_social_filho)) : null,
+              status: rows[0].status,
+              erro_mensagem: rows[0].erro_mensagem,
+              consultado_em: rows[0].consultado_em,
+              socios: rows
+                .filter((r: any) => r.sf_id)
+                .map((r: any) => ({ id: r.sf_id, nome: r.sf_nome, qual: r.sf_qual })),
+            };
+          }
+          sociosComConsulta.push({
+            socio_id: s.socio_id,
+            nome: s.nome,
+            cnpj_filho: cnpjLimpo,
+            qual: s.qual,
+            consulta,
+          });
+        }
+
+        result.push({
+          id: p.id,
+          razao_social: p.razao_social,
+          cnpj_limpo: p.cnpj_limpo,
+          socios_pj: sociosComConsulta,
+        });
+      }
+
+      return { success: true, data: result };
+    } catch (e: any) {
+      if (this.isNoSuchTableError(e)) return { success: true, data: [] };
+      return { success: false, error: e?.message || 'Erro ao listar e-BEF' };
+    }
+  }
+
+  /**
+   * Popula ebef_consultas com sócios PJ que ainda não têm registro.
+   */
+  async popularEBEFPendentes(): Promise<ApiResponse<{ inseridos: number }>> {
+    try {
+      const resp = await this.executeCustomQuery<any>(
+        `INSERT IGNORE INTO ebef_consultas (id, cliente_id, socio_id, cnpj_filho, status)
+         SELECT UUID(), cs.cliente_id, cs.id, REPLACE(COALESCE(cs.cpf,''), ' ', ''), 'pendente'
+         FROM clientes_socios cs
+         WHERE LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14`
+      );
+      const inseridos = (resp as any)?.data?.affectedRows ?? 0;
+      return { success: true, data: { inseridos } };
+    } catch (e: any) {
+      if (this.isNoSuchTableError(e)) return { success: true, data: { inseridos: 0 } };
+      return { success: false, error: e?.message || 'Erro ao popular e-BEF pendentes' };
+    }
+  }
+
+  /**
+   * Consulta ReceitaWS para um filho específico e armazena resultado.
+   */
+  async consultarEBEFFilho(consultaId: string): Promise<ApiResponse<any>> {
+    try {
+      // Buscar registro
+      const regResp = await this.executeCustomQuery<any>(
+        'SELECT * FROM `ebef_consultas` WHERE `id` = ?', [consultaId]
+      );
+      if (!regResp.success || !regResp.data?.length) {
+        return { success: false, error: 'Consulta e-BEF nao encontrada' };
+      }
+      const reg = regResp.data[0];
+      const cnpj = reg.cnpj_filho;
+
+      // Marcar como processando
+      await this.executeCustomQuery<any>(
+        'UPDATE `ebef_consultas` SET `status` = ?, `erro_mensagem` = NULL WHERE `id` = ?',
+        ['processando', consultaId]
+      );
+
+      try {
+        const dados = await this.receitaWs.consultarCNPJ(cnpj);
+
+        // Atualizar consulta com dados obtidos
+        const capitalStr = dados.capital_social;
+        const capital = capitalStr
+          ? parseFloat(String(capitalStr).replace(/[^\d,.-]/g, '').replace(',', '.'))
+          : null;
+
+        await this.executeCustomQuery<any>(
+          `UPDATE ebef_consultas
+           SET nome_filho = ?, situacao_filho = ?, capital_social_filho = ?,
+               receita_ws_payload = ?, status = 'concluido', erro_mensagem = NULL,
+               consultado_em = NOW()
+           WHERE id = ?`,
+          [
+            dados.nome || (dados as any).razao_social || null,
+            (dados as any).situacao || null,
+            capital && !isNaN(capital) ? capital : null,
+            JSON.stringify(dados),
+            consultaId,
+          ]
+        );
+
+        // Deletar socios antigos e inserir novos
+        await this.executeCustomQuery<any>(
+          'DELETE FROM `ebef_socios_filho` WHERE `consulta_id` = ?', [consultaId]
+        );
+
+        const qsa = dados.qsa || [];
+        for (const socio of qsa) {
+          await this.executeCustomQuery<any>(
+            'INSERT INTO `ebef_socios_filho` (`id`, `consulta_id`, `nome`, `qual`) VALUES (?, ?, ?, ?)',
+            [uuidv4(), consultaId, socio.nome || '', socio.qual || null]
+          );
+        }
+
+        return { success: true, data: { consultaId, status: 'concluido', qsa: qsa.length } };
+      } catch (apiErr: any) {
+        await this.executeCustomQuery<any>(
+          'UPDATE `ebef_consultas` SET `status` = ?, `erro_mensagem` = ?, `consultado_em` = NOW() WHERE `id` = ?',
+          ['erro', apiErr?.message || 'Erro desconhecido', consultaId]
+        );
+        return { success: false, error: apiErr?.message || 'Erro ao consultar ReceitaWS' };
+      }
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Erro ao consultar e-BEF filho' };
+    }
+  }
+
+  /**
+   * Retorna contadores de progresso das consultas e-BEF.
+   */
+  async obterProgressoEBEF(): Promise<ApiResponse<any>> {
+    try {
+      const resp = await this.executeCustomQuery<any>(
+        `SELECT status, COUNT(*) AS total FROM ebef_consultas GROUP BY status`
+      );
+      if (!resp.success) return resp as any;
+
+      const contadores: Record<string, number> = { pendente: 0, processando: 0, concluido: 0, erro: 0 };
+      for (const row of (resp.data || [])) {
+        contadores[row.status] = parseInt(String(row.total), 10);
+      }
+      const total = Object.values(contadores).reduce((a, b) => a + b, 0);
+
+      return {
+        success: true,
+        data: {
+          total,
+          concluidos: contadores.concluido,
+          pendentes: contadores.pendente,
+          processando: contadores.processando,
+          erros: contadores.erro,
+        },
+      };
+    } catch (e: any) {
+      if (this.isNoSuchTableError(e)) {
+        return { success: true, data: { total: 0, concluidos: 0, pendentes: 0, processando: 0, erros: 0 } };
+      }
+      return { success: false, error: e?.message || 'Erro ao obter progresso e-BEF' };
+    }
+  }
+
+  /**
+   * Lista consultas e-BEF pendentes (para processamento em lote).
+   */
+  async listarEBEFPendentes(): Promise<ApiResponse<any[]>> {
+    try {
+      const resp = await this.executeCustomQuery<any>(
+        `SELECT id, cnpj_filho FROM ebef_consultas WHERE status = 'pendente' ORDER BY created_at ASC`
+      );
+      return { success: true, data: resp.success ? (resp.data || []) : [] };
+    } catch (e: any) {
+      if (this.isNoSuchTableError(e)) return { success: true, data: [] };
+      return { success: false, error: e?.message || 'Erro ao listar pendentes e-BEF' };
     }
   }
 
