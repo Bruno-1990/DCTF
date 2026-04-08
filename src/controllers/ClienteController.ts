@@ -3061,6 +3061,10 @@ export class ClienteController {
       const oneClick = new OneClickService();
       const clientesOC = await oneClick.buscarClientesMensaisAtivos();
 
+      // Buscar benefícios fiscais em bulk
+      const allIds = clientesOC.map(c => c.id);
+      const beneficiosMap = await oneClick.buscarBeneficiosPorClienteIds(allIds);
+
       // Verificar quais já existem no DCTF_WEB
       const preview = [];
       for (const oc of clientesOC) {
@@ -3080,6 +3084,7 @@ export class ClienteController {
           cidade: oc.cad_cli_cidade || '',
           uf: oc.cad_cli_estado || '',
           regime: oc.cad_cli_regime,
+          beneficios: beneficiosMap.get(Number(oc.id)) || [],
           ja_existe: jaExiste,
         });
       }

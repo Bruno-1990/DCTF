@@ -314,6 +314,7 @@ export class Cliente extends DatabaseService<ICliente> {
       tipo_empresa: row.tipo_empresa || undefined,
       capital_social: row.capital_social !== null && row.capital_social !== undefined ? (typeof row.capital_social === 'number' ? row.capital_social : parseFloat(String(row.capital_social)) || 0) : null,
       regime_tributario: row.regime_tributario || null,
+      beneficios_fiscais: row.beneficios_fiscais || null,
       simples_optante: row.simples_optante === true || row.simples_optante === 1 ? true : (row.simples_optante === false || row.simples_optante === 0 ? false : undefined),
       // Normalizar datas de regimes para string YYYY-MM-DD
       simples_data_opcao: row.simples_data_opcao ? (row.simples_data_opcao instanceof Date ? row.simples_data_opcao.toISOString().slice(0, 10) : String(row.simples_data_opcao).slice(0, 10)) : undefined,
@@ -1974,6 +1975,10 @@ export class Cliente extends DatabaseService<ICliente> {
         : await oneClick.buscarClientesMensaisAtivos();
       resumo.total = clientesOC.length;
 
+      // Buscar benefícios fiscais em bulk para todos os clientes
+      const clienteIdsOC = clientesOC.map(c => c.id);
+      const beneficiosMap = await oneClick.buscarBeneficiosPorClienteIds(clienteIdsOC);
+
       for (const oc of clientesOC) {
         try {
           const cnpjLimpo = (oc.cad_cli_cnpj || '').replace(/\D/g, '');
@@ -2008,6 +2013,7 @@ export class Cliente extends DatabaseService<ICliente> {
             cep: oc.cad_cli_cep ? oc.cad_cli_cep.replace(/\D/g, '') : null,
             complemento: oc.cad_cli_complemento || null,
             regime_tributario: regime,
+            beneficios_fiscais: beneficiosMap.get(Number(oc.id))?.length ? beneficiosMap.get(Number(oc.id))!.join(', ') : null,
           };
 
           if (clienteLocal) {
@@ -2039,15 +2045,15 @@ export class Cliente extends DatabaseService<ICliente> {
             const id = uuidv4();
             await this.executeCustomQuery<any>(
               `INSERT INTO \`clientes\` (\`id\`, \`cnpj_limpo\`, \`razao_social\`, \`email\`, \`telefone\`,
-                \`endereco\`, \`bairro\`, \`municipio\`, \`uf\`, \`cep\`, \`complemento\`, \`regime_tributario\`)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                \`endereco\`, \`bairro\`, \`municipio\`, \`uf\`, \`cep\`, \`complemento\`, \`regime_tributario\`, \`beneficios_fiscais\`)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 id, cnpjLimpo,
                 camposOC.razao_social || 'SEM RAZAO SOCIAL',
                 camposOC.email, camposOC.telefone,
                 camposOC.endereco, camposOC.bairro, camposOC.municipio,
                 camposOC.uf, camposOC.cep, camposOC.complemento,
-                camposOC.regime_tributario,
+                camposOC.regime_tributario, camposOC.beneficios_fiscais,
               ]
             );
             resumo.novos++;

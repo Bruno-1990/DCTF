@@ -44,6 +44,34 @@ export class OneClickService {
   }
 
   /**
+   * Busca benefícios fiscais ativos para uma lista de IDs de clientes.
+   * Retorna Map<id_cliente, string[]> com os nomes dos benefícios.
+   */
+  async buscarBeneficiosPorClienteIds(ids: number[]): Promise<Map<number, string[]>> {
+    const map = new Map<number, string[]>();
+    if (ids.length === 0) return map;
+
+    const pool = getOneClickPool();
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await pool.query<any[]>(
+      `SELECT b.id_cliente, cb.beneficio
+       FROM cad_cli_bnf b
+       JOIN cad_cli_beneficios cb ON cb.id = b.id_beneficio
+       WHERE b.id_cliente IN (${placeholders}) AND b.ativo = 1
+       ORDER BY b.id_cliente, cb.beneficio`,
+      ids
+    );
+
+    for (const row of rows as any[]) {
+      const id = Number(row.id_cliente);
+      if (!map.has(id)) map.set(id, []);
+      map.get(id)!.push(row.beneficio as string);
+    }
+
+    return map;
+  }
+
+  /**
    * Busca clientes por IDs específicos.
    */
   async buscarClientesPorIds(ids: number[]): Promise<OneClickCliente[]> {

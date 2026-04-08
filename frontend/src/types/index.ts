@@ -45,6 +45,7 @@ export interface Cliente {
   tipo_empresa?: string | null; // Matriz ou Filial
   capital_social?: number | string | null;
   regime_tributario?: string | null; // Simples Nacional, Lucro Presumido, Lucro Real, A Definir
+  beneficios_fiscais?: string | null; // Ex: SUBSTITUTO, FUNDAP, COMPETE ATACADISTA
   simples_optante?: boolean | null;
   simples_data_opcao?: string | Date | null;
   simples_data_exclusao?: string | Date | null;
