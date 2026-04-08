@@ -390,8 +390,8 @@ const Clientes: React.FC = () => {
   const [showModalResultado, setShowModalResultado] = useState(false);
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
-  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente' | 'e-bef'>('a-z');
-  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci'>('a-z');
+  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente' | 'e-bef'>('a-z');
+  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal'>('a-z');
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
   // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
@@ -745,6 +745,7 @@ const Clientes: React.FC = () => {
         'TELEFONE',
         'ENDEREÇO',
         'REGIME TRIBUTÁRIO',
+        'BENEFÍCIOS FISCAIS',
         'CNAE PRINCIPAL',
         'DESCRIÇÃO CNAE PRINCIPAL',
         'QUANTIDADE ATIVIDADES SECUNDÁRIAS',
@@ -820,6 +821,7 @@ const Clientes: React.FC = () => {
           displayUppercase((cliente as any).telefone, '-'),
           displayUppercase((cliente as any).endereco, '-'),
           displayUppercase((cliente as any).regime_tributario, '-'),
+          displayUppercase((cliente as any).beneficios_fiscais, '-'),
           cnaePrincipal || '-',
           cnaePrincipalText || '-',
           atividadesSecundarias.length || 0,
@@ -841,10 +843,10 @@ const Clientes: React.FC = () => {
           // Colunas centralizadas:
           // - CÓDIGO SCI = coluna 1
           // - REGIME TRIBUTÁRIO = coluna 8
-          // - QUANTIDADE ATIVIDADES SECUNDÁRIAS = coluna 11
-          const isCentralizado = colNumber === 1 || colNumber === 8 || colNumber === 11;
-          // Colunas de atividades secundárias começam após QUANTIDADE ATIVIDADES SECUNDÁRIAS (coluna 12)
-          const isAtividadeSecundaria = colNumber > 11;
+          // - QUANTIDADE ATIVIDADES SECUNDÁRIAS = coluna 12
+          const isCentralizado = colNumber === 1 || colNumber === 8 || colNumber === 12;
+          // Colunas de atividades secundárias começam após QUANTIDADE ATIVIDADES SECUNDÁRIAS (coluna 13)
+          const isAtividadeSecundaria = colNumber > 12;
           
           cell.alignment = {
             vertical: 'middle',
@@ -870,6 +872,7 @@ const Clientes: React.FC = () => {
         { width: 18 }, // TELEFONE
         { width: 50 }, // ENDEREÇO
         { width: 20 }, // REGIME TRIBUTÁRIO (centralizado)
+        { width: 30 }, // BENEFÍCIOS FISCAIS
         { width: 15 }, // CNAE PRINCIPAL
         { width: 50 }, // DESCRIÇÃO CNAE PRINCIPAL
         { width: 20 }, // QUANTIDADE ATIVIDADES SECUNDÁRIAS (centralizado)
@@ -1326,8 +1329,8 @@ const Clientes: React.FC = () => {
     
     // Não aplicar filtro de sócio fora da aba participação
     // Quando filtro "Sem Cod SCI" ativo, buscar todos para filtrar no frontend
-    const paramLimit = ordenacaoClientes === 'sem-cod-sci' ? 500 : limit;
-    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined }).then(({ pagination }) => {
+    const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 500 : limit;
+    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
@@ -2917,8 +2920,8 @@ const Clientes: React.FC = () => {
       }, 5000);
 
       // Recarregar lista de clientes mantendo filtros ativos
-      const paramLimit = ordenacaoClientes === 'sem-cod-sci' ? 500 : limit;
-      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' ? 1 : page, limit: paramLimit, search: debouncedSearch });
+      const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 500 : limit;
+      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 1 : page, limit: paramLimit, search: debouncedSearch });
     } catch (error) {
       // Erro já é tratado pelo hook useClientes
       setShowError(true);
@@ -4204,6 +4207,22 @@ const Clientes: React.FC = () => {
                         );
                       })()}
                     </div>
+                    <div className="group">
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Benefícios Fiscais</label>
+                      <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm min-h-[38px] flex items-center">
+                        {(visualizandoCliente as any).beneficios_fiscais ? (
+                          <div className="flex flex-wrap gap-1">
+                            {(visualizandoCliente as any).beneficios_fiscais.split(',').map((b: string, i: number) => (
+                              <span key={i} className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium uppercase">
+                                {b.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4366,14 +4385,14 @@ const Clientes: React.FC = () => {
               <div className="relative">
                 <select
                   value={ordenacaoClientes}
-                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'z-a' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci')}
+                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal')}
                   className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
                 >
                   <option value="a-z">A → Z</option>
-                  <option value="z-a">Z → A</option>
                   <option value="cnpj">CNPJ ↑</option>
                   <option value="codigo-sci">Código SCI ↑</option>
                   <option value="sem-cod-sci">Sem Cód SCI</option>
+                  <option value="beneficio-fiscal">Benefício Fiscal</option>
                 </select>
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FunnelIcon className="h-5 w-5 text-blue-500" />
@@ -4398,7 +4417,6 @@ const Clientes: React.FC = () => {
                     className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-amber-300"
                   >
                     <option value="a-z">A → Z</option>
-                    <option value="z-a">Z → A</option>
                     <option value="cnpj">CNPJ ↑</option>
                     <option value="codigo-sci">Código SCI ↑</option>
                     <option value="faltantes">Informações Faltantes</option>
@@ -5165,10 +5183,13 @@ const Clientes: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Código SCI</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Cadastro</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Regime</th>
+                {ordenacaoClientes === 'beneficio-fiscal' && (
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Benefício Fiscal</th>
+                )}
                 {socioFiltro && (
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Participação</th>
                 )}
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Inf. Financeiras</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
@@ -5181,10 +5202,6 @@ const Clientes: React.FC = () => {
                     const nomeA = (a.razao_social || a.nome || '').toLowerCase().trim();
                     const nomeB = (b.razao_social || b.nome || '').toLowerCase().trim();
                     return nomeA.localeCompare(nomeB, 'pt-BR', { sensitivity: 'base' });
-                  } else if (ordenacaoClientes === 'z-a') {
-                    const nomeA = (a.razao_social || a.nome || '').toLowerCase().trim();
-                    const nomeB = (b.razao_social || b.nome || '').toLowerCase().trim();
-                    return nomeB.localeCompare(nomeA, 'pt-BR', { sensitivity: 'base' });
                   } else if (ordenacaoClientes === 'cnpj') {
                     const cnpjA = (a.cnpj_limpo || a.cnpj || '').replace(/\D/g, '');
                     const cnpjB = (b.cnpj_limpo || b.cnpj || '').replace(/\D/g, '');
@@ -5200,12 +5217,16 @@ const Clientes: React.FC = () => {
                     const sci = String(c.codigo_sci ?? '').trim();
                     return !sci || sci === '0';
                   }
+                  if (ordenacaoClientes === 'beneficio-fiscal') {
+                    const bf = String((c as any).beneficios_fiscais ?? '').trim();
+                    return bf.length > 0;
+                  }
                   return true;
                 });
 
                 return clientesOrdenados.length === 0 ? (
                   <tr>
-                    <td colSpan={socioFiltro ? 7 : 6} className="px-6 py-12 text-center">
+                    <td colSpan={6 + (socioFiltro ? 1 : 0) + (ordenacaoClientes === 'beneficio-fiscal' ? 1 : 0)} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <UserGroupIcon className="h-12 w-12 text-gray-400" />
                         <p className="text-gray-500 font-medium">Nenhum cliente encontrado</p>
@@ -5274,6 +5295,26 @@ const Clientes: React.FC = () => {
                             : '—'}
                         </span>
                       </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs text-gray-600 uppercase">
+                          {(cliente as any).regime_tributario || '—'}
+                        </span>
+                      </td>
+                      {ordenacaoClientes === 'beneficio-fiscal' && (
+                        <td className="px-6 py-4">
+                          {(cliente as any).beneficios_fiscais ? (
+                            <div className="flex flex-wrap gap-1">
+                              {String((cliente as any).beneficios_fiscais).split(',').map((b: string, i: number) => (
+                                <span key={i} className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium uppercase">
+                                  {b.trim()}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-400">—</span>
+                          )}
+                        </td>
+                      )}
                       {socioFiltro && (
                       <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
@@ -5289,37 +5330,6 @@ const Clientes: React.FC = () => {
                           </div>
                         </td>
                       )}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              navigate(`/situacao-fiscal?cnpj=${cnpjValue}`);
-                            }}
-                            className="px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-blue-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow uppercase tracking-wide"
-                            title="Consultar Situação Fiscal"
-                          >
-                            Sit. Fis
-                          </button>
-                          <button
-                            onClick={() => {
-                              navigate(`/clientes?tab=faturamento-sci&cnpj=${cnpjValue}`);
-                            }}
-                            className="px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-violet-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow uppercase tracking-wide"
-                            title="Ver Faturamento SCI"
-                          >
-                            Fat
-                          </button>
-                          <button
-                            onClick={() => {
-                              navigate(`/dctf?search=${cnpjValue}`);
-                            }}
-                            className="px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-indigo-500 hover:text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow uppercase tracking-wide"
-                            title="Ver DCTF"
-                          >
-                            DCTF
-                          </button>
-                        </div>
-                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
                           <button
@@ -7088,8 +7098,6 @@ const Clientes: React.FC = () => {
                 
                 if (ordenacaoParticipacao === 'a-z') {
                   return nomeA.localeCompare(nomeB);
-                } else if (ordenacaoParticipacao === 'z-a') {
-                  return nomeB.localeCompare(nomeA);
                 } else if (ordenacaoParticipacao === 'cnpj') {
                   return cnpjA.localeCompare(cnpjB);
                 } else if (ordenacaoParticipacao === 'codigo-sci') {
@@ -8007,6 +8015,7 @@ const Clientes: React.FC = () => {
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Razão Social</th>
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">CNPJ</th>
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cidade/UF</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Benefícios</th>
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                           </tr>
                         </thead>
@@ -8048,6 +8057,19 @@ const Clientes: React.FC = () => {
                                 <td className="px-4 py-2.5 text-sm text-gray-800 font-medium">{c.razao_social}</td>
                                 <td className="px-4 py-2.5 text-sm text-gray-600 font-mono">{c.cnpj}</td>
                                 <td className="px-4 py-2.5 text-sm text-gray-600">{[c.cidade, c.uf?.toUpperCase()].filter(Boolean).join('/')}</td>
+                                <td className="px-4 py-2.5">
+                                  {c.beneficios && c.beneficios.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {c.beneficios.map((b: string, i: number) => (
+                                        <span key={i} className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium">
+                                          {b}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  )}
+                                </td>
                                 <td className="px-4 py-2.5">
                                   {c.ja_existe ? (
                                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Cadastrado</span>
@@ -8107,8 +8129,8 @@ const Clientes: React.FC = () => {
                           if (res.success) {
                             const d = res.data || {};
                             toast.success(`OneClick: ${d.novos || 0} novo(s), ${d.atualizados || 0} atualizado(s), ${d.erros || 0} erro(s)`, 8000);
-                            const paramLimit = ordenacaoClientes === 'sem-cod-sci' ? 500 : limit;
-                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' ? 1 : page, limit: paramLimit, search: debouncedSearch });
+                            const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 500 : limit;
+                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 1 : page, limit: paramLimit, search: debouncedSearch });
                           } else {
                             toast.error(res.error || 'Erro ao importar');
                           }

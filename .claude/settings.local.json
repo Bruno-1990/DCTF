@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(xargs grep:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx jest:*)",
+      "Bash(mysql -u root -p'Central@123' dctf_web)",
+      "Bash(where mysql:*)",
+      "Read(//c/Program Files/MySQL/**)",
+      "Read(//c/xampp/mysql/bin/**)",
+      "Read(//c/laragon/**)",
+      "Bash(node -e ':*)",
+      "Bash(find '/c/Users/bruno/Desktop/aplicativos/DCTF WEB/DCTF_MPC/src' -name \"*.ts\" -type f -exec grep -l \"extends DatabaseService\\\\|extends MySQLDatabaseService\" {} \\\\;)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=100&semCodigoSci=true\")",
+      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=500&semCodigoSci=true\")",
+      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=5&semCodigoSci=true\")",
+      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=500\")",
+      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=5\")",
+      "Bash(curl -sv \"http://localhost:3000/api/clientes?page=1&limit=3\")",
+      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=3&semCodigoSci=true\")",
+      "Bash(node -p \"JSON.parse\\(require\\('fs'\\).readFileSync\\(0,'utf8'\\)\\).pagination\")",
+      "Bash(node -p \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\(0,'utf8'\\)\\); d.pagination?.total + ' items, data: ' + \\(d.data||[]\\).length\")",
+      "Bash(node:*)",
+      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=3\")"
+    ]
+  }
+}
