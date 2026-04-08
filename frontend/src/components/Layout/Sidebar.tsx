@@ -24,7 +24,6 @@ const navigation = [
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },
   { name: 'Relatórios', href: '/relatorios', icon: ChartBarIcon },
   { name: 'Situação Fiscal', href: '/situacao-fiscal', icon: DocumentTextIcon },
-  { name: 'DIRF', href: '/dirf', icon: DocumentTextIcon },
   { name: 'SCI - Banco de Horas', href: '/sci/banco-horas', icon: ClockIcon },
   { name: 'SCI - Gerador SQL', href: '/sci/gerador-sql', icon: CodeBracketIcon },
   { name: 'SPED Validação', href: '/sped', icon: DocumentCheckIcon },

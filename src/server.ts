@@ -28,7 +28,6 @@ import sciRoutes from './routes/sci';
 import spedRoutes from './routes/sped';
 import irpfRoutes from './routes/irpf';
 import cfopRoutes from './routes/cfop';
-import dirfRoutes from './routes/dirf';
 import n8nWebhookRoutes from './routes/n8n-webhook';
 
 class Server {
@@ -175,7 +174,6 @@ class Server {
     this.app.use('/api/sped', spedRoutes);
     this.app.use('/api/irpf', irpfRoutes);
     this.app.use('/api/cfop', cfopRoutes);
-    this.app.use('/api/dirf', dirfRoutes);
     this.app.use('/api/n8n', n8nWebhookRoutes);
 
     // Root endpoint

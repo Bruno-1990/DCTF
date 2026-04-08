@@ -13,7 +13,6 @@ import AdminDashboard from '../pages/AdminDashboard';
 import Conferencias from '../pages/Conferencias';
 import Administracao from '../pages/Administracao';
 import SituacaoFiscal from '../pages/SituacaoFiscal';
-import Dirf from '../pages/Dirf';
 import BancoHoras from '../pages/BancoHoras';
 import GeradorSQL from '../pages/GeradorSQL';
 import SpedValidacao from '../pages/SpedValidacao';
@@ -44,7 +43,6 @@ const router = createBrowserRouter([
           { path: 'dctf/:id/dados', element: <DCTFDadosPage /> },
           { path: 'relatorios', element: <Relatorios /> },
           { path: 'situacao-fiscal', element: <SituacaoFiscal /> },
-          { path: 'dirf', element: <Dirf /> },
           { path: 'administracao', element: <Administracao /> },
           { path: 'upload', element: <UploadDCTF /> },
           { path: 'sci/banco-horas', element: <BancoHoras /> },
