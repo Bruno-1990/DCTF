@@ -23,7 +23,26 @@
       "Bash(node -p \"JSON.parse\\(require\\('fs'\\).readFileSync\\(0,'utf8'\\)\\).pagination\")",
       "Bash(node -p \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\(0,'utf8'\\)\\); d.pagination?.total + ' items, data: ' + \\(d.data||[]\\).length\")",
       "Bash(node:*)",
-      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=3\")"
+      "Bash(curl -s \"http://localhost:3000/api/clientes?page=1&limit=3\")",
+      "Bash(mysqldump --version)",
+      "Bash(/c/Program Files/MySQL/MySQL Server 8.4/bin/mysqldump.exe:*)",
+      "Bash(mysql:*)",
+      "Bash(where mariadb:*)",
+      "Bash(where mysqlsh:*)",
+      "Read(//c/Program Files/**)",
+      "Bash(C:/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe:*)",
+      "Bash(curl -s http://localhost:8000/api/clientes/oneclick/preview)",
+      "Bash(python -c ':*)",
+      "Bash(curl -s http://localhost:8000/api/v1/clientes/oneclick/preview)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(curl -s http://localhost:8000/api/clientes?page=1)",
+      "Bash(limit=1 2>&1)",
+      "Bash(curl -s \"http://localhost:8000/api/clientes?page=1&limit=1\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(list\\(d.keys\\(\\)\\)\\)\")",
+      "Bash(git remote:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
