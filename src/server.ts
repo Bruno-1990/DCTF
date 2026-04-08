@@ -26,8 +26,6 @@ import situacaoFiscalRoutes from './routes/situacao-fiscal';
 import hostDadosRoutes from './routes/host-dados';
 import sciRoutes from './routes/sci';
 import spedRoutes from './routes/sped';
-import spedV2KnowledgeRoutes from './routes/sped-v2-knowledge';
-import spedV2Routes from './routes/sped-v2';
 import irpfRoutes from './routes/irpf';
 import cfopRoutes from './routes/cfop';
 import dirfRoutes from './routes/dirf';
@@ -92,8 +90,6 @@ class Server {
         // Rotas com limiter dedicado ou que precisam de polling frequente
         if (p.startsWith('/api/situacao-fiscal')) return true;
         if (p.startsWith('/api/receita')) return true;
-        // Rotas de status do SPED v2 precisam de polling frequente
-        if (p.startsWith('/api/sped/v2/status/')) return true;
         return false;
       },
     });
@@ -177,8 +173,6 @@ class Server {
     console.log('   - GET /api/sped/correcoes/:validationId/download');
     
     this.app.use('/api/sped', spedRoutes);
-    this.app.use('/api/sped/v2/knowledge', spedV2KnowledgeRoutes);
-    this.app.use('/api/sped/v2', spedV2Routes);
     this.app.use('/api/irpf', irpfRoutes);
     this.app.use('/api/cfop', cfopRoutes);
     this.app.use('/api/dirf', dirfRoutes);

@@ -32,7 +32,6 @@
     "update:socios-zerados": "ts-node src/scripts/atualizar-socios-zerados.ts",
     "create:host-dados": "ts-node src/scripts/create-host-dados-table.ts",
     "create:banco-horas-table": "ts-node src/scripts/create-banco-horas-table.ts",
-    "create:sped-v2-legal-docs": "ts-node src/scripts/create-sped-v2-legal-documents-tables.ts",
     "drop:irpf-producao": "ts-node src/scripts/drop-irpf-producao-tables.ts",
     "migrate:irpf2026": "ts-node src/scripts/run-irpf2026-migration.ts",
     "migrate:sitf-extracted": "ts-node src/scripts/run-sitf-migration.ts",

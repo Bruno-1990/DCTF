@@ -42,7 +42,31 @@
       "Bash(git remote:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(bash /tmp/analyze_imports.sh)",
+      "Bash(xargs basename:*)",
+      "Bash(ls -1 src/routes/*.ts)",
+      "Bash(xargs -n1 basename)",
+      "Bash(sed 's/\\\\.tsx$//')",
+      "Bash(ls -1 src/controllers/*.ts src/controllers/irpf2026/*.ts)",
+      "Bash(sed \"s/'//g\")",
+      "Bash(grep -E \"\\\\.ts$|\\\\.ps1$|\\\\.sh$|\\\\.bat$\")",
+      "Bash(ls -1 src/middleware/*.ts)",
+      "Bash(ls -1 src/services/*.ts)",
+      "Bash(sed 's/\\\\.ts$//')",
+      "Bash(grep \"^[[:space:]]*//.*import\" router/index.tsx)",
+      "Bash(grep \"^[[:space:]]*//.*path:\" router/index.tsx)",
+      "Bash(ls -la python/*.py)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(ls:*)",
+      "Bash(cat src/routes/*.ts)",
+      "Bash(find:*)",
+      "Bash(grep -E \"\\\\.tsx$\")",
+      "Bash(rm:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(rm -f src/types/bcrypt.d.ts)",
+      "Bash(rmdir frontend/src/dashboard)",
+      "Bash(npx vite:*)"
     ]
   }
 }

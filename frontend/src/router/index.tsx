@@ -17,8 +17,6 @@ import Dirf from '../pages/Dirf';
 import BancoHoras from '../pages/BancoHoras';
 import GeradorSQL from '../pages/GeradorSQL';
 import SpedValidacao from '../pages/SpedValidacao';
-import SpedValidacaoV2 from '../pages/SpedValidacaoV2';
-import SpedKnowledgeBase from '../pages/SpedKnowledgeBase';
 import Irpf2025 from '../pages/Irpf2025';
 import Irpf2026ProtectedAdmin from '../pages/Irpf2026/Irpf2026ProtectedAdmin';
 import Irpf2026AdminLayout from '../pages/Irpf2026/Irpf2026AdminLayout';
@@ -52,8 +50,6 @@ const router = createBrowserRouter([
           { path: 'sci/banco-horas', element: <BancoHoras /> },
           { path: 'sci/gerador-sql', element: <GeradorSQL /> },
           { path: 'sped', element: <SpedValidacao /> },
-          { path: 'sped/v2', element: <SpedValidacaoV2 /> },
-          { path: 'sped/knowledge', element: <SpedKnowledgeBase /> },
           {
             path: 'irpf-2026',
             element: <Outlet />,
