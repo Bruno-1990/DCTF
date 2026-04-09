@@ -66,7 +66,13 @@
       "Bash(npm uninstall:*)",
       "Bash(rm -f src/types/bcrypt.d.ts)",
       "Bash(rmdir frontend/src/dashboard)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(mv 1run.bat scripts/)",
+      "Bash(mv diagnostico-backend.ps1 scripts/)",
+      "Bash(mv docs/scripts/open-pasta-rede.ps1 scripts/)",
+      "Bash(rm -rf sped/)",
+      "Bash(rm -f EMAIL_CONFIG.md GUIA-DEPLOY.md GUIA_USO_MONITORAMENTO.md INSTRUCOES_ADMIN_UI.txt DEAD_CODE.md)",
+      "Bash(mv:*)"
     ]
   }
 }
