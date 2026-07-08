@@ -17,7 +17,7 @@
 - **Status**: ✅ Funcionando corretamente
 - **Teste realizado**: 
   ```bash
-  curl "http://localhost:3000/api/dctf?page=1&limit=5"
+  curl "http://localhost:38572/api/dctf?page=1&limit=5"
   ```
 - **Resultado**: 
   - Retorna 318 declarações no total
@@ -86,7 +86,7 @@
 
 #### 6.4. Configuração da API
 - **Arquivo**: `frontend/src/services/api.ts`
-- **Base URL**: `http://localhost:3000/api` (padrão)
+- **Base URL**: `http://localhost:38572/api` (padrão)
 - **Status**: ✅ Configurado corretamente
 
 ### 7. Problemas Identificados

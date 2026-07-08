@@ -93,7 +93,7 @@ echo "  npm start"
 echo ""
 echo "Ou use Docker:"
 echo "  docker build -t dctf-mpc:production ."
-echo "  docker run -p 3000:3000 --env-file .env.production dctf-mpc:production"
+echo "  docker run -p 38572:38572 --env-file .env.production dctf-mpc:production"
 
 
 

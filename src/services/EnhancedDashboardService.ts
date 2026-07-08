@@ -198,20 +198,19 @@ async function fetchSitfMetrics() {
       negativa: 0,
     };
 
-    // Buscar protocolos ativos (Supabase)
-    const { createClient } = require('@supabase/supabase-js');
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
+    // Buscar protocolos ativos — adapter MySQL (sitf_protocols vive no MySQL,
+    // gravado pelo SituacaoFiscalOrchestrator), não o Supabase real.
+    const { createSupabaseAdapter } = require('./SupabaseAdapter');
+    const supabase = createSupabaseAdapter();
+
     let activeProtocols = 0;
-    if (supabaseUrl && supabaseKey) {
-      const supabase = createClient(supabaseUrl, supabaseKey);
+    {
       const { data } = await supabase
         .from('sitf_protocols')
         .select('id')
         .not('protocolo', 'is', null)
         .gte('expires_at', new Date().toISOString());
-      
+
       activeProtocols = data?.length || 0;
     }
 

@@ -64,19 +64,9 @@ router.post('/admin/restore', (req, res) => {
   dctfController.restoreFromBackup(req, res);
 });
 
-// POST /api/dctf/admin/sync - Sincronizar declarações do Supabase para MySQL (operação administrativa)
+// POST /api/dctf/admin/sync - Sincronizar declarações da tabela scrapecac (MySQL) para dctf_declaracoes
 router.post('/admin/sync', (req, res) => {
-  dctfController.sincronizarDoSupabase(req, res);
-});
-
-// POST /api/dctf/admin/fix-schema - Corrigir schema MySQL (tornar cliente_id nullable e remover FK)
-router.post('/admin/fix-schema', (req, res) => {
-  dctfController.corrigirSchemaClienteId(req, res);
-});
-
-// POST /api/dctf/admin/delete-supabase - Deletar todas as declarações do Supabase (operação administrativa)
-router.post('/admin/delete-supabase', (req, res) => {
-  dctfController.deletarDoSupabase(req, res);
+  dctfController.sincronizarDoScrapecac(req, res);
 });
 
 // GET /api/dctf/admin/check-duplicates - Conferência: listar registros duplicados no MySQL

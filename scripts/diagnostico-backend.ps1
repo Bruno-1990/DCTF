@@ -40,12 +40,12 @@ if ($mysqlProcess) {
 }
 Write-Host ""
 
-# 3. Verificar porta 3000
-Write-Host "3️⃣ Verificando porta 3000..." -ForegroundColor Yellow
-$porta3000 = netstat -ano | findstr ":3000"
-if ($porta3000) {
-    Write-Host "   ⚠️  Porta 3000 está em uso:" -ForegroundColor Yellow
-    $porta3000 | ForEach-Object {
+# 3. Verificar porta 38572
+Write-Host "3️⃣ Verificando porta 38572..." -ForegroundColor Yellow
+$porta38572 = netstat -ano | findstr ":38572"
+if ($porta38572) {
+    Write-Host "   ⚠️  Porta 38572 está em uso:" -ForegroundColor Yellow
+    $porta38572 | ForEach-Object {
         $linha = $_.Trim()
         if ($linha -match '\s+(\d+)$') {
             $pid = $matches[1]
@@ -56,7 +56,7 @@ if ($porta3000) {
         }
     }
 } else {
-    Write-Host "   ✅ Porta 3000 está livre" -ForegroundColor Green
+    Write-Host "   ✅ Porta 38572 está livre" -ForegroundColor Green
 }
 Write-Host ""
 

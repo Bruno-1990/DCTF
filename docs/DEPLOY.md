@@ -7,7 +7,7 @@ Este documento descreve como executar a aplicação DCTF MPC em ambiente de prod
 - Node.js 20.x e npm 10.x (mesmo baseline usado em desenvolvimento)
 - Banco de dados Supabase configurado (ver `docs/SUPABASE_SETUP.md`)
 - Variáveis de ambiente obrigatórias:
-  - `PORT` – porta HTTP do backend (padrão: `3000`)
+  - `PORT` – porta HTTP do backend (padrão: `38572`)
   - `NODE_ENV` – defina como `production` em produção
   - `SUPABASE_URL` – URL do projeto no Supabase
   - `SUPABASE_ANON_KEY` – chave anônima do Supabase para chamadas server-side
@@ -57,9 +57,9 @@ docker build -t dctf-mpc-api .
 
 # Execução local
 docker run --rm -it \
-  -p 3000:3000 \
+  -p 38572:38572 \
   -e NODE_ENV=production \
-  -e PORT=3000 \
+  -e PORT=38572 \
   -e SUPABASE_URL=<url> \
   -e SUPABASE_ANON_KEY=<chave> \
   -e FRONTEND_URL=https://app.seudominio.com \
@@ -99,7 +99,7 @@ Mantenha a última imagem/tarball estável versionada. Para reverter:
 
 ```bash
 docker run --rm -it \
-  -p 3000:3000 \
+  -p 38572:38572 \
   dctf-mpc-api:<tag-anterior>
 ```
 

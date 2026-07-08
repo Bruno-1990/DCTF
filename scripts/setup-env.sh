@@ -51,7 +51,7 @@ case $option in
         cp frontend/.env.development frontend/.env
         echo -e "${GREEN}✅ Arquivo frontend/.env criado${NC}"
       else
-        echo "VITE_API_URL=http://localhost:3000" > frontend/.env
+        echo "VITE_API_URL=http://localhost:38572" > frontend/.env
         echo -e "${GREEN}✅ Arquivo frontend/.env criado com valores padrão${NC}"
       fi
     else

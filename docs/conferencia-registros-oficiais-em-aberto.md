@@ -95,7 +95,7 @@ Lista gerada a partir do banco de dados (situação = "Em andamento") para confe
 | Remover duplicados | POST | `/api/dctf/admin/remove-duplicates` |
 
 **Conferência rápida:** abra no navegador ou use curl para baixar o CSV:  
-`http://localhost:3000/api/dctf/admin/export-em-aberto`  
+`http://localhost:38572/api/dctf/admin/export-em-aberto`  
 O arquivo vem com separador `;` (ponto e vírgula) e colunas no mesmo formato da relação oficial.
 
 ---

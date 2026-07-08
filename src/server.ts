@@ -29,6 +29,8 @@ import spedRoutes from './routes/sped';
 import irpfRoutes from './routes/irpf';
 import cfopRoutes from './routes/cfop';
 import n8nWebhookRoutes from './routes/n8n-webhook';
+import beneficiosRoutes from './routes/beneficios';
+import estudoViabilidadeRoutes from './routes/estudo-viabilidade';
 
 class Server {
   private app: express.Application;
@@ -175,6 +177,8 @@ class Server {
     this.app.use('/api/irpf', irpfRoutes);
     this.app.use('/api/cfop', cfopRoutes);
     this.app.use('/api/n8n', n8nWebhookRoutes);
+    this.app.use('/api/beneficios', beneficiosRoutes);
+    this.app.use('/api/estudo-viabilidade', estudoViabilidadeRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

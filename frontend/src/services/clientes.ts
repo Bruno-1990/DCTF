@@ -165,6 +165,11 @@ export const clientesService = {
 
   // ── OneClick (Sincronizar clientes) ──
 
+  async oneClickStatus() {
+    const response = await api.get('/clientes/oneclick/status');
+    return response.data; // { success, data: { active, host, port, taskName } }
+  },
+
   async previewOneClick() {
     const response = await api.get('/clientes/oneclick/preview');
     return response.data; // { success, data: OneClickPreviewItem[] }
@@ -195,6 +200,26 @@ export const clientesService = {
   async consultarEBEFFilho(consultaId: string) {
     const response = await api.post('/clientes/ebef/consultar', { consultaId });
     return response.data; // { success, data }
+  },
+
+  async atualizarEnvioEBEF(clienteId: string, enviado: boolean) {
+    const response = await api.patch(`/clientes/ebef/${clienteId}/envio`, { enviado });
+    return response.data; // { success, data: { ebef_enviado, ebef_enviado_em } }
+  },
+
+  async exportarEBEFXlsx() {
+    const response = await api.get('/clientes/ebef/exportar', { responseType: 'blob' });
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ebef_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   },
 
 };

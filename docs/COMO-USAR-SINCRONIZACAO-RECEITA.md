@@ -116,7 +116,7 @@ POST /api/pagamentos/sincronizar/debito/{id-do-dctf}
 
 ```bash
 # Sincronizar um cliente
-curl -X POST http://localhost:3000/api/pagamentos/sincronizar/cliente \
+curl -X POST http://localhost:38572/api/pagamentos/sincronizar/cliente \
   -H "Content-Type: application/json" \
   -d '{
     "cnpj": "32401481000133",
@@ -125,7 +125,7 @@ curl -X POST http://localhost:3000/api/pagamentos/sincronizar/cliente \
   }'
 
 # Sincronizar um débito específico
-curl -X POST http://localhost:3000/api/pagamentos/sincronizar/debito/uuid-do-dctf
+curl -X POST http://localhost:38572/api/pagamentos/sincronizar/debito/uuid-do-dctf
 ```
 
 ## 🎯 Mapeamento de Dados

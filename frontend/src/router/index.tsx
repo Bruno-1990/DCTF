@@ -21,6 +21,8 @@ import Irpf2026ProtectedAdmin from '../pages/Irpf2026/Irpf2026ProtectedAdmin';
 import Irpf2026AdminLayout from '../pages/Irpf2026/Irpf2026AdminLayout';
 import Irpf2026VisaoGeral from '../pages/Irpf2026/Irpf2026VisaoGeral';
 import Irpf2026LoginPage from '../pages/Irpf2026/Irpf2026LoginPage';
+import Beneficios from '../pages/Beneficios';
+import Legalizacao from '../pages/Legalizacao';
 
 const router = createBrowserRouter([
   {
@@ -48,6 +50,8 @@ const router = createBrowserRouter([
           { path: 'sci/banco-horas', element: <BancoHoras /> },
           { path: 'sci/gerador-sql', element: <GeradorSQL /> },
           { path: 'sped', element: <SpedValidacao /> },
+          { path: 'beneficios', element: <Beneficios /> },
+          { path: 'legalizacao', element: <Legalizacao /> },
           {
             path: 'irpf-2026',
             element: <Outlet />,

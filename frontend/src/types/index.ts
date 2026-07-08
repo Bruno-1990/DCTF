@@ -170,6 +170,8 @@ export interface EBEFParent {
   id: string;
   razao_social: string;
   cnpj_limpo: string;
+  ebef_enviado: boolean;
+  ebef_enviado_em: string | null;
   socios_pj: EBEFSocioPJ[];
 }
 

@@ -45,16 +45,6 @@ const Administracao: React.FC = () => {
     totalBatches: number;
     errorLog?: string[];
   } | null>(null);
-  const [fixingSchema, setFixingSchema] = useState(false);
-  const [schemaFixSuccess, setSchemaFixSuccess] = useState<string | null>(null);
-  const [schemaFixError, setSchemaFixError] = useState<string | null>(null);
-  const [showDeleteSupabaseModal, setShowDeleteSupabaseModal] = useState(false);
-  const [deleteSupabaseConfirmCode, setDeleteSupabaseConfirmCode] = useState('');
-  const [deleteSupabaseConfirmText, setDeleteSupabaseConfirmText] = useState('');
-  const [deletingSupabase, setDeletingSupabase] = useState(false);
-  const [deleteSupabaseSuccess, setDeleteSupabaseSuccess] = useState<string | null>(null);
-  const [deleteSupabaseError, setDeleteSupabaseError] = useState<string | null>(null);
-  
   const [retrying, setRetrying] = useState(false);
   const [lastSyncErrors, setLastSyncErrors] = useState<string[]>([]);
   const [lastBackup, setLastBackup] = useState<{ dateFormatted: string } | null>(null);
@@ -419,71 +409,14 @@ const Administracao: React.FC = () => {
     }
   };
 
-  const handleFixSchema = async () => {
-    setFixingSchema(true);
-    setSchemaFixError(null);
-    setSchemaFixSuccess(null);
-
-    try {
-      const result = await dctfService.fixSchema();
-      if (result.success) {
-        const message = result.message || 'Schema corrigido com sucesso! Agora você pode sincronizar os dados.';
-        setSchemaFixSuccess(message);
-        setTimeout(() => {
-          setSchemaFixSuccess(null);
-        }, 5000);
-      } else {
-        setSchemaFixError(result.error || 'Erro ao corrigir schema');
-      }
-    } catch (err: any) {
-      setSchemaFixError(err.response?.data?.error || err.message || 'Erro ao corrigir schema');
-    } finally {
-      setFixingSchema(false);
-    }
-  };
-
-  const handleDeleteFromSupabase = async () => {
-    if (deleteSupabaseConfirmCode !== 'DELETAR_SUPABASE' || deleteSupabaseConfirmText !== 'CONFIRMAR') {
-      setDeleteSupabaseError('Código de confirmação ou texto incorretos. Por favor, verifique.');
-      return;
-    }
-
-    setDeletingSupabase(true);
-    setDeleteSupabaseError(null);
-    setDeleteSupabaseSuccess(null);
-
-    try {
-      const result = await dctfService.deleteFromSupabase();
-      if (result.success) {
-        const deletedCount = result.data?.deletedDeclarations || 0;
-        const deletedDataCount = result.data?.deletedData || 0;
-        const message = result.message || 
-          `Exclusão do Supabase concluída com sucesso! ${deletedCount} declarações e ${deletedDataCount} registros de dados removidos.`;
-        setDeleteSupabaseSuccess(message);
-        setTimeout(() => {
-          setShowDeleteSupabaseModal(false);
-          setDeleteSupabaseConfirmCode('');
-          setDeleteSupabaseConfirmText('');
-          setDeleteSupabaseError(null);
-        }, 5000);
-      } else {
-        setDeleteSupabaseError(result.error || 'Erro ao deletar dados do Supabase');
-      }
-    } catch (err: any) {
-      setDeleteSupabaseError(err.response?.data?.error || 'Erro ao deletar dados do Supabase');
-    } finally {
-      setDeletingSupabase(false);
-    }
-  };
-
-  const handleSyncFromSupabase = async () => {
+  const handleSyncFromScrapecac = async () => {
     setSyncing(true);
     setSyncError(null);
     setSyncSuccess(null);
     setSyncProgress(null);
 
     try {
-      const result = await dctfService.syncFromSupabase();
+      const result = await dctfService.syncFromScrapecac();
       if (result.success) {
         const message = result.message || 
           `Sincronização concluída: ${result.data?.inserted ?? 0} inseridos${(result.data?.errors ?? 0) > 0 ? `, ${result.data?.errors} erros` : ''}`;
@@ -832,7 +765,7 @@ const Administracao: React.FC = () => {
             <h2 className="text-xl font-semibold text-red-900 mb-2">Limpeza de Declarações DCTF (MySQL)</h2>
             <p className="text-sm text-red-700 mb-4">
               Esta operação irá <strong>deletar permanentemente</strong> todas as declarações DCTF e seus dados relacionados do banco de dados <strong>MySQL</strong>.
-              Esta ação é <strong>irreversível</strong> e deve ser executada antes de sincronizar novos dados do Supabase.
+              Esta ação é <strong>irreversível</strong> e deve ser executada antes de sincronizar novos dados do e-CAC.
             </p>
             
             <div className="bg-white rounded-lg p-4 border border-red-300 mb-4">
@@ -841,19 +774,19 @@ const Administracao: React.FC = () => {
                 <li>Todas as declarações da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code> no <strong>MySQL</strong></li>
                 <li>Todos os dados relacionados da tabela <code className="bg-gray-100 px-1 rounded">dctf_dados</code> no <strong>MySQL</strong></li>
                 <li>Todos os registros de análise e flags associados no <strong>MySQL</strong></li>
-                <li className="text-green-700 font-semibold">✓ Os dados no Supabase NÃO serão afetados</li>
+                <li className="text-green-700 font-semibold">✓ Os dados em <code className="bg-gray-100 px-1 rounded">scrapecac</code> (origem do scraping) NÃO serão afetados</li>
               </ul>
               
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Fluxo Recomendado:</h3>
               <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside mb-4">
                 <li><strong>1. Limpar dados do MySQL</strong> (este botão) - Remove dados antigos do MySQL</li>
-                <li><strong>2. Sincronizar do Supabase</strong> (botão abaixo) - Busca dados novos do Supabase e insere no MySQL</li>
+                <li><strong>2. Sincronizar do e-CAC</strong> (botão abaixo) - Busca registros novos da tabela <code className="bg-gray-100 px-1 rounded">scrapecac</code> e insere em <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code></li>
               </ol>
               
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
                 <li><strong>Sempre</strong> faça um backup antes de executar esta operação</li>
-                <li>Execute esta operação antes de sincronizar novos dados do Supabase</li>
+                <li>Execute esta operação antes de sincronizar novos dados do e-CAC</li>
                 <li>Verifique se não há processos importantes em andamento</li>
                 <li>Certifique-se de que todos os relatórios necessários foram gerados</li>
               </ul>
@@ -978,155 +911,6 @@ const Administracao: React.FC = () => {
                 className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
                 {clearing ? 'Limpando...' : 'Confirmar e Limpar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Seção de Exclusão do Supabase */}
-      <div className="bg-orange-50 border-2 border-orange-200 shadow-lg rounded-lg p-6 mb-6">
-        <div className="flex items-start mb-4">
-          <TrashIcon className="h-6 w-6 text-orange-600 mr-3 mt-1" />
-          <div className="flex-1">
-            <h2 className="text-xl font-semibold text-orange-900 mb-2">Exclusão de Dados do Supabase</h2>
-            <p className="text-sm text-orange-700 mb-4">
-              Esta operação irá <strong>deletar permanentemente</strong> todas as declarações DCTF e seus dados relacionados do banco de dados <strong>Supabase</strong>.
-              Esta ação é <strong>irreversível</strong> e deve ser executada antes de colocar novos registros no Supabase.
-            </p>
-            
-            <div className="bg-white rounded-lg p-4 border border-orange-300 mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será deletado (apenas no Supabase):</h3>
-              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
-                <li>Todas as declarações da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code> no <strong>Supabase</strong></li>
-                <li>Todos os dados relacionados da tabela <code className="bg-gray-100 px-1 rounded">dctf_dados</code> no <strong>Supabase</strong></li>
-                <li className="text-green-700 font-semibold">✓ Os dados no MySQL NÃO serão afetados</li>
-              </ul>
-              
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Fluxo Recomendado:</h3>
-              <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside mb-4">
-                <li><strong>1. Deletar dados do Supabase</strong> (este botão) - Remove dados antigos do Supabase</li>
-                <li><strong>2. Colocar novos registros no Supabase</strong> - Via N8N ou importação manual</li>
-                <li><strong>3. Sincronizar do Supabase para MySQL</strong> (botão abaixo) - Busca dados novos do Supabase e insere no MySQL</li>
-              </ol>
-              
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
-              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
-                <li><strong>Sempre</strong> faça um backup antes de executar esta operação</li>
-                <li>Execute esta operação antes de colocar novos registros no Supabase</li>
-                <li>Verifique se não há processos importantes em andamento</li>
-                <li>Certifique-se de que todos os relatórios necessários foram gerados</li>
-              </ul>
-            </div>
-
-            {deleteSupabaseSuccess && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
-                {deleteSupabaseSuccess}
-              </div>
-            )}
-
-            {deleteSupabaseError && (
-              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
-                {deleteSupabaseError}
-              </div>
-            )}
-
-            <button
-              onClick={() => setShowDeleteSupabaseModal(true)}
-              disabled={deletingSupabase}
-              className="flex items-center gap-2 bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-            >
-              <TrashIcon className="h-5 w-5" />
-              Deletar Dados do Supabase
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Modal de Confirmação - Exclusão Supabase */}
-      {showDeleteSupabaseModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start mb-4">
-              <ExclamationTriangleIcon className="h-6 w-6 text-orange-600 mr-3 mt-1" />
-              <h3 className="text-xl font-bold text-orange-900">Confirmar Exclusão de Dados do Supabase</h3>
-            </div>
-            
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
-              <p className="text-sm text-orange-800 font-semibold mb-2">
-                ⚠️ ATENÇÃO: Esta operação é IRREVERSÍVEL
-              </p>
-              <p className="text-sm text-orange-700 mb-2">
-                Esta ação irá deletar permanentemente:
-              </p>
-              <ul className="text-sm text-orange-700 space-y-1 list-disc list-inside mb-2">
-                <li>Todas as declarações DCTF do Supabase</li>
-                <li>Todos os dados relacionados (dctf_dados) do Supabase</li>
-              </ul>
-              <p className="text-sm text-orange-800 font-semibold">
-                Certifique-se de ter feito um backup antes de continuar!
-              </p>
-            </div>
-            
-            <div className="space-y-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Digite o código de confirmação: <strong className="text-orange-600">DELETAR_SUPABASE</strong>
-                </label>
-                <input
-                  type="text"
-                  value={deleteSupabaseConfirmCode}
-                  onChange={(e) => setDeleteSupabaseConfirmCode(e.target.value)}
-                  placeholder="DELETAR_SUPABASE"
-                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Digite <strong className="text-orange-600">"CONFIRMAR"</strong> para prosseguir:
-                </label>
-                <input
-                  type="text"
-                  value={deleteSupabaseConfirmText}
-                  onChange={(e) => setDeleteSupabaseConfirmText(e.target.value)}
-                  placeholder="CONFIRMAR"
-                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                />
-              </div>
-            </div>
-
-            {deleteSupabaseError && (
-              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4 text-sm">
-                {deleteSupabaseError}
-              </div>
-            )}
-
-            {deleteSupabaseSuccess && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4 text-sm">
-                {deleteSupabaseSuccess}
-              </div>
-            )}
-
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowDeleteSupabaseModal(false);
-                  setDeleteSupabaseConfirmCode('');
-                  setDeleteSupabaseConfirmText('');
-                  setDeleteSupabaseError(null);
-                  setDeleteSupabaseSuccess(null);
-                }}
-                disabled={deletingSupabase}
-                className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 disabled:opacity-50 font-medium"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleDeleteFromSupabase}
-                disabled={deletingSupabase || deleteSupabaseConfirmCode !== 'DELETAR_SUPABASE' || deleteSupabaseConfirmText !== 'CONFIRMAR'}
-                className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-              >
-                {deletingSupabase ? 'Deletando...' : 'Confirmar e Deletar'}
               </button>
             </div>
           </div>
@@ -1263,67 +1047,39 @@ const Administracao: React.FC = () => {
         </div>
       </div>
 
-      {/* Seção de Sincronização do Supabase */}
+      {/* Seção de Sincronização do e-CAC */}
       <div className="bg-green-50 border-2 border-green-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
           <ArrowPathIcon className="h-6 w-6 text-green-600 mr-3 mt-1" />
           <div className="flex-1">
-            <h2 className="text-xl font-semibold text-green-900 mb-2">Sincronização de Declarações DCTF (Supabase → MySQL)</h2>
+            <h2 className="text-xl font-semibold text-green-900 mb-2">Sincronização de Declarações DCTF (scrapecac → dctf_declaracoes)</h2>
             <p className="text-sm text-green-700 mb-4">
-              Esta operação irá <strong>buscar todas as declarações DCTF</strong> da tabela <code className="bg-green-100 px-1 rounded">dctf_declaracoes</code> do <strong>Supabase</strong>
-              e <strong>sincronizar</strong> para a tabela de mesmo nome no <strong>MySQL</strong>. Apenas <strong>novos</strong> registros são inseridos; só é ignorado quem já existe com o <strong>mesmo ID</strong>. Mesmo CNPJ e período com outros campos diferentes (ex.: Original vs Retificadora) são inseridos como registros distintos.
+              Esta operação irá <strong>buscar todas as declarações DCTF</strong> da tabela <code className="bg-green-100 px-1 rounded">scrapecac</code> (populada pelo scraping do e-CAC)
+              e <strong>sincronizar</strong> para a tabela <code className="bg-green-100 px-1 rounded">dctf_declaracoes</code>. Apenas <strong>novos</strong> registros são inseridos; só é ignorado quem já existe com o <strong>mesmo ID</strong>. Mesmo CNPJ e período com outros campos diferentes (ex.: Original vs Retificadora) são inseridos como registros distintos.
             </p>
-            
-            {(syncError && syncError.includes('cannot be null') || syncError?.includes('foreign key')) && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                <p className="text-sm text-yellow-800 font-semibold mb-2">
-                  ⚠️ Erro detectado: Schema MySQL precisa ser corrigido
-                </p>
-                <p className="text-sm text-yellow-700 mb-2">
-                  O schema do MySQL não está alinhado com o Supabase. Clique no botão <strong>"Corrigir Schema MySQL"</strong> antes de sincronizar.
-                </p>
-                <p className="text-sm text-yellow-700">
-                  Isso irá tornar <code className="bg-yellow-100 px-1 rounded">cliente_id</code> nullable e remover a foreign key.
-                </p>
-              </div>
-            )}
-            
+
             <div className="bg-white rounded-lg p-4 border border-green-300 mb-4">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Como funciona:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
-                <li>O sistema busca todos os registros da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code> no Supabase</li>
-                <li>Processa os registros em lotes de 100 para não sobrecarregar o sistema</li>
-                <li><strong>Antes de sincronizar</strong>, é criado um backup automático da tabela (para poder restaurar depois)</li>
-                <li>Registros já existentes no MySQL (mesmo ID) são ignorados; mesmo CNPJ + período com outros campos diferentes = registros distintos, inseridos</li>
-                <li>Apenas registros novos são inseridos no MySQL</li>
+                <li>O sistema lê todos os registros da tabela <code className="bg-gray-100 px-1 rounded">scrapecac</code> (mesmo banco MySQL)</li>
+                <li>Processa em lotes de 100 e traduz formatos (data BR → DATETIME, valores BR → DECIMAL, período MM/AAAA → AAAA-MM)</li>
+                <li><strong>Antes de sincronizar</strong>, é criado um backup automático de <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code></li>
+                <li>Registros já existentes (mesmo ID SHA-1) são ignorados; o restante é inserido</li>
                 <li>O processo mostra progresso em tempo real</li>
-                <li>Use o botão <strong>Restaurar</strong> (com a data do último backup) para reverter a tabela ao estado anterior</li>
+                <li>Use o botão <strong>Restaurar</strong> (com a data do último backup) para reverter</li>
               </ul>
-              
+
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
-                <li>Execute esta operação após receber novos dados do agente N8N</li>
-                <li>Certifique-se de que o Supabase está configurado (SUPABASE_URL e SUPABASE_ANON_KEY no .env)</li>
+                <li>Execute esta operação após o projeto de scraping atualizar <code className="bg-gray-100 px-1 rounded">scrapecac</code></li>
                 <li>Esta operação pode levar alguns minutos dependendo da quantidade de registros</li>
-                <li>Você pode executar esta operação quantas vezes quiser - ela é segura e não duplica dados</li>
+                <li>Você pode executar quantas vezes quiser — é idempotente por ID</li>
               </ul>
             </div>
 
             {syncSuccess && (
               <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
                 {syncSuccess}
-              </div>
-            )}
-
-            {schemaFixSuccess && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
-                {schemaFixSuccess}
-              </div>
-            )}
-
-            {schemaFixError && (
-              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
-                {schemaFixError}
               </div>
             )}
 
@@ -1382,7 +1138,7 @@ const Administracao: React.FC = () => {
                       </div>
                     )}
                     <div className="mt-1">
-                      Se o MySQL estava limpo antes do sync, esses IDs estão <strong>duplicados no Supabase</strong> (mesmo UUID em mais de um registro). Só o primeiro de cada ID é inserido; para inserir os 925 é preciso corrigir ou remover as duplicatas no Supabase.
+                      Se <code className="bg-amber-100 px-1 rounded">dctf_declaracoes</code> estava limpa antes do sync, esses IDs estão <strong>duplicados na tabela <code className="bg-amber-100 px-1 rounded">scrapecac</code></strong> (mesmo SHA-1 em mais de um registro). Só o primeiro de cada ID é inserido; para inserir os demais é preciso corrigir as duplicatas em <code className="bg-amber-100 px-1 rounded">scrapecac</code>.
                     </div>
                   </div>
                 )}
@@ -1391,7 +1147,7 @@ const Administracao: React.FC = () => {
                     <strong>⚠️ Erros:</strong> {syncProgress.errors} registro(s) com erro durante a sincronização.
                     {syncProgress.errors === syncProgress.total && (
                       <div className="mt-1 text-xs">
-                        Todos os registros falharam. Verifique se o schema MySQL foi corrigido (botão "Corrigir Schema MySQL" acima).
+                        Todos os registros falharam. Confira o log de erros para investigar.
                       </div>
                     )}
                   </div>
@@ -1476,21 +1232,12 @@ const Administracao: React.FC = () => {
 
             <div className="flex flex-wrap gap-3 items-center">
               <button
-                onClick={handleFixSchema}
-                disabled={fixingSchema || syncing || clearing}
-                className="flex items-center gap-2 bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-                title="Corrige o schema MySQL para permitir cliente_id NULL e remove foreign key"
-              >
-                <ArrowPathIcon className="h-5 w-5" />
-                {fixingSchema ? 'Corrigindo...' : 'Corrigir Schema MySQL'}
-              </button>
-              <button
-                onClick={handleSyncFromSupabase}
-                disabled={syncing || clearing || fixingSchema}
+                onClick={handleSyncFromScrapecac}
+                disabled={syncing || clearing}
                 className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
                 <ArrowPathIcon className="h-5 w-5" />
-                {syncing ? 'Sincronizando...' : 'Sincronizar do Supabase para MySQL'}
+                {syncing ? 'Sincronizando...' : 'Sincronizar do e-CAC (scrapecac → dctf_declaracoes)'}
               </button>
               <button
                 onClick={handleRestore}

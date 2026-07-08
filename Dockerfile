@@ -25,8 +25,8 @@ RUN npm ci --omit=dev
 # Copia artefatos compilados
 COPY --from=backend-build /app/dist ./dist
 
-# Exposição da porta configurada (padrão 3000)
-EXPOSE 3000
+# Exposição da porta configurada (padrão 38572)
+EXPOSE 38572
 
 CMD ["node", "dist/index.js"]
 

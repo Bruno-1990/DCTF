@@ -1,246 +1,468 @@
-# DCTF_MPC
+<div align="center">
 
-Plataforma web de ferramentas fiscais para conferencia, validacao e gestao de obrigacoes tributarias brasileiras (DCTF, SPED, DIRF, IRPF, SCI).
+# 📦 DCTF_MPC
+
+**Plataforma web de ferramentas fiscais para conferência, validação e gestão de obrigações tributárias brasileiras.**
+
+![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)
+![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
+
+</div>
 
 ---
 
-## Estrutura do Projeto
+## 📋 Índice
+
+- [Sobre](#-sobre)
+- [Stack Tecnológica](#-stack-tecnológica)
+- [Arquitetura](#-arquitetura)
+- [Estrutura do Projeto](#-estrutura-do-projeto)
+- [Pré-requisitos](#%EF%B8%8F-pré-requisitos)
+- [Instalação](#-instalação)
+- [Configuração](#-configuração)
+- [Como Rodar](#%EF%B8%8F-como-rodar)
+- [Scripts Disponíveis](#-scripts-disponíveis)
+- [Testes](#-testes)
+- [Deploy](#-deploy)
+- [API Backend](#-api-backend)
+- [Rotas do Frontend](#-rotas-do-frontend)
+- [Fluxo de PR](#-fluxo-de-pr)
+- [Resumo Técnico](#-resumo-técnico)
+- [Licença](#-licença)
+
+---
+
+## 🧐 Sobre
+
+Sistema completo de gestão fiscal para escritórios de contabilidade brasileiros. Processa e valida obrigações tributárias como **DCTF** (Declaração de Débitos e Créditos Tributários Federais), **SPED** (Sistema Público de Escrituração Digital), **IRPF** (Imposto de Renda Pessoa Física) e integra com sistemas legados como **SCI** (via Firebird).
+
+**Origem dos dados de DCTF:** um projeto separado de **scraping do e‑CAC** coleta as declarações direto no portal da Receita e grava na tabela de aterrissagem `scrapecac` (banco local MySQL `DCTF_WEB`). O `DCTFSyncService` então consome `scrapecac` e popula a tabela de declarações `dctf_declaracoes`, que é a fonte consumida pelo frontend. Veja [Pipeline de dados DCTF](#-pipeline-de-dados-dctf).
+
+**Principais funcionalidades:**
+- Ingestão de DCTFs via scraping do e‑CAC (`scrapecac` → `dctf_declaracoes`)
+- Conferência automatizada de declarações DCTF
+- Validação e correção de arquivos SPED com motor Python (50+ regras)
+- Dashboard administrativo com métricas fiscais e gráficos
+- Gestão de clientes com sync automático via OneClick/MySQL
+- Consulta de situação fiscal na Receita Federal
+- Geração de relatórios Excel/PDF
+- Módulo IRPF 2026 com área do cliente e painel admin
+- Banco de horas via integração Firebird SCI
+- Comunicação em tempo real via WebSocket (Socket.io)
+
+---
+
+## 🛠 Stack Tecnológica
+
+| Camada | Tecnologia |
+|--------|-----------|
+| **Frontend** | React 18, TypeScript, Vite, TailwindCSS, React Router v6 |
+| **Estado (client)** | Zustand, React Query (@tanstack/react-query) |
+| **Backend** | Node.js 20, Express 4, TypeScript |
+| **Banco de Dados** | MySQL 8.0 (principal), Firebird (SCI) |
+| **Ingestão DCTF** | Scraping do e‑CAC → `scrapecac` → `dctf_declaracoes` (MySQL) |
+| **Autenticação** | JWT (jsonwebtoken), bcryptjs |
+| **Tempo real** | Socket.io |
+| **Automação Python** | pandas, openpyxl, fdb (Firebird), pdfplumber |
+| **Infra** | Docker, Docker Compose |
+| **CI/CD** | GitHub Actions |
+| **Testes** | Jest + ts-jest (backend), Vitest (frontend), Supertest (integração) |
+| **Qualidade** | ESLint, Prettier, Knip, Depcheck |
+| **Logs** | Winston |
+
+---
+
+## 🏗 Arquitetura
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend (React/Vite)                 │
+│               localhost:5173 (dev) / :80 (prod)         │
+└──────────────────────┬──────────────────────────────────┘
+                       │ HTTP / WebSocket
+┌──────────────────────▼──────────────────────────────────┐
+│                Backend (Express + TypeScript)            │
+│                     localhost:38572                      │
+│                                                         │
+│  ┌─────────┐  ┌──────────┐  ┌────────────┐            │
+│  │ Routes  │→ │Controllers│→ │  Services  │            │
+│  │ (26)    │  │  (28)     │  │   (72)     │            │
+│  └─────────┘  └──────────┘  └─────┬──────┘            │
+│                                    │                    │
+│  ┌─────────────────────────────────┼──────────────┐    │
+│  │         Integrações             │              │    │
+│  │  ┌───────┐ ┌─────────┐ ┌──────▼───────┐       │    │
+│  │  │MySQL  │ │scrapecac│ │Python Scripts │       │    │
+│  │  │(13    │ │(e-CAC   │ │(16 scripts)  │       │    │
+│  │  │models)│ │ landing)│ │spawn/exec    │       │    │
+│  │  └───────┘ └─────────┘ └──────────────┘       │    │
+│  │  ┌───────┐ ┌────────┐ ┌──────────────┐       │    │
+│  │  │Firebird│ │ n8n    │ │  Socket.io   │       │    │
+│  │  │(SCI)  │ │Webhook │ │ (real-time)  │       │    │
+│  │  └───────┘ └────────┘ └──────────────┘       │    │
+│  └───────────────────────────────────────────────┘    │
+└───────────────────────────────────────────────────────┘
+```
+
+O backend spawna scripts Python para tarefas pesadas (validação SPED, extração de PDFs, consultas Firebird), comunicando-se via stdout JSON.
+
+### 🔄 Pipeline de dados DCTF
+
+```
+┌──────────────────────┐   scraping    ┌──────────────────────┐   DCTFSyncService   ┌──────────────────────┐
+│   Portal e-CAC (RFB)  │ ────────────▶ │  scrapecac (MySQL)    │ ──────────────────▶ │ dctf_declaracoes      │
+│  (projeto separado de │   coleta as   │  banco local /        │  consome por `id`,  │ (tabela consumida     │
+│   scraping eCAC)      │  declarações  │  tabela de aterrissagem│  insere o que falta │  pelo frontend)       │
+└──────────────────────┘               └──────────────────────┘                     └──────────────────────┘
+```
+
+1. O projeto de **scraping do e‑CAC** (repositório separado) coleta as declarações direto no portal da Receita e grava em `scrapecac` no MySQL `DCTF_WEB` — a tabela de aterrissagem ("banco local").
+2. O **`DCTFSyncService.syncFromScrapecac`** lê `scrapecac` em lotes e insere em `dctf_declaracoes` usando o mesmo `id` (CHAR(40)) como chave; registros já existentes são ignorados (nunca sobrescreve/apaga o destino).
+3. O disparo do sync fica no painel **Administração** (`/administracao`).
+
+> **Nota:** a sincronização antiga via **Supabase** foi descontinuada. A única fonte de DCTF hoje é o scraping do e‑CAC. O `scrapecac` é uma tabela de aterrissagem (pode ser limpa entre coletas); o histórico fica acumulado em `dctf_declaracoes`.
+
+---
+
+## 📁 Estrutura do Projeto
 
 ```
 DCTF_MPC/
 ├── src/                          # Backend (Node.js + Express + TypeScript)
 │   ├── index.ts                  # Entry point — inicia servidor
-│   ├── server.ts                 # Configuracao Express (rotas, middleware, CORS)
-│   ├── config/                   # Configuracao (database, mysql, oneclick)
-│   ├── controllers/              # 28 controllers (logica de requisicao)
+│   ├── server.ts                 # Configuração Express (rotas, middleware, CORS)
+│   ├── config/                   # Configuração (database, mysql, oneclick)
+│   ├── controllers/              # 28 controllers (lógica de requisição)
 │   ├── models/                   # 13 models (Sequelize — MySQL)
-│   ├── routes/                   # 26 modulos de rotas
-│   ├── services/                 # 72 services (logica de negocio)
+│   ├── routes/                   # 26 módulos de rotas
+│   ├── services/                 # 72 services (lógica de negócio)
 │   ├── middleware/               # 6 middlewares (auth, validation, error, logger)
-│   ├── types/                    # Definicoes de tipos TypeScript
-│   └── utils/                    # Utilitarios (pythonExtractor)
+│   ├── types/                    # Definições de tipos TypeScript
+│   └── utils/                    # Utilitários (pythonExtractor)
 │
 ├── frontend/                     # Frontend (React + TypeScript + Vite)
 │   └── src/
 │       ├── App.tsx               # Wrapper principal
-│       ├── main.tsx              # Entry point React
 │       ├── router/index.tsx      # 24 rotas registradas
-│       ├── pages/                # Paginas por funcionalidade
-│       ├── components/           # Componentes organizados por dominio
-│       │   ├── BancoHoras/       # Upload e progresso banco de horas
-│       │   ├── Clientes/        # Abas de clientes (Acesso, CFOP, eBEF, Export)
-│       │   ├── Dashboard/       # Cards, graficos, filtros do dashboard
-│       │   ├── Layout/          # Header, Sidebar, Footer, Layout
-│       │   ├── SituacaoFiscal/  # Registro detalhado situacao fiscal
-│       │   ├── UI/              # Componentes base (Button, Input, Modal, Table, Alert)
-│       │   ├── conferences/     # Secoes de conferencia DCTF
-│       │   └── sped/            # Componentes SPED (upload, validacao, v2)
-│       ├── contexts/            # Irpf2026AuthContext
-│       ├── hooks/               # Hooks customizados (useClientes, useDCTF, useToast)
-│       ├── services/            # Camada de API (axios)
-│       ├── store/               # Zustand (estado global)
-│       ├── types/               # Tipos compartilhados
-│       └── utils/               # Utilitarios (exportExcel, formatCurrency)
+│       ├── pages/                # Páginas por funcionalidade
+│       ├── components/           # Componentes organizados por domínio
+│       │   ├── Clientes/         # Abas de clientes (Acesso, CFOP, eBEF, Export)
+│       │   ├── Dashboard/        # Cards, gráficos, filtros do dashboard
+│       │   ├── Layout/           # Header, Sidebar, Footer
+│       │   ├── SituacaoFiscal/   # Registro detalhado situação fiscal
+│       │   ├── UI/               # Componentes base (Button, Input, Modal, Table)
+│       │   ├── conferences/      # Seções de conferência DCTF
+│       │   └── sped/             # Componentes SPED (upload, validação)
+│       ├── contexts/             # Irpf2026AuthContext
+│       ├── hooks/                # Hooks customizados (useClientes, useDCTF, useToast)
+│       ├── services/             # Camada de API (axios)
+│       ├── store/                # Zustand (estado global)
+│       ├── types/                # Tipos compartilhados
+│       └── utils/                # Utilitários (exportExcel, formatCurrency)
 │
 ├── python/                       # Scripts Python chamados pelo backend
-│   ├── buscar_codigo_sci.py      # Busca codigo SCI no Firebird
-│   ├── extract_socios_api.py     # Extrai socios via API
-│   ├── catalog/                  # Consultas ao catalogo SCI
-│   │   ├── buscar_catalog.py
-│   │   ├── consulta_centro_custo.py
-│   │   └── executar_sql.py
-│   └── sped/                     # Validacao e correcao SPED
+│   ├── buscar_codigo_sci.py      # Busca código SCI no Firebird
+│   ├── extract_socios_api.py     # Extrai sócios via API
+│   ├── catalog/                  # Consultas ao catálogo SCI
+│   └── sped/                     # Validação e correção SPED (50+ regras)
 │       ├── aplicar_ajustes.py
-│       ├── aplicar_correcao.py
-│       ├── aplicar_todas_correcoes.py
-│       ├── detectar_setor.py
-│       ├── processar_ajustes.py
 │       ├── processar_validacao.py
 │       └── v2/                   # SPED V2 (RAG + metadata)
-│           ├── extract_sped_metadata.py
-│           ├── extract_xml_flags.py
-│           ├── processar_validacao_v2.py
-│           └── knowledge/
-│               ├── generate_rule.py
-│               └── query_rag.py
 │
-├── scripts/                      # Scripts de manutencao e migracao
+├── scripts/                      # Scripts de manutenção e migração
 ├── tests/                        # Testes (Jest)
-│   ├── controllers/
-│   ├── integration/
-│   ├── models/
-│   ├── routes/
-│   └── services/
+│   ├── integration/              # Testes de integração (5 arquivos)
+│   ├── services/                 # Testes unitários de services (15 arquivos)
+│   └── frontend/                 # Testes de frontend
 │
-├── docs/                         # Documentacao e migracoes SQL
+├── docs/                         # Documentação e migrações SQL
 │   └── migrations/
 ├── data/                         # Backups e dados locais
-├── docker-compose.*.yml          # Docker (dev e producao)
-├── Dockerfile                    # Build do backend
-└── package.json                  # Dependencias e scripts npm
+├── docker-compose.*.yml          # Docker (dev e produção)
+├── Dockerfile                    # Build multi-stage do backend
+└── .github/workflows/ci.yml     # CI (lint, test, build)
 ```
 
 ---
 
-## Rotas do Frontend (24 ativas)
+## ⚙️ Pré-requisitos
 
-| Rota | Pagina | Descricao |
-|------|--------|-----------|
-| `/` | Home | Pagina inicial |
-| `/dashboard` | AdminDashboard | Dashboard administrativo |
-| `/conferencias` | Conferencias | Conferencias DCTF |
-| `/clientes` | Clientes | Cadastro e gestao de clientes |
-| `/clientes/cnae` | ClientesCNAE | Clientes por CNAE |
-| `/dctf` | DCTF | Gestao de DCTFs |
-| `/dctf/list` | DCTFList | Lista de DCTFs |
-| `/dctf/:id/dados` | DCTFDadosPage | Dados detalhados de uma DCTF |
-| `/upload` | UploadDCTF | Upload de arquivos DCTF |
-| `/relatorios` | Relatorios | Geracao de relatorios |
-| `/situacao-fiscal` | SituacaoFiscal | Consulta situacao fiscal |
-| `/dirf` | Dirf | Gestao DIRF |
-| `/administracao` | Administracao | Painel de administracao |
-| `/sci/banco-horas` | BancoHoras | Banco de horas SCI |
-| `/sci/gerador-sql` | GeradorSQL | Gerador de SQL para SCI |
-| `/sped` | SpedValidacao | Validacao SPED |
-| `/sped/v2` | SpedValidacaoV2 | Validacao SPED V2 |
-| `/sped/knowledge` | SpedKnowledgeBase | Base de conhecimento SPED |
-| `/irpf-2026` | Irpf2025 | Landing page IRPF 2026 |
-| `/irpf-2026/cliente/login` | Irpf2026LoginPage | Login de clientes IRPF |
-| `/irpf-2026/admin` | Irpf2026AdminLayout | Painel admin IRPF (protegido) |
-| `/admin` | — | Redirect para `/irpf-2026/admin` |
-| `*` | ErrorPage | Pagina de erro 404 |
+- **Node.js** >= 20.0.0
+- **npm** >= 10.0.0
+- **MySQL** 8.x (local ou Docker)
+- **Python** 3.10+ com pip (para scripts de validação SPED e integração SCI)
+- **Docker** e **Docker Compose** (opcional, para ambiente containerizado)
+- **Firebird** client libs (opcional, apenas se usar integração SCI/Banco de Horas)
 
 ---
 
-## API Backend (26 modulos de rota)
+## 🚀 Instalação
 
-| Modulo | Descricao |
-|--------|-----------|
-| `admin-dashboard` | Dashboard administrativo |
-| `admin-dashboard-conferences` | Conferencias do dashboard |
-| `cfop` | Gestao de CFOPs |
-| `clientes` | CRUD de clientes |
-| `conferences` | Conferencias automatizadas |
-| `conferencias` | Conferencias manuais |
-| `dctf` | Gestao DCTFs |
-| `dctf-codes` | Codigos DCTF |
-| `dirf` | Gestao DIRF |
-| `fiscal-calculation` | Calculos fiscais |
-| `flags` | Flags de clientes |
-| `host-dados` | Dados do host/servidor |
-| `irpf` | IRPF producao |
-| `irpf2026` | IRPF 2026 (admin, auth, documentos, mensagens) |
-| `n8n-webhook` | Webhooks n8n |
-| `performance` | Monitoramento de performance |
-| `receita` | Consulta Receita Federal |
-| `relatorios` | Geracao de relatorios |
-| `sci` | Integracao SCI (banco horas, catalogo, SQL) |
-| `situacao-fiscal` | Situacao fiscal |
-| `sped` | Validacao SPED V1 |
-| `sped-v2` | Validacao SPED V2 |
-| `sped-v2-knowledge` | Knowledge base SPED |
-| `sped_correcoes` | Correcoes SPED |
-| `spreadsheet` | Processamento de planilhas |
+```bash
+# Clonar o repositório
+git clone https://github.com/Bruno-1990/DCTF.git
+cd DCTF_MPC
+
+# Instalar dependências do backend
+npm install
+
+# Instalar dependências do frontend
+cd frontend && npm install && cd ..
+
+# Instalar dependências Python (validação SPED)
+pip install openpyxl pandas fdb pdfplumber
+```
 
 ---
 
-## Models (Sequelize/MySQL)
+## 🔧 Configuração
 
-| Model | Descricao |
-|-------|-----------|
-| `Cliente` | Cadastro de clientes (CNPJ, razao social, regime, flags) |
-| `DCTF` | Declaracoes DCTF |
-| `DCTFDados` | Dados detalhados de cada DCTF |
-| `DCTFCode` | Codigos de receita DCTF |
-| `Flag` | Flags de situacao dos clientes |
-| `Relatorio` | Relatorios gerados |
-| `Analise` | Analises fiscais |
-| `UploadHistory` | Historico de uploads |
-| `BancoHorasRelatorio` | Relatorios banco de horas SCI |
-| `IrpfFaturamentoCache` | Cache de faturamento IRPF |
-| `IrpfFaturamentoConsolidado` | Faturamento consolidado IRPF |
-| `IrpfFaturamentoDetalhado` | Faturamento detalhado IRPF |
-| `IrpfFaturamentoMini` | Faturamento resumido IRPF |
+### Variáveis de Ambiente
 
----
+Copie o `.env.example` para `.env` e preencha:
 
-## Scripts Python Ativos (16)
+```bash
+cp .env.example .env
+```
 
-Chamados pelo backend via spawn/exec:
-
-| Script | Funcao |
-|--------|--------|
-| `buscar_codigo_sci.py` | Busca codigo SCI no Firebird |
-| `extract_socios_api.py` | Extrai socios de empresa via API |
-| `catalog/buscar_catalog.py` | Consulta catalogo SCI |
-| `catalog/consulta_centro_custo.py` | Consulta centro de custo |
-| `catalog/executar_sql.py` | Executa SQL no SCI |
-| `sped/aplicar_ajustes.py` | Aplica ajustes no SPED |
-| `sped/aplicar_correcao.py` | Aplica correcao pontual |
-| `sped/aplicar_todas_correcoes.py` | Aplica todas as correcoes |
-| `sped/detectar_setor.py` | Detecta setor do contribuinte |
-| `sped/processar_ajustes.py` | Processa ajustes SPED |
-| `sped/processar_validacao.py` | Validacao SPED V1 |
-| `sped/v2/extract_sped_metadata.py` | Extrai metadata SPED |
-| `sped/v2/extract_xml_flags.py` | Extrai flags de XMLs |
-| `sped/v2/processar_validacao_v2.py` | Validacao SPED V2 |
-| `sped/v2/knowledge/generate_rule.py` | Gera regras RAG |
-| `sped/v2/knowledge/query_rag.py` | Consulta base RAG |
+| Variável | Obrigatória | Default | Descrição |
+|----------|:-----------:|---------|-----------|
+| `PORT` | Não | `38572` | Porta do servidor Express |
+| `MYSQL_HOST` | Sim | — | Host do MySQL principal |
+| `MYSQL_PORT` | Sim | — | Porta do MySQL |
+| `MYSQL_USER` | Sim | — | Usuário MySQL |
+| `MYSQL_PASSWORD` | Sim | — | Senha MySQL |
+| `MYSQL_DATABASE` | Sim | — | Nome do banco MySQL (contém `scrapecac` e `dctf_declaracoes`) |
+| `ONECLICK_MYSQL_*` | Não | — | Conexão MySQL OneClick (sync clientes) |
+| `SCI_FB_HOST` | Não | — | Host Firebird SCI |
+| `SCI_FB_DATABASE` | Não | — | Path do banco Firebird |
+| `SCI_FB_USER` | Não | — | Usuário Firebird |
+| `SCI_FB_PASSWORD` | Não | — | Senha Firebird |
+| `EMAIL_USER` | Não | — | E-mail SMTP (Gmail) |
+| `EMAIL_PASSWORD` | Não | — | App password do Gmail |
+| `FRONTEND_URL` | Não | — | URLs permitidas para CORS |
+| `N8N_WEBHOOK_URL` | Não | — | Webhook n8n (formulário de acesso) |
+| `IRPF2026_ADMIN_EMAILS` | Não | `ti@central-rnc.com.br,...` | E-mails admin do módulo IRPF |
 
 ---
 
-## Como Rodar
-
-### Pre-requisitos
-- Node.js 18+
-- MySQL 8.x
-- Python 3.10+ (com dependencias: openpyxl, pandas, fdb)
-- Docker (opcional, para MySQL)
+## ▶️ Como Rodar
 
 ### Desenvolvimento
 
 ```bash
-# Instalar dependencias
-npm install
-
-# Rodar backend + frontend
+# Backend (porta 38572)
 npm run dev
 
-# Ou separadamente:
-npm run dev          # Backend (porta 3000)
-cd frontend && npm run dev   # Frontend (porta 5173)
+# Frontend (porta 5173) — em outro terminal
+cd frontend && npm run dev
 ```
 
-### Producao
+### Produção
 
 ```bash
-# Build
+# Build do backend
 npm run build
 
-# Docker
+# Iniciar em produção
+npm run start:production
+
+# Ou via Docker
 docker compose -f docker-compose.production.yml up -d
-```
-
-### Testes
-
-```bash
-npm test
-npm run test:watch
 ```
 
 ---
 
-## Variaveis de Ambiente
+## 📜 Scripts Disponíveis
 
-Veja `.env.example` para a lista completa. Principais:
+### Backend
 
-| Variavel | Descricao |
-|----------|-----------|
-| `MYSQL_HOST/PORT/USER/PASSWORD/DATABASE` | Conexao MySQL principal |
-| `SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY` | Supabase (legado) |
-| `ONECLICK_MYSQL_*` | Banco OneClick (sync clientes) |
-| `SCI_FB_HOST/DATABASE/USER/PASSWORD` | Firebird SCI |
-| `EMAIL_USER/EMAIL_PASSWORD` | SMTP Gmail |
-| `PORT/HOST` | Porta e host do servidor |
-| `FRONTEND_URL` | URLs permitidas (CORS) |
-| `GIT_TOKEN/GIT_REMOTE_URL` | Deploy Git |
+| Script | Comando | Descrição |
+|--------|---------|-----------|
+| dev | `npm run dev` | Inicia backend com nodemon + ts-node |
+| build | `npm run build` | Compila TypeScript para `dist/` |
+| start | `npm start` | Roda build compilado |
+| start:production | `npm run start:production` | Produção com NODE_ENV=production |
+| test | `npm test` | Roda testes Jest |
+| test:watch | `npm run test:watch` | Testes em modo watch |
+| lint | `npm run lint` | ESLint no código fonte |
+| lint:fix | `npm run lint:fix` | ESLint com auto-fix |
+| format | `npm run format` | Prettier no código fonte |
+| type-check | `npm run type-check` | Verifica tipos sem emitir |
+| lint:unused | `npm run lint:unused` | Knip — detecta código não utilizado |
+| deps:check | `npm run deps:check` | Depcheck — detecta deps não utilizadas |
+| clean | `npm run clean` | Remove `dist/` |
+
+### Scripts de Manutenção
+
+| Script | Comando | Descrição |
+|--------|---------|-----------|
+| import:clientes | `npm run import:clientes` | Importa clientes para MySQL |
+| verify:duplicados | `npm run verify:duplicados` | Verifica clientes duplicados |
+| fix:razoes-sociais | `npm run fix:razoes-sociais` | Corrige razões sociais via CNPJ |
+| migrate:irpf2026 | `npm run migrate:irpf2026` | Roda migração IRPF 2026 |
+| deploy:dev | `npm run deploy:dev` | Deploy ambiente desenvolvimento |
+| deploy:prod | `npm run deploy:prod` | Deploy ambiente produção |
+
+---
+
+## 🧪 Testes
+
+```bash
+# Rodar todos os testes
+npm test
+
+# Modo watch
+npm run test:watch
+
+# Testes Python (SPED)
+cd python/sped && pytest tests/
+```
+
+### Cobertura de Testes
+
+| Área | Framework | Arquivos de Teste | Tipo |
+|------|-----------|:-----------------:|------|
+| Services backend | Jest + ts-jest | 15 | Unitário |
+| Integração backend | Jest + Supertest | 5 | Integração |
+| Frontend | Vitest | — | Unitário |
+| Python SPED | pytest | 20 | Unitário |
+
+Testes configurados com `ts-jest`, mapeamento de paths (`@/`), e setup customizado em `tests/setup.ts`.
+
+---
+
+## 🚢 Deploy
+
+### CI/CD — GitHub Actions
+
+O pipeline `.github/workflows/ci.yml` executa em push para `main`/`master` e em PRs:
+
+1. **Backend**: Install → Lint → Type check → Test → Build
+2. **Frontend**: Install → Lint → Test → Build
+
+### Docker (Produção)
+
+```bash
+# Sobe backend + frontend (Nginx) + MySQL
+docker compose -f docker-compose.production.yml up -d
+```
+
+Serviços:
+- **backend** — Node.js 20 Alpine, porta 38572, health check em `/health`
+- **frontend** — Nginx servindo build estático, portas 80/443
+- **mysql** — MySQL 8.0 com volume persistente
+
+---
+
+## 🔌 API Backend
+
+26 módulos de rota organizados por domínio:
+
+| Módulo | Endpoint Base | Descrição |
+|--------|--------------|-----------|
+| `clientes` | `/api/clientes` | CRUD de clientes, sync OneClick |
+| `dctf` | `/api/dctf` | Gestão de declarações DCTF |
+| `dctf-codes` | `/api/dctf-codes` | Códigos de receita DCTF |
+| `sped` | `/api/sped` | Validação SPED V1 |
+| `sped-v2` | `/api/sped-v2` | Validação SPED V2 (RAG) |
+| `sped_correcoes` | `/api/sped/correcoes` | Aplicar correções SPED |
+| `conferencias` | `/api/conferencias` | Conferências manuais |
+| `conferences` | `/api/conferences` | Conferências automatizadas |
+| `situacao-fiscal` | `/api/situacao-fiscal` | Consulta situação fiscal |
+| `receita` | `/api/receita` | Consulta Receita Federal |
+| `relatorios` | `/api/relatorios` | Geração de relatórios |
+| `irpf` | `/api/irpf` | IRPF produção |
+| `irpf2026` | `/api/irpf-2026` | IRPF 2026 (auth, admin, docs) |
+| `sci` | `/api/sci` | Integração SCI (banco horas, catálogo) |
+| `admin-dashboard` | `/api/dashboard/admin` | Dashboard administrativo |
+| `flags` | `/api/flags` | Flags de clientes |
+| `n8n-webhook` | `/api/n8n` | Webhooks n8n |
+| `spreadsheet` | `/api/spreadsheet` | Processamento de planilhas |
+
+---
+
+## 🖥 Rotas do Frontend
+
+| Rota | Página | Descrição |
+|------|--------|-----------|
+| `/` | Home | Página inicial |
+| `/dashboard` | AdminDashboard | Dashboard administrativo |
+| `/clientes` | Clientes | Cadastro e gestão de clientes |
+| `/clientes/cnae` | ClientesCNAE | Clientes por CNAE |
+| `/dctf` | DCTF | Gestão de DCTFs |
+| `/dctf/list` | DCTFList | Lista de DCTFs |
+| `/dctf/:id/dados` | DCTFDadosPage | Dados detalhados de uma DCTF |
+| `/upload` | UploadDCTF | Upload de arquivos DCTF |
+| `/conferencias` | Conferencias | Conferências DCTF |
+| `/relatorios` | Relatorios | Geração de relatórios |
+| `/situacao-fiscal` | SituacaoFiscal | Consulta situação fiscal |
+| `/administracao` | Administracao | Painel de administração |
+| `/sci/banco-horas` | BancoHoras | Banco de horas SCI |
+| `/sci/gerador-sql` | GeradorSQL | Gerador de SQL para SCI |
+| `/sped` | SpedValidacao | Validação SPED |
+| `/sped/v2` | SpedValidacaoV2 | Validação SPED V2 |
+| `/sped/knowledge` | SpedKnowledgeBase | Base de conhecimento SPED |
+| `/irpf-2026` | Irpf2025 | Landing page IRPF 2026 |
+| `/irpf-2026/cliente/login` | Irpf2026LoginPage | Login de clientes IRPF |
+| `/irpf-2026/admin` | Irpf2026AdminLayout | Painel admin IRPF (protegido) |
+
+---
+
+## 🔄 Fluxo de PR
+
+1. Abra uma branch a partir de `develop`
+2. Implemente com testes
+3. Abra PR com descrição, contexto e screenshots (se UI)
+4. Aguarde aprovação de 1 revisor
+5. Merge via squash
+
+---
+
+## 📌 Resumo Técnico
+
+### Pontos Fortes
+
+- **Arquitetura bem organizada** — separação clara entre controllers, services e models com 72 services cobrindo toda a lógica de negócio
+- **Motor de validação SPED robusto** — 50+ regras de validação Python com 20 arquivos de teste dedicados (C100, C170, C190, IPI, ST, Simples Nacional)
+- **Múltiplas integrações** — MySQL, scraping do e‑CAC, Firebird SCI, n8n, Receita Federal, OneClick — comunicação entre sistemas legados e modernos
+- **CI automatizado** — GitHub Actions com lint, type-check, testes e build para backend e frontend
+- **Ferramentas de qualidade** — ESLint, Prettier, Knip (código morto), Depcheck (deps órfãs)
+
+### Riscos Técnicos
+
+- **TypeScript strict desabilitado** — `noImplicitAny`, `strict`, `noUnusedLocals` todos em `false` — permite erros de tipo em tempo de execução. Mitigação: habilitar `strict` incrementalmente por módulo
+- **`scrapecac` como tabela de aterrissagem volátil** — pode ser limpa entre coletas, então a presença de um lançamento deve ser conferida sempre em `dctf_declaracoes` (fonte de verdade), não em `scrapecac`. Mitigação: tratar `dctf_declaracoes` como histórico canônico e logar cada sync
+- **Scripts Python via spawn** — comunicação backend→Python via stdout sem schema validado. Mitigação: padronizar protocolo JSON com schema Zod
+- **Segredos no git remote** — token de acesso visível na URL do remote. Mitigação: usar SSH ou credential helper
+
+### Maturidade do Projeto
+
+| Dimensão | Nível | Observação |
+|----------|:-----:|------------|
+| Cobertura de testes | 3 | 20 testes unitários backend + 20 testes Python SPED + 5 integração. Frontend com pouca cobertura |
+| Documentação | 4 | CLAUDE.md detalhado, README estruturado, .env.example, JSDoc parcial |
+| Qualidade do código | 3 | ESLint + Prettier configurados, mas TypeScript strict desabilitado |
+| Segurança | 3 | JWT auth, helmet, rate limiting, CORS configurado. Falta validação Zod nas rotas |
+| Observabilidade | 3 | Winston para logs, health check no Docker, Socket.io para real-time. Sem APM externo |
+| Escalabilidade | 2 | Monolito single-process, Python via spawn síncrono, sem cache Redis. Adequado para uso interno |
+
+> Escala: 1 = Inexistente · 3 = Adequado · 5 = Excelente
+
+---
+
+## 📄 Licença
+
+`MIT`
+
+---
+
+<div align="center">
+Gerado com ❤️ por análise técnica automatizada
+</div>

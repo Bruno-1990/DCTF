@@ -4,7 +4,7 @@ Este script permite atualizar o campo `regime_tributario` de múltiplos clientes
 
 ## Pré-requisitos
 
-1. **Backend rodando**: O servidor deve estar ativo em `http://localhost:3000`
+1. **Backend rodando**: O servidor deve estar ativo em `http://localhost:38572`
 2. **Arquivo de tributação**: Deve estar em `C:\Users\bruno\Desktop\tribução.txt`
 
 ## Formato do Arquivo

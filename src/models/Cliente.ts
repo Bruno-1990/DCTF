@@ -537,6 +537,29 @@ export class Cliente extends DatabaseService<ICliente> {
     // Remover cnpj se estiver presente (não salvar formatado)
     delete dataToUpdate.cnpj;
 
+    // Sincronizar simples_optante com regime_tributario.
+    // Regra de negócio: o regime tributário é a fonte de verdade. Sempre que o
+    // regime for atualizado (UI, script OneClick, importação), derivamos o flag
+    // simples_optante para evitar divergência ("optante mas não Simples" e
+    // "Simples mas não optante"). Só derivamos quando o chamador NÃO enviou
+    // simples_optante explicitamente (ex.: sync da ReceitaWS já grava os dois).
+    if (
+      Object.prototype.hasOwnProperty.call(dataToUpdate, 'regime_tributario') &&
+      dataToUpdate.regime_tributario != null
+    ) {
+      // Padronizar sempre em MAIÚSCULO (evita divergência de caixa nas comparações).
+      const regimeNorm = String(dataToUpdate.regime_tributario).trim().toUpperCase();
+      dataToUpdate.regime_tributario = regimeNorm || null;
+      if (dataToUpdate.simples_optante === undefined) {
+        if (regimeNorm.includes('SIMPLES')) {
+          dataToUpdate.simples_optante = true;
+        } else if (regimeNorm && regimeNorm !== 'A DEFINIR' && regimeNorm !== '-' && regimeNorm !== '—') {
+          dataToUpdate.simples_optante = false;
+        }
+        // Regime vazio / "A DEFINIR": não mexe em simples_optante (permanece indefinido).
+      }
+    }
+
     // Remover campos undefined (converter para null ou remover)
     // O MySQL/Supabase não aceita undefined, apenas null ou omitir o campo
     Object.keys(dataToUpdate).forEach(key => {
@@ -960,7 +983,7 @@ export class Cliente extends DatabaseService<ICliente> {
       receita_telefone: receita.telefone || null,
       tipo_empresa: receita.tipo ? (receita.tipo.toUpperCase() === 'MATRIZ' ? 'Matriz' : receita.tipo.toUpperCase() === 'FILIAL' ? 'Filial' : null) : null,
       capital_social: this.parseMoney(receita.capital_social),
-      regime_tributario: receita.simples?.optante === true ? 'Simples Nacional' : null, // Definir automaticamente se for optante do Simples
+      regime_tributario: receita.simples?.optante === true ? 'SIMPLES NACIONAL' : null, // Definir automaticamente se for optante do Simples
       simples_optante: receita.simples?.optante ?? null,
       simples_data_opcao: simplesOpcaoISO,
       simples_data_exclusao: simplesExclusaoISO,
@@ -1104,9 +1127,19 @@ export class Cliente extends DatabaseService<ICliente> {
       const key = (s: { nome: string; qual: string | null }) => `${s.nome}||${s.qual || ''}`;
       const beforeSet = new Set(sociosBefore.map(key));
       const afterSet = new Set(sociosAfter.map(key));
-      sociosAdded = [...afterSet].filter((x) => !beforeSet.has(x)).length;
-      sociosRemoved = [...beforeSet].filter((x) => !afterSet.has(x)).length;
-      sociosChanged = sociosAdded > 0 || sociosRemoved > 0;
+      // Não-destrutivo: se a ReceitaWS NÃO retornou QSA (sócios), NÃO apagamos os
+      // sócios já cadastrados. QSA vazio geralmente é omissão da API (plano free /
+      // falha momentânea), não uma baixa real de todos os sócios. Tratamos como
+      // "sem alteração de sócios" para preservar o que já existe no cadastro.
+      if (sociosAfter.length === 0) {
+        sociosAdded = 0;
+        sociosRemoved = 0;
+        sociosChanged = false;
+      } else {
+        sociosAdded = [...afterSet].filter((x) => !beforeSet.has(x)).length;
+        sociosRemoved = [...beforeSet].filter((x) => !afterSet.has(x)).length;
+        sociosChanged = sociosAdded > 0 || sociosRemoved > 0;
+      }
     } else {
       // Cliente novo: consideramos "criado" com alterações (não há before)
       sociosAfter = (Array.isArray(receita.qsa) ? receita.qsa : [])
@@ -1965,7 +1998,7 @@ export class Cliente extends DatabaseService<ICliente> {
    * Read-only no OneClick. Dedup por cnpj_limpo.
    * Campos já preenchidos no DCTF_WEB não são sobrescritos.
    */
-  async sincronizarComOneClick(ids?: number[]): Promise<ApiResponse<any>> {
+  async sincronizarComOneClick(ids?: string[]): Promise<ApiResponse<any>> {
     const oneClick = new OneClickService();
     const resumo = { total: 0, novos: 0, atualizados: 0, ignorados: 0, erros: 0, detalhes: [] as any[] };
 
@@ -1992,7 +2025,7 @@ export class Cliente extends DatabaseService<ICliente> {
           const clienteLocal = existente.success && existente.data?.length ? existente.data[0] : null;
 
           // Mapear regime tributario (cad_reg: 1=Lucro Presumido, 2=Lucro Real, 4=Simples, 5=MEI, 6=Nao Informado)
-          const regimeMap: Record<number, string> = { 1: 'Lucro Presumido', 2: 'Lucro Real', 4: 'Simples Nacional', 5: 'Simples Nacional' };
+          const regimeMap: Record<number, string> = { 1: 'LUCRO PRESUMIDO', 2: 'LUCRO REAL', 4: 'SIMPLES NACIONAL', 5: 'SIMPLES NACIONAL' };
           const regime = oc.cad_cli_regime ? regimeMap[oc.cad_cli_regime] || null : null;
 
           // Montar endereco
@@ -2028,6 +2061,11 @@ export class Cliente extends DatabaseService<ICliente> {
               }
             }
 
+            // Regime é fonte de verdade: se estamos preenchendo o regime, derivar simples_optante.
+            if (updates.regime_tributario) {
+              updates.simples_optante = /simples/i.test(String(updates.regime_tributario)) ? 1 : 0;
+            }
+
             if (Object.keys(updates).length > 0) {
               const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
               const values = [...Object.values(updates), (clienteLocal as any).id];
@@ -2043,17 +2081,20 @@ export class Cliente extends DatabaseService<ICliente> {
           } else {
             // INSERT novo cliente
             const id = uuidv4();
+            const optanteNovo = camposOC.regime_tributario
+              ? (/simples/i.test(String(camposOC.regime_tributario)) ? 1 : 0)
+              : null;
             await this.executeCustomQuery<any>(
               `INSERT INTO \`clientes\` (\`id\`, \`cnpj_limpo\`, \`razao_social\`, \`email\`, \`telefone\`,
-                \`endereco\`, \`bairro\`, \`municipio\`, \`uf\`, \`cep\`, \`complemento\`, \`regime_tributario\`, \`beneficios_fiscais\`)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                \`endereco\`, \`bairro\`, \`municipio\`, \`uf\`, \`cep\`, \`complemento\`, \`regime_tributario\`, \`simples_optante\`, \`beneficios_fiscais\`)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 id, cnpjLimpo,
                 camposOC.razao_social || 'SEM RAZAO SOCIAL',
                 camposOC.email, camposOC.telefone,
                 camposOC.endereco, camposOC.bairro, camposOC.municipio,
                 camposOC.uf, camposOC.cep, camposOC.complemento,
-                camposOC.regime_tributario, camposOC.beneficios_fiscais,
+                camposOC.regime_tributario, optanteNovo, camposOC.beneficios_fiscais,
               ]
             );
             resumo.novos++;
@@ -2084,9 +2125,16 @@ export class Cliente extends DatabaseService<ICliente> {
    */
   async listarEBEF(): Promise<ApiResponse<any[]>> {
     try {
+      // Detecta se as colunas de controle de envio existem (migration 008).
+      const clienteCols = await this.getTableColumns('clientes');
+      const hasEnvioCols = clienteCols.has('ebef_enviado') && clienteCols.has('ebef_enviado_em');
+      const envioSelect = hasEnvioCols
+        ? ', c.ebef_enviado, c.ebef_enviado_em'
+        : '';
+
       // 1. Empresas mãe que possuem ao menos 1 sócio PJ
       const parentResp = await this.executeCustomQuery<any>(
-        `SELECT DISTINCT c.id, c.razao_social, c.cnpj_limpo
+        `SELECT DISTINCT c.id, c.razao_social, c.cnpj_limpo${envioSelect}
          FROM clientes c
          INNER JOIN clientes_socios cs ON cs.cliente_id = c.id
          WHERE LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14
@@ -2149,6 +2197,8 @@ export class Cliente extends DatabaseService<ICliente> {
           id: p.id,
           razao_social: p.razao_social,
           cnpj_limpo: p.cnpj_limpo,
+          ebef_enviado: hasEnvioCols ? Number(p.ebef_enviado) === 1 : false,
+          ebef_enviado_em: hasEnvioCols ? (p.ebef_enviado_em || null) : null,
           socios_pj: sociosComConsulta,
         });
       }
@@ -2157,6 +2207,52 @@ export class Cliente extends DatabaseService<ICliente> {
     } catch (e: any) {
       if (this.isNoSuchTableError(e)) return { success: true, data: [] };
       return { success: false, error: e?.message || 'Erro ao listar e-BEF' };
+    }
+  }
+
+  /**
+   * Atualiza o flag de envio do e-BEF para uma empresa-mãe.
+   * Quando enviado=true, registra a data atual; quando false, limpa.
+   */
+  async atualizarEBEFEnvio(
+    clienteId: string,
+    enviado: boolean,
+  ): Promise<ApiResponse<{ ebef_enviado: boolean; ebef_enviado_em: string | null }>> {
+    try {
+      const clienteCols = await this.getTableColumns('clientes');
+      if (!clienteCols.has('ebef_enviado') || !clienteCols.has('ebef_enviado_em')) {
+        return {
+          success: false,
+          error: 'Migration 008 ainda não foi aplicada (colunas ebef_enviado/ebef_enviado_em ausentes).',
+        };
+      }
+
+      const flag = enviado ? 1 : 0;
+      // UTC_TIMESTAMP() em vez de NOW() porque o pool MySQL está com timezone '+00:00'
+      // (src/config/mysql.ts) — assim o driver lê e o frontend converte corretamente para
+      // horário local sem deslocamento extra.
+      const sql = enviado
+        ? 'UPDATE `clientes` SET `ebef_enviado` = ?, `ebef_enviado_em` = UTC_TIMESTAMP() WHERE `id` = ?'
+        : 'UPDATE `clientes` SET `ebef_enviado` = ?, `ebef_enviado_em` = NULL WHERE `id` = ?';
+      const upd = await this.executeCustomQuery<any>(sql, [flag, clienteId]);
+      if (!upd.success) return upd as any;
+
+      const sel = await this.executeCustomQuery<any>(
+        'SELECT `ebef_enviado`, `ebef_enviado_em` FROM `clientes` WHERE `id` = ?',
+        [clienteId],
+      );
+      const row = sel.success && Array.isArray(sel.data) ? sel.data[0] : null;
+      if (!row) return { success: false, error: 'Cliente não encontrado' };
+
+      return {
+        success: true,
+        data: {
+          ebef_enviado: Number(row.ebef_enviado) === 1,
+          ebef_enviado_em: row.ebef_enviado_em || null,
+        },
+      };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Erro ao atualizar envio e-BEF' };
     }
   }
 

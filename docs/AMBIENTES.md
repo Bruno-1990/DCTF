@@ -40,7 +40,7 @@ Cada ambiente possui suas próprias configurações de:
 
 2. **Ajustar configurações:**
    - Edite `.env.development` com suas configurações locais
-   - Edite `frontend/.env` com a URL do backend (padrão: `http://localhost:3000`)
+   - Edite `frontend/.env` com a URL do backend (padrão: `http://localhost:38572`)
 
 3. **Executar script de deploy:**
    ```bash
@@ -56,7 +56,7 @@ Cada ambiente possui suas próprias configurações de:
 - ✅ Hot-reload ativado
 - ✅ Logs detalhados (debug)
 - ✅ Banco de dados local (MySQL)
-- ✅ Portas padrão: Backend `3000`, Frontend `5173`
+- ✅ Portas padrão: Backend `38572`, Frontend `5173`
 - ✅ Sem otimizações de build
 
 ### Iniciar Serviços

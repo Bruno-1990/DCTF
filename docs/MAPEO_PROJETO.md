@@ -507,7 +507,7 @@ npm run create:sped-v2-legal-docs  # Criar tabelas SPED v2
 ## 🔗 Links Úteis
 
 - **Frontend Dev Server**: http://localhost:5173
-- **Backend API**: http://localhost:3000/api
+- **Backend API**: http://localhost:38572/api
 - **Supabase Dashboard**: (verificar `.env`)
 - **MySQL**: (verificar `.env`)
 

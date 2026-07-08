@@ -72,7 +72,26 @@
       "Bash(mv docs/scripts/open-pasta-rede.ps1 scripts/)",
       "Bash(rm -rf sped/)",
       "Bash(rm -f EMAIL_CONFIG.md GUIA-DEPLOY.md GUIA_USO_MONITORAMENTO.md INSTRUCOES_ADMIN_UI.txt DEAD_CODE.md)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(awk 'NR%14==2')",
+      "Bash(awk '{print length, $0}')",
+      "Bash(curl -s -X POST http://localhost:38572/api/beneficios/importar -F 'arquivo=@C:/Users/bruno/Downloads/Programa compete - ES - Ativos em 2026.04.csv' -F limparAntes=true)",
+      "Bash(curl *)",
+      "Bash(where.exe mysql *)",
+      "Bash('/c/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe' -h localhost -P 3306 -u root '-pUkl4%Jio6\\)' DCTF_WEB -e ' *)",
+      "Bash('/c/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe' -h localhost -P 3306 -u root '-pUkl4%Jio6\\)' DCTF_WEB -e 'DESCRIBE clientes;')",
+      "Bash('/c/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe' -h localhost -P 3306 -u root '-pUkl4%Jio6\\)' DCTF_WEB --table -e ' *)",
+      "Bash(Get-ChildItem -Path . -Depth 1)",
+      "Bash(Select-Object Name)",
+      "Bash(ls \"D:\\\\aplicativos\\\\DCTF WEB\\\\DCTF_MPC\" -la)",
+      "Bash(ls \"D:\\\\aplicativos\\\\DCTF WEB\\\\DCTF_MPC\\\\.env\")",
+      "PowerShell(Get-Command *)",
+      "PowerShell(mysql *)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "task-master-ai"
+  ]
 }

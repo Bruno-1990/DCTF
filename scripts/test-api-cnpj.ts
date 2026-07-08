@@ -14,7 +14,7 @@ import axios from 'axios';
 async function testarAPICNPJ() {
   try {
     const cnpj = '33249391000131';
-    const apiUrl = 'http://192.168.0.47:3000';
+    const apiUrl = 'http://192.168.0.47:38572';
     
     console.log(`🔍 Testando API para CNPJ: ${cnpj}\n`);
     

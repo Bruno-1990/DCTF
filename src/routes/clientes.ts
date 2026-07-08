@@ -94,11 +94,14 @@ router.get('/ebef', (req, res) => clienteController.listarEBEF(req, res));
 router.get('/ebef/progresso', (req, res) => clienteController.obterProgressoEBEF(req, res));
 router.post('/ebef/lote', (req, res) => clienteController.iniciarLoteEBEF(req, res));
 router.post('/ebef/consultar', (req, res) => clienteController.consultarEBEFFilhoUnico(req, res));
+router.get('/ebef/exportar', (req, res) => clienteController.exportarEBEFXlsx(req, res));
+router.patch('/ebef/:id/envio', (req, res) => clienteController.atualizarEBEFEnvio(req, res));
 
 // ── Abrir pasta no Explorer (servidor local) ──
 router.post('/abrir-pasta', (req, res) => clienteController.abrirPasta(req, res));
 
 // ── OneClick (Sincronizar clientes) ──
+router.get('/oneclick/status', (req, res) => clienteController.oneClickStatus(req, res));
 router.get('/oneclick/preview', (req, res) => clienteController.previewOneClick(req, res));
 router.post('/sincronizar-oneclick', (req, res) => clienteController.sincronizarOneClick(req, res));
 

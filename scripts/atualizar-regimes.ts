@@ -11,7 +11,7 @@ import axios from 'axios';
 
 // Configuração
 const ARQUIVO_TRIBUTACAO = 'C:\\Users\\bruno\\Desktop\\tribução.txt';
-const API_URL = 'http://localhost:3000/api/clientes/atualizar-regimes-massa';
+const API_URL = 'http://localhost:38572/api/clientes/atualizar-regimes-massa';
 
 interface DadoTributacao {
   cnpj: string;

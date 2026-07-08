@@ -131,13 +131,13 @@ O n8n envia o link do documento para o backend pelo nó **HTTP Request** chamand
 
 ### Erro "The service refused the connection" (ECONNREFUSED)
 
-Se o n8n está rodando **na nuvem** (ex.: Railway), **não use `http://localhost:3000`** no nó HTTP Request. Nesse caso `localhost` é o próprio servidor do n8n, não a sua máquina — por isso a conexão é recusada.
+Se o n8n está rodando **na nuvem** (ex.: Railway), **não use `http://localhost:38572`** no nó HTTP Request. Nesse caso `localhost` é o próprio servidor do n8n, não a sua máquina — por isso a conexão é recusada.
 
 **Solução:** use a **URL pública do seu backend** no nó HTTP Request do n8n.
 
 | Onde o n8n roda | URL a usar no nó HTTP Request |
 |-----------------|-------------------------------|
-| Na sua máquina (mesmo PC do backend) | `http://localhost:3000/api/n8n/document-ready` (backend precisa estar rodando) |
+| Na sua máquina (mesmo PC do backend) | `http://localhost:38572/api/n8n/document-ready` (backend precisa estar rodando) |
 | Na nuvem (Railway, etc.) | URL pública do backend, ex.: `https://SEU-BACKEND.railway.app/api/n8n/document-ready` ou um túnel (ngrok, etc.) |
 
 **Exemplo:** se o backend DCTF estiver deployado em `https://dctf-backend.railway.app`, no n8n configure:
@@ -146,4 +146,4 @@ Se o n8n está rodando **na nuvem** (ex.: Railway), **não use `http://localhost
 - **Method:** POST
 - **Body (JSON):** `requestId`, `downloadLink`, `documentId` (como já configurado)
 
-Se o backend ainda for só local, use **ngrok** (ou similar) para expor a porta 3000 e coloque no n8n a URL que o ngrok fornecer, ex.: `https://abc123.ngrok.io/api/n8n/document-ready`.
+Se o backend ainda for só local, use **ngrok** (ou similar) para expor a porta 38572 e coloque no n8n a URL que o ngrok fornecer, ex.: `https://abc123.ngrok.io/api/n8n/document-ready`.

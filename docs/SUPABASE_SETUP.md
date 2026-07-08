@@ -35,7 +35,7 @@ SUPABASE_SERVICE_ROLE_KEY=sua_chave_service_role_aqui
 
 # Configurações da Aplicação
 NODE_ENV=development
-PORT=3000
+PORT=38572
 
 # Configurações de Upload
 MAX_FILE_SIZE=10485760

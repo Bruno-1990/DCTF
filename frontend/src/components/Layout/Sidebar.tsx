@@ -11,6 +11,8 @@ import {
   CodeBracketIcon,
   DocumentCheckIcon,
   CurrencyDollarIcon,
+  GiftIcon,
+  ScaleIcon,
 } from '@heroicons/react/24/outline';
 import {
   PaperClipIcon,
@@ -28,6 +30,8 @@ const navigation = [
   { name: 'SCI - Gerador SQL', href: '/sci/gerador-sql', icon: CodeBracketIcon },
   { name: 'SPED Validação', href: '/sped', icon: DocumentCheckIcon },
   { name: 'IRPF 2026', href: '/irpf-2026', icon: CurrencyDollarIcon },
+  { name: 'Benefícios', href: '/beneficios', icon: GiftIcon },
+  { name: 'Legalização', href: '/legalizacao', icon: ScaleIcon },
 ];
 
 interface SidebarProps {

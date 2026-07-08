@@ -1714,20 +1714,11 @@ export class ClienteController {
         return;
       }
 
-      // Buscar download mais recente da situação fiscal para este CNPJ
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabaseUrl = process.env.SUPABASE_URL;
-      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-      
-      if (!supabaseUrl || !supabaseKey) {
-        res.status(500).json({
-          success: false,
-          error: 'Configuração do Supabase não encontrada',
-        });
-        return;
-      }
-
-      const supabase = createClient(supabaseUrl, supabaseKey);
+      // Buscar download mais recente da situação fiscal para este CNPJ.
+      // Usa o adapter MySQL (mesma fonte que o SituacaoFiscalOrchestrator grava),
+      // não o Supabase real — situação fiscal vive no MySQL (tabela sitf_downloads).
+      const { createSupabaseAdapter } = await import('../services/SupabaseAdapter');
+      const supabase = createSupabaseAdapter() as any;
       
       console.log('[Atualizar Sócios] Buscando situação fiscal para CNPJ:', cnpjLimpo);
       console.log('[Atualizar Sócios] Tipo do CNPJ:', typeof cnpjLimpo, 'Tamanho:', cnpjLimpo.length);
@@ -3057,6 +3048,11 @@ export class ClienteController {
    */
   async previewOneClick(_req: Request, res: Response): Promise<void> {
     try {
+      // Garante o túnel SSH antes de consultar o Postgres de prod (sobe a
+      // tarefa e espera a porta responder se estiver caído).
+      const { ensureTunnel } = await import('../services/oneclickTunnel');
+      await ensureTunnel();
+
       const { OneClickService } = await import('../services/OneClickService');
       const oneClick = new OneClickService();
       const clientesOC = await oneClick.buscarClientesMensaisAtivos();
@@ -3107,6 +3103,10 @@ export class ClienteController {
    */
   async sincronizarOneClick(req: Request, res: Response): Promise<void> {
     try {
+      // Garante o túnel SSH antes de sincronizar (auto-heal sob demanda).
+      const { ensureTunnel } = await import('../services/oneclickTunnel');
+      await ensureTunnel();
+
       const { ids } = req.body || {};
       const idsArray = Array.isArray(ids) ? ids : undefined;
       console.log(`[ClienteController] Iniciando sincronizacao com OneClick... (${idsArray ? idsArray.length + ' selecionados' : 'todos'})`);
@@ -3120,6 +3120,21 @@ export class ClienteController {
     } catch (error: any) {
       console.error('[ClienteController] Erro ao sincronizar com OneClick:', error);
       res.status(500).json({ success: false, error: error.message || 'Erro ao sincronizar com OneClick' });
+    }
+  }
+
+  /**
+   * GET /api/clientes/oneclick/status
+   * Indica se o túnel SSH do OneClick está ativo (para o indicador no frontend).
+   */
+  async oneClickStatus(_req: Request, res: Response): Promise<void> {
+    try {
+      const { getTunnelStatus } = await import('../services/oneclickTunnel');
+      const status = await getTunnelStatus();
+      res.json({ success: true, data: status });
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao consultar status do túnel OneClick:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao consultar status do túnel' });
     }
   }
 
@@ -3242,6 +3257,167 @@ export class ClienteController {
       res.json(result);
     } catch (error: any) {
       console.error('[ClienteController] Erro ao consultar e-BEF filho:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * GET /api/clientes/ebef/exportar
+   * Exporta os dados de e-BEF em XLSX:
+   * — para cada empresa-mãe, gera uma linha "MÃE" e abaixo as linhas dos sócios PJ filhos,
+   *   separando cada bloco com 2 linhas em branco.
+   */
+  async exportarEBEFXlsx(_req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.clienteModel.listarEBEF();
+      if (!result.success) {
+        res.status(500).json(result);
+        return;
+      }
+      const parents: any[] = result.data || [];
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('e-BEF');
+
+      const headers = [
+        'Tipo',
+        'CNPJ',
+        'Razão Social / Nome do Sócio',
+        'Qualificação',
+        'Razão Social do Filho',
+        'Situação',
+        'Capital Social',
+        'Status Consulta',
+        'Consultado em',
+        'Enviado',
+        'Data do Envio',
+      ];
+      worksheet.addRow(headers);
+
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4472C4' },
+      };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      headerRow.height = 25;
+
+      const formatCNPJ = (c: string): string => {
+        const d = (c || '').replace(/\D/g, '');
+        if (d.length !== 14) return c || '';
+        return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+      };
+
+      const formatDate = (iso: any): string => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+      };
+
+      const statusLabel: Record<string, string> = {
+        concluido: 'Concluído',
+        pendente: 'Pendente',
+        processando: 'Processando',
+        erro: 'Erro',
+      };
+
+      for (const parent of parents) {
+        // Linha da empresa-mãe
+        const motherRow = worksheet.addRow([
+          'Empresa Mãe',
+          formatCNPJ(parent.cnpj_limpo),
+          parent.razao_social || '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          parent.ebef_enviado ? 'Sim' : 'Não',
+          formatDate(parent.ebef_enviado_em),
+        ]);
+        motherRow.font = { bold: true };
+        motherRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE8EEF7' },
+        };
+
+        // Linhas dos sócios PJ filhos
+        const filhos: any[] = Array.isArray(parent.socios_pj) ? parent.socios_pj : [];
+        for (const f of filhos) {
+          const consulta = f.consulta || {};
+          worksheet.addRow([
+            'Sócio PJ',
+            formatCNPJ(f.cnpj_filho),
+            f.nome || '',
+            f.qual || '',
+            consulta.nome_filho || '',
+            consulta.situacao_filho || '',
+            consulta.capital_social_filho ?? '',
+            consulta.status ? (statusLabel[consulta.status] || consulta.status) : '',
+            formatDate(consulta.consultado_em),
+            '',
+            '',
+          ]);
+        }
+
+        // 2 linhas em branco antes do próximo registro mãe
+        worksheet.addRow([]);
+        worksheet.addRow([]);
+      }
+
+      // Larguras
+      worksheet.columns.forEach((column: any) => {
+        let maxLength = 10;
+        column.eachCell({ includeEmpty: true }, (cell: any) => {
+          const cellLength = cell.value ? cell.value.toString().length : 0;
+          if (cellLength > maxLength) maxLength = cellLength;
+        });
+        column.width = Math.min(Math.max(maxLength + 2, 12), 60);
+      });
+
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const filename = `ebef_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(buffer);
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao exportar e-BEF:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * PATCH /api/clientes/ebef/:id/envio
+   * Alterna o flag de envio do e-BEF para a empresa-mãe.
+   * Body: { enviado: boolean }
+   */
+  async atualizarEBEFEnvio(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { enviado } = req.body;
+      if (!id) {
+        res.status(400).json({ success: false, error: 'id é obrigatório' });
+        return;
+      }
+      if (typeof enviado !== 'boolean') {
+        res.status(400).json({ success: false, error: 'enviado deve ser booleano' });
+        return;
+      }
+      const result = await this.clienteModel.atualizarEBEFEnvio(id, enviado);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao atualizar envio e-BEF:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   }

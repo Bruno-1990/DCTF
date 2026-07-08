@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile
     container_name: dctf-mpc-backend-dev
     ports:
-      - "3000:3000"
+      - "38572:38572"
     env_file:
       - .env.development
     environment:

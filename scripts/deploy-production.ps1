@@ -82,7 +82,7 @@ Write-Host "  npm start"
 Write-Host ""
 Write-Host "Ou use Docker:"
 Write-Host "  docker build -t dctf-mpc:production ."
-Write-Host "  docker run -p 3000:3000 --env-file .env.production dctf-mpc:production"
+Write-Host "  docker run -p 38572:38572 --env-file .env.production dctf-mpc:production"
 Write-Host ""
 Write-Host "Pressione qualquer tecla para sair..."
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

@@ -40,12 +40,12 @@ Get-Process -Id <PID> | Stop-Process -Force
 
 ### Verificar se está rodando:
 ```powershell
-netstat -ano | findstr ":3000"
+netstat -ano | findstr ":38572"
 ```
 
 ### Testar o backend:
 ```powershell
-Invoke-WebRequest -Uri "http://localhost:3000/health" -UseBasicParsing
+Invoke-WebRequest -Uri "http://localhost:38572/health" -UseBasicParsing
 ```
 
 ## Mudanças realizadas:
@@ -56,7 +56,7 @@ Invoke-WebRequest -Uri "http://localhost:3000/health" -UseBasicParsing
 
 ## Nota importante:
 
-Se a porta 3000 estiver ocupada, pare o processo anterior antes de iniciar:
+Se a porta 38572 estiver ocupada, pare o processo anterior antes de iniciar:
 ```powershell
 Get-Process -Name node | Stop-Process -Force
 npm run dev

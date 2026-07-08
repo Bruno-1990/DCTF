@@ -1,12 +1,25 @@
 /**
- * Serviço de leitura (read-only) do banco OneClick (db_intranet).
- * Retorna clientes Mensais e Ativos para sincronização com DCTF_WEB.
+ * Serviço de leitura (read-only) do OneClick de PRODUÇÃO (PostgreSQL na VPS).
+ * Banco `oneclick`, schema `public`, tabela `public.clientes`.
+ * Retorna clientes Mensais e Ativos para sincronização com o DCTF_WEB.
+ *
+ * O shape `OneClickCliente` (campos `cad_cli_*`) é mantido de propósito: o
+ * controller (previewOneClick) e o Cliente.sincronizarComOneClick continuam
+ * consumindo o mesmo contrato, então a lógica de importação não muda —
+ * só a fonte dos dados (antes: MySQL v1 `ger_cad_cli`; agora: PG prod `clientes`).
+ * Ver docs/plano-sync-oneclick-v2.md.
  */
 
 import { getOneClickPool } from '../config/oneclick';
+import {
+  mapClienteRowToOneClick,
+  SELECT_CLIENTE_COLUMNS,
+  MENSAIS_ATIVOS_WHERE,
+  type ClienteProdRow,
+} from './oneclick.mappers';
 
 export interface OneClickCliente {
-  id: number;
+  id: string; // cuid do OneClick de prod (public.clientes.id)
   cad_cli_cnpj: string;
   cad_cli_razao: string | null;
   cad_cli_email: string | null;
@@ -23,69 +36,42 @@ export interface OneClickCliente {
 
 export class OneClickService {
   /**
-   * Busca clientes Mensais (situacao=2) e Ativos (ativo=1) no OneClick.
+   * Busca clientes Mensais (situacao='MENSAL') e Ativos (status='ATIVA') no OneClick.
    * Somente leitura — nenhuma escrita é feita no banco externo.
    */
   async buscarClientesMensaisAtivos(): Promise<OneClickCliente[]> {
     const pool = getOneClickPool();
-    const [rows] = await pool.query<any[]>(
-      `SELECT id, cad_cli_cnpj, cad_cli_razao, cad_cli_email, cad_cli_tel,
-              cad_cli_end, cad_cli_num, cad_cli_bairro, cad_cli_cidade,
-              cad_cli_estado, cad_cli_cep, cad_cli_complemento, cad_cli_regime
-       FROM ger_cad_cli
-       WHERE cad_cli_situacao = 2
-         AND cad_cli_ativo = 1
-         AND cad_cli_cnpj IS NOT NULL
-         AND TRIM(cad_cli_cnpj) != ''
-         AND cad_cli_cnpj != '00.000.000/0000-00'
-       ORDER BY cad_cli_razao ASC`
+    const { rows } = await pool.query<ClienteProdRow>(
+      `SELECT ${SELECT_CLIENTE_COLUMNS}
+       FROM public.clientes
+       WHERE ${MENSAIS_ATIVOS_WHERE}
+       ORDER BY razao_social ASC`,
     );
-    return rows as OneClickCliente[];
+    return rows.map(mapClienteRowToOneClick);
   }
 
   /**
-   * Busca benefícios fiscais ativos para uma lista de IDs de clientes.
-   * Retorna Map<id_cliente, string[]> com os nomes dos benefícios.
+   * Busca benefícios fiscais por cliente. O OneClick de prod ainda não popula
+   * `cliente_beneficios` (0 linhas) — retorna mapa vazio (no-op). Assinatura e
+   * tipo de retorno mantidos para não alterar controller/model.
+   * TODO: quando `public.cliente_beneficios` for populado, buscar por cliente_id.
    */
-  async buscarBeneficiosPorClienteIds(ids: number[]): Promise<Map<number, string[]>> {
-    const map = new Map<number, string[]>();
-    if (ids.length === 0) return map;
-
-    const pool = getOneClickPool();
-    const placeholders = ids.map(() => '?').join(',');
-    const [rows] = await pool.query<any[]>(
-      `SELECT b.id_cliente, cb.beneficio
-       FROM cad_cli_bnf b
-       JOIN cad_cli_beneficios cb ON cb.id = b.id_beneficio
-       WHERE b.id_cliente IN (${placeholders}) AND b.ativo = 1
-       ORDER BY b.id_cliente, cb.beneficio`,
-      ids
-    );
-
-    for (const row of rows as any[]) {
-      const id = Number(row.id_cliente);
-      if (!map.has(id)) map.set(id, []);
-      map.get(id)!.push(row.beneficio as string);
-    }
-
-    return map;
+  async buscarBeneficiosPorClienteIds(_ids: string[]): Promise<Map<number, string[]>> {
+    return new Map<number, string[]>();
   }
 
   /**
-   * Busca clientes por IDs específicos.
+   * Busca clientes por IDs específicos (cuid do prod). Usado na importação seletiva.
    */
-  async buscarClientesPorIds(ids: number[]): Promise<OneClickCliente[]> {
+  async buscarClientesPorIds(ids: string[]): Promise<OneClickCliente[]> {
     if (ids.length === 0) return [];
     const pool = getOneClickPool();
-    const placeholders = ids.map(() => '?').join(',');
-    const [rows] = await pool.query<any[]>(
-      `SELECT id, cad_cli_cnpj, cad_cli_razao, cad_cli_email, cad_cli_tel,
-              cad_cli_end, cad_cli_num, cad_cli_bairro, cad_cli_cidade,
-              cad_cli_estado, cad_cli_cep, cad_cli_complemento, cad_cli_regime
-       FROM ger_cad_cli
-       WHERE id IN (${placeholders})`,
-      ids
+    const { rows } = await pool.query<ClienteProdRow>(
+      `SELECT ${SELECT_CLIENTE_COLUMNS}
+       FROM public.clientes
+       WHERE id = ANY($1::text[])`,
+      [ids],
     );
-    return rows as OneClickCliente[];
+    return rows.map(mapClienteRowToOneClick);
   }
 }

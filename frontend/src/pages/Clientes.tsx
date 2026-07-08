@@ -58,6 +58,47 @@ function displayUppercase(s: string | null | undefined, fallback = ''): string {
   return t;
 }
 
+/**
+ * Retorna a lista de itens de cadastro que estão faltando em um cliente.
+ * Usado pelo filtro "Itens Faltantes" na aba clientes.
+ */
+function getItensFaltantes(c: any): string[] {
+  const faltantes: string[] = [];
+
+  const email = String(c?.email ?? '').trim();
+  if (!email) faltantes.push('E-mail');
+
+  const telefone = String(c?.telefone ?? '').trim();
+  if (!telefone) faltantes.push('Telefone');
+
+  // Endereço: considera preenchido se houver `endereco` (linha única)
+  // OU o endereço estruturado mínimo (logradouro + município + uf).
+  const endereco = String(c?.endereco ?? '').trim();
+  const temEnderecoEstruturado =
+    String(c?.logradouro ?? '').trim() !== '' &&
+    String(c?.municipio ?? '').trim() !== '' &&
+    String(c?.uf ?? '').trim() !== '';
+  if (!endereco && !temEnderecoEstruturado) faltantes.push('Endereço');
+
+  const regime = String(c?.regime_tributario ?? '').trim();
+  if (!regime || regime === '-' || regime === '—') faltantes.push('Regime Trib.');
+
+  // Participantes (sócios / QSA)
+  const socios: any[] = Array.isArray(c?.socios) ? c.socios : [];
+  // Filiais não possuem sócios; só cobramos cadastro de sócios de matrizes.
+  const ehMatriz = c?.tipo_empresa === 'Matriz';
+  if (ehMatriz && socios.length === 0) {
+    faltantes.push('Sócios');
+  } else if (
+    socios.length > 0 &&
+    socios.some((s) => !s?.participacao_percentual || !s?.participacao_valor)
+  ) {
+    faltantes.push('Particip. sócio');
+  }
+
+  return faltantes;
+}
+
 /** Abre a pasta no Windows: tenta protocolo dctf-openfolder (se instalado), senão copia o caminho. */
 function abrirPastaRede(pathRede: string | undefined | null, toast: { success: (m: string) => void; error: (m: string) => void }) {
   const path = (pathRede || '').trim();
@@ -391,7 +432,7 @@ const Clientes: React.FC = () => {
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
   const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente' | 'e-bef'>('a-z');
-  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal'>('a-z');
+  const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal' | 'sem-reg-trib' | 'itens-faltantes'>('a-z');
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
   // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
@@ -433,6 +474,25 @@ const Clientes: React.FC = () => {
   const [oneClickConfirm, setOneClickConfirm] = useState(false);
   const [oneClickSearch, setOneClickSearch] = useState('');
   const [oneClickFiltro, setOneClickFiltro] = useState<'todos' | 'novos' | 'cadastrados'>('novos');
+  // Status do túnel SSH do OneClick (null = ainda não verificado)
+  const [oneClickTunnelAtivo, setOneClickTunnelAtivo] = useState<boolean | null>(null);
+
+  // Consulta o status do túnel do OneClick (para o indicador ao lado do botão).
+  const refreshOneClickTunnel = async () => {
+    try {
+      const res = await clientesService.oneClickStatus();
+      setOneClickTunnelAtivo(res?.success ? !!res.data?.active : false);
+    } catch {
+      setOneClickTunnelAtivo(false);
+    }
+  };
+
+  // Verifica o túnel ao montar e a cada 30s.
+  useEffect(() => {
+    refreshOneClickTunnel();
+    const id = setInterval(refreshOneClickTunnel, 30_000);
+    return () => clearInterval(id);
+  }, []);
   const [mostrarCadastroCompleto, setMostrarCadastroCompleto] = useState(false);
   const [mostrarAtividadesSecundarias, setMostrarAtividadesSecundarias] = useState(false);
   // const [ultimaImportacaoMeta, setUltimaImportacaoMeta] = useState<any>(null); // Não utilizado no momento
@@ -1329,8 +1389,8 @@ const Clientes: React.FC = () => {
     
     // Não aplicar filtro de sócio fora da aba participação
     // Quando filtro "Sem Cod SCI" ativo, buscar todos para filtrar no frontend
-    const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 500 : limit;
-    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined }).then(({ pagination }) => {
+    const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
+    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
@@ -2728,7 +2788,7 @@ const Clientes: React.FC = () => {
 
       // Verificar se regime_tributario está vazio ou nulo
       const regimeTributario = (imported as any).regime_tributario;
-      if (!regimeTributario || regimeTributario.trim() === '' || regimeTributario === 'A Definir') {
+      if (!regimeTributario || regimeTributario.trim() === '' || regimeTributario.trim().toUpperCase() === 'A DEFINIR') {
         // Abrir modal para selecionar regime tributário
         setClienteParaRegime(imported);
         setRegimeSelecionado('');
@@ -2920,8 +2980,8 @@ const Clientes: React.FC = () => {
       }, 5000);
 
       // Recarregar lista de clientes mantendo filtros ativos
-      const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 500 : limit;
-      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 1 : page, limit: paramLimit, search: debouncedSearch });
+      const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
+      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch });
     } catch (error) {
       // Erro já é tratado pelo hook useClientes
       setShowError(true);
@@ -3126,7 +3186,7 @@ const Clientes: React.FC = () => {
       }
       
       if (error.code === 'ECONNREFUSED' || error.message?.includes('ERR_CONNECTION_REFUSED')) {
-        errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 3000.';
+        errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 38572.';
       }
       
       setHostError(errorMessage);
@@ -3185,7 +3245,7 @@ const Clientes: React.FC = () => {
       }
       
       if (error.code === 'ECONNREFUSED' || error.message?.includes('ERR_CONNECTION_REFUSED')) {
-        errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 3000.';
+        errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 38572.';
       }
       
       setHostError(errorMessage);
@@ -3236,7 +3296,7 @@ const Clientes: React.FC = () => {
   //     }
   //     
   //     if (error.code === 'ECONNREFUSED' || error.message?.includes('ERR_CONNECTION_REFUSED')) {
-  //       errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 3000.';
+  //       errorMessage = 'Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 38572.';
   //     }
   //     
   //     setHostError(errorMessage);
@@ -3785,7 +3845,7 @@ const Clientes: React.FC = () => {
                         
                         // Verificar se regime_tributario está vazio ou nulo
                         const regimeTributario = (clienteAtualizado as any)?.regime_tributario;
-                        if (!regimeTributario || regimeTributario.trim() === '' || regimeTributario === 'A Definir') {
+                        if (!regimeTributario || regimeTributario.trim() === '' || regimeTributario.trim().toUpperCase() === 'A DEFINIR') {
                           // Abrir modal para selecionar regime tributário
                           setClienteParaRegime(clienteAtualizado as Cliente);
                           setRegimeSelecionado('');
@@ -4180,7 +4240,7 @@ const Clientes: React.FC = () => {
                       <label className="block text-xs font-medium text-slate-500 mb-1">Regime tributário</label>
                       {(() => {
                         const regime = (visualizandoCliente as any).regime_tributario || '';
-                        const opcoes = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
+                        const opcoes = ['SIMPLES NACIONAL', 'LUCRO PRESUMIDO', 'LUCRO REAL'];
                         const valorSelect = opcoes.includes(regime) ? regime : '';
                         return (
                           <select
@@ -4188,10 +4248,11 @@ const Clientes: React.FC = () => {
                             onChange={async (e) => {
                               const v = e.target.value;
                               if (!visualizandoCliente?.id) return;
-                              const valorSalvar = v === '' ? 'A Definir' : v;
+                              const valorSalvar = v === '' ? 'A DEFINIR' : v;
+                              const optanteDerivado = /simples/i.test(valorSalvar);
                               try {
                                 await updateClienteById(visualizandoCliente.id, { regime_tributario: valorSalvar } as Partial<Cliente>);
-                                setVisualizandoCliente(prev => prev ? { ...prev, regime_tributario: valorSalvar } as Cliente : null);
+                                setVisualizandoCliente(prev => prev ? { ...prev, regime_tributario: valorSalvar, simples_optante: optanteDerivado } as Cliente : null);
                                 toast.success('Regime tributário atualizado.');
                               } catch (err: any) {
                                 toast.error(err?.response?.data?.error ?? err?.message ?? 'Erro ao salvar.');
@@ -4200,9 +4261,9 @@ const Clientes: React.FC = () => {
                             className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 uppercase"
                           >
                             <option value="">SELECIONE</option>
-                            <option value="Simples Nacional">SIMPLES NACIONAL</option>
-                            <option value="Lucro Presumido">LUCRO PRESUMIDO</option>
-                            <option value="Lucro Real">LUCRO REAL</option>
+                            <option value="SIMPLES NACIONAL">SIMPLES NACIONAL</option>
+                            <option value="LUCRO PRESUMIDO">LUCRO PRESUMIDO</option>
+                            <option value="LUCRO REAL">LUCRO REAL</option>
                           </select>
                         );
                       })()}
@@ -4385,7 +4446,7 @@ const Clientes: React.FC = () => {
               <div className="relative">
                 <select
                   value={ordenacaoClientes}
-                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal')}
+                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal' | 'sem-reg-trib' | 'itens-faltantes')}
                   className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
                 >
                   <option value="a-z">A → Z</option>
@@ -4393,6 +4454,8 @@ const Clientes: React.FC = () => {
                   <option value="codigo-sci">Código SCI ↑</option>
                   <option value="sem-cod-sci">Sem Cód SCI</option>
                   <option value="beneficio-fiscal">Benefício Fiscal</option>
+                  <option value="sem-reg-trib">Sem Reg. Trib.</option>
+                  <option value="itens-faltantes">Itens Faltantes</option>
                 </select>
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FunnelIcon className="h-5 w-5 text-blue-500" />
@@ -4524,36 +4587,56 @@ const Clientes: React.FC = () => {
                     <PlusIcon className="h-5 w-5" />
                     Novo Cliente
                   </button>
-                  <button
-                    onClick={async () => {
-                      try {
-                        setOneClickLoading(true);
-                        setShowOneClickModal(true);
-                        setOneClickSearch('');
-                        setOneClickFiltro('novos');
-                        const res = await clientesService.previewOneClick();
-                        if (res.success) {
-                          setOneClickPreview(res.data || []);
-                          // Pré-selecionar apenas os que NÃO existem ainda
-                          const novos = (res.data || []).filter((c: any) => !c.ja_existe);
-                          setOneClickSelected(new Set(novos.map((c: any) => c.id)));
-                        } else {
-                          toast.error(res.error || 'Erro ao buscar clientes do OneClick');
-                          setShowOneClickModal(false);
-                        }
-                      } catch (err: any) {
-                        toast.error(err.message || 'Erro ao conectar com OneClick');
-                        setShowOneClickModal(false);
-                      } finally {
-                        setOneClickLoading(false);
+                  <div className="relative">
+                    {/* Indicador do túnel SSH: verde=ativo, vermelho=inativo, cinza=verificando */}
+                    <span
+                      title={
+                        oneClickTunnelAtivo === null
+                          ? 'Verificando túnel do OneClick...'
+                          : oneClickTunnelAtivo
+                            ? 'Túnel do OneClick ATIVO'
+                            : 'Túnel do OneClick INATIVO (será ativado ao clicar)'
                       }
-                    }}
-                    disabled={sincronizandoOneClick}
-                    className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:scale-105 transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
-                  >
-                    <ArrowPathIcon className={`h-5 w-5 ${sincronizandoOneClick ? 'animate-spin' : ''}`} />
-                    {sincronizandoOneClick ? 'Importando...' : 'OneClick'}
-                  </button>
+                      className={`absolute -top-1 -right-1 z-10 h-3.5 w-3.5 rounded-full ring-2 ring-white ${
+                        oneClickTunnelAtivo === null
+                          ? 'bg-gray-400'
+                          : oneClickTunnelAtivo
+                            ? 'bg-green-500 shadow-[0_0_6px_1px] shadow-green-400'
+                            : 'bg-red-500'
+                      } ${oneClickTunnelAtivo ? 'animate-pulse' : ''}`}
+                    />
+                    <button
+                      onClick={async () => {
+                        try {
+                          setOneClickLoading(true);
+                          setShowOneClickModal(true);
+                          setOneClickSearch('');
+                          setOneClickFiltro('novos');
+                          const res = await clientesService.previewOneClick();
+                          if (res.success) {
+                            setOneClickPreview(res.data || []);
+                            // Pré-selecionar apenas os que NÃO existem ainda
+                            const novos = (res.data || []).filter((c: any) => !c.ja_existe);
+                            setOneClickSelected(new Set(novos.map((c: any) => c.id)));
+                          } else {
+                            toast.error(res.error || 'Erro ao buscar clientes do OneClick');
+                            setShowOneClickModal(false);
+                          }
+                        } catch (err: any) {
+                          toast.error(err.message || 'Erro ao conectar com OneClick');
+                          setShowOneClickModal(false);
+                        } finally {
+                          setOneClickLoading(false);
+                          refreshOneClickTunnel(); // o preview pode ter subido o túnel
+                        }
+                      }}
+                      disabled={sincronizandoOneClick || oneClickLoading}
+                      className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:scale-105 transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    >
+                      <ArrowPathIcon className={`h-5 w-5 ${sincronizandoOneClick || oneClickLoading ? 'animate-spin' : ''}`} />
+                      {sincronizandoOneClick ? 'Importando...' : oneClickLoading ? 'Conectando...' : 'OneClick'}
+                    </button>
+                  </div>
                   <button
                     onClick={() => setShowExportModal(true)}
                     className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 hover:scale-105 transform"
@@ -5093,14 +5176,14 @@ const Clientes: React.FC = () => {
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1.5">Regime Tributário</label>
                       <select
-                        value={(formData as any).regime_tributario || ((formData as any).simples_optante === true || (formData as any).simples_optante === 1 ? 'Simples Nacional' : 'A Definir')}
-                        onChange={(e) => setFormData({ ...formData, regime_tributario: e.target.value } as any)}
+                        value={(formData as any).regime_tributario || ((formData as any).simples_optante === true || (formData as any).simples_optante === 1 ? 'SIMPLES NACIONAL' : 'A DEFINIR')}
+                        onChange={(e) => setFormData({ ...formData, regime_tributario: e.target.value, simples_optante: /simples/i.test(e.target.value) } as any)}
                         className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all uppercase"
                       >
-                        <option value="A Definir">A DEFINIR</option>
-                        <option value="Simples Nacional">SIMPLES NACIONAL</option>
-                        <option value="Lucro Presumido">LUCRO PRESUMIDO</option>
-                        <option value="Lucro Real">LUCRO REAL</option>
+                        <option value="A DEFINIR">A DEFINIR</option>
+                        <option value="SIMPLES NACIONAL">SIMPLES NACIONAL</option>
+                        <option value="LUCRO PRESUMIDO">LUCRO PRESUMIDO</option>
+                        <option value="LUCRO REAL">LUCRO REAL</option>
                       </select>
                     </div>
                   </div>
@@ -5183,9 +5266,13 @@ const Clientes: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Código SCI</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Cadastro</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Atualização</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Regime</th>
                 {ordenacaoClientes === 'beneficio-fiscal' && (
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Benefício Fiscal</th>
+                )}
+                {ordenacaoClientes === 'itens-faltantes' && (
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Itens Faltantes</th>
                 )}
                 {socioFiltro && (
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Participação</th>
@@ -5221,12 +5308,19 @@ const Clientes: React.FC = () => {
                     const bf = String((c as any).beneficios_fiscais ?? '').trim();
                     return bf.length > 0;
                   }
+                  if (ordenacaoClientes === 'sem-reg-trib') {
+                    const rt = String((c as any).regime_tributario ?? '').trim();
+                    return !rt || rt === '-' || rt === '—';
+                  }
+                  if (ordenacaoClientes === 'itens-faltantes') {
+                    return getItensFaltantes(c).length > 0;
+                  }
                   return true;
                 });
 
                 return clientesOrdenados.length === 0 ? (
                   <tr>
-                    <td colSpan={6 + (socioFiltro ? 1 : 0) + (ordenacaoClientes === 'beneficio-fiscal' ? 1 : 0)} className="px-6 py-12 text-center">
+                    <td colSpan={7 + (socioFiltro ? 1 : 0) + (ordenacaoClientes === 'beneficio-fiscal' ? 1 : 0) + (ordenacaoClientes === 'itens-faltantes' ? 1 : 0)} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <UserGroupIcon className="h-12 w-12 text-gray-400" />
                         <p className="text-gray-500 font-medium">Nenhum cliente encontrado</p>
@@ -5296,6 +5390,20 @@ const Clientes: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4">
+                        <span
+                          className="text-xs text-gray-500"
+                          title={
+                            (cliente as any).receita_ws_consulta_em
+                              ? `Última sincronização ReceitaWS: ${new Date((cliente as any).receita_ws_consulta_em).toLocaleString('pt-BR')}`
+                              : undefined
+                          }
+                        >
+                          {cliente.updatedAt
+                            ? new Date(cliente.updatedAt).toLocaleDateString('pt-BR')
+                            : '—'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
                         <span className="text-xs text-gray-600 uppercase">
                           {(cliente as any).regime_tributario || '—'}
                         </span>
@@ -5313,6 +5421,24 @@ const Clientes: React.FC = () => {
                           ) : (
                             <span className="text-sm text-gray-400">—</span>
                           )}
+                        </td>
+                      )}
+                      {ordenacaoClientes === 'itens-faltantes' && (
+                        <td className="px-6 py-4">
+                          {(() => {
+                            const faltantes = getItensFaltantes(cliente);
+                            return faltantes.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {faltantes.map((item, i) => (
+                                  <span key={i} className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-medium">
+                                    {item}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            );
+                          })()}
                         </td>
                       )}
                       {socioFiltro && (
@@ -7225,6 +7351,14 @@ const Clientes: React.FC = () => {
                               </p>
                             </>
                           )}
+                          {cliente.receita_ws_ultima_atualizacao && (
+                            <>
+                              <span className="text-gray-400">•</span>
+                              <p className="text-xs text-gray-400" title={`Última atualização: ${new Date(cliente.receita_ws_ultima_atualizacao).toLocaleString('pt-BR')}`}>
+                                Atualizado em {new Date(cliente.receita_ws_ultima_atualizacao).toLocaleDateString('pt-BR')}
+                              </p>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -7872,8 +8006,8 @@ const Clientes: React.FC = () => {
                     className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm hover:border-gray-400 uppercase"
                   >
                     <option value="">SELECIONE UMA OPÇÃO...</option>
-                    <option value="Lucro Presumido">LUCRO PRESUMIDO</option>
-                    <option value="Lucro Real">LUCRO REAL</option>
+                    <option value="LUCRO PRESUMIDO">LUCRO PRESUMIDO</option>
+                    <option value="LUCRO REAL">LUCRO REAL</option>
                   </select>
                 </div>
 
@@ -8129,8 +8263,8 @@ const Clientes: React.FC = () => {
                           if (res.success) {
                             const d = res.data || {};
                             toast.success(`OneClick: ${d.novos || 0} novo(s), ${d.atualizados || 0} atualizado(s), ${d.erros || 0} erro(s)`, 8000);
-                            const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 500 : limit;
-                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' ? 1 : page, limit: paramLimit, search: debouncedSearch });
+                            const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
+                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch });
                           } else {
                             toast.error(res.error || 'Erro ao importar');
                           }
@@ -8140,6 +8274,7 @@ const Clientes: React.FC = () => {
                           setSincronizandoOneClick(false);
                           setShowOneClickModal(false);
                           setOneClickConfirm(false);
+                          refreshOneClickTunnel(); // o sync pode ter subido o túnel
                         }
                       }}
                       disabled={sincronizandoOneClick}

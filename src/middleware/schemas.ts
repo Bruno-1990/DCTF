@@ -40,11 +40,12 @@ export const clienteSchemas = {
         'any.only': 'Tipo de empresa deve ser: Matriz ou Filial',
       }),
     regime_tributario: Joi.string()
-      .valid('Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'A Definir')
+      .uppercase()
+      .valid('SIMPLES NACIONAL', 'LUCRO PRESUMIDO', 'LUCRO REAL', 'A DEFINIR')
       .optional()
       .allow('', null)
       .messages({
-        'any.only': 'Regime tributário deve ser: Simples Nacional, Lucro Presumido, Lucro Real ou A Definir',
+        'any.only': 'Regime tributário deve ser: SIMPLES NACIONAL, LUCRO PRESUMIDO, LUCRO REAL ou A DEFINIR',
       }),
   }).unknown(true),
 
@@ -70,11 +71,12 @@ export const clienteSchemas = {
         'any.only': 'Tipo de empresa deve ser: Matriz ou Filial',
       }),
     regime_tributario: Joi.string()
-      .valid('Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'A Definir')
+      .uppercase()
+      .valid('SIMPLES NACIONAL', 'LUCRO PRESUMIDO', 'LUCRO REAL', 'A DEFINIR')
       .optional()
       .allow('', null)
       .messages({
-        'any.only': 'Regime tributário deve ser: Simples Nacional, Lucro Presumido, Lucro Real ou A Definir',
+        'any.only': 'Regime tributário deve ser: SIMPLES NACIONAL, LUCRO PRESUMIDO, LUCRO REAL ou A DEFINIR',
       }),
   }).unknown(true),
 

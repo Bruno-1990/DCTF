@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { clientesService } from '../../services/clientes';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import Alert from '../UI/Alert';
-import { ChevronDownIcon, ChevronUpIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import type { EBEFParent, EBEFProgress } from '../../types';
 
 /** Formata CNPJ de 14 dígitos para XX.XXX.XXX/XXXX-XX */
@@ -21,6 +21,8 @@ export default function EBEFTab() {
   const [progress, setProgress] = useState<EBEFProgress | null>(null);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [envioSavingId, setEnvioSavingId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Carregar dados ──
@@ -85,6 +87,18 @@ export default function EBEFTab() {
     }
   };
 
+  // ── Exportar XLSX ──
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      await clientesService.exportarEBEFXlsx();
+    } catch (err: any) {
+      setError(err.message || 'Erro ao exportar XLSX');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // ── Retry individual ──
   const handleRetry = async (consultaId: string) => {
     try {
@@ -97,6 +111,62 @@ export default function EBEFTab() {
     } finally {
       setRetryingId(null);
     }
+  };
+
+  // ── Toggle envio do e-BEF (controle manual do usuário) ──
+  const handleToggleEnvio = async (clienteId: string, novoValor: boolean) => {
+    const anterior = data.find(p => p.id === clienteId);
+    // Atualização otimista
+    setData(prev => prev.map(p =>
+      p.id === clienteId
+        ? {
+            ...p,
+            ebef_enviado: novoValor,
+            ebef_enviado_em: novoValor ? new Date().toISOString() : null,
+          }
+        : p
+    ));
+    try {
+      setEnvioSavingId(clienteId);
+      const res = await clientesService.atualizarEnvioEBEF(clienteId, novoValor);
+      if (res.success) {
+        // Sincroniza data exata vinda do servidor
+        setData(prev => prev.map(p =>
+          p.id === clienteId
+            ? {
+                ...p,
+                ebef_enviado: res.data.ebef_enviado,
+                ebef_enviado_em: res.data.ebef_enviado_em,
+              }
+            : p
+        ));
+      } else {
+        // Reverte
+        setData(prev => prev.map(p =>
+          p.id === clienteId && anterior
+            ? { ...p, ebef_enviado: anterior.ebef_enviado, ebef_enviado_em: anterior.ebef_enviado_em }
+            : p
+        ));
+        setError(res.error || 'Erro ao salvar envio do e-BEF');
+      }
+    } catch (err: any) {
+      setData(prev => prev.map(p =>
+        p.id === clienteId && anterior
+          ? { ...p, ebef_enviado: anterior.ebef_enviado, ebef_enviado_em: anterior.ebef_enviado_em }
+          : p
+      ));
+      setError(err.message || 'Erro ao salvar envio do e-BEF');
+    } finally {
+      setEnvioSavingId(null);
+    }
+  };
+
+  // ── Formata data para exibição ──
+  const formatDataEnvio = (iso: string | null): string => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
   };
 
   // ── Toggle accordion ──
@@ -134,6 +204,7 @@ export default function EBEFTab() {
   const totalConcluidos = data.reduce((acc, p) => acc + p.socios_pj.filter(s => s.consulta?.status === 'concluido').length, 0);
   const totalPendentes = data.reduce((acc, p) => acc + p.socios_pj.filter(s => !s.consulta || s.consulta.status === 'pendente').length, 0);
   const totalErros = data.reduce((acc, p) => acc + p.socios_pj.filter(s => s.consulta?.status === 'erro').length, 0);
+  const totalEnviados = data.filter(p => p.ebef_enviado).length;
 
   // ── Status badge ──
   const StatusBadge = ({ status }: { status?: string }) => {
@@ -172,18 +243,32 @@ export default function EBEFTab() {
               Identifica os CPFs por trás de sócios PJ (CNPJ) no quadro societário dos clientes.
             </p>
           </div>
-          <button
-            onClick={handleStartBatch}
-            disabled={batchRunning || batchStarting}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all duration-200 ${
-              batchRunning || batchStarting
-                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                : 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white hover:shadow-lg hover:scale-105'
-            }`}
-          >
-            <ArrowPathIcon className={`h-4 w-4 ${batchRunning ? 'animate-spin' : ''}`} />
-            {batchStarting ? 'Iniciando...' : batchRunning ? 'Consultando...' : 'Consultar Todos'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleExport}
+              disabled={exporting || data.length === 0}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all duration-200 ${
+                exporting || data.length === 0
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 hover:shadow'
+              }`}
+            >
+              <ArrowDownTrayIcon className={`h-4 w-4 ${exporting ? 'animate-pulse' : ''}`} />
+              {exporting ? 'Exportando...' : 'Exportar XLSX'}
+            </button>
+            <button
+              onClick={handleStartBatch}
+              disabled={batchRunning || batchStarting}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all duration-200 ${
+                batchRunning || batchStarting
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white hover:shadow-lg hover:scale-105'
+              }`}
+            >
+              <ArrowPathIcon className={`h-4 w-4 ${batchRunning ? 'animate-spin' : ''}`} />
+              {batchStarting ? 'Iniciando...' : batchRunning ? 'Consultando...' : 'Consultar Todos'}
+            </button>
+          </div>
         </div>
 
         {/* Barra de progresso */}
@@ -214,13 +299,14 @@ export default function EBEFTab() {
       )}
 
       {/* Cards de resumo */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         {[
           { label: 'Empresas Mãe', value: totalMaes, color: 'text-gray-700' },
           { label: 'CNPJs Filho', value: totalFilhos, color: 'text-indigo-600' },
           { label: 'Concluídos', value: totalConcluidos, color: 'text-green-600' },
           { label: 'Pendentes', value: totalPendentes, color: 'text-yellow-600' },
           { label: 'Erros', value: totalErros, color: 'text-red-600' },
+          { label: 'Enviados', value: totalEnviados, color: 'text-emerald-600' },
         ].map(card => (
           <div key={card.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{card.label}</p>
@@ -243,25 +329,57 @@ export default function EBEFTab() {
       {data.map(parent => (
         <div key={parent.id} className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden">
           {/* Cabeçalho da empresa mãe */}
-          <button
-            type="button"
-            onClick={() => toggleParent(parent.id)}
-            className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex items-center gap-4 text-left">
-              <div>
-                <p className="font-semibold text-gray-800">{parent.razao_social}</p>
+          <div className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors">
+            <button
+              type="button"
+              onClick={() => toggleParent(parent.id)}
+              className="flex items-center gap-4 text-left flex-1 min-w-0"
+            >
+              <div className="min-w-0">
+                <p className="font-semibold text-gray-800 truncate">{parent.razao_social}</p>
                 <p className="text-sm text-gray-500">{formatCNPJ(parent.cnpj_limpo)}</p>
               </div>
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
                 {parent.socios_pj.length} sócio(s) PJ
               </span>
-            </div>
-            {expandedParents.has(parent.id)
-              ? <ChevronUpIcon className="h-5 w-5 text-gray-400" />
-              : <ChevronDownIcon className="h-5 w-5 text-gray-400" />
-            }
-          </button>
+            </button>
+
+            {/* Controle de envio do e-BEF (clique não propaga para o accordion) */}
+            <label
+              className="inline-flex items-center gap-2 ml-4 cursor-pointer select-none"
+              onClick={(e) => e.stopPropagation()}
+              title={parent.ebef_enviado && parent.ebef_enviado_em
+                ? `Marcado em ${formatDataEnvio(parent.ebef_enviado_em)}`
+                : 'Marcar como enviado'}
+            >
+              <input
+                type="checkbox"
+                checked={!!parent.ebef_enviado}
+                disabled={envioSavingId === parent.id}
+                onChange={(e) => handleToggleEnvio(parent.id, e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
+              />
+              <span className={`text-xs font-medium ${parent.ebef_enviado ? 'text-emerald-700' : 'text-gray-500'}`}>
+                {parent.ebef_enviado
+                  ? (parent.ebef_enviado_em
+                      ? `Enviado em ${formatDataEnvio(parent.ebef_enviado_em)}`
+                      : 'Enviado')
+                  : 'Enviado?'}
+              </span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => toggleParent(parent.id)}
+              className="ml-3 p-1"
+              aria-label={expandedParents.has(parent.id) ? 'Recolher' : 'Expandir'}
+            >
+              {expandedParents.has(parent.id)
+                ? <ChevronUpIcon className="h-5 w-5 text-gray-400" />
+                : <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+              }
+            </button>
+          </div>
 
           {/* Conteúdo expandido */}
           {expandedParents.has(parent.id) && (
