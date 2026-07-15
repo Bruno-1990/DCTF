@@ -1,11 +1,32 @@
 name: CI
 
+# DESATIVADO EM 2026-07-15 — roda só sob demanda (aba Actions → Run workflow).
+#
+# Por quê: este CI nunca teve como passar. O job de backend executa `npm test`,
+# que inclui os testes de `tests/integration/**` — e eles precisam de um MySQL
+# que o runner do GitHub não tem (21 × ER_ACCESS_DENIED). Resultado: vermelho em
+# todo push há meses, o que treina todo mundo a ignorar o CI e faz ele não valer
+# nada como sinal.
+#
+# Desativado em vez de apagado: o trabalho aqui é aproveitável e religar é só
+# restaurar o gatilho abaixo.
+#
+# Para deixá-lo verde de verdade, 4 frentes (nesta ordem):
+#   1. jest.config.js: `uuid` v13 é ESM puro e o runtime do jest é CJS, então 11
+#      suítes nem parseiam ("Unexpected token 'export'"). A app não sofre porque
+#      o Node 22 faz require(ESM) nativo — só o jest quebra. Correção validada:
+#        transform: { '^.+\.js$': ['ts-jest', { tsconfig: { allowJs: true } }] }
+#        transformIgnorePatterns: ['/node_modules/(?!(uuid)/)']
+#   2. CI deve rodar só teste unitário (`--testPathIgnorePatterns=tests/integration`)
+#      ou subir um `services: mysql` no job.
+#   3. Passo "Build (backend)" roda `tsc` e falha com 15 erros de tipo em
+#      BancoHorasController, IrpfController e ReportPdfService. Erros reais,
+#      pré-existentes — note que "Type check" acima é continue-on-error e por
+#      isso os escondia.
+#   4. Frontend: `npm run lint` + 2 testes vermelhos (DCTFList, Home).
+
 on:
-  push:
-    branches:
-      - main
-      - master
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   backend:
