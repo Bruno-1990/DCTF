@@ -16,4 +16,7 @@ router.get('/invest/comparacao', (req, res) => controller.comparacaoInvest(req, 
 router.post('/invest/importar', beneficiosUploadMiddleware, (req, res) => controller.importarInvest(req, res));
 router.delete('/invest/limpar', (req, res) => controller.limparInvest(req, res));
 
+// Fonte da planilha no Portal da Transparência (compete | invest)
+router.get('/fonte/:programa', (req, res) => controller.fontePlanilha(req, res));
+
 export default router;

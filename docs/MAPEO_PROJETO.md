@@ -293,6 +293,14 @@ DCTF_MPC/
 1. **Frontend**: `frontend/src/types/index.ts`
 2. **Backend**: `src/types/index.ts`
 
+### **O botão "Baixar planilha" dos Benefícios parou de achar o arquivo**
+O link do CSV é resolvido no Portal da Transparência a cada carregamento (o id do
+arquivo muda todo mês). Quando o portal muda, a tela degrada para o link da
+página — não quebra.
+1. **Runbook + mapa das seções**: `docs/BENEFICIOS_FONTE_PLANILHA.md`
+2. **Service (raspagem)**: `src/services/FontePlanilhaService.ts`
+3. **Card na tela**: `frontend/src/components/Beneficios/FontePlanilha.tsx`
+
 ---
 
 ## 🔄 Fluxos Principais

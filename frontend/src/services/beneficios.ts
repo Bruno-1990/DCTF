@@ -12,6 +12,23 @@ export interface PaginatedResponse<T> {
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }
 
+export type ProgramaBeneficio = 'compete' | 'invest';
+
+/**
+ * Onde está a planilha vigente deste programa no Portal da Transparência.
+ * `arquivoUrl` vem null quando o portal não pôde ser lido — nesse caso sobra o
+ * `portalUrl`, e o motivo está em `erro`.
+ */
+export interface FontePlanilhaDto {
+  programa: ProgramaBeneficio;
+  secao: string;
+  descricao: string;
+  portalUrl: string;
+  arquivoUrl: string | null;
+  arquivoLabel: string | null;
+  erro: string | null;
+}
+
 export const beneficiosService = {
   // ─── Compete ───
   async listarCompete(page = 1, limit = 50, busca?: string): Promise<PaginatedResponse<any>> {
@@ -54,4 +71,10 @@ export const beneficiosService = {
     return r.data;
   },
   async limparInvest() { const r = await api.delete('/beneficios/invest/limpar'); return r.data; },
+
+  // ─── Fonte da planilha ───
+  async obterFonte(programa: ProgramaBeneficio): Promise<FontePlanilhaDto> {
+    const r = await api.get(`/beneficios/fonte/${programa}`);
+    return r.data;
+  },
 };

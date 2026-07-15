@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import { CloudArrowUpIcon, TrashIcon, MagnifyingGlassIcon, DocumentTextIcon, XMarkIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 import { beneficiosService } from '../services/beneficios';
 import type { ComparacaoItem, PaginatedResponse } from '../services/beneficios';
+import FontePlanilha from '../components/Beneficios/FontePlanilha';
 
 const formatDate = (value: string | null) => {
   if (!value) return '—';
@@ -24,6 +25,16 @@ const TABS: { id: TabId; label: string; gradient: string }[] = [
   { id: 'compete', label: 'Compete', gradient: 'from-blue-500 to-indigo-600 shadow-blue-500/30' },
   { id: 'invest', label: 'Invest', gradient: 'from-emerald-500 to-teal-600 shadow-emerald-500/30' },
 ];
+
+// Cada aba importa a lista de um programa diferente, publicada numa seção
+// diferente do Portal da Transparência do ES — daí a fonte ser por aba e não
+// um aviso único na página.
+// O backend confirma seção/descrição ao resolver o arquivo; isto é só o que
+// aparece enquanto ele não respondeu (ou se o portal estiver fora).
+const FONTES: Record<TabId, { programa: TabId; secao: string; descricao: string }> = {
+  compete: { programa: 'compete', secao: '04', descricao: 'Lista de Beneficiários do programa Compete' },
+  invest: { programa: 'invest', secao: '05', descricao: 'Lista de Beneficiários do programa Invest' },
+};
 
 // ─── Colunas de exibição por aba ───
 
@@ -102,6 +113,7 @@ const Beneficios: React.FC = () => {
           comparar={beneficiosService.comparacaoCompete}
           limpar={beneficiosService.limparCompete}
           accentColor="blue"
+          fonte={FONTES.compete}
         />
       </div>
       <div className={activeTab === 'invest' ? '' : 'hidden'}>
@@ -112,6 +124,7 @@ const Beneficios: React.FC = () => {
           comparar={beneficiosService.comparacaoInvest}
           limpar={beneficiosService.limparInvest}
           accentColor="emerald"
+          fonte={FONTES.invest}
         />
       </div>
     </div>
@@ -127,9 +140,10 @@ interface BeneficioTabProps {
   comparar: (page: number, limit: number, busca?: string) => Promise<PaginatedResponse<ComparacaoItem>>;
   limpar: () => Promise<any>;
   accentColor: 'blue' | 'emerald';
+  fonte: { programa: TabId; secao: string; descricao: string };
 }
 
-const BeneficioTab: React.FC<BeneficioTabProps> = ({ columns, importar, listar, comparar, limpar, accentColor }) => {
+const BeneficioTab: React.FC<BeneficioTabProps> = ({ columns, importar, listar, comparar, limpar, accentColor, fonte }) => {
   const [data, setData] = useState<any[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
   const [loading, setLoading] = useState(false);
@@ -225,6 +239,9 @@ const BeneficioTab: React.FC<BeneficioTabProps> = ({ columns, importar, listar, 
           {message.text}
         </div>
       )}
+
+      {/* Onde baixar a planilha — vem antes do dropzone porque baixar precede importar */}
+      <FontePlanilha programa={fonte.programa} secao={fonte.secao} descricao={fonte.descricao} accentColor={accentColor} />
 
       {/* Dropzone */}
       <div onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}

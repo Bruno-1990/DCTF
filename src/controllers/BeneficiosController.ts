@@ -6,6 +6,7 @@ import { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { BeneficiosService } from '../services/BeneficiosService';
+import { FontePlanilhaService } from '../services/FontePlanilhaService';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -22,6 +23,7 @@ export const beneficiosUploadMiddleware = upload.single('arquivo');
 
 export class BeneficiosController {
   private service = new BeneficiosService();
+  private fonteService = new FontePlanilhaService();
 
   // ─── Compete ───
 
@@ -113,5 +115,26 @@ export class BeneficiosController {
     } catch (error: any) {
       res.status(500).json({ error: error?.message || 'Erro interno' });
     }
+  }
+
+  // ─── Fonte da planilha (Portal da Transparência) ───
+
+  /**
+   * Responde 200 mesmo quando o portal falha: o corpo traz `arquivoUrl: null` +
+   * `erro`, e o frontend degrada para o link da página. Um portal fora do ar
+   * não é erro desta API nem pode quebrar a tela de importação.
+   */
+  async fontePlanilha(req: Request, res: Response): Promise<void> {
+    const programa = String(req.params['programa'] || '').toLowerCase();
+    if (programa !== 'compete' && programa !== 'invest') {
+      res.status(400).json({ error: "Programa inválido. Use 'compete' ou 'invest'." });
+      return;
+    }
+
+    const fonte = await this.fonteService.obter(programa);
+    if (fonte.erro) {
+      console.warn(`[BENEFICIOS] Fonte ${programa} não resolvida: ${fonte.erro}`);
+    }
+    res.json(fonte);
   }
 }
