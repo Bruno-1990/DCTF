@@ -85,6 +85,7 @@ Estas tabelas **têm código implementado** e são usadas pelo sistema:
 | `dctf_receita_codes` | `DCTFCode.ts` | `src/models/DCTFCode.ts` | ✅ **IMPLEMENTADO** |
 | `dctf_aliquotas` | `DCTFCode.ts` | `src/models/DCTFCode.ts` | ✅ **IMPLEMENTADO** |
 | `beneficios` | `BeneficioTipo.ts` | `src/models/BeneficioTipo.ts` | ✅ **IMPLEMENTADO** — tabela mestra de tipos de benefício fiscal ([doc](./BENEFICIOS_TABELA_MESTRA.md)) |
+| `reoa_faturamento` | `SubstitutoService.ts` | `src/services/SubstitutoService.ts` | ✅ **IMPLEMENTADO** — faturamento real do SCI (Quadro 1) da conferência REOA ([doc](./REOA_CONFERENCIA.md)) |
 
 ### **⚠️ Importante: Tabelas no Supabase**
 

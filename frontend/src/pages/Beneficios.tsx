@@ -3,6 +3,7 @@ import { CloudArrowUpIcon, TrashIcon, MagnifyingGlassIcon, DocumentTextIcon, XMa
 import { beneficiosService } from '../services/beneficios';
 import type { ComparacaoItem, PaginatedResponse } from '../services/beneficios';
 import FontePlanilha from '../components/Beneficios/FontePlanilha';
+import ReoaTab from '../components/Beneficios/ReoaTab';
 
 const formatDate = (value: string | null) => {
   if (!value) return '—';
@@ -19,11 +20,12 @@ const formatCnpj = (cnpj: string) => {
 
 const ACCEPTED_EXTENSIONS = ['.csv', '.xls', '.xlsx'];
 
-type TabId = 'compete' | 'invest';
+type TabId = 'compete' | 'invest' | 'reoa';
 
 const TABS: { id: TabId; label: string; gradient: string }[] = [
   { id: 'compete', label: 'Compete', gradient: 'from-blue-500 to-indigo-600 shadow-blue-500/30' },
   { id: 'invest', label: 'Invest', gradient: 'from-emerald-500 to-teal-600 shadow-emerald-500/30' },
+  { id: 'reoa', label: 'REOA', gradient: 'from-rose-500 to-pink-600 shadow-rose-500/30' },
 ];
 
 // Cada aba importa a lista de um programa diferente, publicada numa seção
@@ -31,7 +33,7 @@ const TABS: { id: TabId; label: string; gradient: string }[] = [
 // um aviso único na página.
 // O backend confirma seção/descrição ao resolver o arquivo; isto é só o que
 // aparece enquanto ele não respondeu (ou se o portal estiver fora).
-const FONTES: Record<TabId, { programa: TabId; secao: string; descricao: string }> = {
+const FONTES: Record<'compete' | 'invest', { programa: 'compete' | 'invest'; secao: string; descricao: string }> = {
   compete: { programa: 'compete', secao: '04', descricao: 'Lista de Beneficiários do programa Compete' },
   invest: { programa: 'invest', secao: '05', descricao: 'Lista de Beneficiários do programa Invest' },
 };
@@ -127,6 +129,9 @@ const Beneficios: React.FC = () => {
           fonte={FONTES.invest}
         />
       </div>
+      <div className={activeTab === 'reoa' ? '' : 'hidden'}>
+        <ReoaTab />
+      </div>
     </div>
   );
 };
@@ -140,7 +145,7 @@ interface BeneficioTabProps {
   comparar: (page: number, limit: number, busca?: string) => Promise<PaginatedResponse<ComparacaoItem>>;
   limpar: () => Promise<any>;
   accentColor: 'blue' | 'emerald';
-  fonte: { programa: TabId; secao: string; descricao: string };
+  fonte: { programa: 'compete' | 'invest'; secao: string; descricao: string };
 }
 
 const BeneficioTab: React.FC<BeneficioTabProps> = ({ columns, importar, listar, comparar, limpar, accentColor, fonte }) => {

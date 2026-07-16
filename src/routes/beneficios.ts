@@ -20,6 +20,11 @@ router.delete('/invest/limpar', (req, res) => controller.limparInvest(req, res))
 router.get('/tipos', (req, res) => controller.listarTipos(req, res));
 router.post('/tipos', (req, res) => controller.criarTipo(req, res));
 
+// REOA — conferência de faturamento do grupo SUBSTITUTO
+router.get('/substituto/conferencia', (req, res) => controller.conferenciaSubstituto(req, res));
+router.get('/substituto/faturamento/:clienteId', (req, res) => controller.faturamentoAoVivoSubstituto(req, res));
+router.post('/substituto/aviso', (req, res) => controller.enviarAvisoSubstituto(req, res));
+
 // Fonte da planilha no Portal da Transparência (compete | invest)
 router.get('/fonte/:programa', (req, res) => controller.fontePlanilha(req, res));
 

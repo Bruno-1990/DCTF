@@ -7,6 +7,7 @@ import multer from 'multer';
 import path from 'path';
 import { BeneficiosService } from '../services/BeneficiosService';
 import { FontePlanilhaService } from '../services/FontePlanilhaService';
+import { SubstitutoService } from '../services/SubstitutoService';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -24,6 +25,7 @@ export const beneficiosUploadMiddleware = upload.single('arquivo');
 export class BeneficiosController {
   private service = new BeneficiosService();
   private fonteService = new FontePlanilhaService();
+  private substitutoService = new SubstitutoService();
 
   // ─── Compete ───
 
@@ -139,6 +141,47 @@ export class BeneficiosController {
     } catch (error: any) {
       console.error('[BENEFICIOS] Erro criarTipo:', error);
       res.status(500).json({ success: false, error: error?.message || 'Erro interno' });
+    }
+  }
+
+  // ─── REOA / Substituto (conferência de faturamento) ───
+
+  async conferenciaSubstituto(_req: Request, res: Response): Promise<void> {
+    try {
+      res.json(await this.substitutoService.conferencia());
+    } catch (error: any) {
+      console.error('[BENEFICIOS] Erro conferenciaSubstituto:', error);
+      res.status(500).json({ success: false, error: error?.message || 'Erro interno' });
+    }
+  }
+
+  // Envia e-mail com a lista de clientes NÃO OK do grupo SUBSTITUTO.
+  async enviarAvisoSubstituto(req: Request, res: Response): Promise<void> {
+    try {
+      const body = req.body || {};
+      const destinatarios = Array.isArray(body.destinatarios)
+        ? body.destinatarios
+        : typeof body.destinatarios === 'string'
+          ? String(body.destinatarios).split(',')
+          : undefined;
+      res.json(await this.substitutoService.enviarAviso(destinatarios));
+    } catch (error: any) {
+      console.error('[BENEFICIOS] Erro enviarAvisoSubstituto:', error);
+      const status = error?.status === 400 ? 400 : 500;
+      res.status(status).json({ success: false, error: error?.message || 'Erro ao enviar o aviso' });
+    }
+  }
+
+  // Faturamento AO VIVO do SCI (Quadro 1) para 1 cliente — sob demanda.
+  async faturamentoAoVivoSubstituto(req: Request, res: Response): Promise<void> {
+    try {
+      const clienteId = String(req.params['clienteId'] || '');
+      if (!clienteId) { res.status(400).json({ success: false, error: 'clienteId é obrigatório.' }); return; }
+      res.json(await this.substitutoService.faturamentoAoVivo(clienteId));
+    } catch (error: any) {
+      console.error('[BENEFICIOS] Erro faturamentoAoVivoSubstituto:', error);
+      const status = error?.status === 404 ? 404 : 500;
+      res.status(status).json({ success: false, error: error?.message || 'Erro ao consultar o SCI' });
     }
   }
 
