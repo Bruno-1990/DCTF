@@ -32,6 +32,7 @@ import AcessoTab from '../components/Clientes/AcessoTab';
 import EBEFTab from '../components/Clientes/EBEFTab';
 import ExportClientesModal from '../components/Clientes/ExportClientesModal';
 import { clientesService } from '../services';
+import { beneficiosService } from '../services/beneficios';
 import { useToast } from '../hooks/useToast';
 import { irpfService, type FaturamentoAnual, type FaturamentoPorEmpresa } from '../services/irpf';
 import { CurrencyDollarIcon, CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
@@ -431,9 +432,31 @@ const Clientes: React.FC = () => {
   const [showModalResultado, setShowModalResultado] = useState(false);
   const [loadingParticipacao, setLoadingParticipacao] = useState(false);
   const [searchParticipacao, setSearchParticipacao] = useState('');
-  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente' | 'e-bef'>('a-z');
+  const [ordenacaoParticipacao, setOrdenacaoParticipacao] = useState<'a-z' | 'cnpj' | 'codigo-sci' | 'faltantes' | 'sem-registro' | 'capital-zerado' | 'divergente' | 'e-bef' | 'socios-sem-doc'>('a-z');
   const [ordenacaoClientes, setOrdenacaoClientes] = useState<'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal' | 'sem-reg-trib' | 'itens-faltantes'>('a-z');
+  // Filtro secundário por tipo de benefício (só na aba "Benefício Fiscal"). 'todos' = sem filtro.
+  const [filtroTipoBeneficio, setFiltroTipoBeneficio] = useState<string>('todos');
+  // Texto do input de "adicionar benefício" no painel de detalhes do cliente.
+  const [novoBeneficioInput, setNovoBeneficioInput] = useState('');
   const [showScrollToTop, setShowScrollToTop] = useState(false);
+
+  // Lista mestra de tipos de benefício fiscal (MAIÚSCULO, ordenado), carregada do backend.
+  // Usada no dropdown de filtro por tipo e nas sugestões (datalist) ao adicionar benefício.
+  const [tiposBeneficioDistintos, setTiposBeneficioDistintos] = useState<string[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const tipos = await beneficiosService.listarTipos();
+        const nomes = tipos
+          .map((d) => String(d.nome ?? '').toUpperCase())
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        setTiposBeneficioDistintos(nomes);
+      } catch (err: any) {
+        toast.error(err?.response?.data?.error ?? err?.message ?? 'Erro ao carregar tipos de benefício.');
+      }
+    })();
+  }, []);
   // const [clienteParticipacao, setClienteParticipacao] = useState<Cliente | null>(null); // Removido - usando clientesParticipacao
   // const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'with' | 'without'>('all'); // Não utilizado no momento
   const [successMessage, setSuccessMessage] = useState<string>('');
@@ -1279,6 +1302,15 @@ const Clientes: React.FC = () => {
           return socios.some(s => {
             const doc = (s.cpf || '').replace(/\D/g, '');
             return doc.length === 14; // CNPJ tem 14 dígitos
+          });
+        } else if (ordenacaoParticipacao === 'socios-sem-doc') {
+          // Empresas com ao menos um sócio SEM CPF/CNPJ preenchido
+          // (para gerar a Situação Fiscal e atualizar o documento do sócio)
+          const socios = c.socios || [];
+          if (socios.length === 0) return false;
+          return socios.some(s => {
+            const doc = (s.cpf || '').replace(/\D/g, '');
+            return doc.length !== 11 && doc.length !== 14; // nem CPF nem CNPJ
           });
         }
         return true;
@@ -4268,21 +4300,129 @@ const Clientes: React.FC = () => {
                         );
                       })()}
                     </div>
-                    <div className="group">
+                    <div className="group md:col-span-2">
                       <label className="block text-xs font-medium text-slate-500 mb-1">Benefícios Fiscais</label>
-                      <div className="px-3 py-2 rounded-lg bg-slate-50 text-slate-800 text-sm min-h-[38px] flex items-center">
-                        {(visualizandoCliente as any).beneficios_fiscais ? (
-                          <div className="flex flex-wrap gap-1">
-                            {(visualizandoCliente as any).beneficios_fiscais.split(',').map((b: string, i: number) => (
-                              <span key={i} className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium uppercase">
-                                {b.trim()}
-                              </span>
-                            ))}
+                      {(() => {
+                        const raw = String((visualizandoCliente as any).beneficios_fiscais ?? '').trim();
+                        const lista = raw ? raw.split(',').map(b => b.trim()).filter(Boolean) : [];
+                        const salvar = async (novaLista: string[]) => {
+                          if (!visualizandoCliente?.id) return;
+                          const valor = novaLista.length ? novaLista.join(', ') : null;
+                          try {
+                            await updateClienteById(visualizandoCliente.id, { beneficios_fiscais: valor } as Partial<Cliente>);
+                            setVisualizandoCliente(prev => prev ? { ...prev, beneficios_fiscais: valor } as Cliente : null);
+                            toast.success('Benefícios fiscais atualizados.');
+                          } catch (err: any) {
+                            toast.error(err?.response?.data?.error ?? err?.message ?? 'Erro ao salvar.');
+                          }
+                        };
+                        // Adiciona um tipo já existente (clicado na lista) — sem risco de digitação errada.
+                        const adicionarTipo = (tipo: string) => {
+                          const novo = tipo.trim().toUpperCase();
+                          if (!novo || lista.map(b => b.toUpperCase()).includes(novo)) return;
+                          salvar([...lista, novo]);
+                        };
+                        // Adiciona um benefício digitado no input (para tipos novos que ainda não existem).
+                        const adicionar = async () => {
+                          const novo = novoBeneficioInput.trim().toUpperCase();
+                          if (!novo) return;
+                          if (lista.map(b => b.toUpperCase()).includes(novo)) {
+                            toast.warning('Este benefício já está cadastrado.');
+                            return;
+                          }
+                          setNovoBeneficioInput('');
+                          // Persiste o tipo na tabela mestra (upsert). Se falhar, ainda salva no cliente.
+                          try {
+                            await beneficiosService.criarTipo(novo);
+                          } catch (err: any) {
+                            toast.error(err?.response?.data?.error ?? err?.message ?? 'Erro ao registrar o tipo de benefício.');
+                          }
+                          // Reflete na lista mestra local para aparecer imediatamente nas sugestões.
+                          if (!tiposBeneficioDistintos.includes(novo)) {
+                            setTiposBeneficioDistintos(prev => [...prev, novo].sort((a, b) => a.localeCompare(b, 'pt-BR')));
+                          }
+                          salvar([...lista, novo]);
+                        };
+                        const remover = (idx: number) => salvar(lista.filter((_, i) => i !== idx));
+                        // Sugestões (autocomplete): tipos existentes que este cliente ainda não possui,
+                        // filtrados pelo texto digitado no input. Input vazio → mostra todos os disponíveis.
+                        const termo = novoBeneficioInput.trim().toUpperCase();
+                        const jaTem = lista.map(b => b.toUpperCase());
+                        const disponiveis = tiposBeneficioDistintos.filter(
+                          t => !jaTem.includes(t) && (termo === '' || t.includes(termo))
+                        );
+                        // Se o texto digitado já corresponde exatamente a um tipo existente, não precisa do botão "criar novo".
+                        const termoJaExiste = termo !== '' && tiposBeneficioDistintos.includes(termo);
+                        return (
+                          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 space-y-2">
+                            <div className="flex flex-wrap gap-1 min-h-[24px] items-center">
+                              {lista.length > 0 ? lista.map((b, i) => (
+                                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium uppercase">
+                                  {b}
+                                  <button
+                                    type="button"
+                                    onClick={() => remover(i)}
+                                    className="text-emerald-600 hover:text-red-600 transition-colors"
+                                    title="Remover benefício"
+                                  >
+                                    <XMarkIcon className="h-3 w-3" />
+                                  </button>
+                                </span>
+                              )) : (
+                                <span className="text-gray-400 text-xs">Nenhum benefício cadastrado</span>
+                              )}
+                            </div>
+
+                            {/* Campo de busca/adição — digitar filtra as sugestões abaixo (autocomplete) */}
+                            <div className="flex gap-1 pt-1 border-t border-slate-200">
+                              <input
+                                value={novoBeneficioInput}
+                                onChange={(e) => setNovoBeneficioInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); adicionar(); } }}
+                                placeholder="Digite para buscar ou cadastrar um benefício..."
+                                className="flex-1 min-w-0 px-2 py-1 rounded border border-slate-200 bg-white text-slate-800 text-xs uppercase focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={adicionar}
+                                disabled={termo === ''}
+                                className="px-3 py-1 bg-emerald-600 text-white rounded text-xs font-medium hover:bg-emerald-700 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                Adicionar
+                              </button>
+                            </div>
+
+                            {/* Sugestões clicáveis (evita erro de digitação). Filtram conforme o texto digitado. */}
+                            {disponiveis.length > 0 ? (
+                              <div>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                                  {termo === '' ? 'Clique para adicionar' : 'Sugestões'}
+                                </p>
+                                <div className="flex flex-wrap gap-1">
+                                  {disponiveis.map((t) => (
+                                    <button
+                                      key={t}
+                                      type="button"
+                                      onClick={() => { adicionarTipo(t); setNovoBeneficioInput(''); }}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-emerald-300 text-emerald-700 rounded text-xs font-medium uppercase hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-colors"
+                                      title={`Adicionar ${t}`}
+                                    >
+                                      <PlusIcon className="h-3 w-3" />
+                                      {t}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              termo !== '' && !termoJaExiste && (
+                                <p className="text-[10px] text-slate-400">
+                                  Nenhum benefício existente com "{termo}". Clique em <span className="font-semibold text-emerald-600">Adicionar</span> para cadastrar como novo.
+                                </p>
+                              )
+                            )}
                           </div>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -4359,8 +4499,8 @@ const Clientes: React.FC = () => {
       {/* Barra de Busca e Ações - Não exibir nas abas e-BEF, CNAE e Acesso, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
       {activeTab !== 'e-bef' && activeTab !== 'cnae' && activeTab !== 'acesso' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-          <div className={`flex-1 ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
+        <div className="flex flex-col md:flex-row md:flex-wrap gap-4 items-start md:items-center justify-between">
+          <div className={`flex-1 min-w-[260px] ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Buscar Cliente</label>
             <div className="relative group">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
@@ -4446,7 +4586,12 @@ const Clientes: React.FC = () => {
               <div className="relative">
                 <select
                   value={ordenacaoClientes}
-                  onChange={(e) => setOrdenacaoClientes(e.target.value as 'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal' | 'sem-reg-trib' | 'itens-faltantes')}
+                  onChange={(e) => {
+                    const novaOrdenacao = e.target.value as 'a-z' | 'cnpj' | 'codigo-sci' | 'sem-cod-sci' | 'beneficio-fiscal' | 'sem-reg-trib' | 'itens-faltantes';
+                    setOrdenacaoClientes(novaOrdenacao);
+                    // Ao sair do modo "Benefício Fiscal", zera o filtro por tipo.
+                    if (novaOrdenacao !== 'beneficio-fiscal') setFiltroTipoBeneficio('todos');
+                  }}
                   className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
                 >
                   <option value="a-z">A → Z</option>
@@ -4459,6 +4604,32 @@ const Clientes: React.FC = () => {
                 </select>
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FunnelIcon className="h-5 w-5 text-blue-500" />
+                </div>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                </div>
+              </div>
+            </div>
+          )}
+          {activeTab === 'clientes' && ordenacaoClientes === 'beneficio-fiscal' && (
+            <div className="w-full md:w-64">
+              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <FunnelIcon className="h-4 w-4 text-emerald-600" />
+                Tipo de Benefício
+              </label>
+              <div className="relative">
+                <select
+                  value={filtroTipoBeneficio}
+                  onChange={(e) => setFiltroTipoBeneficio(e.target.value)}
+                  className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-emerald-300 uppercase"
+                >
+                  <option value="todos">TODOS</option>
+                  {tiposBeneficioDistintos.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <FunnelIcon className="h-5 w-5 text-emerald-500" />
                 </div>
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                   <ChevronDownIcon className="h-5 w-5 text-gray-400" />
@@ -4487,6 +4658,7 @@ const Clientes: React.FC = () => {
                     <option value="capital-zerado">Capital Social Zerado</option>
                     <option value="divergente">Divergente</option>
                     <option value="e-bef">e-BEF</option>
+                    <option value="socios-sem-doc">Sócios Sem CPF/CNPJ</option>
                   </select>
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <FunnelIcon className="h-5 w-5 text-amber-500" />
@@ -5306,7 +5478,12 @@ const Clientes: React.FC = () => {
                   }
                   if (ordenacaoClientes === 'beneficio-fiscal') {
                     const bf = String((c as any).beneficios_fiscais ?? '').trim();
-                    return bf.length > 0;
+                    if (bf.length === 0) return false;
+                    if (filtroTipoBeneficio !== 'todos') {
+                      const tipos = bf.split(',').map(t => t.trim().toUpperCase());
+                      return tipos.includes(filtroTipoBeneficio);
+                    }
+                    return true;
                   }
                   if (ordenacaoClientes === 'sem-reg-trib') {
                     const rt = String((c as any).regime_tributario ?? '').trim();
@@ -7209,6 +7386,15 @@ const Clientes: React.FC = () => {
                   return socios.some(s => {
                     const doc = (s.cpf || '').replace(/\D/g, '');
                     return doc.length === 14; // CNPJ tem 14 dígitos
+                  });
+                } else if (ordenacaoParticipacao === 'socios-sem-doc') {
+                  // Empresas com ao menos um sócio SEM CPF/CNPJ preenchido
+                  // (para gerar a Situação Fiscal e atualizar o documento do sócio)
+                  const socios = c.socios || [];
+                  if (socios.length === 0) return false;
+                  return socios.some(s => {
+                    const doc = (s.cpf || '').replace(/\D/g, '');
+                    return doc.length !== 11 && doc.length !== 14; // nem CPF nem CNPJ
                   });
                 }
                 return true; // Outros casos: sem filtro especial

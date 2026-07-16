@@ -84,6 +84,7 @@ Estas tabelas **têm código implementado** e são usadas pelo sistema:
 | `dctf_codes` | `DCTFCode.ts` | `src/models/DCTFCode.ts` | ✅ **IMPLEMENTADO** |
 | `dctf_receita_codes` | `DCTFCode.ts` | `src/models/DCTFCode.ts` | ✅ **IMPLEMENTADO** |
 | `dctf_aliquotas` | `DCTFCode.ts` | `src/models/DCTFCode.ts` | ✅ **IMPLEMENTADO** |
+| `beneficios` | `BeneficioTipo.ts` | `src/models/BeneficioTipo.ts` | ✅ **IMPLEMENTADO** — tabela mestra de tipos de benefício fiscal ([doc](./BENEFICIOS_TABELA_MESTRA.md)) |
 
 ### **⚠️ Importante: Tabelas no Supabase**
 

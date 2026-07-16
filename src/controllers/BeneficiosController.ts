@@ -117,6 +117,31 @@ export class BeneficiosController {
     }
   }
 
+  // ─── Tipos (tabela mestra de benefícios) ───
+
+  async listarTipos(_req: Request, res: Response): Promise<void> {
+    try {
+      res.json({ success: true, data: await this.service.listarTipos() });
+    } catch (error: any) {
+      console.error('[BENEFICIOS] Erro listarTipos:', error);
+      res.status(500).json({ success: false, error: error?.message || 'Erro interno' });
+    }
+  }
+
+  async criarTipo(req: Request, res: Response): Promise<void> {
+    try {
+      const nome = String(req.body?.nome ?? '').trim();
+      if (!nome) {
+        res.status(400).json({ success: false, error: 'Nome do benefício é obrigatório.' });
+        return;
+      }
+      res.json({ success: true, data: await this.service.criarTipo(nome) });
+    } catch (error: any) {
+      console.error('[BENEFICIOS] Erro criarTipo:', error);
+      res.status(500).json({ success: false, error: error?.message || 'Erro interno' });
+    }
+  }
+
   // ─── Fonte da planilha (Portal da Transparência) ───
 
   /**

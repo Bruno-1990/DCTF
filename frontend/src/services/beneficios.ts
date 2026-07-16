@@ -77,4 +77,14 @@ export const beneficiosService = {
     const r = await api.get(`/beneficios/fonte/${programa}`);
     return r.data;
   },
+
+  // ─── Tipos (lista mestra de benefícios fiscais) ───
+  async listarTipos(): Promise<{ id: number; nome: string }[]> {
+    const r = await api.get('/beneficios/tipos');
+    return r.data?.data ?? [];
+  },
+  async criarTipo(nome: string): Promise<{ id: number; nome: string }> {
+    const r = await api.post('/beneficios/tipos', { nome });
+    return r.data?.data;
+  },
 };

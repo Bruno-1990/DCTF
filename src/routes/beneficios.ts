@@ -16,6 +16,10 @@ router.get('/invest/comparacao', (req, res) => controller.comparacaoInvest(req, 
 router.post('/invest/importar', beneficiosUploadMiddleware, (req, res) => controller.importarInvest(req, res));
 router.delete('/invest/limpar', (req, res) => controller.limparInvest(req, res));
 
+// Tipos (tabela mestra de benefícios) — antes de qualquer rota com :param
+router.get('/tipos', (req, res) => controller.listarTipos(req, res));
+router.post('/tipos', (req, res) => controller.criarTipo(req, res));
+
 // Fonte da planilha no Portal da Transparência (compete | invest)
 router.get('/fonte/:programa', (req, res) => controller.fontePlanilha(req, res));
 

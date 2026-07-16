@@ -5,6 +5,7 @@
 import * as XLSX from 'xlsx';
 import { BeneficioCompete, IBeneficioCompete } from '../models/Beneficio';
 import { BeneficioInvest, IBeneficioInvest } from '../models/BeneficioInvest';
+import { BeneficioTipo } from '../models/BeneficioTipo';
 
 // ─── Helpers de data ───
 
@@ -119,6 +120,17 @@ const INVEST_DATE_FIELDS = new Set([
 export class BeneficiosService {
   private competeModel = new BeneficioCompete();
   private investModel = new BeneficioInvest();
+  private tipoModel = new BeneficioTipo();
+
+  // ─── Tipos (tabela mestra) ───
+
+  async listarTipos() {
+    return this.tipoModel.listar();
+  }
+
+  async criarTipo(nome: string) {
+    return this.tipoModel.upsert(nome);
+  }
 
   // ─── Compete ───
 
