@@ -1179,6 +1179,18 @@ export class ClienteController {
       }
 
       res.json(result);
+
+      // Auto-REOA: se o benefício SUBSTITUTO foi (re)definido neste update, puxa o
+      // faturamento do SCI em background e persiste em reoa_faturamento — assim o
+      // cliente já entra no REOA com dados reais. Fire-and-forget; o próprio
+      // serviço serializa as chamadas ao SCI (não trava a procedure).
+      const bf = (updates as any)?.beneficios_fiscais;
+      if (typeof bf === 'string' && bf.split(',').map(s => s.trim().toUpperCase()).includes('SUBSTITUTO')) {
+        import('../services/SubstitutoService')
+          .then(({ SubstitutoService }) => new SubstitutoService().faturamentoAoVivo(id))
+          .then(() => console.log(`[REOA] SCI puxado em background p/ cliente ${id} (SUBSTITUTO)`))
+          .catch(err => console.warn('[REOA] Falha ao puxar SCI em background:', err?.message || err));
+      }
     } catch (error) {
       res.status(500).json({
         success: false,

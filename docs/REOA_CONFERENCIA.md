@@ -27,11 +27,25 @@ A conferência REOA usa **PLANO=2, QUADRO=1 (consolidada), SOMA=0 (separa matriz
 
 ## Fluxo na tela
 - **Página**: grid de cards (um por cliente). Cada card = prévia rápida (cache) com mini-fita dos 12 meses (verde/vermelho/cinza) e badge de status.
+- **Busca** (razão social/CNPJ/SCI) + **filtro de status**: `Todos` (default), `Abaixo` (alerta), `OK` — filtra pelos dados efetivos (ao vivo quando já puxado).
 - **Abrir um card** → modal puxa o cliente **ao vivo do SCI** (Quadro 1), mostra os 12 meses reais, e **persiste** em `reoa_faturamento`.
 - Depois de puxado, o card passa a mostrar o dado real (**"● SCI ao vivo"**) e **sobrevive ao reload** (a conferência passa a lê-lo de `reoa_faturamento`). Reabrir não re-consulta o SCI (há botão para forçar).
 
+## Entrada automática no grupo (auto-pull do SCI)
+Quando um cliente **entra no grupo SUBSTITUTO**, o sistema puxa o faturamento do
+SCI em **background** (serializado) e persiste em `reoa_faturamento` — o cliente
+já aparece no REOA com dados reais, sem precisar abrir o card. Gatilhos:
+- **Painel de edição** (`PUT /api/clientes/:id`): quando `beneficios_fiscais` é
+  salvo contendo `SUBSTITUTO`, dispara `SubstitutoService.faturamentoAoVivo(id)`
+  (fire-and-forget) — `ClienteController.atualizarCliente`.
+- **Sincronização OneClick** (`Cliente.sincronizarComOneClick`): coleta os clientes
+  que entram (INSERT novo) ou passam a ter (UPDATE) `SUBSTITUTO` e puxa cada um em
+  sequência ao final da sync.
+A lista do REOA em si **sempre** foi dinâmica (a conferência filtra `clientes` por
+token SUBSTITUTO a cada request); o auto-pull garante que venham já **com os dados**.
+
 ## Aviso por e-mail
-Card na página (fora do modal): campo de destinatários (padrão `fiscal@` e `leg@ central-rnc.com.br`) + botão com confirmação. Envia a lista dos clientes **não-ok** (com algum mês abaixo), com os faturamentos por mês, **link da página** e disclaimer para copiar/colar o link. Não envia se estiver tudo ok. Usa `EmailService` (Gmail SMTP do `.env`).
+Card na página (fora do modal): destinatários em **tags** (Tab/Enter/vírgula fecham a tag e liberam o próximo; `×` remove; Backspace com campo vazio remove a última) — padrão `fiscal@` e `leg@ central-rnc.com.br` — + botão com confirmação. Envia a lista dos clientes **não-ok** (com algum mês abaixo), com os faturamentos por mês, **link da página** e disclaimer para copiar/colar o link. Não envia se estiver tudo ok. Usa `EmailService` (Gmail SMTP do `.env`).
 
 ## Endpoints (`/api/beneficios`)
 | Método | Path | Descrição |

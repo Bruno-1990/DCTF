@@ -2012,6 +2012,12 @@ export class Cliente extends DatabaseService<ICliente> {
       const clienteIdsOC = clientesOC.map(c => c.id);
       const beneficiosMap = await oneClick.buscarBeneficiosPorClienteIds(clienteIdsOC);
 
+      // Ids que entram/ficam com SUBSTITUTO nesta sync → puxar faturamento do SCI
+      // depois (auto-REOA). Token exato para não casar substring.
+      const reoaParaAtualizar = new Set<string>();
+      const temSubstituto = (s?: string | null) =>
+        typeof s === 'string' && s.split(',').map(x => x.trim().toUpperCase()).includes('SUBSTITUTO');
+
       for (const oc of clientesOC) {
         try {
           const cnpjLimpo = (oc.cad_cli_cnpj || '').replace(/\D/g, '');
@@ -2075,6 +2081,8 @@ export class Cliente extends DatabaseService<ICliente> {
               );
               resumo.atualizados++;
               resumo.detalhes.push({ cnpj: cnpjLimpo, razao: oc.cad_cli_razao, acao: 'atualizado', campos: Object.keys(updates) });
+              // Se acabou de preencher beneficios com SUBSTITUTO, entra no auto-REOA.
+              if (temSubstituto(updates.beneficios_fiscais)) reoaParaAtualizar.add((clienteLocal as any).id);
             } else {
               resumo.ignorados++;
             }
@@ -2099,11 +2107,30 @@ export class Cliente extends DatabaseService<ICliente> {
             );
             resumo.novos++;
             resumo.detalhes.push({ cnpj: cnpjLimpo, razao: oc.cad_cli_razao, acao: 'novo' });
+            // Cliente novo já com SUBSTITUTO → entra no auto-REOA.
+            if (temSubstituto(camposOC.beneficios_fiscais)) reoaParaAtualizar.add(id);
           }
         } catch (err: any) {
           resumo.erros++;
           resumo.detalhes.push({ cnpj: oc.cad_cli_cnpj, razao: oc.cad_cli_razao, acao: 'erro', erro: err?.message });
         }
+      }
+
+      // Auto-REOA: puxa o faturamento do SCI (Quadro 1) dos clientes que entraram
+      // no grupo SUBSTITUTO, em background e sequencialmente (o serviço serializa
+      // as chamadas ao SCI). Fire-and-forget — não bloqueia a resposta da sync.
+      if (reoaParaAtualizar.size > 0) {
+        const idsReoa = Array.from(reoaParaAtualizar);
+        import('../services/SubstitutoService')
+          .then(async ({ SubstitutoService }) => {
+            const svc = new SubstitutoService();
+            for (const cid of idsReoa) {
+              try { await svc.faturamentoAoVivo(cid); }
+              catch (e: any) { console.warn('[REOA] OneClick bg pull falhou', cid, e?.message || e); }
+            }
+            console.log(`[REOA] Auto-pull SCI concluído p/ ${idsReoa.length} cliente(s) SUBSTITUTO (OneClick)`);
+          })
+          .catch(err => console.warn('[REOA] Falha ao iniciar auto-pull OneClick:', err?.message || err));
       }
 
       return {

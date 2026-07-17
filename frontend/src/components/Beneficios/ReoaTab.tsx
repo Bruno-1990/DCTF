@@ -8,6 +8,8 @@ import {
   BuildingOfficeIcon,
   EnvelopeIcon,
   PaperAirplaneIcon,
+  FunnelIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { beneficiosService } from '../../services/beneficios';
 import type { ConferenciaSubstituto, SubstitutoCliente, SubstitutoEstabelecimento, FaturamentoAoVivoResp } from '../../services/beneficios';
@@ -78,6 +80,7 @@ const ReoaTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'ok' | 'abaixo'>('todos');
   const [selecionado, setSelecionado] = useState<SubstitutoCliente | null>(null);
   // Dados ao vivo do SCI já puxados nesta sessão (por cliente). Sobrepõem o cache
   // no card e no modal — assim, ao fechar o modal, os faturamentos reais permanecem.
@@ -85,16 +88,35 @@ const ReoaTab: React.FC = () => {
   const registrarLive = (cli: SubstitutoCliente) =>
     setLiveByCliente(prev => new Map(prev).set(cli.id, cli));
 
-  // Aviso por e-mail
-  const [destinatarios, setDestinatarios] = useState('fiscal@central-rnc.com.br, leg@central-rnc.com.br');
+  // Aviso por e-mail (destinatários como tags)
+  const [destinatariosTags, setDestinatariosTags] = useState<string[]>(['fiscal@central-rnc.com.br', 'leg@central-rnc.com.br']);
+  const [emailInput, setEmailInput] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [avisoMsg, setAvisoMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
 
+  const commitTag = () => {
+    const v = emailInput.trim().replace(/,+$/, '').trim();
+    if (!v) return;
+    setDestinatariosTags(prev => (prev.includes(v) ? prev : [...prev, v]));
+    setEmailInput('');
+  };
+  const onKeyDownEmail = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Tab' || e.key === 'Enter' || e.key === ',') {
+      if (emailInput.trim()) { e.preventDefault(); commitTag(); }
+    } else if (e.key === 'Backspace' && !emailInput && destinatariosTags.length) {
+      setDestinatariosTags(prev => prev.slice(0, -1));
+    }
+  };
+  const removerTag = (i: number) => setDestinatariosTags(prev => prev.filter((_, idx) => idx !== i));
+
   const enviarAviso = async () => {
     setEnviando(true); setAvisoMsg(null);
     try {
-      const lista = destinatarios.split(',').map(s => s.trim()).filter(Boolean);
+      // inclui um e-mail que ficou digitado sem virar tag
+      const lista = [...destinatariosTags];
+      const pend = emailInput.trim().replace(/,+$/, '').trim();
+      if (pend && !lista.includes(pend)) lista.push(pend);
       const resp = await beneficiosService.enviarAvisoSubstituto(lista);
       if (resp.success && resp.enviado) {
         setAvisoMsg({ tipo: 'ok', texto: `Aviso enviado (${resp.totalNaoOk} cliente(s)) para ${resp.destinatarios?.join(', ')}.` });
@@ -149,15 +171,25 @@ const ReoaTab: React.FC = () => {
 
   const clientesFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    const arr = data?.clientes ?? [];
-    if (!termo) return arr;
     const soDigitos = termo.replace(/\D/g, '');
-    return arr.filter(c =>
-      c.razao_social.toLowerCase().includes(termo) ||
-      (soDigitos && (c.cnpj || '').replace(/\D/g, '').includes(soDigitos)) ||
-      String(c.codigo_sci ?? '').includes(termo)
-    );
-  }, [data, busca]);
+    return (data?.clientes ?? []).filter(c => {
+      // Filtro por status (usa o dado efetivo: ao vivo se já puxado)
+      if (filtroStatus !== 'todos') {
+        const alerta = efetivo(c).temAlgumAbaixo;
+        if (filtroStatus === 'abaixo' && !alerta) return false;
+        if (filtroStatus === 'ok' && alerta) return false;
+      }
+      // Filtro por busca
+      if (termo) {
+        const bate = c.razao_social.toLowerCase().includes(termo)
+          || (!!soDigitos && (c.cnpj || '').replace(/\D/g, '').includes(soDigitos))
+          || String(c.codigo_sci ?? '').includes(termo);
+        if (!bate) return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, busca, filtroStatus, liveByCliente]);
 
   return (
     <div className="space-y-6">
@@ -211,14 +243,26 @@ const ReoaTab: React.FC = () => {
                 <p className="text-xs text-gray-500 mt-0.5">
                   Envia a lista dos <strong>{comAlerta}</strong> cliente(s) fora do limite (com faturamentos) e o link da página.
                 </p>
-                <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-center">
-                  <input
-                    type="text"
-                    value={destinatarios}
-                    onChange={e => setDestinatarios(e.target.value)}
-                    placeholder="destinatários separados por vírgula"
-                    className="flex-1 min-w-0 px-3 py-2 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
-                  />
+                <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-start">
+                  <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5 px-2 py-1.5 border-2 border-gray-200 rounded-xl bg-white focus-within:ring-2 focus-within:ring-rose-500 focus-within:border-rose-500">
+                    {destinatariosTags.map((t, i) => (
+                      <span key={`${t}-${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 rounded-lg text-xs font-medium">
+                        {t}
+                        <button type="button" onClick={() => removerTag(i)} className="text-rose-500 hover:text-red-600" title="Remover">
+                          <XMarkIcon className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      type="text"
+                      value={emailInput}
+                      onChange={e => setEmailInput(e.target.value)}
+                      onKeyDown={onKeyDownEmail}
+                      onBlur={commitTag}
+                      placeholder={destinatariosTags.length ? 'adicionar e-mail…' : 'destinatários'}
+                      className="flex-1 min-w-[150px] px-1 py-1 text-sm outline-none border-0 focus:ring-0 bg-transparent"
+                    />
+                  </div>
                   {!confirmando ? (
                     <button
                       type="button"
@@ -249,13 +293,28 @@ const ReoaTab: React.FC = () => {
             </div>
           </div>
 
-          {/* Busca + legenda */}
+          {/* Busca + filtro + legenda */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="relative w-full sm:w-96">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
-                placeholder="Buscar por razão social, CNPJ ou código SCI…"
-                className="w-full pl-10 pr-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-sm" />
+            <div className="flex items-center gap-3 flex-1 flex-wrap">
+              <div className="relative w-full sm:w-80">
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
+                  placeholder="Buscar por razão social, CNPJ ou código SCI…"
+                  className="w-full pl-10 pr-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-sm" />
+              </div>
+              <div className="relative">
+                <FunnelIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-rose-500 pointer-events-none" />
+                <select
+                  value={filtroStatus}
+                  onChange={e => setFiltroStatus(e.target.value as 'todos' | 'ok' | 'abaixo')}
+                  className="pl-9 pr-8 py-2.5 border-2 border-gray-200 rounded-xl bg-white text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 appearance-none cursor-pointer"
+                >
+                  <option value="todos">Todos</option>
+                  <option value="abaixo">Abaixo (alerta)</option>
+                  <option value="ok">OK</option>
+                </select>
+                <ChevronDownIcon className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              </div>
             </div>
             <div className="flex items-center gap-3 text-xs text-gray-500">
               <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-emerald-100 border border-emerald-300" /> Ok</span>
