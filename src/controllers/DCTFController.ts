@@ -1120,7 +1120,7 @@ export class DCTFController {
       // Enviar email para o destinatário informado
       await EmailService.sendEmail({
         to: emailDestino,
-        subject: `📋 DCTFs em Andamento (Clientes Ativos) - ${new Date().toLocaleDateString('pt-BR')}`,
+        subject: EmailService.montarAssunto('Registros oficiais em aberto', dctfs.length),
         html: htmlContent,
       });
       

@@ -59,7 +59,7 @@ router.post('/send-email-sem-dctf-com-movimento', async (req, res) => {
     const htmlContent = EmailService.generateSemDCTFComMovimentoEmailHTML(clientes);
     await EmailService.sendEmail({
       to: emailDestino,
-      subject: `Clientes sem DCTF mas com Movimento - ${new Date().toLocaleDateString('pt-BR')}`,
+      subject: EmailService.montarAssunto('Clientes com movimento e sem DCTF', clientes.length),
       html: htmlContent,
     });
 
