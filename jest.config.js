@@ -28,6 +28,11 @@ module.exports = {
   // variáveis na importação. Ver o cabeçalho de tests/env.ts.
   setupFiles: ['<rootDir>/tests/env.ts'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
+  // O padrão do Jest é 5s POR TESTE, e aqui as suítes gastam quase isso só
+  // compilando TypeScript antes do primeiro `it` rodar — testes perfeitamente
+  // sadios morriam com "Exceeded timeout of 5000 ms", que sugere código lento
+  // ou travado quando o problema era só a partida.
+  testTimeout: 30000,
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     // uuid v13 é ESM puro e o Jest roda em CommonJS — ver tests/__mocks__/uuid.ts

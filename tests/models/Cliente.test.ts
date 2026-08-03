@@ -5,61 +5,84 @@
 import { Cliente } from '../../src/models/Cliente';
 import { Cliente as ICliente } from '../../src/types';
 
-// Mock do Supabase
-jest.mock('../../src/config/database', () => ({
-  supabase: {
-    from: jest.fn(() => ({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          single: jest.fn(() => ({
-            data: null,
-            error: null,
-          })),
-        })),
-      })),
-      insert: jest.fn(() => ({
-        select: jest.fn(() => ({
-          single: jest.fn(() => ({
-            data: {
-              id: 'test-id',
-              razao_social: 'Cliente Teste',
-              cnpj_limpo: '12345678000195',
-              cnpj: '12.345.678/0001-95',
-              email: 'teste@exemplo.com',
-              created_at: new Date(),
-              updated_at: new Date(),
-            },
-            error: null,
-          })),
-        })),
-      })),
-      update: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          select: jest.fn(() => ({
-            single: jest.fn(() => ({
-              data: {
-                id: 'test-id',
-                razao_social: 'Cliente Atualizado',
-                cnpj_limpo: '12345678000195',
-                cnpj: '12.345.678/0001-95',
-                email: 'atualizado@exemplo.com',
-                created_at: new Date(),
-                updated_at: new Date(),
-              },
-              error: null,
-            })),
-          })),
-        })),
-      })),
-      delete: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: null,
-          error: null,
-        })),
-      })),
-    })),
-  },
-}));
+/**
+ * BANCO SIMULADO — nada aqui encosta no MySQL de verdade.
+ *
+ * O mock anterior era do SUPABASE, de quando o projeto usava aquele banco. Como
+ * o Cliente hoje vai por DatabaseService → MySQLDatabaseService → config/mysql,
+ * aquele mock não interceptava nada: o teste "deve criar cliente com dados
+ * válidos" gravava um registro REAL na base de produção a cada rodada (foi o
+ * que aconteceu em 03/08/2026 — um "Cliente Teste" cadastrado sem querer).
+ *
+ * Simular o config/mysql resolve na raiz, porque é o único ponto por onde toda
+ * consulta passa: `executeQuery` para leitura e `mysqlPool.getConnection()`
+ * para a escrita do create.
+ */
+const COLUNAS_CLIENTES = [
+  'id', 'razao_social', 'nome_fantasia', 'cnpj_limpo', 'email', 'telefone',
+  'tipo_empresa', 'regime_tributario', 'created_at', 'updated_at',
+];
+
+const CLIENTE_CRIADO = {
+  id: 'test-id',
+  razao_social: 'Cliente Teste',
+  cnpj_limpo: '11222333000181',
+  email: 'teste@exemplo.com',
+  created_at: new Date(),
+  updated_at: new Date(),
+};
+
+/**
+ * Um cliente SEMEADO na base falsa. Existe porque dois testes fazem exigências
+ * opostas: o de criação precisa que o CNPJ ainda NÃO exista (senão o model
+ * recusa por duplicidade) e o de busca precisa encontrar alguém. Um banco que
+ * responde igual a tudo não atende os dois — este responde pelo CNPJ, como o
+ * banco real faria.
+ */
+const CNPJ_EXISTENTE = '12345678000190';
+const CLIENTE_EXISTENTE = {
+  id: 'cliente-existente',
+  razao_social: 'Empresa Já Cadastrada',
+  cnpj_limpo: CNPJ_EXISTENTE,
+  email: 'contato@existente.com',
+  created_at: new Date(),
+  updated_at: new Date(),
+};
+
+/** Responde como o banco responderia, olhando o SQL e os parâmetros. */
+const responder = (sql: string, params: any[] = []): any[] => {
+  if (/^\s*SHOW COLUMNS/i.test(sql)) {
+    return COLUNAS_CLIENTES.map(Field => ({ Field }));
+  }
+  if (/COUNT\(/i.test(sql)) return [{ total: 1, count: 1 }];
+  // O create relê o registro recém-inserido pelo id
+  if (/WHERE\s+`?id`?\s*=/i.test(sql)) return [CLIENTE_CRIADO];
+  // Busca por CNPJ: só o semeado existe
+  if (/cnpj_limpo/i.test(sql)) {
+    return params.includes(CNPJ_EXISTENTE) ? [CLIENTE_EXISTENTE] : [];
+  }
+  if (/^\s*SELECT/i.test(sql)) return [CLIENTE_EXISTENTE];
+  return [];
+};
+
+jest.mock('../../src/config/mysql', () => {
+  const conexao = {
+    execute: jest.fn(async (sql: string, params?: any[]) => [responder(sql, params), []]),
+    release: jest.fn(),
+    beginTransaction: jest.fn(),
+    commit: jest.fn(),
+    rollback: jest.fn(),
+  };
+  return {
+    __esModule: true,
+    executeQuery: jest.fn(async (sql: string, params?: any[]) => responder(sql, params)),
+    executeTransaction: jest.fn(async (fn: any) => fn(conexao)),
+    getConnection: jest.fn(async () => conexao),
+    mysqlPool: { getConnection: jest.fn(async () => conexao) },
+    testMySQLConnection: jest.fn(async () => true),
+    default: { getConnection: jest.fn(async () => conexao) },
+  };
+});
 
 describe('Cliente Model', () => {
   let clienteModel: Cliente;
@@ -117,7 +140,11 @@ describe('Cliente Model', () => {
 
       const result = await clienteModel.createCliente(clienteData);
       expect(result.success).toBe(false);
-      expect(result.error).toBe('CNPJ inválido');
+      // O texto exato ganhou o motivo entre parênteses ("dígito verificador
+      // incorreto") depois que o teste foi escrito, e a asserção literal
+      // quebrou. O contrato que importa é recusar dizendo que o CNPJ é
+      // inválido — o detalhe pode ser refinado sem quebrar o teste de novo.
+      expect(result.error).toContain('CNPJ inválido');
     });
 
     it('deve rejeitar cliente sem nome', async () => {

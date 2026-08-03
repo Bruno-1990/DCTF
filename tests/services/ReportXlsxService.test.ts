@@ -91,8 +91,12 @@ describe('ReportXlsxService', () => {
     expect(view?.state).toBe('frozen');
     expect((view as any)?.ySplit).toBe(1);
 
+    // Alturas: o serviço tem DOIS perfis — DCTF (25/20, mais compacto por ter
+    // muitas linhas) e os demais relatórios (30/25). Este teste exercita
+    // 'clientes', logo o perfil largo. O teste guardava 22/18, de quando havia
+    // um perfil só, e passou a falhar quando a distinção foi criada.
     const headerRow = worksheet.getRow(1);
-    expect(headerRow.height).toBe(22);
+    expect(headerRow.height).toBe(30);
     headerRow.eachCell(cell => {
       expect(cell.font?.bold).toBe(true);
       if (!cell.fill || cell.fill.type !== 'pattern') {
@@ -104,7 +108,7 @@ describe('ReportXlsxService', () => {
     });
 
     const dataRow = worksheet.getRow(2);
-    expect(dataRow.height).toBe(18);
+    expect(dataRow.height).toBe(25);
     dataRow.eachCell(cell => {
       expect(cell.alignment?.horizontal).toBe('center');
       expect(cell.alignment?.vertical).toBe('middle');

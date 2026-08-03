@@ -60,7 +60,14 @@ describe('AdminDashboardConferenceService', () => {
     jest.useRealTimers();
   });
 
-  it('deve identificar declarações próximas ao vencimento e atrasadas', async () => {
+  it('marca como grave a competência vencida sem entrega', async () => {
+    // Empresa Exemplo: competência 08/2025 (vence 30/09), sem transmissão, e
+    // "hoje" é 10/10 — 10 dias de atraso. A regra é `daysUntilDue < 0 → high`.
+    //
+    // O teste exigia 'medium' aqui, o que nunca poderia acontecer: 'medium' é
+    // reservado para quem ainda está DENTRO do prazo, faltando até 5 dias
+    // (DAYS_BEFORE_DEADLINE_MEDIUM). Uma declaração vencida em 'medium' seria
+    // um alerta mais fraco do que a situação merece.
     const summary = await getConferenceSummary(6);
 
     expect(summary.rules.dueDate).toEqual(
@@ -68,11 +75,6 @@ describe('AdminDashboardConferenceService', () => {
         expect.objectContaining({
           identification: '11.111.111/0001-11',
           businessName: 'Empresa Exemplo',
-          severity: 'medium',
-          rule: 'due_date',
-        }),
-        expect.objectContaining({
-          identification: '33.333.333/0001-33',
           severity: 'high',
           rule: 'due_date',
         }),
@@ -84,5 +86,23 @@ describe('AdminDashboardConferenceService', () => {
     const summary = await getConferenceSummary(6);
     const punctualIssues = summary.rules.dueDate.filter(issue => issue.identification === '22.222.222/0001-22');
     expect(punctualIssues.length).toBe(0);
+  });
+
+  it('não gera alerta de prazo para declaração já entregue, mesmo em atraso', async () => {
+    // Empresa Atrasada: competência 07/2025 entregue em 25/09, depois do
+    // vencimento (31/08). O serviço NÃO aponta — a regra de entrega fora do
+    // prazo foi removida de propósito (ver o comentário "removida lógica de
+    // entrega fora do prazo" em getConferenceSummary): a régua de prazo trata
+    // do que ainda falta entregar, não do histórico de atrasos.
+    //
+    // ⚠️ Este teste antes exigia o oposto — era o último vestígio da regra
+    // removida. Se a detecção de entrega em atraso voltar a ser desejada, ela
+    // precisa de regra própria, e não de um remendo na régua de prazo.
+    const summary = await getConferenceSummary(6);
+    const atrasadas = summary.rules.dueDate.filter(
+      issue => issue.identification === '33.333.333/0001-33',
+    );
+
+    expect(atrasadas).toHaveLength(0);
   });
 });
