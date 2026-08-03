@@ -15,6 +15,7 @@ import { randomUUID } from 'crypto';
 import { executeQuery } from '../../../config/mysql';
 import { Cliente } from '../../../models/Cliente';
 import type { Cliente as ICliente } from '../../../types';
+import { diferencaEmDias } from '../utils/dateUtils';
 
 export interface ClienteSemDCTFVigente {
   id: string;
@@ -138,8 +139,10 @@ export async function listarClientesSemDCTFVigente(): Promise<ClienteSemDCTFVige
     // 3. Filtrar clientes SEM DCTF
     // IMPORTANTE: Considerar apenas clientes "Matriz", excluir "Filial"
     const vencimento = calcularVencimento(ano, mes);
-    const hoje = new Date();
-    const diasAteVencimento = Math.floor((vencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+    // Dias de CALENDÁRIO, via utilitário compartilhado. A conta feita aqui à
+    // mão comparava instantes e devolvia "1 dia vencido" no próprio dia do
+    // vencimento — ver diferencaEmDias em conferences/utils/dateUtils.
+    const diasAteVencimento = diferencaEmDias(vencimento);
     
     const clientesSemDCTF: ClienteSemDCTFVigente[] = todosClientes
       .filter((cliente: ICliente) => {

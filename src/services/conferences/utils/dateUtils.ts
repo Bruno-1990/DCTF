@@ -50,12 +50,37 @@ export function calcularVencimento(ano: number, mes: number): Date {
 }
 
 /**
- * Calcula dias até o vencimento (negativo se já vencido)
+ * Calcula dias até o vencimento (negativo se já vencido, 0 se vence hoje).
+ *
+ * Compara DIAS DE CALENDÁRIO, nunca instantes. A versão anterior fazia
+ * `vencimento.getTime() - hoje.getTime()` e arredondava para baixo: como o
+ * vencimento é fixado ao meio-dia UTC e "hoje" é o instante atual, no próprio
+ * dia do vencimento a diferença ficava negativa por algumas horas e o
+ * `Math.floor` devolvia -1 — o sistema anunciava "1 dia vencido" justamente no
+ * último dia do prazo, quando ainda dava tempo de enviar.
+ *
+ * A data de vencimento é lida em UTC (é assim que ela é construída) e a de
+ * hoje em hora local (é o calendário de quem está olhando a tela). Ambas viram
+ * meia-noite UTC, então a diferença sai em dias inteiros exatos e imune a
+ * horário de verão.
  */
 export function calcularDiasAteVencimento(ano: number, mes: number, hoje: Date = new Date()): number {
   const vencimento = calcularVencimento(ano, mes);
-  const diffTime = vencimento.getTime() - hoje.getTime();
-  return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  return diferencaEmDias(vencimento, hoje);
+}
+
+/**
+ * Diferença em dias inteiros entre o dia do vencimento e o dia de hoje.
+ * Positivo = ainda falta; 0 = vence hoje; negativo = já venceu.
+ */
+export function diferencaEmDias(vencimento: Date, hoje: Date = new Date()): number {
+  const diaVencimento = Date.UTC(
+    vencimento.getUTCFullYear(),
+    vencimento.getUTCMonth(),
+    vencimento.getUTCDate(),
+  );
+  const diaHoje = Date.UTC(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  return Math.round((diaVencimento - diaHoje) / (1000 * 60 * 60 * 24));
 }
 
 /**
