@@ -13,6 +13,7 @@
     "deploy:prod": "node scripts/deploy-production.js || bash scripts/deploy-production.sh",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:integration": "jest --testPathIgnorePatterns=/node_modules/ --testPathPattern=tests/integration",
     "test:connection": "ts-node src/scripts/test-connection.ts",
     "test:mysql-connection": "ts-node src/scripts/test-mysql-connection.ts",
     "mysql:demo": "ts-node src/scripts/mysql-demo.ts",
