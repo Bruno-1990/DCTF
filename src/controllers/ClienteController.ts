@@ -2000,8 +2000,8 @@ export class ClienteController {
   async editarParticipacaoManual(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { capital_social, socios } = req.body;
-      
+      const { capital_social, socios, socios_removidos } = req.body;
+
       if (!id) {
         res.status(400).json({
           success: false,
@@ -2033,6 +2033,15 @@ export class ClienteController {
         res.status(400).json({
           success: false,
           error: 'Sócios deve ser um array',
+        });
+        return;
+      }
+
+      // Validar socios_removidos (opcional)
+      if (socios_removidos !== undefined && !Array.isArray(socios_removidos)) {
+        res.status(400).json({
+          success: false,
+          error: 'Sócios removidos deve ser um array',
         });
         return;
       }
@@ -2089,11 +2098,47 @@ export class ClienteController {
         }
       }
 
+      // Excluir sócios marcados para remoção.
+      // executeQuery descarta o ResultSetHeader (retorna [] em DELETE), então a
+      // confirmação vem de um SELECT prévio — que também valida a posse do sócio,
+      // impedindo apagar registro de outro cliente por id forjado.
+      let sociosExcluidos = 0;
+      for (const socioId of (socios_removidos || [])) {
+        if (socioId === undefined || socioId === null || socioId === '') {
+          continue;
+        }
+
+        try {
+          const existente = await executeQuery<{ id: any; nome: string }>(
+            'SELECT id, nome FROM clientes_socios WHERE id = ? AND cliente_id = ?',
+            [socioId, id]
+          );
+
+          if (existente.length === 0) {
+            console.warn(`[Editar Participação] Sócio ${socioId} não encontrado no cliente ${id} — exclusão ignorada`);
+            continue;
+          }
+
+          await executeQuery(
+            'DELETE FROM clientes_socios WHERE id = ? AND cliente_id = ?',
+            [socioId, id]
+          );
+          sociosExcluidos++;
+          console.log(`[Editar Participação] 🗑️ Sócio "${existente[0].nome}" (${socioId}) excluído do cliente ${id}`);
+        } catch (error: any) {
+          console.error(`[Editar Participação] Erro ao excluir sócio ${socioId}:`, error);
+          // Continuar excluindo os outros mesmo se um falhar
+        }
+      }
+
       res.json({
         success: true,
         data: {
           clienteId: id,
-          message: 'Participação atualizada com sucesso',
+          sociosExcluidos,
+          message: sociosExcluidos > 0
+            ? `Participação atualizada e ${sociosExcluidos} sócio(s) excluído(s)`
+            : 'Participação atualizada com sucesso',
         },
       });
     } catch (error: any) {

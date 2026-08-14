@@ -328,6 +328,30 @@ const MonthYearPicker: React.FC<{
   );
 };
 
+// ─── Modal de Participação: formulário controlado ───
+// Percentual e valor se auto-calculam a partir do Capital Social:
+//   valor = capital × % / 100        % = valor / capital × 100
+type SocioForm = {
+  id: any;
+  nome: string;
+  cpf: string;
+  percentual: string;
+  valor: string;
+  removido: boolean;
+};
+
+// Arredonda para 2 casas evitando o erro de ponto flutuante do JS (ex.: 1.005)
+const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+
+// Converte o texto de um input numérico em número, aceitando vírgula decimal
+const paraNumero = (texto: string): number => {
+  const n = parseFloat(String(texto ?? '').replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+};
+
+// Formata um número para exibição no input (sem casas decimais sobrando)
+const paraTextoInput = (n: number): string => (n === 0 ? '0' : String(round2(n)));
+
 const Clientes: React.FC = () => {
   const { clientes, loadClientes, createCliente, updateClienteById, deleteClienteById, loading, error, clearError } = useClientes();
   const toast = useToast();
@@ -373,30 +397,6 @@ const Clientes: React.FC = () => {
   const [faturamentoData, setFaturamentoData] = useState<Map<string, { faturamento: FaturamentoAnual[]; empresas?: FaturamentoPorEmpresa[]; loading: boolean; carregado: boolean; error?: string; ultimaAtualizacao?: string | null }>>(new Map());
   const [loadingFaturamento, setLoadingFaturamento] = useState(false);
   const [searchFaturamento, setSearchFaturamento] = useState('');
-  const carregandoFaturamentoRef = useRef(false);
-  const activeTabFaturamentoAnteriorRef = useRef<string>('');
-  const anoAtualFaturamento = new Date().getFullYear();
-  const anosParaBuscarFaturamento = [anoAtualFaturamento - 2, anoAtualFaturamento - 1];
-  
-  // Aba CNAE
-  const [cnae, setCnae] = useState('');
-  const [cnaesSelecionados, setCnaesSelecionados] = useState<string[]>([]); // Tags de CNAEs
-  const [modoBuscaCNAEs, setModoBuscaCNAEs] = useState<'OR' | 'AND'>('OR'); // Modo para CNAEs individuais
-  const [clientesCNAE, setClientesCNAE] = useState<Cliente[]>([]);
-  const [loadingCNAE, setLoadingCNAE] = useState(false);
-  const [buscouCNAE, setBuscouCNAE] = useState(false);
-  const [gruposCNAE, setGruposCNAE] = useState<Array<{ nome: string; palavrasChave: string[]; cnaes: Array<{ codigo: string; descricao: string }> }>>([]);
-  const [gruposSelecionados, setGruposSelecionados] = useState<string[]>([]);
-  const [modoBuscaGrupos, setModoBuscaGrupos] = useState<'OR' | 'AND'>('OR'); // OR = qualquer um | AND = todos
-  const [loadingGrupos, setLoadingGrupos] = useState(false);
-  const [cnaesExpandidos, setCnaesExpandidos] = useState(false);
-  const [clienteModalCNAE, setClienteModalCNAE] = useState<Cliente | null>(null);
-  const [exportandoCNAE, setExportandoCNAE] = useState(false);
-  const [grupoDropdownAberto, setGrupoDropdownAberto] = useState(false);
-
-  // Modal de CNAEs e Atividades
-  const [showModalCNAEAtividades, setShowModalCNAEAtividades] = useState(false);
-  const [clienteModalCNAEAtividades, setClienteModalCNAEAtividades] = useState<Cliente | null>(null);
   // Filtro por porte da empresa (ME, EPP, Demais...). As opções são montadas a
   // partir dos valores realmente presentes no banco — nada é fixado no código.
   const [filtroPorteFaturamento, setFiltroPorteFaturamento] = useState<string>('todos');
@@ -472,6 +472,30 @@ const Clientes: React.FC = () => {
       return true;
     });
   }, [clientesFaturamento, searchFaturamento, filtroPorteFaturamento]);
+  const carregandoFaturamentoRef = useRef(false);
+  const activeTabFaturamentoAnteriorRef = useRef<string>('');
+  const anoAtualFaturamento = new Date().getFullYear();
+  const anosParaBuscarFaturamento = [anoAtualFaturamento - 2, anoAtualFaturamento - 1];
+  
+  // Aba CNAE
+  const [cnae, setCnae] = useState('');
+  const [cnaesSelecionados, setCnaesSelecionados] = useState<string[]>([]); // Tags de CNAEs
+  const [modoBuscaCNAEs, setModoBuscaCNAEs] = useState<'OR' | 'AND'>('OR'); // Modo para CNAEs individuais
+  const [clientesCNAE, setClientesCNAE] = useState<Cliente[]>([]);
+  const [loadingCNAE, setLoadingCNAE] = useState(false);
+  const [buscouCNAE, setBuscouCNAE] = useState(false);
+  const [gruposCNAE, setGruposCNAE] = useState<Array<{ nome: string; palavrasChave: string[]; cnaes: Array<{ codigo: string; descricao: string }> }>>([]);
+  const [gruposSelecionados, setGruposSelecionados] = useState<string[]>([]);
+  const [modoBuscaGrupos, setModoBuscaGrupos] = useState<'OR' | 'AND'>('OR'); // OR = qualquer um | AND = todos
+  const [loadingGrupos, setLoadingGrupos] = useState(false);
+  const [cnaesExpandidos, setCnaesExpandidos] = useState(false);
+  const [clienteModalCNAE, setClienteModalCNAE] = useState<Cliente | null>(null);
+  const [exportandoCNAE, setExportandoCNAE] = useState(false);
+  const [grupoDropdownAberto, setGrupoDropdownAberto] = useState(false);
+
+  // Modal de CNAEs e Atividades
+  const [showModalCNAEAtividades, setShowModalCNAEAtividades] = useState(false);
+  const [clienteModalCNAEAtividades, setClienteModalCNAEAtividades] = useState<Cliente | null>(null);
   const [filtroCNAEModal, setFiltroCNAEModal] = useState<string>('');
 
   // Modal Consulta Personalizada
@@ -612,6 +636,9 @@ const Clientes: React.FC = () => {
   const [showModalEdicaoParticipacao, setShowModalEdicaoParticipacao] = useState(false);
   const [clienteEditandoParticipacao, setClienteEditandoParticipacao] = useState<Cliente | null>(null);
   const [editandoParticipacao, setEditandoParticipacao] = useState(false);
+  // Formulário controlado do modal de participação (auto-cálculo % <-> valor e remoção de sócios)
+  const [formCapitalSocial, setFormCapitalSocial] = useState<string>('');
+  const [formSocios, setFormSocios] = useState<SocioForm[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -624,6 +651,102 @@ const Clientes: React.FC = () => {
   const activeTabAnteriorRef = useRef<string>(''); // Rastrear aba anterior
   const atualizandoSociosIdRef = useRef<string | null>(null); // Ref para rastrear qual cliente está sendo atualizado
   const fileInputRef = useRef<HTMLInputElement>(null); // Ref para input de arquivo
+
+  // ─── Modal de Participação: carregar o cliente no formulário ao abrir ───
+  useEffect(() => {
+    if (!showModalEdicaoParticipacao || !clienteEditandoParticipacao) {
+      setFormCapitalSocial('');
+      setFormSocios([]);
+      return;
+    }
+
+    setFormCapitalSocial(String(clienteEditandoParticipacao.capital_social ?? 0));
+    setFormSocios(
+      ((clienteEditandoParticipacao as any).socios || []).map((socio: any) => ({
+        id: socio.id,
+        nome: socio.nome || 'Sem nome',
+        cpf: socio.cpf || '',
+        percentual:
+          socio.participacao_percentual !== null && socio.participacao_percentual !== undefined
+            ? paraTextoInput(parseFloat(String(socio.participacao_percentual)))
+            : '0',
+        valor:
+          socio.participacao_valor !== null && socio.participacao_valor !== undefined
+            ? paraTextoInput(parseFloat(String(socio.participacao_valor)))
+            : '0',
+        removido: false,
+      }))
+    );
+  }, [showModalEdicaoParticipacao, clienteEditandoParticipacao]);
+
+  // Capital Social atual do formulário (base dos cálculos)
+  const capitalSocialForm = paraNumero(formCapitalSocial);
+
+  // Digitou a porcentagem → recalcula o valor
+  const handleParticipacaoPercentualChange = (socioId: any, texto: string) => {
+    setFormSocios(prev =>
+      prev.map(s =>
+        s.id !== socioId
+          ? s
+          : {
+              ...s,
+              percentual: texto,
+              valor:
+                capitalSocialForm > 0
+                  ? paraTextoInput((capitalSocialForm * paraNumero(texto)) / 100)
+                  : s.valor,
+            }
+      )
+    );
+  };
+
+  // Digitou o valor → recalcula a porcentagem
+  const handleParticipacaoValorChange = (socioId: any, texto: string) => {
+    setFormSocios(prev =>
+      prev.map(s =>
+        s.id !== socioId
+          ? s
+          : {
+              ...s,
+              valor: texto,
+              percentual:
+                capitalSocialForm > 0
+                  ? paraTextoInput((paraNumero(texto) / capitalSocialForm) * 100)
+                  : s.percentual,
+            }
+      )
+    );
+  };
+
+  // Reaplica valor = capital × % / 100 em todos os sócios ativos
+  const recalcularTodosValores = () => {
+    if (capitalSocialForm <= 0) {
+      toast.error('Informe o Capital Social antes de recalcular');
+      return;
+    }
+    setFormSocios(prev =>
+      prev.map(s =>
+        s.removido
+          ? s
+          : { ...s, valor: paraTextoInput((capitalSocialForm * paraNumero(s.percentual)) / 100) }
+      )
+    );
+    toast.success('Valores recalculados a partir do Capital Social');
+  };
+
+  // Marca/desmarca um sócio para remoção (efetivada só ao Concluir)
+  const alternarRemocaoSocio = (socioId: any) => {
+    setFormSocios(prev => prev.map(s => (s.id === socioId ? { ...s, removido: !s.removido } : s)));
+  };
+
+  // Totais dos sócios que permanecem
+  const sociosAtivosForm = formSocios.filter(s => !s.removido);
+  const totalPercentualForm = round2(
+    sociosAtivosForm.reduce((soma, s) => soma + paraNumero(s.percentual), 0)
+  );
+  const totalValorForm = round2(sociosAtivosForm.reduce((soma, s) => soma + paraNumero(s.valor), 0));
+  const totalPercentualOk = Math.abs(totalPercentualForm - 100) < 0.01;
+  const qtdSociosRemovidos = formSocios.length - sociosAtivosForm.length;
 
   // Função para formatar CPF ou CNPJ
   const formatarCpfCnpj = (valor: string | null | undefined): string => {
@@ -4510,6 +4633,27 @@ const Clientes: React.FC = () => {
                 <h3 className="text-sm font-semibold text-slate-800">Participação</h3>
               </div>
               <div className="p-5">
+              {/* Aviso de mudança no quadro societário detectada pelo cartão CNPJ */}
+              {(() => {
+                const ausentes = ((visualizandoCliente as any).socios || []).filter(
+                  (s: any) => s.ausente_no_cartao === true || s.ausente_no_cartao === 1
+                );
+                if (ausentes.length === 0) return null;
+                return (
+                  <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+                    <p className="text-sm font-semibold text-amber-900">
+                      ⚠ Mudança no quadro societário detectada no cartão CNPJ
+                    </p>
+                    <p className="text-xs text-amber-800 mt-1">
+                      {ausentes.length === 1 ? 'O sócio abaixo não consta' : `Os ${ausentes.length} sócios abaixo não constam`}{' '}
+                      mais no cartão CNPJ da Receita Federal:{' '}
+                      <strong>{ausentes.map((s: any) => s.nome).join(', ')}</strong>. O cadastro foi mantido
+                      (com CPF e participação) para conferência — confirme a saída antes de excluir.
+                    </p>
+                  </div>
+                );
+              })()}
+
               {Array.isArray((visualizandoCliente as any).socios) && (visualizandoCliente as any).socios.length > 0 ? (
                 <div
                   className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50/30"
@@ -4547,6 +4691,13 @@ const Clientes: React.FC = () => {
                           if (value === null || isNaN(value)) return '—';
                           return `${value.toFixed(2).replace('.', ',')}%`;
                         };
+
+                        // Sócio que não consta mais no cartão CNPJ da ReceitaWS.
+                        // Não é excluído do cadastro — fica sinalizado para conferência.
+                        const ausenteNoCartao = s.ausente_no_cartao === true || s.ausente_no_cartao === 1;
+                        const ausenteDesde = s.ausente_no_cartao_em
+                          ? new Date(s.ausente_no_cartao_em).toLocaleDateString('pt-BR')
+                          : null;
 
                         return (
                           <tr
@@ -4653,6 +4804,34 @@ const Clientes: React.FC = () => {
               )}
             </div>
           </div>
+          {activeTab === 'faturamento-sci' && portesDisponiveisFaturamento.length > 0 && (
+            <div className="w-full md:w-72">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
+                <FunnelIcon className="h-4 w-4 text-purple-600" />
+                Porte da empresa
+              </label>
+              <div className="relative">
+                <select
+                  value={filtroPorteFaturamento}
+                  onChange={(e) => setFiltroPorteFaturamento(e.target.value)}
+                  className="w-full h-12 pl-10 pr-10 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-purple-300"
+                >
+                  <option value="todos">Todos os portes ({clientesFaturamento.length})</option>
+                  {portesDisponiveisFaturamento.map((p) => (
+                    <option key={p.valor} value={p.valor}>
+                      {p.rotulo} ({p.quantidade})
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <FunnelIcon className="h-5 w-5 text-purple-500" />
+                </div>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                </div>
+              </div>
+            </div>
+          )}
           {activeTab === 'faturamento-sci' && (
             // Espaçador com a mesma altura das labels: alinha a base do botão
             // com a base dos campos, em vez de centralizá-lo na linha.
@@ -4661,27 +4840,6 @@ const Clientes: React.FC = () => {
               <button
                 onClick={() => {
                   // Preencher o campo de busca do modal com o valor do campo de busca principal
-              {/* Aviso de mudança no quadro societário detectada pelo cartão CNPJ */}
-              {(() => {
-                const ausentes = ((visualizandoCliente as any).socios || []).filter(
-                  (s: any) => s.ausente_no_cartao === true || s.ausente_no_cartao === 1
-                );
-                if (ausentes.length === 0) return null;
-                return (
-                  <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
-                    <p className="text-sm font-semibold text-amber-900">
-                      ⚠ Mudança no quadro societário detectada no cartão CNPJ
-                    </p>
-                    <p className="text-xs text-amber-800 mt-1">
-                      {ausentes.length === 1 ? 'O sócio abaixo não consta' : `Os ${ausentes.length} sócios abaixo não constam`}{' '}
-                      mais no cartão CNPJ da Receita Federal:{' '}
-                      <strong>{ausentes.map((s: any) => s.nome).join(', ')}</strong>. O cadastro foi mantido
-                      (com CPF e participação) para conferência — confirme a saída antes de excluir.
-                    </p>
-                  </div>
-                );
-              })()}
-
                   setTipoConsulta('anual');
                   setConsultaPersonalizada(prev => ({
                     ...prev,
@@ -4720,13 +4878,6 @@ const Clientes: React.FC = () => {
                 >
                   <option value="a-z">A → Z</option>
                   <option value="cnpj">CNPJ ↑</option>
-                        // Sócio que não consta mais no cartão CNPJ da ReceitaWS.
-                        // Não é excluído do cadastro — fica sinalizado para conferência.
-                        const ausenteNoCartao = s.ausente_no_cartao === true || s.ausente_no_cartao === 1;
-                        const ausenteDesde = s.ausente_no_cartao_em
-                          ? new Date(s.ausente_no_cartao_em).toLocaleDateString('pt-BR')
-                          : null;
-
                   <option value="codigo-sci">Código SCI ↑</option>
                   <option value="sem-cod-sci">Sem Cód SCI</option>
                   <option value="beneficio-fiscal">Benefício Fiscal</option>
@@ -4810,34 +4961,6 @@ const Clientes: React.FC = () => {
                     <input
                       type="text"
                       value={socioSearchInput}
-          {activeTab === 'faturamento-sci' && portesDisponiveisFaturamento.length > 0 && (
-            <div className="w-full md:w-72">
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
-                <FunnelIcon className="h-4 w-4 text-purple-600" />
-                Porte da empresa
-              </label>
-              <div className="relative">
-                <select
-                  value={filtroPorteFaturamento}
-                  onChange={(e) => setFiltroPorteFaturamento(e.target.value)}
-                  className="w-full h-12 pl-10 pr-10 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-purple-300"
-                >
-                  <option value="todos">Todos os portes ({clientesFaturamento.length})</option>
-                  {portesDisponiveisFaturamento.map((p) => (
-                    <option key={p.valor} value={p.valor}>
-                      {p.rotulo} ({p.quantidade})
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FunnelIcon className="h-5 w-5 text-purple-500" />
-                </div>
-                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                  <ChevronDownIcon className="h-5 w-5 text-gray-400" />
-                </div>
-              </div>
-            </div>
-          )}
                       onChange={(e) => {
                         setSocioSearchInput(e.target.value);
                         setShowSocioDropdown(true);
@@ -6678,8 +6801,37 @@ const Clientes: React.FC = () => {
               <div className="text-center py-12 text-gray-500">
                 <p>Nenhum cliente (matriz ou filial) com código SCI encontrado.</p>
               </div>
+            ) : clientesFaturamentoFiltrados.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <p className="font-medium">Nenhuma empresa encontrada com os filtros atuais.</p>
+                {filtroPorteFaturamento !== 'todos' && (
+                  <button
+                    onClick={() => setFiltroPorteFaturamento('todos')}
+                    className="mt-3 text-sm text-purple-600 hover:text-purple-800 font-semibold underline"
+                  >
+                    Limpar filtro de porte
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="space-y-4">
+                {/* Resumo do que está sendo exibido, quando há filtro ativo */}
+                {(filtroPorteFaturamento !== 'todos' || searchFaturamento) && (
+                  <div className="text-sm text-gray-600">
+                    Exibindo <strong>{clientesFaturamentoFiltrados.length}</strong> de{' '}
+                    <strong>{clientesFaturamento.length}</strong> empresas
+                    {filtroPorteFaturamento !== 'todos' && (
+                      <>
+                        {' '}· porte:{' '}
+                        <strong>
+                          {portesDisponiveisFaturamento.find((p) => p.valor === filtroPorteFaturamento)?.rotulo ||
+                            filtroPorteFaturamento}
+                        </strong>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* Lista: um item por (Cliente + Empresa) — Matriz e Filiais como linhas separadas */}
                 <div className="space-y-4">
                   {clientesFaturamentoFiltrados
@@ -6793,37 +6945,8 @@ const Clientes: React.FC = () => {
 
                       // Aba Faturamento SCI: exibir Matriz e Filial SEPARADOS (um bloco por estabelecimento)
                       if (exibirPorEmpresa) {
-            ) : clientesFaturamentoFiltrados.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="font-medium">Nenhuma empresa encontrada com os filtros atuais.</p>
-                {filtroPorteFaturamento !== 'todos' && (
-                  <button
-                    onClick={() => setFiltroPorteFaturamento('todos')}
-                    className="mt-3 text-sm text-purple-600 hover:text-purple-800 font-semibold underline"
-                  >
-                    Limpar filtro de porte
-                  </button>
-                )}
-              </div>
                         const usarTipoCadastro = empresas!.length === 1;
                         return empresas!.map((emp) => {
-                {/* Resumo do que está sendo exibido, quando há filtro ativo */}
-                {(filtroPorteFaturamento !== 'todos' || searchFaturamento) && (
-                  <div className="text-sm text-gray-600">
-                    Exibindo <strong>{clientesFaturamentoFiltrados.length}</strong> de{' '}
-                    <strong>{clientesFaturamento.length}</strong> empresas
-                    {filtroPorteFaturamento !== 'todos' && (
-                      <>
-                        {' '}· porte:{' '}
-                        <strong>
-                          {portesDisponiveisFaturamento.find((p) => p.valor === filtroPorteFaturamento)?.rotulo ||
-                            filtroPorteFaturamento}
-                        </strong>
-                      </>
-                    )}
-                  </div>
-                )}
-
                           const labelEstabelecimento = usarTipoCadastro ? tipoEmpresaLabel : emp.tipo;
                           return (
                             <div
@@ -8707,18 +8830,36 @@ const Clientes: React.FC = () => {
               <div className="p-6 max-h-[70vh] overflow-y-auto">
                 {/* Capital Social */}
                 <div className="mb-6">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Capital Social (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    defaultValue={clienteEditandoParticipacao.capital_social || 0}
-                    id="capital-social-input"
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm hover:border-gray-400"
-                    placeholder="0.00"
-                  />
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Capital Social (R$)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={formCapitalSocial}
+                        onChange={(e) => setFormCapitalSocial(e.target.value)}
+                        id="capital-social-input"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm hover:border-gray-400"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={recalcularTodosValores}
+                      disabled={sociosAtivosForm.length === 0}
+                      className="px-4 py-3 bg-indigo-50 text-indigo-700 border-2 border-indigo-200 rounded-xl hover:bg-indigo-100 hover:border-indigo-300 font-semibold text-sm transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Reaplica valor = Capital Social × % / 100 em todos os sócios"
+                    >
+                      <ArrowPathIcon className="h-4 w-4" />
+                      Recalcular todos
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Ao digitar a porcentagem o valor é calculado sozinho — e ao digitar o valor, a porcentagem.
+                  </p>
                 </div>
 
                 {/* Sócios */}
@@ -8727,59 +8868,126 @@ const Clientes: React.FC = () => {
                     Participações dos Sócios
                   </label>
                   <div className="space-y-4">
-                    {((clienteEditandoParticipacao as any).socios || []).map((socio: any, idx: number) => (
-                      <div key={socio.id || idx} className="border-2 border-gray-200 rounded-xl p-4 bg-gray-50">
-                        <div className="mb-3">
-                          <h4 className="text-sm font-semibold text-gray-800">{socio.nome || 'Sem nome'}</h4>
-                          {socio.cpf && (
-                            <p className="text-xs text-gray-500">CPF/CNPJ: {formatarCpfCnpj(socio.cpf)}</p>
+                    {formSocios.map((socio, idx) => (
+                      <div
+                        key={socio.id || idx}
+                        className={`border-2 rounded-xl p-4 transition-all ${
+                          socio.removido
+                            ? 'border-red-200 bg-red-50/60'
+                            : 'border-gray-200 bg-gray-50'
+                        }`}
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div className={socio.removido ? 'opacity-60' : ''}>
+                            <h4 className={`text-sm font-semibold text-gray-800 ${socio.removido ? 'line-through' : ''}`}>
+                              {socio.nome}
+                            </h4>
+                            {socio.cpf && (
+                              <p className="text-xs text-gray-500">CPF/CNPJ: {formatarCpfCnpj(socio.cpf)}</p>
+                            )}
+                          </div>
+                          {socio.removido ? (
+                            <button
+                              type="button"
+                              onClick={() => alternarRemocaoSocio(socio.id)}
+                              className="px-3 py-1.5 text-xs font-semibold text-red-700 bg-white border-2 border-red-200 rounded-lg hover:bg-red-100 transition-all flex items-center gap-1.5 whitespace-nowrap"
+                            >
+                              <ArrowPathIcon className="h-3.5 w-3.5" />
+                              Desfazer
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => alternarRemocaoSocio(socio.id)}
+                              className="p-2 text-gray-400 bg-white border-2 border-gray-200 rounded-lg hover:bg-red-500 hover:border-red-500 hover:text-white transition-all"
+                              title="Excluir este sócio"
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
                           )}
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">
-                              Participação (%)
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              max="100"
-                              defaultValue={socio.participacao_percentual !== null && socio.participacao_percentual !== undefined 
-                                ? parseFloat(String(socio.participacao_percentual)) 
-                                : 0}
-                              data-socio-id={socio.id}
-                              data-field="participacao_percentual"
-                              className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                              placeholder="0.00"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">
-                              Valor (R$)
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              defaultValue={socio.participacao_valor !== null && socio.participacao_valor !== undefined 
-                                ? parseFloat(String(socio.participacao_valor)) 
-                                : 0}
-                              data-socio-id={socio.id}
-                              data-field="participacao_valor"
-                              className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                              placeholder="0.00"
-                            />
+                        {socio.removido ? (
+                          <p className="text-xs font-medium text-red-700">
+                            Será excluído ao clicar em Concluir.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Participação (%)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                value={socio.percentual}
+                                onChange={(e) => handleParticipacaoPercentualChange(socio.id, e.target.value)}
+                                data-socio-id={socio.id}
+                                data-field="participacao_percentual"
+                                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Valor (R$)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={socio.valor}
+                                onChange={(e) => handleParticipacaoValorChange(socio.id, e.target.value)}
+                                data-socio-id={socio.id}
+                                data-field="participacao_valor"
+                                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                placeholder="0.00"
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
                     ))}
-                    {(!(clienteEditandoParticipacao as any).socios || (clienteEditandoParticipacao as any).socios.length === 0) && (
+                    {formSocios.length === 0 && (
                       <div className="text-center py-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                         <p className="text-sm text-gray-500">Nenhum sócio cadastrado</p>
                       </div>
                     )}
                   </div>
+
+                  {/* Totalizador */}
+                  {sociosAtivosForm.length > 0 && (
+                    <div
+                      className={`mt-4 px-4 py-3 rounded-xl border-2 flex items-center justify-between flex-wrap gap-2 ${
+                        totalPercentualOk
+                          ? 'bg-emerald-50 border-emerald-200'
+                          : 'bg-amber-50 border-amber-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4 text-sm">
+                        <span className={`font-bold ${totalPercentualOk ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          Total: {totalPercentualForm.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                        </span>
+                        <span className="text-gray-600">
+                          {totalValorForm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </span>
+                      </div>
+                      <span className={`text-xs font-medium ${totalPercentualOk ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {totalPercentualOk
+                          ? '✓ Fecha em 100%'
+                          : `Faltam ${round2(100 - totalPercentualForm).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% para fechar 100%`}
+                      </span>
+                    </div>
+                  )}
+
+                  {qtdSociosRemovidos > 0 && (
+                    <p className="mt-3 text-xs font-medium text-red-700">
+                      {qtdSociosRemovidos === 1
+                        ? '1 sócio será excluído ao concluir.'
+                        : `${qtdSociosRemovidos} sócios serão excluídos ao concluir.`}
+                    </p>
+                  )}
                 </div>
 
                 {/* Botões */}
@@ -8788,32 +8996,38 @@ const Clientes: React.FC = () => {
                     onClick={async () => {
                       if (!clienteEditandoParticipacao?.id) return;
                       
+                      // Exclusão de sócio é definitiva — confirmar antes de salvar
+                      const sociosRemovidos = formSocios.filter(s => s.removido);
+                      if (sociosRemovidos.length > 0) {
+                        const nomes = sociosRemovidos.map(s => `• ${s.nome}`).join('\n');
+                        const confirmado = window.confirm(
+                          `Excluir definitivamente ${sociosRemovidos.length === 1 ? 'este sócio' : `estes ${sociosRemovidos.length} sócios`}?\n\n${nomes}\n\nEsta ação não pode ser desfeita.`
+                        );
+                        if (!confirmado) return;
+                      }
+
                       setEditandoParticipacao(true);
                       try {
-                        // Coletar dados do formulário
-                        const capitalSocialInput = document.getElementById('capital-social-input') as HTMLInputElement;
-                        const capitalSocial = capitalSocialInput ? parseFloat(capitalSocialInput.value) || 0 : 0;
-                        
-                        const sociosAtualizados = ((clienteEditandoParticipacao as any).socios || []).map((socio: any) => {
-                          const percentualInput = document.querySelector(`[data-socio-id="${socio.id}"][data-field="participacao_percentual"]`) as HTMLInputElement;
-                          const valorInput = document.querySelector(`[data-socio-id="${socio.id}"][data-field="participacao_valor"]`) as HTMLInputElement;
-                          
-                          return {
-                            id: socio.id,
-                            participacao_percentual: percentualInput ? parseFloat(percentualInput.value) || 0 : 0,
-                            participacao_valor: valorInput ? parseFloat(valorInput.value) || 0 : 0,
-                          };
-                        });
-                        
+                        const capitalSocial = capitalSocialForm;
+
+                        const sociosAtualizados = formSocios
+                          .filter(s => !s.removido)
+                          .map(s => ({
+                            id: s.id,
+                            participacao_percentual: paraNumero(s.percentual),
+                            participacao_valor: paraNumero(s.valor),
+                          }));
+
                         // Chamar API para salvar
                         const result = await clientesService.editarParticipacaoManual(
                           clienteEditandoParticipacao.id,
                           capitalSocial,
-                          sociosAtualizados
+                          sociosAtualizados,
+                          sociosRemovidos.map(s => s.id)
                         );
                         
                         if (result.success) {
-                          toast.success('Participação atualizada com sucesso!');
+                          toast.success(result?.data?.message || 'Participação atualizada com sucesso!');
                           
                           // Atualizar cliente na lista
                           if (activeTab === 'participacao') {

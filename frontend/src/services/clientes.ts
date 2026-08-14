@@ -209,10 +209,16 @@ export const clientesService = {
     return response.data;
   },
 
-  async editarParticipacaoManual(id: string, capitalSocial: number, socios: Array<{ id: number; participacao_percentual: number; participacao_valor: number }>) {
+  async editarParticipacaoManual(
+    id: string,
+    capitalSocial: number,
+    socios: Array<{ id: number; participacao_percentual: number; participacao_valor: number }>,
+    sociosRemovidos: number[] = []
+  ) {
     const response = await api.put(`/clientes/${id}/editar-participacao-manual`, {
       capital_social: capitalSocial,
       socios,
+      socios_removidos: sociosRemovidos,
     });
     return response.data; // { success, data: { clienteId, message } }
   },
