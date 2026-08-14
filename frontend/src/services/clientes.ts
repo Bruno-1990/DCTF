@@ -145,9 +145,68 @@ export const clientesService = {
     return response.data; // { success, data: Cliente[], total: number, criterios: { cnaes, grupos, totalCodigosCNAE } }
   },
 
-  async atualizarTodosReceitaWS() {
-    const response = await api.post('/clientes/atualizar-todos-receita-ws');
-    return response.data; // { success, data: { total, sucessos, erros, resultados } }
+  /**
+   * Atualiza o cadastro de um CNPJ com os dados do cartão CNPJ (ReceitaWS).
+   * Não-destrutivo: nunca apaga nem substitui dado já existente no cadastro.
+   */
+  async atualizarCadastroReceitaWS(
+    cnpj: string,
+    options?: { dryRun?: boolean; ignorarCaixa?: boolean; somenteRazaoSocial?: boolean }
+  ) {
+    const cnpjLimpo = String(cnpj || '').replace(/\D/g, '');
+    const response = await api.post('/clientes/atualizar-cadastro-receita-ws', {
+      cnpj: cnpjLimpo,
+      dryRun: options?.dryRun === true,
+      ignorarCaixa: options?.ignorarCaixa !== false,
+      somenteRazaoSocial: options?.somenteRazaoSocial === true,
+    });
+    // { success, data: { status, cnpj_limpo, cliente_id?, razao_social_antes?, razao_social_depois?,
+    //                    alteracoes: [{campo, antes, depois}], socios_novos, socios_qualificacao,
+    //                    socios_ausentes_no_cartao, simulado? } }
+    return response.data;
+  },
+
+  /**
+   * Registro do que a ReceitaWS já alterou no cadastro (histórico gravado).
+   * Não consulta a API externa — lê a tabela de histórico.
+   */
+  async historicoReceitaWS(filtros?: { desde?: string; ate?: string; clienteId?: string }) {
+    const params = new URLSearchParams();
+    if (filtros?.desde) params.set('desde', filtros.desde);
+    if (filtros?.ate) params.set('ate', filtros.ate);
+    if (filtros?.clienteId) params.set('cliente_id', filtros.clienteId);
+    const response = await api.get(`/clientes/historico-receita?${params.toString()}`);
+    return response.data; // { success, data: [...], total }
+  },
+
+  /** Baixa o mesmo histórico em XLSX. */
+  async baixarHistoricoReceitaWS(filtros?: { desde?: string; ate?: string; clienteId?: string }) {
+    const params = new URLSearchParams({ formato: 'xlsx' });
+    if (filtros?.desde) params.set('desde', filtros.desde);
+    if (filtros?.ate) params.set('ate', filtros.ate);
+    if (filtros?.clienteId) params.set('cliente_id', filtros.clienteId);
+    const response = await api.get(`/clientes/historico-receita?${params.toString()}`, {
+      responseType: 'blob',
+    });
+    return response.data as Blob;
+  },
+
+  /**
+   * Grava no banco o que já foi calculado numa simulação, sem consultar a
+   * ReceitaWS de novo (portanto sem rate limit).
+   */
+  async aplicarCadastroSimulado(payload: {
+    cliente_id: string;
+    alteracoes?: Array<{ campo: string; antes: any; depois: any }>;
+    socios_novos?: Array<{ nome: string; qual?: string | null }>;
+    socios_qualificacao?: Array<{ socio_id: string; nome: string; antes: any; depois: string }>;
+    socios_ausentes_no_cartao?: string[];
+    ignorarCaixa?: boolean;
+  }) {
+    const response = await api.post('/clientes/aplicar-cadastro-simulado', payload);
+    // { success, data: { cliente_id, campos_gravados, campos_em_conflito, socios_inseridos,
+    //                    socios_qualificacao_atualizada, socios_marcados_ausentes, campos_ignorados } }
+    return response.data;
   },
 
   async editarParticipacaoManual(id: string, capitalSocial: number, socios: Array<{ id: number; participacao_percentual: number; participacao_valor: number }>) {

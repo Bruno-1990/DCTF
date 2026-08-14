@@ -84,6 +84,8 @@ export interface ClienteSocio extends BaseEntity {
   qual?: string | null;
   participacao_percentual?: number | null; // Porcentagem de participação no capital social
   participacao_valor?: number | null; // Valor da participação calculado
+  ausente_no_cartao?: boolean; // Não consta mais no cartão CNPJ da ReceitaWS (não foi excluído)
+  ausente_no_cartao_em?: string | Date | null; // Quando a ausência foi detectada
 }
 
 // Tipos para DCTF

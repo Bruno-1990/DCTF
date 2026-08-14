@@ -717,6 +717,9 @@ export class Cliente extends DatabaseService<ICliente> {
         qual: r.qual ?? null,
         participacao_percentual: r.participacao_percentual ? parseFloat(String(r.participacao_percentual)) : null,
         participacao_valor: r.participacao_valor ? parseFloat(String(r.participacao_valor)) : null,
+        // Aviso: sócio que não consta mais no cartão CNPJ (não foi excluído).
+        ausente_no_cartao: r.ausente_no_cartao === 1 || r.ausente_no_cartao === true,
+        ausente_no_cartao_em: r.ausente_no_cartao_em ?? null,
         createdAt: r.created_at ? new Date(r.created_at) : new Date(),
         updatedAt: r.updated_at ? new Date(r.updated_at) : new Date(),
       }));
@@ -874,6 +877,827 @@ export class Cliente extends DatabaseService<ICliente> {
   }
 
   /**
+   * Colunas de `clientes` que o cartão CNPJ pode preencher/atualizar.
+   * Funciona como whitelist: nada fora desta lista é gravado pelos fluxos
+   * de ReceitaWS não-destrutivos (nem mesmo se vier no corpo da requisição).
+   */
+  private static readonly CAMPOS_CARTAO_CNPJ: ReadonlySet<string> = new Set([
+    'razao_social', 'fantasia', 'tipo_estabelecimento', 'situacao_cadastral', 'porte',
+    'natureza_juridica', 'abertura', 'data_situacao', 'motivo_situacao', 'situacao_especial',
+    'data_situacao_especial', 'efr', 'atividade_principal_code', 'atividade_principal_text',
+    'atividades_secundarias', 'logradouro', 'numero', 'complemento', 'bairro', 'municipio',
+    'uf', 'cep', 'receita_email', 'receita_telefone', 'tipo_empresa', 'capital_social',
+    'simples_optante', 'simples_data_opcao', 'simples_data_exclusao', 'simei_optante',
+    'simei_data_opcao', 'simei_data_exclusao', 'regime_tributario', 'email', 'telefone', 'endereco',
+  ]);
+
+  private static readonly CAMPOS_CARTAO_DATA: ReadonlySet<string> = new Set([
+    'abertura', 'data_situacao', 'data_situacao_especial',
+    'simples_data_opcao', 'simples_data_exclusao', 'simei_data_opcao', 'simei_data_exclusao',
+  ]);
+
+  /**
+   * Registra no histórico o que a ReceitaWS mudou no cadastro. É isso que
+   * permite responder depois "o que mudou na última atualização?" sem
+   * recalcular nada nem gastar consulta na API.
+   *
+   * Nunca derruba a atualização: se a migration 037 não estiver aplicada ou o
+   * INSERT falhar, o cadastro já foi gravado e o histórico é só perdido.
+   */
+  private async registrarHistoricoReceita(
+    cliente: { id: string; cnpj_limpo?: string | null; razao_social?: string | null },
+    origem: string,
+    eventos: Array<{ tipo: string; campo: string; antes?: any; depois?: any }>
+  ): Promise<void> {
+    if (!eventos.length) return;
+
+    const texto = (v: any): string | null => {
+      if (v === null || v === undefined) return null;
+      if (typeof v === 'object') {
+        try {
+          return JSON.stringify(v);
+        } catch {
+          return String(v);
+        }
+      }
+      return String(v);
+    };
+
+    try {
+      const valores: any[] = [];
+      const placeholders = eventos
+        .map((e) => {
+          valores.push(
+            cliente.id,
+            cliente.cnpj_limpo ?? null,
+            cliente.razao_social ?? null,
+            e.tipo,
+            e.campo,
+            texto(e.antes),
+            texto(e.depois),
+            origem
+          );
+          return '(?,?,?,?,?,?,?,?)';
+        })
+        .join(',');
+
+      await this.executeCustomQuery(
+        'INSERT INTO `clientes_receita_historico` (`cliente_id`,`cnpj_limpo`,`razao_social`,`tipo`,`campo`,`valor_antes`,`valor_depois`,`origem`) VALUES ' +
+          placeholders,
+        valores
+      );
+    } catch (e: any) {
+      console.warn('[Histórico ReceitaWS] Não foi possível registrar:', e?.message || e);
+    }
+  }
+
+  /**
+   * Lê o histórico de alterações vindas do cartão CNPJ, do mais recente para o
+   * mais antigo. É a resposta para "o que mudou na última atualização?".
+   */
+  async listarHistoricoReceita(filtros?: {
+    desde?: string;
+    ate?: string;
+    clienteId?: string;
+    limite?: number;
+  }): Promise<
+    ApiResponse<
+      Array<{
+        id: number;
+        cliente_id: string;
+        cnpj_limpo: string | null;
+        razao_social: string | null;
+        tipo: string;
+        campo: string;
+        valor_antes: string | null;
+        valor_depois: string | null;
+        origem: string;
+        aplicado_em: string;
+      }>
+    >
+  > {
+    const where: string[] = [];
+    const params: any[] = [];
+
+    if (filtros?.desde) {
+      where.push('`aplicado_em` >= ?');
+      params.push(`${filtros.desde} 00:00:00`);
+    }
+    if (filtros?.ate) {
+      where.push('`aplicado_em` <= ?');
+      params.push(`${filtros.ate} 23:59:59`);
+    }
+    if (filtros?.clienteId) {
+      where.push('`cliente_id` = ?');
+      params.push(filtros.clienteId);
+    }
+
+    // LIMIT não aceita placeholder em prepared statement no MySQL: sanitizamos.
+    const limite = Math.min(Math.max(Number(filtros?.limite) || 20000, 1), 100000);
+
+    const sql =
+      'SELECT * FROM `clientes_receita_historico`' +
+      (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
+      ` ORDER BY \`aplicado_em\` DESC, \`id\` DESC LIMIT ${limite}`;
+
+    const resp = await this.executeCustomQuery<any>(sql, params);
+    if (!resp.success) {
+      // Migration 037 ainda não aplicada: devolve vazio em vez de erro.
+      if (/clientes_receita_historico/i.test(resp.error || '')) {
+        return { success: true, data: [] };
+      }
+      return resp as any;
+    }
+    return { success: true, data: resp.data || [] };
+  }
+
+  /**
+   * Liga/desliga o aviso de "não consta mais no cartão CNPJ" de um sócio.
+   * A data de detecção é gravada só na primeira vez (reprocessar não a reseta)
+   * e é limpa quando o sócio volta a aparecer no cartão.
+   *
+   * Tolerante à migration 036 ainda não aplicada: nesse caso apenas não marca,
+   * sem derrubar a atualização do cadastro.
+   */
+  private async marcarSocioAusenteNoCartao(socioId: string, ausente: boolean): Promise<void> {
+    const sql = ausente
+      ? 'UPDATE `clientes_socios` SET `ausente_no_cartao` = 1, `ausente_no_cartao_em` = COALESCE(`ausente_no_cartao_em`, NOW()) WHERE `id` = ?'
+      : 'UPDATE `clientes_socios` SET `ausente_no_cartao` = 0, `ausente_no_cartao_em` = NULL WHERE `id` = ?';
+
+    const resp = await this.executeCustomQuery(sql, [socioId]);
+    if (!resp.success && !/ausente_no_cartao/i.test(resp.error || '')) {
+      throw new Error(resp.error || 'Erro ao marcar sócio ausente no cartão');
+    }
+  }
+
+  /**
+   * A ReceitaWS devolve MÁSCARAS no lugar do dado quando a empresa está baixada
+   * ou inapta: `"********"`, CNAE `"00.00-0-00"`, `"Não informada"`.
+   * Isso não é informação nova — é ausência de informação. Se gravássemos,
+   * apagaríamos o CNAE real que está no cadastro trocando por um placeholder.
+   * Por isso tratamos esses valores como vazios.
+   */
+  private ehMascaraReceita(valor: any): boolean {
+    const s = String(valor ?? '').replace(/\s+/g, ' ').trim();
+    if (!s) return true;
+    if (/^\*+$/.test(s)) return true; // ********
+    if (/^00\.00-0-00$/.test(s)) return true; // CNAE placeholder
+    const upper = s.toUpperCase();
+    if (upper === 'NAO INFORMADA' || upper === 'NÃO INFORMADA') return true;
+    if (upper === 'NAO INFORMADO' || upper === 'NÃO INFORMADO') return true;
+    return false;
+  }
+
+  /**
+   * Normaliza um valor (do banco ou do cartão) para comparação textual estável.
+   * Usado tanto na simulação quanto na gravação, para que os dois lados
+   * enxerguem exatamente a mesma coisa.
+   */
+  private valorParaComparacao(campo: string, valor: any, ignorarCaixa: boolean): string {
+    const colapsar = (v: any) => String(v ?? '').replace(/\s+/g, ' ').trim();
+    if (valor === null || valor === undefined) return '';
+
+    if (campo === 'atividades_secundarias') {
+      const parsed =
+        typeof valor === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(valor);
+              } catch {
+                return valor;
+              }
+            })()
+          : valor;
+      const json = JSON.stringify(parsed);
+      return ignorarCaixa ? json.toUpperCase() : json;
+    }
+
+    if (campo === 'capital_social') {
+      const n = typeof valor === 'number' ? valor : parseFloat(String(valor));
+      return Number.isFinite(n) ? n.toFixed(2) : '';
+    }
+
+    if (campo === 'simples_optante' || campo === 'simei_optante') {
+      if (valor === true || valor === 1 || valor === '1') return 'true';
+      if (valor === false || valor === 0 || valor === '0') return 'false';
+      return '';
+    }
+
+    if (Cliente.CAMPOS_CARTAO_DATA.has(campo)) {
+      if (valor instanceof Date) {
+        // Coluna DATE pode chegar do driver como meia-noite LOCAL ou meia-noite
+        // UTC. Usar sempre getDate() desloca um dia quando vem em UTC (Brasil é
+        // UTC-3), o que faria datas idênticas parecerem diferentes a cada rodada.
+        // Escolhemos a leitura que cai exatamente na meia-noite.
+        if (valor.getHours() === 0 && valor.getMinutes() === 0) {
+          const ano = valor.getFullYear();
+          const mes = String(valor.getMonth() + 1).padStart(2, '0');
+          const dia = String(valor.getDate()).padStart(2, '0');
+          return `${ano}-${mes}-${dia}`;
+        }
+        return valor.toISOString().slice(0, 10);
+      }
+      return String(valor).slice(0, 10);
+    }
+
+    // Vale para todos os campos de texto, não só razão social: a Receita alterna
+    // entre maiúsculas e capitalizado (ex.: "Extinção Por Encerramento" vs
+    // "EXTINÇÃO POR ENCERRAMENTO"). Sem isso, dezenas de clientes seriam
+    // "atualizados" por diferença puramente cosmética.
+    const s = colapsar(valor);
+    return ignorarCaixa ? s.toUpperCase() : s;
+  }
+
+  /**
+   * Atualiza o cadastro do cliente com os dados do cartão CNPJ (ReceitaWS) de
+   * forma ESTRITAMENTE NÃO-DESTRUTIVA.
+   *
+   * Diferente de importarReceitaWS():
+   * - NÃO cria cadastro novo (o cliente precisa já existir);
+   * - NUNCA grava vazio/null por cima de um valor que já existe no cadastro;
+   * - só escreve campo por campo, e apenas onde a Receita traz algo diferente;
+   * - campos preenchidos à mão (email, telefone, endereco) só são preenchidos
+   *   quando estão vazios — nunca substituídos;
+   * - campos que não vêm no cartão (codigo_sci, nome_pasta_rede, beneficios_fiscais,
+   *   flags internas) nunca são tocados;
+   * - sócios: só acrescenta quem entrou e corrige a qualificação; não apaga ninguém.
+   *
+   * @param options.dryRun        Simula: compara e reporta, mas não grava nada.
+   * @param options.ignorarCaixa  Quando true (padrão), diferença só de
+   *                              maiúsculas/minúsculas não conta como mudança.
+   * @param options.somenteRazaoSocial  Restringe a atualização à razão social.
+   */
+  async atualizarCadastroViaReceitaWS(
+    cnpj: string,
+    options?: { dryRun?: boolean; ignorarCaixa?: boolean; somenteRazaoSocial?: boolean }
+  ): Promise<
+    ApiResponse<{
+      status: 'atualizado' | 'sem_alteracao' | 'nao_encontrado' | 'sem_nome_receita';
+      cnpj_limpo: string;
+      cliente_id?: string;
+      razao_social_antes?: string;
+      razao_social_depois?: string;
+      alteracoes: Array<{ campo: string; antes: any; depois: any }>;
+      socios_novos: Array<{ nome: string; qual: string | null }>;
+      socios_qualificacao: Array<{ socio_id: string; nome: string; antes: string | null; depois: string }>;
+      socios_ausentes_no_cartao: string[];
+      simulado?: boolean;
+    }>
+  > {
+    const dryRun = options?.dryRun === true;
+    const ignorarCaixa = options?.ignorarCaixa !== false; // padrão: ignora caixa
+    const somenteRazaoSocial = options?.somenteRazaoSocial === true;
+
+    const cnpjLimpo = this.cleanCNPJ(cnpj);
+    if (cnpjLimpo.length !== 14) {
+      return { success: false, error: 'CNPJ inválido. Deve conter 14 dígitos.' };
+    }
+
+    // O cliente PRECISA existir: este fluxo nunca cadastra ninguém.
+    const existente = await this.findBy({ cnpj_limpo: cnpjLimpo });
+    const cliente =
+      existente.success && existente.data && existente.data.length > 0
+        ? (existente.data[0] as any)
+        : null;
+
+    if (!cliente) {
+      return {
+        success: true,
+        data: {
+          status: 'nao_encontrado',
+          cnpj_limpo: cnpjLimpo,
+          alteracoes: [],
+          socios_novos: [],
+          socios_qualificacao: [],
+          socios_ausentes_no_cartao: [],
+        },
+      };
+    }
+
+    const colapsar = (v: any) => String(v ?? '').replace(/\s+/g, ' ').trim();
+    const razaoAtual = colapsar(cliente.razao_social);
+
+    let receita: ReceitaWSResponseOk;
+    try {
+      receita = await this.receitaWs.consultarCNPJ(cnpjLimpo);
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Erro ao consultar ReceitaWS' };
+    }
+
+    const nomeOficial = colapsar(receita.nome);
+
+    // Sem nome na resposta o cartão veio inutilizável: não gravamos nada.
+    if (!nomeOficial) {
+      return {
+        success: true,
+        data: {
+          status: 'sem_nome_receita',
+          cnpj_limpo: cnpjLimpo,
+          cliente_id: cliente.id,
+          razao_social_antes: razaoAtual,
+          alteracoes: [],
+          socios_novos: [],
+          socios_qualificacao: [],
+          socios_ausentes_no_cartao: [],
+        },
+      };
+    }
+
+    // -------------------------------------------------------------------
+    // Monta os candidatos a atualização a partir do cartão CNPJ.
+    // Valor `undefined` = a Receita não informou → campo nem entra na disputa.
+    // -------------------------------------------------------------------
+    // Máscara da Receita ("********", "00.00-0-00", "Não informada") entra como
+    // undefined: é ausência de dado, não dado novo — e nunca deve apagar o cadastro.
+    const texto = (v: any): string | undefined => {
+      const s = colapsar(v);
+      if (!s || this.ehMascaraReceita(s)) return undefined;
+      return s;
+    };
+    const data = (v: any): string | undefined => this.parseBRDateToISO(v) || undefined;
+    const atividadePrincipal = Array.isArray(receita.atividade_principal)
+      ? receita.atividade_principal[0]
+      : undefined;
+    // Também descartamos a lista de CNAEs secundários quando ela vem só com o
+    // item-máscara (típico de empresa baixada): substituir a lista real por
+    // [{"00.00-0-00","Não informada"}] seria apagar o cadastro.
+    const secundariasUteis = (Array.isArray(receita.atividades_secundarias)
+      ? receita.atividades_secundarias
+      : []
+    ).filter((a: any) => !this.ehMascaraReceita(a?.code));
+    const secundarias = secundariasUteis.length > 0 ? secundariasUteis : undefined;
+    const capitalSocial = this.parseMoney(receita.capital_social);
+    const tipoNormalizado = receita.tipo ? colapsar(receita.tipo).toUpperCase() : '';
+
+    const candidatos: Record<string, any> = somenteRazaoSocial
+      ? { razao_social: nomeOficial }
+      : {
+          razao_social: nomeOficial,
+          fantasia: texto(receita.fantasia),
+          tipo_estabelecimento: texto(receita.tipo),
+          situacao_cadastral: texto(receita.situacao),
+          porte: texto(receita.porte),
+          natureza_juridica: texto(receita.natureza_juridica),
+          abertura: data(receita.abertura),
+          data_situacao: data(receita.data_situacao),
+          motivo_situacao: texto(receita.motivo_situacao),
+          situacao_especial: texto(receita.situacao_especial),
+          data_situacao_especial: data(receita.data_situacao_especial),
+          efr: texto(receita.efr),
+          atividade_principal_code: texto(atividadePrincipal?.code),
+          atividade_principal_text: texto(atividadePrincipal?.text),
+          atividades_secundarias: secundarias,
+          logradouro: texto(receita.logradouro),
+          numero: texto(receita.numero),
+          complemento: texto(receita.complemento),
+          bairro: texto(receita.bairro),
+          municipio: texto(receita.municipio),
+          uf: texto(receita.uf),
+          cep: texto(receita.cep),
+          receita_email: texto(receita.email),
+          receita_telefone: texto(receita.telefone),
+          tipo_empresa:
+            tipoNormalizado === 'MATRIZ' ? 'Matriz' : tipoNormalizado === 'FILIAL' ? 'Filial' : undefined,
+          // capital_social 0 é tratado como "não informado": não sobrepõe um valor real já cadastrado.
+          capital_social: capitalSocial !== null && capitalSocial > 0 ? capitalSocial : undefined,
+          simples_optante: typeof receita.simples?.optante === 'boolean' ? receita.simples.optante : undefined,
+          simples_data_opcao: data(receita.simples?.data_opcao),
+          simples_data_exclusao: data(receita.simples?.data_exclusao),
+          simei_optante: typeof receita.simei?.optante === 'boolean' ? receita.simei.optante : undefined,
+          simei_data_opcao: data(receita.simei?.data_opcao),
+          simei_data_exclusao: data(receita.simei?.data_exclusao),
+          // Só promove para SIMPLES NACIONAL. A ReceitaWS não sabe distinguir
+          // Lucro Real de Presumido, então nunca rebaixa/zera o regime.
+          regime_tributario: receita.simples?.optante === true ? 'SIMPLES NACIONAL' : undefined,
+        };
+
+    // Campos preenchidos à mão pela equipe: a Receita só pode COMPLETAR o que
+    // está vazio, jamais substituir o que já foi cadastrado.
+    const camposSomenteSeVazio = new Set(['email', 'telefone', 'endereco']);
+    if (!somenteRazaoSocial) {
+      candidatos.email = texto(receita.email);
+      candidatos.telefone = receita.telefone ? this.normalizeTelefone(receita.telefone) || undefined : undefined;
+      candidatos.endereco = this.montarEnderecoLinha(receita) || undefined;
+    }
+
+    // Colunas VARCHAR(255) no schema: cortamos com segurança.
+    for (const [campo, valor] of Object.entries(candidatos)) {
+      if (typeof valor === 'string' && valor.length > 255) {
+        candidatos[campo] = valor.substring(0, 255);
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // Comparação campo a campo contra o que está no banco.
+    // -------------------------------------------------------------------
+    const paraComparacao = (campo: string, valor: any): string =>
+      this.valorParaComparacao(campo, valor, ignorarCaixa);
+
+    const alteracoes: Array<{ campo: string; antes: any; depois: any }> = [];
+    const paraGravar: Record<string, any> = {};
+
+    for (const [campo, novoValor] of Object.entries(candidatos)) {
+      if (novoValor === undefined || novoValor === null || novoValor === '') continue;
+
+      const valorAtual = cliente[campo];
+      const atualVazio =
+        valorAtual === null ||
+        valorAtual === undefined ||
+        (typeof valorAtual === 'string' && valorAtual.trim() === '');
+
+      // Campos manuais: completar apenas, nunca substituir.
+      if (camposSomenteSeVazio.has(campo) && !atualVazio) continue;
+
+      const antesComp = paraComparacao(campo, valorAtual);
+      const depoisComp = paraComparacao(campo, novoValor);
+      if (antesComp === depoisComp) continue;
+
+      // Já filtramos vazios acima, então nunca gravamos "nada" por cima de algo.
+      paraGravar[campo] = campo === 'atividades_secundarias' ? JSON.stringify(novoValor) : novoValor;
+      alteracoes.push({ campo, antes: valorAtual ?? null, depois: novoValor });
+    }
+
+    // -------------------------------------------------------------------
+    // Sócios do cartão: acrescenta os que faltam, corrige qualificação,
+    // e apenas REPORTA quem não aparece mais (não apaga ninguém).
+    // -------------------------------------------------------------------
+    const sociosNovos: Array<{ nome: string; qual: string | null }> = [];
+    const sociosQualificacao: Array<{ socio_id: string; nome: string; antes: string | null; depois: string }> = [];
+    const sociosAusentes: string[] = [];
+
+    if (!somenteRazaoSocial) {
+      const chave = (nome: string) => colapsar(nome).toUpperCase();
+      const qsa = (Array.isArray(receita.qsa) ? receita.qsa : [])
+        .map((s) => ({ nome: colapsar((s as any)?.nome), qual: texto((s as any)?.qual) || null }))
+        .filter((s) => s.nome);
+
+      try {
+        // Tolerante à migration 036 ainda não aplicada: sem a coluna, seguimos
+        // sem a flag em vez de derrubar a atualização.
+        let respExistentes = await this.executeCustomQuery<any>(
+          'SELECT `id`,`nome`,`qual`,`ausente_no_cartao` FROM `clientes_socios` WHERE `cliente_id` = ?',
+          [cliente.id]
+        );
+        if (!respExistentes.success && /ausente_no_cartao/i.test(respExistentes.error || '')) {
+          respExistentes = await this.executeCustomQuery<any>(
+            'SELECT `id`,`nome`,`qual` FROM `clientes_socios` WHERE `cliente_id` = ?',
+            [cliente.id]
+          );
+        }
+        const existentesSocios = (respExistentes.success ? respExistentes.data || [] : []).map((r: any) => ({
+          id: r.id,
+          nome: colapsar(r.nome),
+          qual: r.qual ?? null,
+          ausente_no_cartao: r.ausente_no_cartao === 1 || r.ausente_no_cartao === true,
+        }));
+        const mapaExistentes = new Map(existentesSocios.map((s: any) => [chave(s.nome), s]));
+
+        for (const s of qsa) {
+          const atual: any = mapaExistentes.get(chave(s.nome));
+          if (!atual) {
+            sociosNovos.push({ nome: s.nome, qual: s.qual });
+            if (!dryRun) {
+              await this.executeCustomQuery(
+                'INSERT INTO `clientes_socios` (`id`,`cliente_id`,`nome`,`cpf`,`qual`,`participacao_percentual`,`participacao_valor`) VALUES (?,?,?,?,?,?,?)',
+                [uuidv4(), cliente.id, s.nome, null, s.qual, null, null]
+              );
+            }
+          } else if (s.qual && colapsar(atual.qual) !== colapsar(s.qual)) {
+            // Só corrige a qualificação; CPF e participação continuam intocados.
+            sociosQualificacao.push({
+              socio_id: atual.id,
+              nome: s.nome,
+              antes: atual.qual ?? null,
+              depois: s.qual,
+            });
+            if (!dryRun) {
+              await this.executeCustomQuery('UPDATE `clientes_socios` SET `qual` = ? WHERE `id` = ?', [
+                s.qual,
+                atual.id,
+              ]);
+            }
+          }
+        }
+
+        // Quem sumiu do cartão FICA no cadastro (apagar levaria junto CPF e
+        // participação preenchidos à mão). Marcamos com a flag `ausente_no_cartao`
+        // para que quem abrir o cadastro veja que o quadro societário mudou.
+        // Quem voltou a constar tem a flag limpa automaticamente.
+        if (qsa.length > 0) {
+          const chavesCartao = new Set(qsa.map((s) => chave(s.nome)));
+
+          for (const s of existentesSocios) {
+            const sumiu = !chavesCartao.has(chave(s.nome));
+
+            if (sumiu) {
+              sociosAusentes.push(s.nome);
+              // Preserva a data da primeira detecção em reprocessamentos.
+              if (!dryRun && !s.ausente_no_cartao) {
+                await this.marcarSocioAusenteNoCartao(s.id, true);
+              }
+            } else if (!dryRun && s.ausente_no_cartao) {
+              await this.marcarSocioAusenteNoCartao(s.id, false);
+            }
+          }
+        }
+      } catch (e: any) {
+        // Tabela de sócios ainda não migrada: não derruba a atualização do cadastro.
+        if (!this.isNoSuchTableError(e)) throw e;
+      }
+    }
+
+    const houveMudanca =
+      Object.keys(paraGravar).length > 0 || sociosNovos.length > 0 || sociosQualificacao.length > 0;
+
+    if (!houveMudanca) {
+      return {
+        success: true,
+        data: {
+          status: 'sem_alteracao',
+          cnpj_limpo: cnpjLimpo,
+          cliente_id: cliente.id,
+          razao_social_antes: razaoAtual,
+          razao_social_depois: nomeOficial,
+          alteracoes: [],
+          socios_novos: [],
+          socios_qualificacao: [],
+          socios_ausentes_no_cartao: sociosAusentes,
+        },
+      };
+    }
+
+    if (!dryRun && Object.keys(paraGravar).length > 0) {
+      // UPDATE explícito: só as colunas que realmente mudaram entram no SET.
+      const colunas = Object.keys(paraGravar);
+      const setClause = colunas.map((c) => `\`${c}\` = ?`).join(', ');
+      const valores = colunas.map((c) => paraGravar[c]);
+      valores.push(cliente.id);
+
+      const upd = await this.executeCustomQuery(
+        `UPDATE \`clientes\` SET ${setClause}, \`updated_at\` = NOW() WHERE \`id\` = ?`,
+        valores
+      );
+      if (!upd.success) {
+        return { success: false, error: upd.error || 'Erro ao gravar dados da ReceitaWS' };
+      }
+    }
+
+    // Registra o que foi efetivamente gravado (simulação não entra no histórico).
+    if (!dryRun) {
+      await this.registrarHistoricoReceita(
+        { id: cliente.id, cnpj_limpo: cnpjLimpo, razao_social: razaoAtual },
+        'lote-cartao-cnpj',
+        [
+          ...alteracoes
+            .filter((a) => Object.prototype.hasOwnProperty.call(paraGravar, a.campo))
+            .map((a) => ({ tipo: 'campo', campo: a.campo, antes: a.antes, depois: a.depois })),
+          ...sociosQualificacao.map((s) => ({
+            tipo: 'socio_qualificacao',
+            campo: s.nome,
+            antes: s.antes,
+            depois: s.depois,
+          })),
+          ...sociosNovos.map((s) => ({
+            tipo: 'socio_novo',
+            campo: s.nome,
+            antes: null,
+            depois: s.qual,
+          })),
+          ...sociosAusentes.map((nome) => ({
+            tipo: 'socio_fora_cartao',
+            campo: nome,
+            antes: 'consta no cadastro',
+            depois: 'não consta no cartão',
+          })),
+        ]
+      );
+    }
+
+    return {
+      success: true,
+      data: {
+        status: 'atualizado',
+        cnpj_limpo: cnpjLimpo,
+        cliente_id: cliente.id,
+        razao_social_antes: razaoAtual,
+        razao_social_depois: nomeOficial,
+        alteracoes,
+        socios_novos: sociosNovos,
+        socios_qualificacao: sociosQualificacao,
+        socios_ausentes_no_cartao: sociosAusentes,
+        simulado: dryRun,
+      },
+    };
+  }
+
+  /**
+   * Aplica no banco um resultado que já foi calculado por
+   * atualizarCadastroViaReceitaWS() em modo simulação — SEM consultar a
+   * ReceitaWS de novo. É isso que permite simular a base inteira uma vez e
+   * depois gravar em segundos, em vez de repetir 220 consultas.
+   *
+   * Proteção contra simulação velha: cada campo só é gravado se o valor atual
+   * no banco ainda for igual ao "antes" registrado na simulação. Se alguém
+   * editou o cadastro nesse meio-tempo, o campo é pulado e reportado como
+   * conflito — nunca sobrescrevemos uma edição mais nova.
+   */
+  async aplicarCadastroSimulado(
+    clienteId: string,
+    payload: {
+      alteracoes?: Array<{ campo: string; antes: any; depois: any }>;
+      socios_novos?: Array<{ nome: string; qual?: string | null }>;
+      socios_qualificacao?: Array<{ socio_id: string; nome: string; antes: any; depois: string }>;
+      socios_ausentes_no_cartao?: string[];
+      ignorarCaixa?: boolean;
+    }
+  ): Promise<
+    ApiResponse<{
+      cliente_id: string;
+      campos_gravados: string[];
+      campos_em_conflito: Array<{ campo: string; esperado: any; encontrado: any }>;
+      socios_inseridos: string[];
+      socios_qualificacao_atualizada: string[];
+      socios_marcados_ausentes: string[];
+      campos_ignorados: string[];
+    }>
+  > {
+    const id = String(clienteId || '').trim();
+    if (!id) return { success: false, error: 'cliente_id é obrigatório.' };
+
+    const ignorarCaixa = payload?.ignorarCaixa !== false;
+    const alteracoes = Array.isArray(payload?.alteracoes) ? payload!.alteracoes : [];
+    const sociosNovos = Array.isArray(payload?.socios_novos) ? payload!.socios_novos : [];
+    const sociosQual = Array.isArray(payload?.socios_qualificacao) ? payload!.socios_qualificacao : [];
+    const sociosAusentes = Array.isArray(payload?.socios_ausentes_no_cartao)
+      ? payload!.socios_ausentes_no_cartao
+      : [];
+
+    const respCliente = await this.executeCustomQuery<any>(
+      'SELECT * FROM `clientes` WHERE `id` = ? LIMIT 1',
+      [id]
+    );
+    const cliente = respCliente.success && respCliente.data && respCliente.data[0] ? respCliente.data[0] : null;
+    if (!cliente) return { success: false, error: 'Cliente não encontrado.' };
+
+    const camposGravados: string[] = [];
+    const camposIgnorados: string[] = [];
+    const camposEmConflito: Array<{ campo: string; esperado: any; encontrado: any }> = [];
+    const paraGravar: Record<string, any> = {};
+
+    for (const alt of alteracoes) {
+      const campo = String(alt?.campo || '');
+
+      // Whitelist: só colunas do cartão CNPJ podem ser gravadas por aqui.
+      if (!Cliente.CAMPOS_CARTAO_CNPJ.has(campo)) {
+        camposIgnorados.push(campo);
+        continue;
+      }
+
+      // Nunca gravamos vazio por cima de algo — mesma regra da simulação.
+      if (alt?.depois === null || alt?.depois === undefined || alt?.depois === '') {
+        camposIgnorados.push(campo);
+        continue;
+      }
+
+      const atualComp = this.valorParaComparacao(campo, cliente[campo], ignorarCaixa);
+      const esperadoComp = this.valorParaComparacao(campo, alt?.antes, ignorarCaixa);
+
+      if (atualComp !== esperadoComp) {
+        // O cadastro mudou depois da simulação: preservamos a edição mais nova.
+        camposEmConflito.push({ campo, esperado: alt?.antes ?? null, encontrado: cliente[campo] ?? null });
+        continue;
+      }
+
+      const depoisComp = this.valorParaComparacao(campo, alt?.depois, ignorarCaixa);
+      if (depoisComp === atualComp) continue; // já está como deveria
+
+      paraGravar[campo] =
+        campo === 'atividades_secundarias' && typeof alt.depois !== 'string'
+          ? JSON.stringify(alt.depois)
+          : alt.depois;
+      camposGravados.push(campo);
+    }
+
+    if (Object.keys(paraGravar).length > 0) {
+      const colunas = Object.keys(paraGravar);
+      const setClause = colunas.map((c) => `\`${c}\` = ?`).join(', ');
+      const valores = colunas.map((c) => paraGravar[c]);
+      valores.push(id);
+
+      const upd = await this.executeCustomQuery(
+        `UPDATE \`clientes\` SET ${setClause}, \`updated_at\` = NOW() WHERE \`id\` = ?`,
+        valores
+      );
+      if (!upd.success) {
+        return { success: false, error: upd.error || 'Erro ao gravar alterações simuladas' };
+      }
+    }
+
+    // Sócios: só inserimos quem continua faltando e corrigimos qualificação.
+    const sociosInseridos: string[] = [];
+    const sociosQualAtualizada: string[] = [];
+    const sociosMarcadosAusentes: string[] = [];
+
+    if (sociosNovos.length > 0 || sociosQual.length > 0 || sociosAusentes.length > 0) {
+      try {
+        const chave = (nome: string) => String(nome || '').replace(/\s+/g, ' ').trim().toUpperCase();
+        const respExistentes = await this.executeCustomQuery<any>(
+          'SELECT `id`,`nome`,`qual` FROM `clientes_socios` WHERE `cliente_id` = ?',
+          [id]
+        );
+        const existentes = respExistentes.success ? respExistentes.data || [] : [];
+        const chavesExistentes = new Set(existentes.map((r: any) => chave(r.nome)));
+
+        for (const s of sociosNovos) {
+          const nome = String(s?.nome || '').replace(/\s+/g, ' ').trim();
+          if (!nome || chavesExistentes.has(chave(nome))) continue;
+          await this.executeCustomQuery(
+            'INSERT INTO `clientes_socios` (`id`,`cliente_id`,`nome`,`cpf`,`qual`,`participacao_percentual`,`participacao_valor`) VALUES (?,?,?,?,?,?,?)',
+            [uuidv4(), id, nome, null, s?.qual ?? null, null, null]
+          );
+          chavesExistentes.add(chave(nome));
+          sociosInseridos.push(nome);
+        }
+
+        for (const sq of sociosQual) {
+          const socioId = String(sq?.socio_id || '');
+          const novoQual = String(sq?.depois || '').trim();
+          if (!socioId || !novoQual) continue;
+
+          const atual = existentes.find((r: any) => String(r.id) === socioId);
+          if (!atual) continue;
+
+          // Mesma proteção: só corrige se a qualificação ainda for a que simulamos.
+          const esperado = String(sq?.antes ?? '').replace(/\s+/g, ' ').trim();
+          const encontrado = String(atual.qual ?? '').replace(/\s+/g, ' ').trim();
+          if (esperado !== encontrado) {
+            camposEmConflito.push({ campo: `socio:${sq?.nome} (qualificação)`, esperado, encontrado });
+            continue;
+          }
+
+          await this.executeCustomQuery('UPDATE `clientes_socios` SET `qual` = ? WHERE `id` = ?', [
+            novoQual,
+            socioId,
+          ]);
+          sociosQualAtualizada.push(String(sq?.nome || socioId));
+        }
+
+        // Marca quem a simulação apontou como fora do cartão. Ninguém é excluído:
+        // a flag serve de aviso dentro do cadastro do cliente.
+        for (const nomeAusente of sociosAusentes) {
+          const nome = String(nomeAusente || '').replace(/\s+/g, ' ').trim();
+          if (!nome) continue;
+          const alvo = existentes.find((r: any) => chave(r.nome) === chave(nome));
+          if (!alvo) continue;
+          await this.marcarSocioAusenteNoCartao(String(alvo.id), true);
+          sociosMarcadosAusentes.push(nome);
+        }
+      } catch (e: any) {
+        if (!this.isNoSuchTableError(e)) throw e;
+      }
+    }
+
+    // Histórico do que foi realmente gravado por este fluxo.
+    await this.registrarHistoricoReceita(
+      { id, cnpj_limpo: cliente.cnpj_limpo, razao_social: cliente.razao_social },
+      'aplicar-simulacao',
+      [
+        ...alteracoes
+          .filter((a) => camposGravados.includes(String(a?.campo)))
+          .map((a) => ({ tipo: 'campo', campo: String(a.campo), antes: a.antes, depois: a.depois })),
+        ...sociosQual
+          .filter((s) => sociosQualAtualizada.includes(String(s?.nome)))
+          .map((s) => ({
+            tipo: 'socio_qualificacao',
+            campo: String(s.nome),
+            antes: s.antes,
+            depois: s.depois,
+          })),
+        ...sociosInseridos.map((nome) => ({ tipo: 'socio_novo', campo: nome, antes: null, depois: null })),
+        ...sociosMarcadosAusentes.map((nome) => ({
+          tipo: 'socio_fora_cartao',
+          campo: nome,
+          antes: 'consta no cadastro',
+          depois: 'não consta no cartão',
+        })),
+      ]
+    );
+
+    return {
+      success: true,
+      data: {
+        cliente_id: id,
+        campos_gravados: camposGravados,
+        campos_em_conflito: camposEmConflito,
+        socios_inseridos: sociosInseridos,
+        socios_qualificacao_atualizada: sociosQualAtualizada,
+        socios_marcados_ausentes: sociosMarcadosAusentes,
+        campos_ignorados: camposIgnorados,
+      },
+    };
+  }
+
+  /**
    * Importa/atualiza cadastro do cliente via ReceitaWS (inclui sócios)
    * - Se cliente não existir, cria
    * - Se existir, atualiza (com controle de overwrite)
@@ -983,7 +1807,12 @@ export class Cliente extends DatabaseService<ICliente> {
       receita_telefone: receita.telefone || null,
       tipo_empresa: receita.tipo ? (receita.tipo.toUpperCase() === 'MATRIZ' ? 'Matriz' : receita.tipo.toUpperCase() === 'FILIAL' ? 'Filial' : null) : null,
       capital_social: this.parseMoney(receita.capital_social),
-      regime_tributario: receita.simples?.optante === true ? 'SIMPLES NACIONAL' : null, // Definir automaticamente se for optante do Simples
+      // Só promovemos para SIMPLES NACIONAL quando a Receita confirma a opção.
+      // NUNCA gravamos null aqui: a ReceitaWS não sabe se a empresa é Lucro Real
+      // ou Presumido, então zerar o campo apagaria uma informação que só existe
+      // no nosso cadastro. Quando não é optante, o campo fica intocado
+      // (undefined é descartado por filterToExistingColumns).
+      regime_tributario: receita.simples?.optante === true ? 'SIMPLES NACIONAL' : undefined,
       simples_optante: receita.simples?.optante ?? null,
       simples_data_opcao: simplesOpcaoISO,
       simples_data_exclusao: simplesExclusaoISO,
@@ -1323,39 +2152,103 @@ export class Cliente extends DatabaseService<ICliente> {
       // Se a tabela ainda não existir (migração não aplicada), não falhar a importação.
       if (!clienteExistente || sociosChanged) {
         try {
-          await connection.execute('DELETE FROM `clientes_socios` WHERE `cliente_id` = ?', [clienteId]);
+          // MERGE, não DELETE + INSERT. O CPF do sócio vem da Situação Fiscal e a
+          // participação costuma ser preenchida à mão — apagar tudo a cada mudança
+          // de QSA descartaria esses dados. Aqui só mexemos em quem realmente
+          // entrou, saiu ou mudou de qualificação.
+          const chaveSocio = (nome: string) => nome.replace(/\s+/g, ' ').trim().toUpperCase();
+
+          const [existentesRows] = await connection.execute(
+            'SELECT `id`,`nome`,`qual` FROM `clientes_socios` WHERE `cliente_id` = ?',
+            [clienteId]
+          );
+          const sociosExistentes = new Map<string, { id: string; nome: string; qual: string | null }>();
+          for (const r of existentesRows as any[]) {
+            const nome = String(r?.nome || '').trim();
+            if (nome) sociosExistentes.set(chaveSocio(nome), { id: r.id, nome, qual: r.qual ?? null });
+          }
+
           const socios = Array.isArray(receita.qsa) ? receita.qsa : [];
+          const chavesNaReceita = new Set<string>();
+
+          // Capital social é o mesmo para todos os sócios: buscamos uma única vez.
+          let capitalSocialNum: number | null = null;
+          const [clienteRows] = await connection.execute(
+            'SELECT `capital_social` FROM `clientes` WHERE `id` = ? LIMIT 1',
+            [clienteId]
+          );
+          const clienteRow = (clienteRows as any[])[0];
+          if (clienteRow?.capital_social) {
+            const bruto =
+              typeof clienteRow.capital_social === 'string'
+                ? parseFloat(clienteRow.capital_social.replace(/[^\d,.-]/g, '').replace(',', '.'))
+                : parseFloat(String(clienteRow.capital_social));
+            capitalSocialNum = Number.isFinite(bruto) ? bruto : null;
+          }
+
           for (const s of socios) {
             const nome = String((s as any)?.nome || '').trim();
             if (!nome) continue;
-            const socioId = uuidv4();
-          // Calcular participação se temos porcentagem e capital social
-          const participacaoPercentual = (s as any)?.participacao_percentual ? parseFloat(String((s as any).participacao_percentual)) : null;
-          let participacaoValor: number | null = null;
-          
-          // Se temos participação percentual, tentar calcular o valor
-          if (participacaoPercentual !== null && !isNaN(participacaoPercentual)) {
-            // Buscar capital social do cliente se não foi fornecido
-            let capitalSocialNum: number | null = null;
-            const [clienteRows] = await connection.execute('SELECT `capital_social` FROM `clientes` WHERE `id` = ? LIMIT 1', [clienteId]);
-            const clienteRow = (clienteRows as any[])[0];
-            if (clienteRow?.capital_social) {
-              capitalSocialNum = typeof clienteRow.capital_social === 'string' 
-                ? parseFloat(clienteRow.capital_social.replace(/[^\d,.-]/g, '').replace(',', '.'))
-                : parseFloat(String(clienteRow.capital_social));
+
+            const chave = chaveSocio(nome);
+            chavesNaReceita.add(chave);
+            const qual = (s as any)?.qual ? String((s as any).qual).trim() : null;
+            const jaExiste = sociosExistentes.get(chave);
+
+            if (jaExiste) {
+              // Sócio permanece: atualizamos só a qualificação (e apenas se mudou).
+              // CPF, participação percentual e valor ficam preservados.
+              if ((jaExiste.qual ?? null) !== qual) {
+                await connection.execute(
+                  'UPDATE `clientes_socios` SET `qual` = ? WHERE `id` = ?',
+                  [qual, jaExiste.id]
+                );
+              }
+              continue;
             }
-            
-            if (capitalSocialNum !== null && !isNaN(capitalSocialNum)) {
-              participacaoValor = (capitalSocialNum * participacaoPercentual) / 100;
-            }
+
+            // Sócio novo: calcular participação quando a Receita informar o percentual
+            const participacaoPercentualBruto = (s as any)?.participacao_percentual
+              ? parseFloat(String((s as any).participacao_percentual))
+              : null;
+            const participacaoPercentual =
+              participacaoPercentualBruto !== null && Number.isFinite(participacaoPercentualBruto)
+                ? participacaoPercentualBruto
+                : null;
+            const participacaoValor =
+              participacaoPercentual !== null && capitalSocialNum !== null
+                ? (capitalSocialNum * participacaoPercentual) / 100
+                : null;
+
+            // CPF entra como NULL: a ReceitaWS não fornece CPF no QSA.
+            // Ele é preenchido depois, pela consulta de Situação Fiscal.
+            await connection.execute(
+              'INSERT INTO `clientes_socios` (`id`,`cliente_id`,`nome`,`cpf`,`qual`,`participacao_percentual`,`participacao_valor`) VALUES (?,?,?,?,?,?,?)',
+              [uuidv4(), clienteId, nome, null, qual, participacaoPercentual, participacaoValor]
+            );
           }
 
-          // ✅ Incluir campo CPF (será NULL inicialmente, pois ReceitaWS não fornece CPF no QSA)
-          // O CPF será preenchido posteriormente quando a Situação Fiscal for consultada
-          await connection.execute(
-            'INSERT INTO `clientes_socios` (`id`,`cliente_id`,`nome`,`cpf`,`qual`,`participacao_percentual`,`participacao_valor`) VALUES (?,?,?,?,?,?,?)',
-            [socioId, clienteId, nome, null, ((s as any)?.qual ? String((s as any).qual).trim() : null), participacaoPercentual, participacaoValor]
-          );
+          // Quem saiu do quadro societário NÃO é excluído: fica marcado com
+          // `ausente_no_cartao` para aparecer como aviso no cadastro. Assim o
+          // CPF e a participação preenchidos à mão continuam disponíveis para
+          // conferência, e a saída não passa despercebida.
+          try {
+            for (const [chaveSocioExistente, socio] of sociosExistentes) {
+              if (!chavesNaReceita.has(chaveSocioExistente)) {
+                await connection.execute(
+                  'UPDATE `clientes_socios` SET `ausente_no_cartao` = 1, `ausente_no_cartao_em` = COALESCE(`ausente_no_cartao_em`, NOW()) WHERE `id` = ?',
+                  [socio.id]
+                );
+              } else {
+                await connection.execute(
+                  'UPDATE `clientes_socios` SET `ausente_no_cartao` = 0, `ausente_no_cartao_em` = NULL WHERE `id` = ? AND `ausente_no_cartao` = 1',
+                  [socio.id]
+                );
+              }
+            }
+          } catch (errFlag: any) {
+            // Migration 036 ainda não aplicada: segue sem a flag.
+            if (!/ausente_no_cartao/i.test(errFlag?.message || '')) throw errFlag;
           }
         } catch (e: any) {
           if (!this.isNoSuchTableError(e)) {

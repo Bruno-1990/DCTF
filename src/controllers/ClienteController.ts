@@ -10,6 +10,7 @@ import * as path from 'path';
 import { Cliente } from '../models/Cliente';
 import { ApiResponse } from '../types';
 import ExcelJS from 'exceljs';
+import { buildStandardSheet, formatarCnpj, formatarValorLegivel } from '../services/reports/XlsxStandardSheet';
 
 const execAsync = promisify(exec);
 
@@ -22,107 +23,163 @@ export class ClienteController {
 
 
   /**
-   * Atualizar todos os clientes na ReceitaWS (execução única)
-   * Atualiza cada CNPJ com intervalo de 20 segundos entre cada atualização
+   * Atualizar o cadastro de um cliente com os dados do cartão CNPJ (ReceitaWS),
+   * de forma não-destrutiva: nada que já existe no cadastro é apagado.
+   *
+   * Uma requisição = uma consulta na ReceitaWS. O ritmo (3 consultas/min) é
+   * controlado por quem chama — hoje, a tela de Administração.
+   *
+   * Body: { cnpj: string, dryRun?: boolean, ignorarCaixa?: boolean, somenteRazaoSocial?: boolean }
    */
-  async atualizarTodosReceitaWS(req: Request, res: Response): Promise<void> {
+  async atualizarCadastroReceitaWS(req: Request, res: Response): Promise<void> {
     try {
-      console.log('[Atualizar Todos ReceitaWS] Iniciando atualização em massa...');
-      
-      // Buscar todos os clientes com CNPJ
-      const result = await this.clienteModel.findAll();
-      
-      if (!result.success || !result.data) {
-        res.status(400).json({
-          success: false,
-          error: 'Erro ao buscar clientes',
-          data: null,
-        });
+      const { cnpj, dryRun, ignorarCaixa, somenteRazaoSocial } = req.body || {};
+
+      if (!cnpj) {
+        res.status(400).json({ success: false, error: 'CNPJ é obrigatório', data: null });
         return;
       }
 
-      const clientes = result.data as any[];
-      
-      // Filtrar apenas clientes com CNPJ válido
-      const clientesComCNPJ = clientes.filter((c: any) => {
-        const cnpj = c.cnpj_limpo || c.cnpj;
-        return cnpj && String(cnpj).replace(/\D/g, '').length === 14;
+      const result = await this.clienteModel.atualizarCadastroViaReceitaWS(String(cnpj), {
+        dryRun: dryRun === true,
+        ignorarCaixa: ignorarCaixa !== false,
+        somenteRazaoSocial: somenteRazaoSocial === true,
       });
 
-      console.log(`[Atualizar Todos ReceitaWS] Encontrados ${clientesComCNPJ.length} clientes com CNPJ válido`);
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.error, data: null });
+        return;
+      }
 
-      const resultados: Array<{
-        cnpj: string;
-        razao_social: string;
-        sucesso: boolean;
-        erro?: string;
-      }> = [];
+      res.json({ success: true, data: result.data });
+    } catch (error: any) {
+      console.error('[Atualizar Cadastro ReceitaWS] Erro:', error);
+      res.status(500).json({
+        success: false,
+        error: error?.message || 'Erro ao atualizar cadastro via ReceitaWS',
+        data: null,
+      });
+    }
+  }
 
-      // Processar cada cliente com intervalo de 20 segundos
-      for (let i = 0; i < clientesComCNPJ.length; i++) {
-        const cliente = clientesComCNPJ[i];
-        const cnpj = String(cliente.cnpj_limpo || cliente.cnpj).replace(/\D/g, '');
-        const razaoSocial = cliente.razao_social || cliente.nome || 'N/A';
+  /**
+   * Histórico de alterações aplicadas pelo cartão CNPJ.
+   * Query: ?desde=YYYY-MM-DD&ate=YYYY-MM-DD&cliente_id=&formato=xlsx
+   */
+  async historicoReceitaWS(req: Request, res: Response): Promise<void> {
+    try {
+      const { desde, ate, cliente_id, formato } = req.query as Record<string, string>;
 
-        console.log(`[Atualizar Todos ReceitaWS] Processando ${i + 1}/${clientesComCNPJ.length}: ${razaoSocial} (${cnpj})`);
+      const result = await this.clienteModel.listarHistoricoReceita({
+        desde: desde || undefined,
+        ate: ate || undefined,
+        clienteId: cliente_id || undefined,
+      });
 
-        try {
-          // Importar dados da ReceitaWS com overwrite
-          const importResult = await this.clienteModel.importarReceitaWS(cnpj, { overwrite: true });
-          
-          if (importResult.success) {
-            resultados.push({
-              cnpj,
-              razao_social: razaoSocial,
-              sucesso: true,
-            });
-            console.log(`[Atualizar Todos ReceitaWS] ✓ Sucesso para ${razaoSocial}`);
-          } else {
-            resultados.push({
-              cnpj,
-              razao_social: razaoSocial,
-              sucesso: false,
-              erro: importResult.error || 'Erro desconhecido',
-            });
-            console.log(`[Atualizar Todos ReceitaWS] ✗ Erro para ${razaoSocial}: ${importResult.error}`);
-          }
-        } catch (error: any) {
-          resultados.push({
-            cnpj,
-            razao_social: razaoSocial,
-            sucesso: false,
-            erro: error.message || 'Erro ao processar',
-          });
-          console.error(`[Atualizar Todos ReceitaWS] ✗ Exceção para ${razaoSocial}:`, error);
-        }
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.error, data: null });
+        return;
+      }
 
-        // Aguardar 20 segundos antes do próximo (exceto no último)
-        if (i < clientesComCNPJ.length - 1) {
-          console.log(`[Atualizar Todos ReceitaWS] Aguardando 20 segundos antes do próximo...`);
-          await new Promise(resolve => setTimeout(resolve, 20000));
+      const registros = result.data || [];
+
+      if (String(formato || '').toLowerCase() !== 'xlsx') {
+        res.json({ success: true, data: registros, total: registros.length });
+        return;
+      }
+
+      // Agrupa por CNPJ preservando a ordem de recência: o banco devolve por
+      // `aplicado_em DESC`, então a primeira aparição de cada empresa define a
+      // posição do grupo, e dentro dele as linhas seguem da mais nova à mais antiga.
+      const grupos = new Map<string, typeof registros>();
+      for (const r of registros) {
+        const chave = String(r.cnpj_limpo || '').replace(/\D/g, '') || `cliente:${r.cliente_id}`;
+        const atual = grupos.get(chave);
+        if (atual) {
+          atual.push(r);
+        } else {
+          grupos.set(chave, [r]);
         }
       }
 
-      const sucessos = resultados.filter(r => r.sucesso).length;
-      const erros = resultados.filter(r => !r.sucesso).length;
+      const linhas: (string | number | null)[][] = [];
+      for (const registrosDoCnpj of grupos.values()) {
+        for (const r of registrosDoCnpj) {
+          linhas.push([
+            r.aplicado_em ? new Date(r.aplicado_em).toLocaleString('pt-BR') : '',
+            r.razao_social || '',
+            formatarCnpj(r.cnpj_limpo),
+            r.tipo,
+            r.campo,
+            formatarValorLegivel(r.valor_antes),
+            formatarValorLegivel(r.valor_depois),
+            r.origem,
+          ]);
+        }
+      }
 
-      console.log(`[Atualizar Todos ReceitaWS] Concluído: ${sucessos} sucessos, ${erros} erros`);
-
-      res.json({
-        success: true,
-        data: {
-          total: clientesComCNPJ.length,
-          sucessos,
-          erros,
-          resultados,
-        },
-        message: `Atualização concluída: ${sucessos} sucessos, ${erros} erros`,
+      const buffer = await buildStandardSheet({
+        sheetName: 'Alterações ReceitaWS',
+        headers: ['Aplicado em', 'Cliente', 'CNPJ', 'Tipo', 'Campo', 'Antes', 'Depois', 'Origem'],
+        rows: linhas,
+        groupByColumn: 2, // CNPJ: duas linhas em branco a cada empresa nova
+        groupSpacing: 2,
       });
+      const nome = `alteracoes-receitaws-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
+      res.send(buffer);
     } catch (error: any) {
-      console.error('[Atualizar Todos ReceitaWS] Erro geral:', error);
+      console.error('[Histórico ReceitaWS] Erro:', error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Erro ao atualizar clientes na ReceitaWS',
+        error: error?.message || 'Erro ao obter histórico de alterações',
+        data: null,
+      });
+    }
+  }
+
+  /**
+   * Gravar no banco um resultado já calculado em modo simulação, sem consultar
+   * a ReceitaWS de novo. Não tem rate limit: é só banco.
+   *
+   * Body: { cliente_id, alteracoes[], socios_novos[], socios_qualificacao[], ignorarCaixa? }
+   */
+  async aplicarCadastroSimulado(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        cliente_id,
+        alteracoes,
+        socios_novos,
+        socios_qualificacao,
+        socios_ausentes_no_cartao,
+        ignorarCaixa,
+      } = req.body || {};
+
+      if (!cliente_id) {
+        res.status(400).json({ success: false, error: 'cliente_id é obrigatório', data: null });
+        return;
+      }
+
+      const result = await this.clienteModel.aplicarCadastroSimulado(String(cliente_id), {
+        alteracoes,
+        socios_novos,
+        socios_qualificacao,
+        socios_ausentes_no_cartao,
+        ignorarCaixa: ignorarCaixa !== false,
+      });
+
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.error, data: null });
+        return;
+      }
+
+      res.json({ success: true, data: result.data });
+    } catch (error: any) {
+      console.error('[Aplicar Cadastro Simulado] Erro:', error);
+      res.status(500).json({
+        success: false,
+        error: error?.message || 'Erro ao aplicar alterações simuladas',
         data: null,
       });
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useClientes } from '../hooks/useClientes';
 import type { Cliente } from '../types';
@@ -397,6 +397,81 @@ const Clientes: React.FC = () => {
   // Modal de CNAEs e Atividades
   const [showModalCNAEAtividades, setShowModalCNAEAtividades] = useState(false);
   const [clienteModalCNAEAtividades, setClienteModalCNAEAtividades] = useState<Cliente | null>(null);
+  // Filtro por porte da empresa (ME, EPP, Demais...). As opções são montadas a
+  // partir dos valores realmente presentes no banco — nada é fixado no código.
+  const [filtroPorteFaturamento, setFiltroPorteFaturamento] = useState<string>('todos');
+
+  // Chave usada para agrupar clientes sem porte preenchido no cadastro.
+  const SEM_PORTE = '__sem_porte__';
+
+  const normalizarPorte = (valor: any): string =>
+    String(valor || '').replace(/\s+/g, ' ').trim().toUpperCase();
+
+  /** Abreviação usual do porte; valores desconhecidos aparecem como vieram. */
+  const rotularPorte = (porteNormalizado: string): string => {
+    switch (porteNormalizado) {
+      case 'MICRO EMPRESA':
+      case 'MICROEMPRESA':
+        return 'ME — Micro Empresa';
+      case 'EMPRESA DE PEQUENO PORTE':
+        return 'EPP — Empresa de Pequeno Porte';
+      case 'DEMAIS':
+        return 'Demais';
+      default:
+        return porteNormalizado;
+    }
+  };
+
+  /**
+   * Opções do filtro: só os portes que existem de fato entre os clientes
+   * carregados, cada um com a contagem. Se amanhã a Receita trouxer um porte
+   * novo, ele aparece sozinho aqui.
+   */
+  const portesDisponiveisFaturamento = useMemo(() => {
+    const mapa = new Map<string, { rotulo: string; quantidade: number }>();
+    for (const c of clientesFaturamento) {
+      const porte = normalizarPorte((c as any).porte);
+      const chave = porte || SEM_PORTE;
+      const existente = mapa.get(chave);
+      if (existente) {
+        existente.quantidade += 1;
+      } else {
+        mapa.set(chave, {
+          rotulo: porte ? rotularPorte(porte) : 'Sem porte informado',
+          quantidade: 1,
+        });
+      }
+    }
+    return Array.from(mapa.entries())
+      .map(([valor, dados]) => ({ valor, ...dados }))
+      .sort((a, b) => {
+        // "Sem porte informado" sempre por último
+        if (a.valor === SEM_PORTE) return 1;
+        if (b.valor === SEM_PORTE) return -1;
+        return a.rotulo.localeCompare(b.rotulo, 'pt-BR');
+      });
+  }, [clientesFaturamento]);
+
+  /** Lista da aba Faturamento SCI após busca por texto e filtro de porte. */
+  const clientesFaturamentoFiltrados = useMemo(() => {
+    return clientesFaturamento.filter((c) => {
+      if (searchFaturamento) {
+        const termLimpo = searchFaturamento.replace(/\D/g, '').toLowerCase();
+        const termOriginal = searchFaturamento.toLowerCase();
+        const cnpjLimpo = (c.cnpj_limpo || (c.cnpj ? c.cnpj.replace(/\D/g, '') : '')).toLowerCase();
+        const razao = (c.razao_social || (c as any).nome || '').toLowerCase();
+        const casa = (termLimpo && cnpjLimpo.includes(termLimpo)) || razao.includes(termOriginal);
+        if (!casa) return false;
+      }
+
+      if (filtroPorteFaturamento !== 'todos') {
+        const porte = normalizarPorte((c as any).porte) || SEM_PORTE;
+        if (porte !== filtroPorteFaturamento) return false;
+      }
+
+      return true;
+    });
+  }, [clientesFaturamento, searchFaturamento, filtroPorteFaturamento]);
   const [filtroCNAEModal, setFiltroCNAEModal] = useState<string>('');
 
   // Modal Consulta Personalizada
@@ -4436,7 +4511,7 @@ const Clientes: React.FC = () => {
               </div>
               <div className="p-5">
               {Array.isArray((visualizandoCliente as any).socios) && (visualizandoCliente as any).socios.length > 0 ? (
-                <div 
+                <div
                   className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50/30"
                   key={`socios-${visualizandoCliente.id}-${sociosRefreshKey}`}
                 >
@@ -4474,8 +4549,30 @@ const Clientes: React.FC = () => {
                         };
 
                         return (
-                          <tr key={s.id || idx} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-3 text-sm font-medium text-slate-800">{s.nome || s.Nome || s.name || '—'}</td>
+                          <tr
+                            key={s.id || idx}
+                            className={
+                              ausenteNoCartao
+                                ? 'bg-amber-50 hover:bg-amber-100 transition-colors'
+                                : 'hover:bg-slate-50 transition-colors'
+                            }
+                          >
+                            <td className="px-4 py-3 text-sm font-medium text-slate-800">
+                              {s.nome || s.Nome || s.name || '—'}
+                              {ausenteNoCartao && (
+                                <span
+                                  title={
+                                    ausenteDesde
+                                      ? `Detectado em ${ausenteDesde}. O sócio foi mantido no cadastro para conferência.`
+                                      : 'O sócio foi mantido no cadastro para conferência.'
+                                  }
+                                  className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 border border-amber-300 align-middle"
+                                >
+                                  ⚠ Não consta mais no cartão CNPJ
+                                  {ausenteDesde ? ` (desde ${ausenteDesde})` : ''}
+                                </span>
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-sm text-slate-600">{formatPercent(participacaoPercentual)}</td>
                             <td className="px-4 py-3 text-sm font-semibold text-slate-800">{formatCurrency(participacaoValor)}</td>
                           </tr>
@@ -4501,7 +4598,10 @@ const Clientes: React.FC = () => {
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
         <div className="flex flex-col md:flex-row md:flex-wrap gap-4 items-start md:items-center justify-between">
           <div className={`flex-1 min-w-[260px] ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Buscar Cliente</label>
+            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
+              <MagnifyingGlassIcon className="h-4 w-4 text-blue-600" />
+              Buscar Cliente
+            </label>
             <div className="relative group">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
               <input
@@ -4531,7 +4631,7 @@ const Clientes: React.FC = () => {
                     setSearch(e.target.value);
                   }
                 }}
-                className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
+                className="w-full h-12 pl-10 pr-10 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white focus:bg-white shadow-sm hover:shadow-md"
               />
               {((activeTab === 'participacao' ? searchParticipacao : activeTab === 'faturamento-sci' ? searchFaturamento : search)) && (
                 <button
@@ -4554,10 +4654,34 @@ const Clientes: React.FC = () => {
             </div>
           </div>
           {activeTab === 'faturamento-sci' && (
-            <div className="flex items-end">
+            // Espaçador com a mesma altura das labels: alinha a base do botão
+            // com a base dos campos, em vez de centralizá-lo na linha.
+            <div className="w-full md:w-auto">
+              <span aria-hidden="true" className="hidden md:block h-5 mb-2" />
               <button
                 onClick={() => {
                   // Preencher o campo de busca do modal com o valor do campo de busca principal
+              {/* Aviso de mudança no quadro societário detectada pelo cartão CNPJ */}
+              {(() => {
+                const ausentes = ((visualizandoCliente as any).socios || []).filter(
+                  (s: any) => s.ausente_no_cartao === true || s.ausente_no_cartao === 1
+                );
+                if (ausentes.length === 0) return null;
+                return (
+                  <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+                    <p className="text-sm font-semibold text-amber-900">
+                      ⚠ Mudança no quadro societário detectada no cartão CNPJ
+                    </p>
+                    <p className="text-xs text-amber-800 mt-1">
+                      {ausentes.length === 1 ? 'O sócio abaixo não consta' : `Os ${ausentes.length} sócios abaixo não constam`}{' '}
+                      mais no cartão CNPJ da Receita Federal:{' '}
+                      <strong>{ausentes.map((s: any) => s.nome).join(', ')}</strong>. O cadastro foi mantido
+                      (com CPF e participação) para conferência — confirme a saída antes de excluir.
+                    </p>
+                  </div>
+                );
+              })()}
+
                   setTipoConsulta('anual');
                   setConsultaPersonalizada(prev => ({
                     ...prev,
@@ -4570,7 +4694,7 @@ const Clientes: React.FC = () => {
                   }));
                   setShowModalConsultaPersonalizada(true);
                 }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-medium whitespace-nowrap shadow-sm hover:shadow-md transition-all"
+                className="w-full md:w-auto h-12 flex items-center justify-center gap-2 px-5 border-2 border-transparent bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-semibold whitespace-nowrap shadow-sm hover:shadow-md transition-all"
               >
                 <MagnifyingGlassIcon className="h-4 w-4" />
                 Consulta Personalizada
@@ -4579,7 +4703,7 @@ const Clientes: React.FC = () => {
           )}
           {activeTab === 'clientes' && (
             <div className="w-full md:w-64">
-              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
                 <FunnelIcon className="h-4 w-4 text-blue-600" />
                 Ordenar
               </label>
@@ -4592,10 +4716,17 @@ const Clientes: React.FC = () => {
                     // Ao sair do modo "Benefício Fiscal", zera o filtro por tipo.
                     if (novaOrdenacao !== 'beneficio-fiscal') setFiltroTipoBeneficio('todos');
                   }}
-                  className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
+                  className="w-full pl-10 pr-10 h-12 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
                 >
                   <option value="a-z">A → Z</option>
                   <option value="cnpj">CNPJ ↑</option>
+                        // Sócio que não consta mais no cartão CNPJ da ReceitaWS.
+                        // Não é excluído do cadastro — fica sinalizado para conferência.
+                        const ausenteNoCartao = s.ausente_no_cartao === true || s.ausente_no_cartao === 1;
+                        const ausenteDesde = s.ausente_no_cartao_em
+                          ? new Date(s.ausente_no_cartao_em).toLocaleDateString('pt-BR')
+                          : null;
+
                   <option value="codigo-sci">Código SCI ↑</option>
                   <option value="sem-cod-sci">Sem Cód SCI</option>
                   <option value="beneficio-fiscal">Benefício Fiscal</option>
@@ -4613,7 +4744,7 @@ const Clientes: React.FC = () => {
           )}
           {activeTab === 'clientes' && ordenacaoClientes === 'beneficio-fiscal' && (
             <div className="w-full md:w-64">
-              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
                 <FunnelIcon className="h-4 w-4 text-emerald-600" />
                 Tipo de Benefício
               </label>
@@ -4621,7 +4752,7 @@ const Clientes: React.FC = () => {
                 <select
                   value={filtroTipoBeneficio}
                   onChange={(e) => setFiltroTipoBeneficio(e.target.value)}
-                  className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-emerald-300 uppercase"
+                  className="w-full pl-10 pr-10 h-12 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-emerald-300 uppercase"
                 >
                   <option value="todos">TODOS</option>
                   {tiposBeneficioDistintos.map((t) => (
@@ -4640,7 +4771,7 @@ const Clientes: React.FC = () => {
           {activeTab === 'participacao' && (
             <>
               <div className="w-full md:w-64">
-                <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
                   <FunnelIcon className="h-4 w-4 text-amber-600" />
                   Ordenar / Filtrar
                 </label>
@@ -4648,7 +4779,7 @@ const Clientes: React.FC = () => {
                   <select
                     value={ordenacaoParticipacao}
                     onChange={(e) => setOrdenacaoParticipacao(e.target.value as any)}
-                    className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-amber-300"
+                    className="w-full pl-10 pr-10 h-12 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-amber-300"
                   >
                     <option value="a-z">A → Z</option>
                     <option value="cnpj">CNPJ ↑</option>
@@ -4669,20 +4800,51 @@ const Clientes: React.FC = () => {
                 </div>
               </div>
               <div className="w-full md:w-72 socio-filter-container">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Sócio (filtro)</label>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
+                  <MagnifyingGlassIcon className="h-4 w-4 text-blue-600" />
+                  Sócio (filtro)
+                </label>
                 <div className="relative">
                   <div className="relative">
                     <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                     <input
                       type="text"
                       value={socioSearchInput}
+          {activeTab === 'faturamento-sci' && portesDisponiveisFaturamento.length > 0 && (
+            <div className="w-full md:w-72">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
+                <FunnelIcon className="h-4 w-4 text-purple-600" />
+                Porte da empresa
+              </label>
+              <div className="relative">
+                <select
+                  value={filtroPorteFaturamento}
+                  onChange={(e) => setFiltroPorteFaturamento(e.target.value)}
+                  className="w-full h-12 pl-10 pr-10 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-purple-300"
+                >
+                  <option value="todos">Todos os portes ({clientesFaturamento.length})</option>
+                  {portesDisponiveisFaturamento.map((p) => (
+                    <option key={p.valor} value={p.valor}>
+                      {p.rotulo} ({p.quantidade})
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <FunnelIcon className="h-5 w-5 text-purple-500" />
+                </div>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                </div>
+              </div>
+            </div>
+          )}
                       onChange={(e) => {
                         setSocioSearchInput(e.target.value);
                         setShowSocioDropdown(true);
                       }}
                       onFocus={() => setShowSocioDropdown(true)}
                       placeholder="Buscar sócio..."
-                      className="w-full pl-10 pr-10 py-2.5 border-2 border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      className="w-full h-12 pl-10 pr-10 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm hover:shadow-md transition-all duration-200"
                     />
                     {socioFiltro && (
                       <button
@@ -6520,15 +6682,7 @@ const Clientes: React.FC = () => {
               <div className="space-y-4">
                 {/* Lista: um item por (Cliente + Empresa) — Matriz e Filiais como linhas separadas */}
                 <div className="space-y-4">
-                  {clientesFaturamento
-                    .filter((c) => {
-                      if (!searchFaturamento) return true;
-                      const termLimpo = searchFaturamento.replace(/\D/g, '').toLowerCase();
-                      const termOriginal = searchFaturamento.toLowerCase();
-                      const cnpjLimpo = (c.cnpj_limpo || (c.cnpj ? c.cnpj.replace(/\D/g, '') : '')).toLowerCase();
-                      const razao = (c.razao_social || c.nome || '').toLowerCase();
-                      return (termLimpo && cnpjLimpo.includes(termLimpo)) || razao.includes(termOriginal);
-                    })
+                  {clientesFaturamentoFiltrados
                     .flatMap((cliente) => {
                       const data = faturamentoData.get(cliente.id);
                       const faturamento = data?.faturamento || [];
@@ -6639,8 +6793,37 @@ const Clientes: React.FC = () => {
 
                       // Aba Faturamento SCI: exibir Matriz e Filial SEPARADOS (um bloco por estabelecimento)
                       if (exibirPorEmpresa) {
+            ) : clientesFaturamentoFiltrados.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <p className="font-medium">Nenhuma empresa encontrada com os filtros atuais.</p>
+                {filtroPorteFaturamento !== 'todos' && (
+                  <button
+                    onClick={() => setFiltroPorteFaturamento('todos')}
+                    className="mt-3 text-sm text-purple-600 hover:text-purple-800 font-semibold underline"
+                  >
+                    Limpar filtro de porte
+                  </button>
+                )}
+              </div>
                         const usarTipoCadastro = empresas!.length === 1;
                         return empresas!.map((emp) => {
+                {/* Resumo do que está sendo exibido, quando há filtro ativo */}
+                {(filtroPorteFaturamento !== 'todos' || searchFaturamento) && (
+                  <div className="text-sm text-gray-600">
+                    Exibindo <strong>{clientesFaturamentoFiltrados.length}</strong> de{' '}
+                    <strong>{clientesFaturamento.length}</strong> empresas
+                    {filtroPorteFaturamento !== 'todos' && (
+                      <>
+                        {' '}· porte:{' '}
+                        <strong>
+                          {portesDisponiveisFaturamento.find((p) => p.valor === filtroPorteFaturamento)?.rotulo ||
+                            filtroPorteFaturamento}
+                        </strong>
+                      </>
+                    )}
+                  </div>
+                )}
+
                           const labelEstabelecimento = usarTipoCadastro ? tipoEmpresaLabel : emp.tipo;
                           return (
                             <div
@@ -8588,7 +8771,7 @@ const Clientes: React.FC = () => {
                               placeholder="0.00"
                             />
                           </div>
-                        </div>
+                        )}
                       </div>
                     ))}
                     {(!(clienteEditandoParticipacao as any).socios || (clienteEditandoParticipacao as any).socios.length === 0) && (

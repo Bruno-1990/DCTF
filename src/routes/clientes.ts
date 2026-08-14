@@ -106,6 +106,13 @@ router.get('/oneclick/preview', (req, res) => clienteController.previewOneClick(
 router.post('/sincronizar-oneclick', (req, res) => clienteController.sincronizarOneClick(req, res));
 
 // GET /api/clientes/:id - Obter cliente por ID (DEVE ser a última rota GET com :id)
+// GET /api/clientes/historico-receita - Registro do que a ReceitaWS alterou no cadastro
+// ?desde=YYYY-MM-DD&ate=YYYY-MM-DD&cliente_id=&formato=xlsx
+// IMPORTANTE: precisa vir ANTES de '/:id', senão a rota dinâmica captura o caminho.
+router.get('/historico-receita', (req, res) => {
+  clienteController.historicoReceitaWS(req, res);
+});
+
 router.get('/:id', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.obterCliente(req, res);
 });
@@ -120,9 +127,16 @@ router.post('/import-receita-ws', (req, res) => {
   clienteController.importarReceitaWS(req, res);
 });
 
-// POST /api/clientes/atualizar-todos-receita-ws - Atualizar todos os clientes na ReceitaWS (execução única)
-router.post('/atualizar-todos-receita-ws', (req, res) => {
-  clienteController.atualizarTodosReceitaWS(req, res);
+// POST /api/clientes/atualizar-cadastro-receita-ws - Atualizar 1 CNPJ com o cartão CNPJ
+// (não-destrutivo: nunca apaga dado já existente no cadastro)
+router.post('/atualizar-cadastro-receita-ws', (req, res) => {
+  clienteController.atualizarCadastroReceitaWS(req, res);
+});
+
+// POST /api/clientes/aplicar-cadastro-simulado - Gravar o que foi calculado na simulação
+// (sem nova consulta na ReceitaWS)
+router.post('/aplicar-cadastro-simulado', (req, res) => {
+  clienteController.aplicarCadastroSimulado(req, res);
 });
 
 // POST /api/clientes/atualizar-regimes-massa - Atualizar regimes tributários em massa

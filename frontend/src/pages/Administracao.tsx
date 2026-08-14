@@ -7,6 +7,7 @@ import { relatoriosService } from '../services/relatorios';
 import { clientesService } from '../services/clientes';
 import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentTextIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import { exportToExcel, formatarValorLegivel } from '../utils/exportExcel';
 
 const ADMIN_CREDENTIALS = {
   username: 'Admin',
@@ -91,17 +92,88 @@ const Administracao: React.FC = () => {
     if (v && !v.includes('@')) setEmailDestinoSemDCTFInput(`${v}${EMAIL_SUFFIX}`);
   };
   
-  // Estados para atualização de clientes na ReceitaWS
-  const [atualizandoClientes, setAtualizandoClientes] = useState(false);
-  const [atualizacaoProgresso, setAtualizacaoProgresso] = useState<{
+  // Estados para atualização do cadastro pelo cartão CNPJ (ReceitaWS),
+  // de forma não-destrutiva: nada que já existe no cadastro é apagado
+  const [atualizandoRazao, setAtualizandoRazao] = useState(false);
+  const [razaoSimular, setRazaoSimular] = useState(false);
+  const [razaoIgnorarCaixa, setRazaoIgnorarCaixa] = useState(true);
+  const [razaoSomenteNome, setRazaoSomenteNome] = useState(false);
+  const cancelarRazaoRef = useRef(false);
+  const [razaoProgresso, setRazaoProgresso] = useState<{
     total: number;
     processados: number;
-    sucessos: number;
+    atualizados: number;
+    semAlteracao: number;
     erros: number;
     atual: string;
+    segundosRestantes: number;
   } | null>(null);
-  const [atualizacaoResultado, setAtualizacaoResultado] = useState<any>(null);
-  const [atualizacaoError, setAtualizacaoError] = useState<string | null>(null);
+  type RazaoResultado = {
+    total: number;
+    atualizados: number;
+    semAlteracao: number;
+    erros: number;
+    cancelado: boolean;
+    simulado: boolean;
+    salvoEm?: string;
+    itens: Array<{
+      cnpj: string;
+      status: string;
+      antes: string;
+      depois?: string;
+      erro?: string;
+      clienteId?: string;
+      alteracoes?: Array<{ campo: string; antes: any; depois: any }>;
+      sociosNovos?: Array<{ nome: string; qual?: string | null }>;
+      sociosQualificacao?: Array<{ socio_id: string; nome: string; antes: any; depois: string }>;
+      sociosAusentes?: string[];
+    }>;
+  };
+
+  // A simulação leva ~73 min. Guardamos o resultado no navegador para que
+  // recarregar a página (ou voltar depois) não obrigue a rodar tudo de novo.
+  const RAZAO_STORAGE_KEY = 'dctf_simulacao_cartao_cnpj';
+
+  const [razaoResultado, setRazaoResultado] = useState<RazaoResultado | null>(() => {
+    try {
+      const bruto = localStorage.getItem(RAZAO_STORAGE_KEY);
+      return bruto ? (JSON.parse(bruto) as RazaoResultado) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Persiste (ou limpa) o resultado sempre que ele muda.
+  useEffect(() => {
+    try {
+      if (razaoResultado) {
+        localStorage.setItem(RAZAO_STORAGE_KEY, JSON.stringify(razaoResultado));
+      } else {
+        localStorage.removeItem(RAZAO_STORAGE_KEY);
+      }
+    } catch {
+      // Sem espaço no localStorage: o relatório segue disponível na tela.
+    }
+  }, [razaoResultado]);
+  const [razaoError, setRazaoError] = useState<string | null>(null);
+
+  // Registro do que a ReceitaWS já alterou no cadastro (histórico gravado no banco)
+  const [histDesde, setHistDesde] = useState('');
+  const [histAte, setHistAte] = useState('');
+  const [histBaixando, setHistBaixando] = useState(false);
+  const [histResumo, setHistResumo] = useState<string | null>(null);
+  const [histErro, setHistErro] = useState<string | null>(null);
+
+  // Gravação do que foi calculado na simulação (não consulta a ReceitaWS de novo)
+  const [aplicandoSimulacao, setAplicandoSimulacao] = useState(false);
+  const [aplicacaoResultado, setAplicacaoResultado] = useState<{
+    clientes: number;
+    camposGravados: number;
+    sociosInseridos: number;
+    sociosMarcados: number;
+    conflitos: Array<{ cliente: string; campo: string; esperado: any; encontrado: any }>;
+    erros: Array<{ cliente: string; erro: string }>;
+  } | null>(null);
 
   // Estados para consulta em lote de Situação Fiscal
   const [consultandoSITF, setConsultandoSITF] = useState(false);
@@ -230,128 +302,420 @@ const Administracao: React.FC = () => {
     setPassword('');
   };
 
-  const handleAtualizarTodosClientes = async () => {
-    setAtualizandoClientes(true);
-    setAtualizacaoError(null);
-    setAtualizacaoResultado(null);
-    
+  // ReceitaWS (plano gratuito) aceita 3 consultas por minuto → 20s entre cada CNPJ.
+  const RAZAO_INTERVALO_MS = 20000;
+
+  /**
+   * Descreve uma alteração de forma legível. Para a lista de CNAEs secundários,
+   * despejar o array inteiro é ilegível (e truncado esconde a mudança real):
+   * mostramos só os itens que entraram e saíram.
+   */
+  const descreverAlteracao = (alt: { campo: string; antes: any; depois: any }): React.ReactNode => {
+    const comoTexto = (v: any) =>
+      v === null || v === undefined || v === ''
+        ? '(vazio)'
+        : String(typeof v === 'object' ? JSON.stringify(v) : v);
+
+    if (alt.campo === 'atividades_secundarias') {
+      const normalizar = (v: any): Array<{ code?: string; text?: string }> => {
+        try {
+          const arr = typeof v === 'string' ? JSON.parse(v) : v;
+          return Array.isArray(arr) ? arr : [];
+        } catch {
+          return [];
+        }
+      };
+      const rotulo = (a: any) => `${a?.code || ''} ${a?.text || ''}`.trim();
+      const antes = normalizar(alt.antes).map(rotulo);
+      const depois = normalizar(alt.depois).map(rotulo);
+      const removidos = antes.filter((x) => !depois.includes(x));
+      const incluidos = depois.filter((x) => !antes.includes(x));
+
+      return (
+        <>
+          {removidos.map((x, i) => (
+            <div key={`r${i}`} className="text-red-700 line-through">− {x}</div>
+          ))}
+          {incluidos.map((x, i) => (
+            <div key={`i${i}`} className="text-green-700">+ {x}</div>
+          ))}
+          {removidos.length === 0 && incluidos.length === 0 && (
+            <span className="text-gray-500">(reordenação apenas)</span>
+          )}
+        </>
+      );
+    }
+
+    return (
+      <>
+        <span className="text-red-700 line-through">{comoTexto(alt.antes).slice(0, 160)}</span>
+        {' → '}
+        <span className="text-green-700 font-semibold">{comoTexto(alt.depois).slice(0, 160)}</span>
+      </>
+    );
+  };
+
+  /**
+   * Percorre todos os clientes com CNPJ válido e atualiza o cadastro com os
+   * dados do cartão CNPJ (ReceitaWS), sem apagar nada do que já existe:
+   * campo vazio é preenchido, campo desatualizado é corrigido, campo que a
+   * Receita não informa fica como está. Nenhum cliente novo é criado.
+   */
+  const handleAtualizarRazoesSociais = async () => {
+    cancelarRazaoRef.current = false;
+    setAtualizandoRazao(true);
+    setRazaoError(null);
+    setRazaoResultado(null);
+
     try {
-      // Buscar todos os clientes (fazendo requisições paginadas)
+      // Carregar todos os clientes (paginado)
       let clientes: any[] = [];
       let page = 1;
       let hasMore = true;
-      
+
       while (hasMore) {
         const response = await clientesService.getAll({ page, limit: 100 });
         if (response.items && response.items.length > 0) {
           clientes = [...clientes, ...response.items];
-          // Verificar se há mais páginas
           if (response.pagination) {
             hasMore = page < response.pagination.totalPages;
             page++;
           } else {
-            hasMore = response.items.length === 100; // Se retornou 100, pode haver mais
+            hasMore = response.items.length === 100;
             page++;
           }
         } else {
           hasMore = false;
         }
       }
-      
-      // Filtrar apenas clientes com CNPJ válido
+
       const clientesComCNPJ = clientes.filter((c: any) => {
         const cnpj = c.cnpj_limpo || c.cnpj;
         return cnpj && String(cnpj).replace(/\D/g, '').length === 14;
       });
 
-      setAtualizacaoProgresso({
-        total: clientesComCNPJ.length,
+      const total = clientesComCNPJ.length;
+      const itens: Array<{
+        cnpj: string;
+        status: string;
+        antes: string;
+        depois?: string;
+        erro?: string;
+        clienteId?: string;
+        alteracoes?: Array<{ campo: string; antes: any; depois: any }>;
+        sociosNovos?: Array<{ nome: string; qual?: string | null }>;
+        sociosQualificacao?: Array<{ socio_id: string; nome: string; antes: any; depois: string }>;
+        sociosAusentes?: string[];
+      }> = [];
+      let atualizados = 0;
+      let semAlteracao = 0;
+      let erros = 0;
+
+      setRazaoProgresso({
+        total,
         processados: 0,
-        sucessos: 0,
+        atualizados: 0,
+        semAlteracao: 0,
         erros: 0,
         atual: '',
+        segundosRestantes: Math.round((total * RAZAO_INTERVALO_MS) / 1000),
       });
 
-      const resultados: Array<{
-        cnpj: string;
-        razao_social: string;
-        sucesso: boolean;
-        erro?: string;
-      }> = [];
+      for (let i = 0; i < total; i++) {
+        if (cancelarRazaoRef.current) break;
 
-      // Processar cada cliente com intervalo de 20 segundos
-      for (let i = 0; i < clientesComCNPJ.length; i++) {
         const cliente = clientesComCNPJ[i];
         const cnpj = String(cliente.cnpj_limpo || cliente.cnpj).replace(/\D/g, '');
-        const razaoSocial = cliente.razao_social || cliente.nome || 'N/A';
+        const razaoAtual = cliente.razao_social || cliente.nome || '';
 
-        setAtualizacaoProgresso(prev => prev ? {
-          ...prev,
-          atual: `${razaoSocial} (${cnpj})`,
-        } : null);
+        setRazaoProgresso(prev => (prev ? { ...prev, atual: `${razaoAtual} (${cnpj})` } : null));
 
         try {
-          // Importar dados da ReceitaWS com overwrite
-          const importResult = await clientesService.importarReceitaWS(cnpj, true);
-          
-          if (importResult.success) {
-            resultados.push({
+          const resp = await clientesService.atualizarCadastroReceitaWS(cnpj, {
+            dryRun: razaoSimular,
+            ignorarCaixa: razaoIgnorarCaixa,
+            somenteRazaoSocial: razaoSomenteNome,
+          });
+
+          const d = resp?.data || {};
+          if (resp?.success && d.status === 'atualizado') {
+            atualizados++;
+            itens.push({
               cnpj,
-              razao_social: razaoSocial,
-              sucesso: true,
+              status: 'atualizado',
+              antes: d.razao_social_antes || razaoAtual,
+              depois: d.razao_social_depois,
+              clienteId: d.cliente_id,
+              alteracoes: d.alteracoes || [],
+              sociosNovos: d.socios_novos || [],
+              sociosQualificacao: d.socios_qualificacao || [],
+              sociosAusentes: d.socios_ausentes_no_cartao || [],
             });
-            setAtualizacaoProgresso(prev => prev ? {
-              ...prev,
-              processados: prev.processados + 1,
-              sucessos: prev.sucessos + 1,
-            } : null);
+          } else if (resp?.success) {
+            semAlteracao++;
+            itens.push({
+              cnpj,
+              status: d.status || 'sem_alteracao',
+              antes: d.razao_social_antes || razaoAtual,
+              clienteId: d.cliente_id,
+              sociosAusentes: d.socios_ausentes_no_cartao || [],
+            });
           } else {
-            resultados.push({
-              cnpj,
-              razao_social: razaoSocial,
-              sucesso: false,
-              erro: importResult.error || 'Erro desconhecido',
-            });
-            setAtualizacaoProgresso(prev => prev ? {
-              ...prev,
-              processados: prev.processados + 1,
-              erros: prev.erros + 1,
-            } : null);
+            erros++;
+            itens.push({ cnpj, status: 'erro', antes: razaoAtual, erro: resp?.error || 'Erro desconhecido' });
           }
         } catch (error: any) {
-          resultados.push({
+          erros++;
+          itens.push({
             cnpj,
-            razao_social: razaoSocial,
-            sucesso: false,
-            erro: error.message || 'Erro ao processar',
+            status: 'erro',
+            antes: razaoAtual,
+            erro: error?.response?.data?.error || error?.message || 'Erro ao consultar',
           });
-          setAtualizacaoProgresso(prev => prev ? {
-            ...prev,
-            processados: prev.processados + 1,
-            erros: prev.erros + 1,
-          } : null);
         }
 
-        // Aguardar 20 segundos antes do próximo (exceto no último)
-        if (i < clientesComCNPJ.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 20000));
+        const processados = i + 1;
+        setRazaoProgresso(prev =>
+          prev
+            ? {
+                ...prev,
+                processados,
+                atualizados,
+                semAlteracao,
+                erros,
+                segundosRestantes: Math.round(((total - processados) * RAZAO_INTERVALO_MS) / 1000),
+              }
+            : null
+        );
+
+        // Respeitar o limite de 3 consultas/min (exceto após o último)
+        if (processados < total) {
+          const passos = RAZAO_INTERVALO_MS / 1000;
+          for (let s = 0; s < passos; s++) {
+            if (cancelarRazaoRef.current) break;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            setRazaoProgresso(prev =>
+              prev ? { ...prev, segundosRestantes: Math.max(0, prev.segundosRestantes - 1) } : null
+            );
+          }
         }
       }
 
-      setAtualizacaoResultado({
-        total: clientesComCNPJ.length,
-        sucessos: resultados.filter(r => r.sucesso).length,
-        erros: resultados.filter(r => !r.sucesso).length,
-        resultados,
+      setRazaoResultado({
+        total,
+        atualizados,
+        semAlteracao,
+        erros,
+        cancelado: cancelarRazaoRef.current,
+        simulado: razaoSimular,
+        salvoEm: new Date().toISOString(),
+        itens,
+      });
+      setRazaoProgresso(null);
+    } catch (error: any) {
+      setRazaoError(
+        error?.response?.data?.error || error?.message || 'Erro ao atualizar razões sociais'
+      );
+      setRazaoProgresso(null);
+    } finally {
+      cancelarRazaoRef.current = false;
+      setAtualizandoRazao(false);
+    }
+  };
+
+  /**
+   * Grava o que a simulação já calculou. Não consulta a ReceitaWS de novo, então
+   * não há espera de 20s: roda em segundos. Cada campo só é gravado se o valor
+   * no banco ainda for o mesmo de quando simulamos (o backend confere).
+   */
+  const handleAplicarSimulacao = async () => {
+    if (!razaoResultado) return;
+
+    setAplicandoSimulacao(true);
+    setRazaoError(null);
+    setAplicacaoResultado(null);
+
+    try {
+      // Inclui também quem não teve campo alterado mas tem sócio fora do cartão:
+      // a flag de aviso precisa ser gravada nesses casos.
+      const pendentes = razaoResultado.itens.filter(
+        (it) => it.clienteId && (it.status === 'atualizado' || (it.sociosAusentes || []).length > 0)
+      );
+
+      let camposGravados = 0;
+      let sociosInseridos = 0;
+      let sociosMarcados = 0;
+      const conflitos: Array<{ cliente: string; campo: string; esperado: any; encontrado: any }> = [];
+      const erros: Array<{ cliente: string; erro: string }> = [];
+
+      setRazaoProgresso({
+        total: pendentes.length,
+        processados: 0,
+        atualizados: 0,
+        semAlteracao: 0,
+        erros: 0,
+        atual: '',
+        segundosRestantes: 0,
       });
 
-      setAtualizacaoProgresso(null);
+      for (let i = 0; i < pendentes.length; i++) {
+        const it = pendentes[i];
+        setRazaoProgresso((prev) => (prev ? { ...prev, atual: `${it.antes} (${it.cnpj})` } : null));
+
+        try {
+          const resp = await clientesService.aplicarCadastroSimulado({
+            cliente_id: it.clienteId!,
+            alteracoes: it.alteracoes || [],
+            socios_novos: it.sociosNovos || [],
+            socios_qualificacao: it.sociosQualificacao || [],
+            socios_ausentes_no_cartao: it.sociosAusentes || [],
+            ignorarCaixa: razaoIgnorarCaixa,
+          });
+
+          const d = resp?.data || {};
+          if (resp?.success) {
+            camposGravados += (d.campos_gravados || []).length;
+            sociosInseridos += (d.socios_inseridos || []).length;
+            sociosMarcados += (d.socios_marcados_ausentes || []).length;
+            for (const c of d.campos_em_conflito || []) {
+              conflitos.push({ cliente: it.antes, campo: c.campo, esperado: c.esperado, encontrado: c.encontrado });
+            }
+          } else {
+            erros.push({ cliente: it.antes, erro: resp?.error || 'Erro desconhecido' });
+          }
+        } catch (error: any) {
+          erros.push({
+            cliente: it.antes,
+            erro: error?.response?.data?.error || error?.message || 'Erro ao gravar',
+          });
+        }
+
+        setRazaoProgresso((prev) => (prev ? { ...prev, processados: i + 1 } : null));
+      }
+
+      setAplicacaoResultado({
+        clientes: pendentes.length,
+        camposGravados,
+        sociosInseridos,
+        sociosMarcados,
+        conflitos,
+        erros,
+      });
+      setRazaoProgresso(null);
+      // A simulação já foi aplicada: some com o botão para não gravar duas vezes.
+      setRazaoResultado((prev) => (prev ? { ...prev, simulado: false } : prev));
     } catch (error: any) {
-      const errorMessage = error?.response?.data?.error || error?.message || (typeof error === 'string' ? error : 'Erro ao atualizar clientes');
-      setAtualizacaoError(errorMessage);
-      setAtualizacaoProgresso(null);
+      setRazaoError(error?.response?.data?.error || error?.message || 'Erro ao aplicar a simulação');
+      setRazaoProgresso(null);
     } finally {
-      setAtualizandoClientes(false);
+      setAplicandoSimulacao(false);
+    }
+  };
+
+  /**
+   * Baixa o relatório da simulação/gravação em planilha, a partir dos dados que
+   * já estão em memória — não refaz nenhuma consulta na ReceitaWS.
+   *
+   * Usa o mesmo modelo das demais planilhas do sistema (`exportToExcel`), com
+   * duas linhas em branco a cada CNPJ novo: assim dá para ver de relance quais
+   * registros foram alterados em cada empresa.
+   */
+  const baixarRelatorioSimulacao = async () => {
+    if (!razaoResultado) return;
+
+    // JSON (CNAEs, por exemplo) sai em texto corrido, não como estrutura crua.
+    const texto = formatarValorLegivel;
+
+    const cnpjFormatado = (v: any) => {
+      const digitos = String(v || '').replace(/\D/g, '');
+      return digitos.length === 14
+        ? digitos.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')
+        : String(v || '');
+    };
+
+    const linhas: string[][] = [];
+
+    for (const it of razaoResultado.itens) {
+      const cnpj = cnpjFormatado(it.cnpj);
+      for (const alt of it.alteracoes || []) {
+        linhas.push([it.antes, cnpj, 'campo', alt.campo, texto(alt.antes), texto(alt.depois)]);
+      }
+      for (const sq of it.sociosQualificacao || []) {
+        linhas.push([it.antes, cnpj, 'sócio (qualificação)', sq.nome, texto(sq.antes), texto(sq.depois)]);
+      }
+      for (const sn of it.sociosNovos || []) {
+        linhas.push([it.antes, cnpj, 'sócio novo', sn.nome, '', texto(sn.qual)]);
+      }
+      for (const sa of it.sociosAusentes || []) {
+        linhas.push([it.antes, cnpj, 'sócio fora do cartão', sa, 'consta no cadastro', 'não consta no cartão']);
+      }
+      if (it.status === 'erro') {
+        linhas.push([it.antes, cnpj, 'erro', '', '', texto(it.erro)]);
+      }
+    }
+
+    try {
+      await exportToExcel({
+        filename: `simulacao-cartao-cnpj-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheetName: 'Alterações Cartão CNPJ',
+        headers: ['Cliente', 'CNPJ', 'Tipo', 'Campo', 'Antes', 'Depois'],
+        data: linhas,
+        groupByColumn: 1, // CNPJ
+        groupSpacing: 2,
+        wrapText: false, // valores longos (CNAEs, endereços) truncam em vez de quebrar
+      });
+    } catch (error: any) {
+      setRazaoError(error?.message || 'Erro ao gerar a planilha do relatório');
+    }
+  };
+
+  /** Mostra quantas alterações existem no período, sem baixar nada. */
+  const handleConsultarHistorico = async () => {
+    setHistErro(null);
+    setHistResumo(null);
+    try {
+      const resp = await clientesService.historicoReceitaWS({
+        desde: histDesde || undefined,
+        ate: histAte || undefined,
+      });
+      const registros = resp?.data || [];
+      if (registros.length === 0) {
+        setHistResumo('Nenhuma alteração registrada no período.');
+        return;
+      }
+      const clientes = new Set(registros.map((r: any) => r.cliente_id)).size;
+      const ultima = registros[0]?.aplicado_em
+        ? new Date(registros[0].aplicado_em).toLocaleString('pt-BR')
+        : '—';
+      setHistResumo(
+        `${registros.length} alteração(ões) em ${clientes} cliente(s). Mais recente: ${ultima}.`
+      );
+    } catch (error: any) {
+      setHistErro(error?.response?.data?.error || error?.message || 'Erro ao consultar o histórico');
+    }
+  };
+
+  /** Baixa o histórico em XLSX. */
+  const handleBaixarHistorico = async () => {
+    setHistBaixando(true);
+    setHistErro(null);
+    try {
+      const blob = await clientesService.baixarHistoricoReceitaWS({
+        desde: histDesde || undefined,
+        ate: histAte || undefined,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `alteracoes-receitaws-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setHistErro(error?.response?.data?.error || error?.message || 'Erro ao baixar o histórico');
+    } finally {
+      setHistBaixando(false);
     }
   };
 
@@ -917,69 +1281,372 @@ const Administracao: React.FC = () => {
         </div>
       )}
 
-      {/* Seção de Atualização de Clientes na ReceitaWS */}
-      <div className="bg-blue-50 border-2 border-blue-200 shadow-lg rounded-lg p-6 mb-6">
+      {/* Seção de Atualização do Cadastro pelo Cartão CNPJ (ReceitaWS) */}
+      <div className="bg-indigo-50 border-2 border-indigo-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
-          <ArrowPathIcon className="h-6 w-6 text-blue-600 mr-3 mt-1" />
+          <ArrowPathIcon className="h-6 w-6 text-indigo-600 mr-3 mt-1" />
           <div className="flex-1">
-            <h2 className="text-xl font-semibold text-blue-900 mb-2">Atualização de Clientes na ReceitaWS</h2>
-            <p className="text-sm text-blue-700 mb-4">
-              Esta operação irá <strong>atualizar todos os clientes</strong> na base de dados consultando a API da ReceitaWS.
-              Cada cliente será atualizado com um intervalo de <strong>20 segundos</strong> entre cada atualização para respeitar os limites da API.
+            <h2 className="text-xl font-semibold text-indigo-900 mb-2">
+              Atualizar Cadastro pelo Cartão CNPJ (ReceitaWS)
+            </h2>
+            <p className="text-sm text-indigo-700 mb-4">
+              Percorre todos os clientes com CNPJ válido e atualiza o cadastro com os dados do cartão
+              CNPJ: razão social, nome fantasia, situação cadastral, porte, natureza jurídica, datas,
+              CNAEs, endereço, contatos da Receita, capital social e Simples/SIMEI.{' '}
+              <strong>Nada que já existe no cadastro é apagado</strong>: campo vazio é preenchido, campo
+              desatualizado é corrigido, e o que a Receita não informa fica exatamente como está.
             </p>
-            
-            <div className="bg-white rounded-lg p-4 border border-blue-300 mb-4">
+
+            <div className="bg-white rounded-lg p-4 border border-indigo-300 mb-4">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Como funciona:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
-                <li>O sistema busca todos os clientes com CNPJ válido</li>
-                <li>Para cada cliente, consulta a ReceitaWS e atualiza os dados</li>
-                <li>Aguarda 20 segundos entre cada atualização</li>
-                <li>Mostra progresso em tempo real com barra de progresso</li>
-                <li>Exibe relatório final com sucessos e erros</li>
+                <li>Consulta 1 CNPJ por vez, aguardando <strong>20 segundos</strong> entre cada um (limite da ReceitaWS: 3 consultas/minuto)</li>
+                <li>Compara campo a campo e grava <strong>somente as colunas que mudaram</strong></li>
+                <li>Nunca grava vazio por cima de um valor já preenchido</li>
+                <li>
+                  Ignora as <strong>máscaras da Receita</strong> — empresas baixadas voltam com CNAE
+                  <code className="bg-gray-100 px-1 rounded">00.00-0-00</code>,{' '}
+                  <code className="bg-gray-100 px-1 rounded">********</code> e "Não informada"; nada disso
+                  substitui o CNAE real do cadastro
+                </li>
+                <li><strong>E-mail, telefone e endereço</strong> digitados pela equipe só são preenchidos se estiverem vazios — nunca substituídos</li>
+                <li><strong>Regime tributário</strong> só é promovido para Simples Nacional quando a Receita confirma a opção; nunca é zerado</li>
+                <li>
+                  <strong>Sócios</strong>: quem entrou é acrescentado e a qualificação é corrigida —
+                  ninguém é excluído. Quem sumiu do cartão fica marcado com o aviso{' '}
+                  <span className="text-amber-700 font-semibold">"não consta mais no cartão CNPJ"</span>,
+                  visível no cadastro do cliente (aba Participação), com CPF e participação preservados
+                </li>
+                <li>Código SCI, pasta de rede, benefícios fiscais e demais campos internos não são tocados</li>
+                <li>Ao final, mostra o <strong>antes → depois</strong> de cada campo alterado</li>
               </ul>
-              
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Recomendações:</h3>
+
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Antes de começar:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
-                <li>Execute esta operação quando precisar atualizar a base de clientes</li>
-                <li>O processo pode levar bastante tempo dependendo da quantidade de clientes</li>
-                <li>Não feche a página durante a atualização</li>
+                <li>Mantenha esta aba aberta até o fim — o ritmo é controlado por esta tela</li>
+                <li>Use o modo <strong>Simular</strong> para ver o que mudaria sem gravar nada</li>
+                <li>Dá para <strong>cancelar</strong> a qualquer momento; o que já foi gravado permanece</li>
               </ul>
             </div>
 
-            {atualizacaoError && (
+            {/* Opções */}
+            <div className="bg-white rounded-lg p-4 border border-indigo-300 mb-4 space-y-3">
+              <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={razaoSimular}
+                  onChange={(e) => setRazaoSimular(e.target.checked)}
+                  disabled={atualizandoRazao}
+                  className="mt-1"
+                />
+                <span>
+                  <strong>Simular (não grava nada)</strong> — lista tudo que mudaria. Ao final aparece o
+                  botão <em>"Gravar as alterações simuladas"</em>, que aplica o resultado sem precisar
+                  consultar a Receita de novo (leva segundos).
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={razaoIgnorarCaixa}
+                  onChange={(e) => setRazaoIgnorarCaixa(e.target.checked)}
+                  disabled={atualizandoRazao}
+                  className="mt-1"
+                />
+                <span>
+                  <strong>Ignorar diferença de maiúsculas/minúsculas</strong> — vale para todos os campos
+                  de texto: "Extinção Por Encerramento" e "EXTINÇÃO POR ENCERRAMENTO" são tratados como
+                  iguais, evitando gravar dezenas de clientes por diferença puramente cosmética
+                  (recomendado).
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={razaoSomenteNome}
+                  onChange={(e) => setRazaoSomenteNome(e.target.checked)}
+                  disabled={atualizandoRazao}
+                  className="mt-1"
+                />
+                <span>
+                  <strong>Atualizar somente a razão social</strong> — ignora os demais campos do cartão.
+                </span>
+              </label>
+            </div>
+
+            {/* Registro do que já foi alterado pela Receita */}
+            <div className="bg-white rounded-lg p-4 border border-indigo-300 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                Registro de alterações já aplicadas
+              </h3>
+              <p className="text-sm text-gray-600 mb-3">
+                Tudo que a ReceitaWS mudou no cadastro fica gravado: cliente, campo, valor anterior, valor
+                novo e data. Consulta o histórico — não gasta consulta na API.
+              </p>
+
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">De</label>
+                  <input
+                    type="date"
+                    value={histDesde}
+                    onChange={(e) => setHistDesde(e.target.value)}
+                    className="h-10 px-3 border-2 border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Até</label>
+                  <input
+                    type="date"
+                    value={histAte}
+                    onChange={(e) => setHistAte(e.target.value)}
+                    className="h-10 px-3 border-2 border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+
+                <button
+                  onClick={handleConsultarHistorico}
+                  className="h-10 px-4 border-2 border-indigo-300 text-indigo-700 bg-white rounded-lg hover:bg-indigo-50 text-sm font-semibold transition-colors"
+                >
+                  Consultar
+                </button>
+
+                <button
+                  onClick={handleBaixarHistorico}
+                  disabled={histBaixando}
+                  className="h-10 px-4 flex items-center gap-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-semibold transition-colors"
+                >
+                  {histBaixando ? (
+                    <>
+                      <LoadingSpinner size="sm" />
+                      <span>Gerando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <DocumentArrowDownIcon className="h-4 w-4" />
+                      Baixar registro (XLSX)
+                    </>
+                  )}
+                </button>
+
+                {(histDesde || histAte) && (
+                  <button
+                    onClick={() => {
+                      setHistDesde('');
+                      setHistAte('');
+                      setHistResumo(null);
+                    }}
+                    className="h-10 px-3 text-sm text-gray-500 hover:text-gray-700 underline"
+                  >
+                    Limpar período
+                  </button>
+                )}
+              </div>
+
+              {histResumo && <p className="text-sm text-indigo-800 mt-3 font-medium">{histResumo}</p>}
+              {histErro && <p className="text-sm text-red-700 mt-3">{histErro}</p>}
+              {!histDesde && !histAte && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Sem período informado, traz o histórico completo.
+                </p>
+              )}
+            </div>
+
+            {razaoError && (
               <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4 text-sm">
-                {typeof atualizacaoError === 'string' ? atualizacaoError : JSON.stringify(atualizacaoError)}
+                {razaoError}
               </div>
             )}
 
-            {atualizacaoResultado && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                <h3 className="text-lg font-semibold text-green-900 mb-2">Atualização Concluída!</h3>
-                <div className="grid grid-cols-3 gap-4 mb-4">
+            {/* Progresso */}
+            {razaoProgresso && (
+              <div className="bg-indigo-100 border border-indigo-300 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium text-indigo-900">
+                    {razaoSimular ? 'Simulando' : 'Atualizando'} razões sociais...
+                  </div>
+                  <div className="text-sm font-semibold text-indigo-700">
+                    {razaoProgresso.processados} de {razaoProgresso.total} (
+                    {razaoProgresso.total > 0
+                      ? Math.round((razaoProgresso.processados / razaoProgresso.total) * 100)
+                      : 0}
+                    %)
+                  </div>
+                </div>
+
+                <div className="w-full bg-indigo-200 rounded-full h-4 mb-2 overflow-hidden">
+                  <div
+                    className="bg-indigo-600 h-full rounded-full transition-all duration-500 ease-out"
+                    style={{
+                      width: `${
+                        razaoProgresso.total > 0
+                          ? Math.round((razaoProgresso.processados / razaoProgresso.total) * 100)
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700">
+                    Alterados: <strong>{razaoProgresso.atualizados}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-100 text-gray-700">
+                    Já corretos: <strong>{razaoProgresso.semAlteracao}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 text-red-700">
+                    Erros: <strong>{razaoProgresso.erros}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-indigo-200 text-indigo-800">
+                    Tempo restante: <strong>~{Math.floor(razaoProgresso.segundosRestantes / 60)}min {razaoProgresso.segundosRestantes % 60}s</strong>
+                  </span>
+                </div>
+
+                {razaoProgresso.atual && (
+                  <div className="text-xs text-indigo-700 mt-2">
+                    Consultando: <span className="font-mono font-semibold">{razaoProgresso.atual}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Resultado */}
+            {razaoResultado && (
+              <div className="bg-white border border-indigo-300 rounded-lg p-4 mb-4">
+                <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
+                  <div>
+                    <h3 className="text-lg font-semibold text-indigo-900">
+                      {razaoResultado.cancelado ? 'Processo cancelado' : 'Processo concluído'}
+                      {razaoResultado.simulado ? ' (simulação — nada foi gravado)' : ''}
+                    </h3>
+                    {razaoResultado.salvoEm && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Relatório de {new Date(razaoResultado.salvoEm).toLocaleString('pt-BR')} — fica
+                        guardado neste navegador mesmo se você recarregar a página.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={baixarRelatorioSimulacao}
+                      className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-indigo-300 text-indigo-700 rounded-lg hover:bg-indigo-50 text-sm font-semibold transition-colors"
+                      title="Baixa o relatório completo em planilha, agrupado por CNPJ, sem consultar a Receita de novo"
+                    >
+                      <DocumentArrowDownIcon className="h-4 w-4" />
+                      Baixar relatório (XLSX)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRazaoResultado(null);
+                        setAplicacaoResultado(null);
+                      }}
+                      className="px-4 py-2 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
+                      title="Descarta o relatório guardado neste navegador"
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-4 mb-4">
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-green-700">{atualizacaoResultado.total}</div>
-                    <div className="text-sm text-green-600">Total</div>
+                    <div className="text-2xl font-bold text-gray-800">{razaoResultado.total}</div>
+                    <div className="text-sm text-gray-600">Clientes</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-green-700">{atualizacaoResultado.sucessos}</div>
-                    <div className="text-sm text-green-600">Sucessos</div>
+                    <div className="text-2xl font-bold text-green-700">{razaoResultado.atualizados}</div>
+                    <div className="text-sm text-green-600">
+                      {razaoResultado.simulado ? 'Seriam alterados' : 'Alterados'}
+                    </div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-red-700">{atualizacaoResultado.erros}</div>
+                    <div className="text-2xl font-bold text-gray-700">{razaoResultado.semAlteracao}</div>
+                    <div className="text-sm text-gray-600">Já corretos</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-700">{razaoResultado.erros}</div>
                     <div className="text-sm text-red-600">Erros</div>
                   </div>
                 </div>
-                {atualizacaoResultado.erros > 0 && (
-                  <details className="mt-4">
-                    <summary className="cursor-pointer text-sm font-semibold text-red-700 hover:text-red-800">
-                      Ver erros ({atualizacaoResultado.erros})
+
+                {razaoResultado.atualizados > 0 && (
+                  <details className="mb-2" open>
+                    <summary className="cursor-pointer text-sm font-semibold text-indigo-800 hover:text-indigo-900">
+                      Ver clientes {razaoResultado.simulado ? 'que mudariam' : 'alterados'} ({razaoResultado.atualizados})
+                    </summary>
+                    <div className="mt-2 max-h-96 overflow-y-auto">
+                      {razaoResultado.itens
+                        .filter((it) => it.status === 'atualizado')
+                        .map((it, idx) => (
+                          <div key={idx} className="text-xs text-gray-800 p-2 border-b border-gray-200">
+                            <div className="font-semibold text-gray-900">
+                              {it.antes} <span className="font-mono font-normal text-gray-500">({it.cnpj})</span>
+                            </div>
+
+                            {(it.alteracoes || []).map((alt, i) => (
+                              <div key={i} className="ml-3 mt-1">
+                                <span className="font-mono text-indigo-700">{alt.campo}</span>
+                                {': '}
+                                {descreverAlteracao(alt)}
+                              </div>
+                            ))}
+
+                            {(it.sociosNovos || []).length > 0 && (
+                              <div className="ml-3 mt-1 text-green-700">
+                                + Sócios acrescentados: {(it.sociosNovos || []).map((s) => s.nome).join(', ')}
+                              </div>
+                            )}
+
+                            {(it.sociosQualificacao || []).map((sq, i) => (
+                              <div key={`q${i}`} className="ml-3 mt-1">
+                                <span className="font-mono text-indigo-700">sócio {sq.nome} (qualificação)</span>
+                                {': '}
+                                <span className="text-red-700 line-through">{sq.antes || '(vazio)'}</span>
+                                {' → '}
+                                <span className="text-green-700 font-semibold">{sq.depois}</span>
+                              </div>
+                            ))}
+
+                            {(it.sociosAusentes || []).length > 0 && (
+                              <div className="ml-3 mt-1 text-amber-700">
+                                ⚠ Não constam mais no cartão (mantidos no cadastro, confira manualmente):{' '}
+                                {(it.sociosAusentes || []).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </details>
+                )}
+
+                {razaoResultado.itens.some((it) => it.status !== 'atualizado' && (it.sociosAusentes || []).length > 0) && (
+                  <details className="mb-2">
+                    <summary className="cursor-pointer text-sm font-semibold text-amber-700 hover:text-amber-800">
+                      Sócios que não constam mais no cartão CNPJ (nenhum foi excluído)
                     </summary>
                     <div className="mt-2 max-h-60 overflow-y-auto">
-                      {atualizacaoResultado.resultados
-                        .filter((r: any) => !r.sucesso)
-                        .map((r: any, idx: number) => (
+                      {razaoResultado.itens
+                        .filter((it) => it.status !== 'atualizado' && (it.sociosAusentes || []).length > 0)
+                        .map((it, idx) => (
+                          <div key={idx} className="text-xs text-amber-800 p-2 border-b border-amber-200">
+                            <strong>{it.antes}</strong> ({it.cnpj}): {(it.sociosAusentes || []).join(', ')}
+                          </div>
+                        ))}
+                    </div>
+                  </details>
+                )}
+
+                {razaoResultado.erros > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-sm font-semibold text-red-700 hover:text-red-800">
+                      Ver erros ({razaoResultado.erros})
+                    </summary>
+                    <div className="mt-2 max-h-60 overflow-y-auto">
+                      {razaoResultado.itens
+                        .filter((it) => it.status === 'erro')
+                        .map((it, idx) => (
                           <div key={idx} className="text-xs text-red-700 p-2 border-b border-red-200">
-                            <strong>{r.razao_social}</strong> ({r.cnpj}): {r.erro}
+                            <strong>{it.antes}</strong> ({it.cnpj}): {it.erro}
                           </div>
                         ))}
                     </div>
@@ -988,61 +1655,114 @@ const Administracao: React.FC = () => {
               </div>
             )}
 
-            {/* Barra de Progresso */}
-            {atualizacaoProgresso && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-medium text-blue-900">
-                    Atualizando clientes na ReceitaWS...
-                  </div>
-                  <div className="text-sm font-semibold text-blue-700">
-                    {atualizacaoProgresso.processados} de {atualizacaoProgresso.total} ({Math.round((atualizacaoProgresso.processados / atualizacaoProgresso.total) * 100)}%)
-                  </div>
+            {/* Resultado da gravação da simulação */}
+            {aplicacaoResultado && (
+              <div className="bg-green-50 border border-green-300 rounded-lg p-4 mb-4">
+                <h3 className="text-lg font-semibold text-green-900 mb-2">Alterações gravadas</h3>
+                <div className="text-sm text-green-800">
+                  <strong>{aplicacaoResultado.camposGravados}</strong> campo(s) gravado(s) em{' '}
+                  <strong>{aplicacaoResultado.clientes}</strong> cliente(s)
+                  {aplicacaoResultado.sociosInseridos > 0 && (
+                    <> · <strong>{aplicacaoResultado.sociosInseridos}</strong> sócio(s) acrescentado(s)</>
+                  )}
                 </div>
-                
-                {/* Barra de progresso visual */}
-                <div className="w-full bg-blue-200 rounded-full h-4 mb-2 overflow-hidden">
-                  <div
-                    className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${Math.round((atualizacaoProgresso.processados / atualizacaoProgresso.total) * 100)}%` }}
-                  />
-                </div>
-                
-                {/* Métricas em tempo real */}
-                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700">
-                    Sucessos: <strong>{atualizacaoProgresso.sucessos}</strong>
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 text-red-700">
-                    Erros: <strong>{atualizacaoProgresso.erros}</strong>
-                  </span>
-                </div>
-                
-                {atualizacaoProgresso.atual && (
-                  <div className="text-xs text-blue-600 mt-2">
-                    Processando: <span className="font-mono font-semibold">{atualizacaoProgresso.atual}</span>
+
+                {aplicacaoResultado.sociosMarcados > 0 && (
+                  <div className="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    ⚠ <strong>{aplicacaoResultado.sociosMarcados}</strong> sócio(s) marcado(s) como "não
+                    consta mais no cartão CNPJ". Nenhum foi excluído — o aviso aparece no cadastro do
+                    cliente, na aba de Participação.
                   </div>
+                )}
+
+                {aplicacaoResultado.conflitos.length > 0 && (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-amber-700 hover:text-amber-800">
+                      Campos pulados porque o cadastro mudou depois da simulação ({aplicacaoResultado.conflitos.length})
+                    </summary>
+                    <div className="mt-2 max-h-60 overflow-y-auto">
+                      {aplicacaoResultado.conflitos.map((c, idx) => (
+                        <div key={idx} className="text-xs text-amber-800 p-2 border-b border-amber-200">
+                          <strong>{c.cliente}</strong> · <span className="font-mono">{c.campo}</span>: a
+                          simulação viu "{String(c.esperado ?? '')}" mas o banco está com "
+                          {String(c.encontrado ?? '')}" — nada foi sobrescrito.
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                {aplicacaoResultado.erros.length > 0 && (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-red-700 hover:text-red-800">
+                      Erros ao gravar ({aplicacaoResultado.erros.length})
+                    </summary>
+                    <div className="mt-2 max-h-60 overflow-y-auto">
+                      {aplicacaoResultado.erros.map((e, idx) => (
+                        <div key={idx} className="text-xs text-red-700 p-2 border-b border-red-200">
+                          <strong>{e.cliente}</strong>: {e.erro}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 )}
               </div>
             )}
 
-            <button
-              onClick={handleAtualizarTodosClientes}
-              disabled={atualizandoClientes}
-              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-            >
-              {atualizandoClientes ? (
-                <>
-                  <LoadingSpinner size="sm" />
-                  <span>Atualizando...</span>
-                </>
-              ) : (
-                <>
-                  <ArrowPathIcon className="h-5 w-5" />
-                  <span>Iniciar Atualização de Todos os Clientes</span>
-                </>
+            <div className="flex gap-3 flex-wrap">
+              {razaoResultado &&
+                razaoResultado.simulado &&
+                (razaoResultado.atualizados > 0 ||
+                  razaoResultado.itens.some((it) => (it.sociosAusentes || []).length > 0)) && (
+                <button
+                  onClick={handleAplicarSimulacao}
+                  disabled={aplicandoSimulacao || atualizandoRazao}
+                  className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                >
+                  {aplicandoSimulacao ? (
+                    <>
+                      <LoadingSpinner size="sm" />
+                      <span>Gravando...</span>
+                    </>
+                  ) : (
+                    <span>Gravar as {razaoResultado.atualizados} alterações simuladas</span>
+                  )}
+                </button>
               )}
-            </button>
+
+              <button
+                onClick={handleAtualizarRazoesSociais}
+                disabled={atualizandoRazao || aplicandoSimulacao}
+                className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                {atualizandoRazao ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    <span>{razaoSimular ? 'Simulando...' : 'Atualizando...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5" />
+                    <span>
+                      {razaoSimular
+                        ? 'Simular Atualização pelo Cartão CNPJ'
+                        : 'Atualizar Cadastros pelo Cartão CNPJ'}
+                    </span>
+                  </>
+                )}
+              </button>
+
+              {atualizandoRazao && (
+                <button
+                  onClick={() => {
+                    cancelarRazaoRef.current = true;
+                  }}
+                  className="flex items-center gap-2 bg-gray-200 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-300 font-medium"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
