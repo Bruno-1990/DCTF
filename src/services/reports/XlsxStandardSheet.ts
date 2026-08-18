@@ -18,12 +18,39 @@ export const HEADER_TEXT = 'FFFFFFFF';
 export const DATA_BORDER = { style: 'thin' as const, color: { argb: 'FFE0E0E0' } };
 export const HEADER_BORDER = { style: 'thin' as const };
 
-export type CellValue = string | number | null | undefined;
+/**
+ * `Date` entra na lista porque data gravada como TEXTO ordena alfabeticamente:
+ * 01/12 vem antes de 02/01, e o filtro do Excel não oferece "depois de". Com
+ * `Date` + `numFmt`, a célula mostra dd/mm/aaaa e continua sendo data.
+ */
+export type CellValue = string | number | Date | null | undefined;
+
+/**
+ * Formatação de UMA coluna.
+ *
+ * Existe porque o padrão "tudo texto à esquerda" serve para relatório de
+ * cadastro, mas não para relatório com dinheiro: valores alinhados à esquerda e
+ * sem separador de milhar não se comparam de relance, e é comparar que a pessoa
+ * está fazendo quando abre a planilha.
+ */
+export interface ColumnFormat {
+  /** Formato numérico do Excel — ex.: `'R$ #,##0.00'`, `'dd/mm/yyyy'`. */
+  numFmt?: string;
+  align?: 'left' | 'center' | 'right';
+  /** Largura fixa. Sem isso, a largura sai do conteúdo mais longo. */
+  width?: number;
+}
 
 export interface StandardSheetOptions {
   sheetName: string;
   headers: string[];
   rows: CellValue[][];
+  /** Formatação por coluna, na mesma ordem de `headers`. */
+  columnFormats?: Array<ColumnFormat | undefined>;
+  /** Linha de título acima do cabeçalho — some quando não informada. */
+  titulo?: string;
+  /** Subtítulo da linha de título (competência, filtro aplicado…). */
+  subtitulo?: string;
   /** Índice (base 0) da coluna que agrupa. Ao mudar de valor, pula linhas. */
   groupByColumn?: number;
   /** Quantas linhas em branco entre um grupo e o próximo. Padrão: 2. */
@@ -50,16 +77,36 @@ export async function buildStandardSheet(options: StandardSheetOptions): Promise
     sheetName,
     headers,
     rows,
+    columnFormats,
+    titulo,
+    subtitulo,
     groupByColumn,
     groupSpacing = 2,
     boldFirstRowOfGroup = true,
     autoFilter = true,
   } = options;
 
+  // Com título, o cabeçalho desce e o congelamento tem de acompanhar — senão a
+  // rolagem prende a faixa de título e esconde os nomes das colunas.
+  const linhasDeTitulo = titulo ? (subtitulo ? 2 : 1) : 0;
+
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(sanitizeSheetName(sheetName), {
-    views: [{ state: 'frozen', ySplit: 1 }],
+    views: [{ state: 'frozen', ySplit: linhasDeTitulo + 1 }],
   });
+
+  if (titulo) {
+    const linha = sheet.addRow([titulo]);
+    linha.height = 26;
+    linha.getCell(1).font = { bold: true, size: 14, color: { argb: HEADER_FILL } };
+    sheet.mergeCells(1, 1, 1, headers.length);
+    if (subtitulo) {
+      const sub = sheet.addRow([subtitulo]);
+      sub.height = 18;
+      sub.getCell(1).font = { size: 11, color: { argb: 'FF666666' } };
+      sheet.mergeCells(2, 1, 2, headers.length);
+    }
+  }
 
   const headerRow = sheet.addRow(headers);
   headerRow.height = 30;
@@ -98,12 +145,23 @@ export async function buildStandardSheet(options: StandardSheetOptions): Promise
 
     const row = sheet.addRow(valores as any[]);
     row.height = 20;
-    row.eachCell(cell => {
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const formato = columnFormats?.[colNumber - 1];
       // Sem quebra automática: com altura fixa, um valor longo (JSON de CNAEs,
       // por exemplo) apareceria cortado no meio da segunda linha. Melhor a
       // célula truncar e o usuário alargar a coluna quando quiser ler inteiro.
-      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: formato?.align ?? 'left',
+        wrapText: false,
+      };
       cell.border = { top: DATA_BORDER, left: DATA_BORDER, bottom: DATA_BORDER, right: DATA_BORDER };
+      // Só numera o que É número: aplicar formato de moeda a uma célula vazia
+      // faria o Excel exibir "R$ 0,00" onde não há valor — e zero apurado é
+      // diferente de valor ausente.
+      if (formato?.numFmt && (typeof cell.value === 'number' || cell.value instanceof Date)) {
+        cell.numFmt = formato.numFmt;
+      }
       if (primeiraDoGrupo && boldFirstRowOfGroup) {
         cell.font = { bold: true };
       }
@@ -112,6 +170,11 @@ export async function buildStandardSheet(options: StandardSheetOptions): Promise
 
   headers.forEach((header, index) => {
     const column = sheet.getColumn(index + 1);
+    const larguraFixa = columnFormats?.[index]?.width;
+    if (larguraFixa) {
+      column.width = larguraFixa;
+      return;
+    }
     let maxLength = header.length;
     column.eachCell({ includeEmpty: false }, cell => {
       const value = cell.value === null || cell.value === undefined ? '' : String(cell.value);
@@ -124,7 +187,11 @@ export async function buildStandardSheet(options: StandardSheetOptions): Promise
     // O intervalo vai até a última linha de propósito: sem isso o Excel pararia
     // o filtro na primeira linha em branco, cobrindo só o primeiro grupo.
     const ultimaColuna = sheet.getColumn(headers.length).letter;
-    sheet.autoFilter = { from: 'A1', to: `${ultimaColuna}${sheet.rowCount}` };
+    const linhaCabecalho = linhasDeTitulo + 1;
+    sheet.autoFilter = {
+      from: `A${linhaCabecalho}`,
+      to: `${ultimaColuna}${sheet.rowCount}`,
+    };
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
