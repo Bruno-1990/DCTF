@@ -250,7 +250,10 @@ cp .env.example .env
 | `IRPF2026_ADMIN_EMAILS` | Não | `ti@central-rnc.com.br,...` | E-mails admin do módulo IRPF |
 | `COTA_SCHEDULER_ENABLED` | Não | `false` | Liga a apuração mensal da cota de aprendizagem |
 | `COTA_SCHEDULER_DIA` | Não | `5` | Dia do mês em que a apuração roda |
-| `COTA_ALERT_EMAILS` | Não | `ti@central-rnc.com.br` | Destinatários do resumo mensal da cota |
+| `COTA_ALERT_EMAILS` | Não | `ti@central-rnc.com.br` | Destinatários do aviso de cota de aprendizagem |
+| `ENQUADRAMENTO_ALERT_EMAILS` | Não | `ti@central-rnc.com.br` | Destinatários do aviso de enquadramento de porte |
+| `COTA_REFRESH_CADASTRO` | Não | `true` | Atualiza o cadastro pela ReceitaWS antes de apurar |
+| `CADASTRO_REFRESH_INTERVALO_MS` | Não | `20000` | Ritmo da varredura cadastral (3 consultas/min) |
 
 ---
 

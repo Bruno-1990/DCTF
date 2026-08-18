@@ -6,16 +6,31 @@
  * demais significa classificar com o mês pela metade e disparar alerta falso
  * de mudança de porte.
  *
+ * SÃO TRÊS ETAPAS, NESTA ORDEM, e a ordem é o ponto:
+ *
+ *   1. CADASTRO — varredura pela ReceitaWS (~1h15 no ritmo do plano gratuito).
+ *      A classificação lê abertura, tipo de estabelecimento, situação e sócios
+ *      do cadastro; atualizar depois de classificar não conserta nada.
+ *   2. FATURAMENTO — a apuração coleta do SCI de 1º de janeiro do ano ANTERIOR
+ *      até o fim do mês de referência e grava por UPSERT: o mês novo entra sem
+ *      apagar os que já estavam, e é assim que os 12 meses se completam. A RBAA
+ *      só é usada quando o ano anterior tem os 12 meses fechados — ano pela
+ *      metade não é "receita baixa", é receita desconhecida.
+ *   3. E-MAIL — os dois avisos, cada um para o seu público.
+ *
  * Desligado por padrão — precisa de `COTA_SCHEDULER_ENABLED=true` no .env.
  */
 
 import { executeQuery } from '../config/mysql';
 import cotaAprendizagemService from './CotaAprendizagemService';
+import cadastroRefreshService from './CadastroRefreshService';
 import { mesReferencia, bdrefDe } from './cotaAprendizagem.rules';
 
 const DIA_PADRAO = Number(process.env['COTA_SCHEDULER_DIA'] || 5);
 const HORA_PADRAO = Number(process.env['COTA_SCHEDULER_HORA'] || 1);
 const HABILITADO = process.env['COTA_SCHEDULER_ENABLED'] === 'true';
+/** Ligada por padrão; `COTA_REFRESH_CADASTRO=false` pula a etapa 1. */
+const REFRESH_CADASTRO = process.env['COTA_REFRESH_CADASTRO'] !== 'false';
 const INTERVALO_MS = 60 * 1000; // confere a cada minuto
 
 export class CotaAprendizagemScheduler {
@@ -90,6 +105,9 @@ export class CotaAprendizagemScheduler {
           (atrasado ? ` (recuperando — o dia ${DIA_PADRAO} foi perdido)` : '') +
           '...'
       );
+
+      await this.atualizarCadastro();
+
       await cotaAprendizagemService.sincronizar({
         mesReferencia: ref,
         enviarEmail: true,
@@ -98,6 +116,35 @@ export class CotaAprendizagemScheduler {
       console.error('[Cota Scheduler] Erro na apuração automática:', err?.message || err);
     } finally {
       this.rodandoAgora = false;
+    }
+  }
+
+  /**
+   * Etapa 1 — cadastro em dia antes de classificar.
+   *
+   * Best-effort de propósito: ReceitaWS fora do ar, 429 teimoso ou qualquer
+   * outra falha NÃO pode impedir a apuração. Apurar com o cadastro do mês
+   * passado é ruim; não apurar o mês é pior, porque a regra dos 20% depende de
+   * acompanhar todos os meses sem buraco.
+   */
+  private async atualizarCadastro(): Promise<void> {
+    if (!REFRESH_CADASTRO) {
+      console.log('[Cota Scheduler] Etapa de cadastro pulada (COTA_REFRESH_CADASTRO=false).');
+      return;
+    }
+
+    try {
+      console.log('[Cota Scheduler] Etapa 1/3 — atualizando o cadastro pela ReceitaWS...');
+      const r = await cadastroRefreshService.atualizarTodos();
+      console.log(
+        `[Cota Scheduler] Cadastro atualizado: ${r.atualizados} mudança(s) em ` +
+          `${r.processados} cliente(s), ${r.erros} erro(s).`
+      );
+    } catch (err: any) {
+      console.error(
+        '[Cota Scheduler] Varredura cadastral falhou — a apuração segue com o cadastro atual:',
+        err?.message || err
+      );
     }
   }
 
