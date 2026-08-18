@@ -28,9 +28,10 @@ import sciRoutes from './routes/sci';
 import spedRoutes from './routes/sped';
 import irpfRoutes from './routes/irpf';
 import cfopRoutes from './routes/cfop';
-import n8nWebhookRoutes from './routes/n8n-webhook';
 import beneficiosRoutes from './routes/beneficios';
 import estudoViabilidadeRoutes from './routes/estudo-viabilidade';
+import cotaAprendizagemRoutes from './routes/cota-aprendizagem';
+import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
 
 class Server {
   private app: express.Application;
@@ -48,6 +49,8 @@ class Server {
     this.setupErrorHandling();
     this.setupWebSocket();
     // Scheduler de faturamento IRPF desabilitado: consulta ao banco apenas manual (quando o usuário clica em atualizar).
+    // Cota de aprendizagem: apuração mensal automática, atrás de COTA_SCHEDULER_ENABLED.
+    cotaAprendizagemScheduler.start();
   }
 
   private setupMiddleware(): void {
@@ -176,9 +179,9 @@ class Server {
     this.app.use('/api/sped', spedRoutes);
     this.app.use('/api/irpf', irpfRoutes);
     this.app.use('/api/cfop', cfopRoutes);
-    this.app.use('/api/n8n', n8nWebhookRoutes);
     this.app.use('/api/beneficios', beneficiosRoutes);
     this.app.use('/api/estudo-viabilidade', estudoViabilidadeRoutes);
+    this.app.use('/api/cota-aprendizagem', cotaAprendizagemRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

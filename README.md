@@ -247,8 +247,10 @@ cp .env.example .env
 | `EMAIL_USER` | Não | — | E-mail SMTP (Gmail) |
 | `EMAIL_PASSWORD` | Não | — | App password do Gmail |
 | `FRONTEND_URL` | Não | — | URLs permitidas para CORS |
-| `N8N_WEBHOOK_URL` | Não | — | Webhook n8n (formulário de acesso) |
 | `IRPF2026_ADMIN_EMAILS` | Não | `ti@central-rnc.com.br,...` | E-mails admin do módulo IRPF |
+| `COTA_SCHEDULER_ENABLED` | Não | `false` | Liga a apuração mensal da cota de aprendizagem |
+| `COTA_SCHEDULER_DIA` | Não | `5` | Dia do mês em que a apuração roda |
+| `COTA_ALERT_EMAILS` | Não | `ti@central-rnc.com.br` | Destinatários do resumo mensal da cota |
 
 ---
 
@@ -383,7 +385,7 @@ Serviços:
 | `sci` | `/api/sci` | Integração SCI (banco horas, catálogo) |
 | `admin-dashboard` | `/api/dashboard/admin` | Dashboard administrativo |
 | `flags` | `/api/flags` | Flags de clientes |
-| `n8n-webhook` | `/api/n8n` | Webhooks n8n |
+| `cota-aprendizagem` | `/api/cota-aprendizagem` | Classificação de porte ME/EPP/Demais (LC 123) |
 | `spreadsheet` | `/api/spreadsheet` | Processamento de planilhas |
 
 ---

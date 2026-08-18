@@ -28,8 +28,8 @@ import {
 import { api } from '../services/api';
 import type { AxiosError } from 'axios';
 import CFOPTab from '../components/Clientes/CFOPTab';
-import AcessoTab from '../components/Clientes/AcessoTab';
 import EBEFTab from '../components/Clientes/EBEFTab';
+import CotaAprendizagemTab from '../components/Clientes/CotaAprendizagemTab';
 import ExportClientesModal from '../components/Clientes/ExportClientesModal';
 import { clientesService } from '../services';
 import { beneficiosService } from '../services/beneficios';
@@ -566,7 +566,7 @@ const Clientes: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ cliente: Cliente | null; countdown: number }>({ cliente: null, countdown: 0 });
   const [deleteTimer, setDeleteTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-bef' | 'cnae' | 'cfop' | 'acesso'>(() => {
+  const [activeTab, setActiveTab] = useState<'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-bef' | 'cnae' | 'cfop' | 'cota-aprendizagem'>(() => {
     // Inicializar pela URL/localStorage para evitar 1º render na aba errada (que dispara várias requisições/toasts)
     const params = new URLSearchParams(window.location.search);
     const tabFromQuery = params.get('tab');
@@ -578,7 +578,7 @@ const Clientes: React.FC = () => {
     if (tab === 'participacao') return 'participacao';
     if (tab === 'cnae') return 'cnae';
     if (tab === 'cfop') return 'cfop';
-    if (tab === 'acesso') return 'acesso';
+    if (tab === 'cota-aprendizagem') return 'cota-aprendizagem';
     return 'clientes';
   });
   const [hostLancamentos, setHostLancamentos] = useState<any[]>([]);
@@ -1201,7 +1201,7 @@ const Clientes: React.FC = () => {
   };
 
   // Função para mudar de aba e atualizar URL (preserva cnpj/contexto ao trocar de aba)
-  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-bef' | 'cnae' | 'cfop' | 'acesso') => {
+  const handleTabChange = (tab: 'clientes' | 'participacao' | 'faturamento-sci' | 'lancamentos' | 'e-bef' | 'cnae' | 'cfop' | 'cota-aprendizagem') => {
     setActiveTab(tab);
     const params = new URLSearchParams(location.search);
     if (tab === 'clientes') {
@@ -1305,7 +1305,7 @@ const Clientes: React.FC = () => {
     else if (tab === 'faturamento-sci') setActiveTab('faturamento-sci');
     else if (tab === 'cnae') setActiveTab('cnae');
     else if (tab === 'cfop') setActiveTab('cfop');
-    else if (tab === 'acesso') setActiveTab('acesso');
+    else if (tab === 'cota-aprendizagem') setActiveTab('cota-aprendizagem');
     else setActiveTab('clientes');
 
     // Detectar CNPJ na query string para lançamentos, clientes, faturamento-sci e cfop
@@ -3628,14 +3628,16 @@ const Clientes: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs de categoria */}
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 mb-6 overflow-hidden">
-        <div className="px-6 pt-4 pb-2">
-          <div className="flex space-x-1">
+      {/* Tabs de categoria — uma linha só. `whitespace-nowrap` + `flex-shrink-0`
+          nos botões impedem a quebra do rótulo em duas linhas; o container rola
+          na horizontal quando a tela for estreita demais para todas as abas. */}
+      <div className="bg-white rounded-2xl shadow-md border border-gray-100 mb-6">
+        <div className="px-6 pt-4 pb-2 overflow-x-auto">
+          <div className="flex space-x-1 min-w-max">
             <button
               type="button"
               onClick={() => handleTabChange('clientes')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+              className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'clientes'
                   ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
@@ -3649,7 +3651,7 @@ const Clientes: React.FC = () => {
             <button
               type="button"
               onClick={() => handleTabChange('participacao')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+              className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'participacao'
                   ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
@@ -3663,7 +3665,7 @@ const Clientes: React.FC = () => {
             <button
               type="button"
               onClick={() => handleTabChange('faturamento-sci')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+              className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'faturamento-sci'
                   ? 'bg-gradient-to-r from-blue-500 to-cyan-600 text-white shadow-lg shadow-blue-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
@@ -3677,7 +3679,7 @@ const Clientes: React.FC = () => {
             <button
               type="button"
               onClick={() => handleTabChange('cfop')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+              className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'cfop'
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
@@ -3691,7 +3693,7 @@ const Clientes: React.FC = () => {
             <button
               type="button"
               onClick={() => handleTabChange('lancamentos')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+              className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'lancamentos'
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
@@ -3705,7 +3707,7 @@ const Clientes: React.FC = () => {
             <button
               type="button"
               onClick={() => handleTabChange('e-bef')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+              className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'e-bef'
                   ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg shadow-indigo-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
@@ -3719,7 +3721,7 @@ const Clientes: React.FC = () => {
             <button
               type="button"
               onClick={() => handleTabChange('cnae')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+              className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'cnae'
                   ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
@@ -3732,15 +3734,15 @@ const Clientes: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => handleTabChange('acesso')}
-              className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
-                activeTab === 'acesso'
-                  ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/30 transform scale-105'
+              onClick={() => handleTabChange('cota-aprendizagem')}
+              className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
+                activeTab === 'cota-aprendizagem'
+                  ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg shadow-indigo-500/30 transform scale-105'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white'
               }`}
             >
-              Acesso T.I
-              {activeTab === 'acesso' && (
+              Enquadramento de Porte
+              {activeTab === 'cota-aprendizagem' && (
                 <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"></span>
               )}
             </button>
@@ -4744,8 +4746,8 @@ const Clientes: React.FC = () => {
         </>
       )}
 
-      {/* Barra de Busca e Ações - Não exibir nas abas e-BEF, CNAE e Acesso, nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
-      {activeTab !== 'e-bef' && activeTab !== 'cnae' && activeTab !== 'acesso' && !showForm && !visualizandoCliente && (
+      {/* Barra de Busca e Ações - Não exibir nas abas e-BEF, CNAE e Cota (que têm busca própria), nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
+      {activeTab !== 'e-bef' && activeTab !== 'cnae' && activeTab !== 'cota-aprendizagem' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
         <div className="flex flex-col md:flex-row md:flex-wrap gap-4 items-start md:items-center justify-between">
           <div className={`flex-1 min-w-[260px] ${activeTab === 'faturamento-sci' ? 'max-w-2xl' : 'max-w-md'} w-full`}>
@@ -6019,9 +6021,9 @@ const Clientes: React.FC = () => {
         <CFOPTab />
       )}
 
-      {/* Aba de Acesso - formulário para webhook n8n */}
-      {activeTab === 'acesso' && (
-        <AcessoTab />
+      {/* Aba de Cota de Aprendizagem - porte ME/EPP/Demais pelo faturamento do SCI */}
+      {activeTab === 'cota-aprendizagem' && (
+        <CotaAprendizagemTab />
       )}
 
       {/* Aba de CNAE */}

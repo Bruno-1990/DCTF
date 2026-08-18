@@ -36,6 +36,7 @@
     "drop:irpf-producao": "ts-node src/scripts/drop-irpf-producao-tables.ts",
     "migrate:irpf2026": "ts-node src/scripts/run-irpf2026-migration.ts",
     "migrate:beneficios": "ts-node src/scripts/run-beneficios-migration.ts",
+    "migrate:cota-aprendizagem": "ts-node --transpile-only src/scripts/run-cota-aprendizagem-migration.ts",
     "migrate:sitf-extracted": "ts-node src/scripts/run-sitf-migration.ts",
     "migrate:clientes-receitaws": "ts-node src/scripts/migrate-clientes-receitaws-fields.ts",
     "verify:clientes-schema": "ts-node src/scripts/verify-clientes-schema.ts",
