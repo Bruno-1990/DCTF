@@ -14,6 +14,17 @@ import { promisify } from 'util';
 import path from 'path';
 import { executeQuery, mysqlPool } from '../config/mysql';
 import EmailService from './EmailService';
+import { comLockSci } from './sciLock';
+import {
+  C,
+  esc,
+  formatCnpj,
+  moldura,
+  painelTotais,
+  secao,
+  itemLista,
+  blocoVazio,
+} from './email.layout';
 
 const execAsync = promisify(exec);
 
@@ -30,12 +41,8 @@ const SCI_TIMEOUT_MS = 150000;
 
 // Serializa as chamadas ao SCI: no máximo UMA SP_BI_FAT ativa por vez em todo o
 // processo — cautela para não sobrecarregar/travar a procedure no Firebird.
-let sciChain: Promise<unknown> = Promise.resolve();
-function comLockSci<T>(fn: () => Promise<T>): Promise<T> {
-  const run = sciChain.then(fn, fn);
-  sciChain = run.then(() => undefined, () => undefined);
-  return run;
-}
+// A cadeia mora em `sciLock` para ser compartilhada com os outros serviços que
+// consultam o SCI; uma cadeia por serviço deixaria as consultas concorrentes.
 
 function ultimoDiaDoMes(ano: number, mes: number): string {
   const dia = new Date(ano, mes, 0).getDate(); // mes 1-based → dia 0 do próximo = último do mês
@@ -161,73 +168,88 @@ const brlSrv = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BR
 const labelMesSrv = (ano: number, mes: number) => `${MESES_SRV[mes - 1]}/${ano}`;
 const REOA_PAGE_URL = process.env['REOA_PAGE_URL'] || 'http://192.168.0.47:5173/beneficios';
 
-function formatCnpjSrv(v: string | null | undefined): string {
-  const n = String(v ?? '').replace(/\D/g, '');
-  if (n.length !== 14) return v || '—';
-  return `${n.slice(0, 2)}.${n.slice(2, 5)}.${n.slice(5, 8)}/${n.slice(8, 12)}-${n.slice(12)}`;
-}
+export const TITULO_EMAIL_REOA = 'Conferência REOA — Grupo Substituto';
 
-/** HTML do e-mail de aviso — margens/espaçamento definidos, lista de clientes
- *  com seus faturamentos, link da página e disclaimer para copiar/colar. */
-function montarHtmlAviso(conf: any, naoOk: any[]): string {
+/**
+ * HTML do aviso REOA, no padrão visual comum (`email.layout`).
+ *
+ * Antes este e-mail tinha moldura própria — carmim, Arial, URL em caixa
+ * tracejada — e, principalmente, interpolava `razao_social` SEM ESCAPAR: um
+ * "&" ou "<" no cadastro bastava para quebrar o corpo da mensagem. Ao passar
+ * pelas peças comuns, o escape deixa de depender de alguém lembrar.
+ *
+ * Exportada (antes era módulo-privada) para poder ser testada sem SMTP.
+ */
+export function montarHtmlAviso(conf: any, naoOk: any[]): string {
   const j = conf.janela || [];
-  const janelaTxt = j.length ? `${labelMesSrv(j[0].ano, j[0].mes)} a ${labelMesSrv(j[j.length - 1].ano, j[j.length - 1].mes)}` : '';
+  const janelaTxt = j.length
+    ? `${labelMesSrv(j[0].ano, j[0].mes)} a ${labelMesSrv(j[j.length - 1].ano, j[j.length - 1].mes)}`
+    : '';
   const limite = brlSrv.format(conf.threshold ?? 300000);
 
-  const blocos = naoOk.map((c: any) => {
-    const linhas = c.estabelecimentos.flatMap((e: any) =>
-      e.meses.filter((m: any) => m.abaixo).map((m: any) => `
-        <tr>
-          <td style="padding:7px 12px;border:1px solid #f1f5f9;color:#334155;">${e.rotulo}</td>
-          <td style="padding:7px 12px;border:1px solid #f1f5f9;color:#334155;">${labelMesSrv(m.ano, m.mes)}</td>
-          <td style="padding:7px 12px;border:1px solid #f1f5f9;text-align:right;color:#b91c1c;font-weight:700;">${brlSrv.format(m.faturamento || 0)}</td>
-        </tr>`).join('')
-    ).join('');
-    return `
-      <div style="margin:0 0 18px;padding:16px 18px;border:1px solid #e5e7eb;border-radius:10px;background:#ffffff;">
-        <div style="font-size:15px;font-weight:700;color:#111827;">${c.razao_social}</div>
-        <div style="font-size:12px;color:#6b7280;margin:3px 0 12px;">CNPJ ${formatCnpjSrv(c.cnpj)}${c.codigo_sci ? ` &middot; SCI ${c.codigo_sci}` : ''}</div>
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <thead>
-            <tr>
-              <th style="text-align:left;padding:7px 12px;background:#fef2f2;border:1px solid #fee2e2;color:#991b1b;">Estabelecimento</th>
-              <th style="text-align:left;padding:7px 12px;background:#fef2f2;border:1px solid #fee2e2;color:#991b1b;">Mês</th>
-              <th style="text-align:right;padding:7px 12px;background:#fef2f2;border:1px solid #fee2e2;color:#991b1b;">Faturamento</th>
-            </tr>
-          </thead>
-          <tbody>${linhas}</tbody>
-        </table>
-      </div>`;
-  }).join('');
+  // Cada cliente vira uma seção; dentro dela, uma linha por mês abaixo do
+  // limite. O mês é o dado que importa — é ele que se leva para a conferência.
+  const blocos = naoOk
+    .map((c: any) => {
+      const abaixo = c.estabelecimentos.flatMap((e: any) =>
+        e.meses.filter((m: any) => m.abaixo).map((m: any) => ({ ...m, rotulo: e.rotulo }))
+      );
+      const itens = abaixo
+        .map((m: any, i: number) =>
+          itemLista({
+            titulo: labelMesSrv(m.ano, m.mes),
+            meta: esc(m.rotulo),
+            valor: brlSrv.format(m.faturamento || 0),
+            cor: C.ALERTA,
+            indice: i,
+          })
+        )
+        .join('');
+      return secao({
+        titulo: esc(c.razao_social),
+        // Identificação junto do nome: é ela que se leva para o SCI conferir.
+        subtitulo: `CNPJ ${formatCnpj(c.cnpj)}${c.codigo_sci ? ` &middot; SCI ${c.codigo_sci}` : ''}`,
+        contagem: abaixo.length,
+        cor: C.ALERTA,
+        fundo: C.ALERTA_FUNDO,
+        itens,
+      });
+    })
+    .join('');
 
-  return `
-  <div style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;">
-    <div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
-      <div style="background:#be123c;padding:24px 28px;">
-        <h1 style="margin:0;color:#ffffff;font-size:20px;">Aviso REOA — Grupo Substituto</h1>
-        <p style="margin:6px 0 0;color:#fecdd3;font-size:13px;">Clientes com faturamento mensal abaixo de ${limite}</p>
-      </div>
-      <div style="padding:24px 28px;">
-        <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#374151;">
-          Os clientes a seguir tiveram faturamento <strong>mensal abaixo de ${limite}</strong> em algum mês da janela
-          <strong>${janelaTxt}</strong>. Total: <strong>${naoOk.length}</strong> cliente(s) fora do limite.
-        </p>
-        ${blocos}
-        <div style="margin:28px 0 4px;padding:18px 20px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;">
-          <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#111827;">Acessar a conferência completa</p>
-          <p style="margin:0 0 10px;font-size:12px;color:#6b7280;line-height:1.5;">
-            Copie o link completo abaixo e cole na barra de endereços do navegador:
-          </p>
-          <div style="padding:11px 13px;background:#ffffff;border:1px dashed #cbd5e1;border-radius:8px;font-family:'Courier New',monospace;font-size:13px;color:#1d4ed8;word-break:break-all;">
-            ${REOA_PAGE_URL}
-          </div>
-        </div>
-      </div>
-      <div style="padding:16px 28px;background:#f9fafb;border-top:1px solid #e5e7eb;">
-        <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.5;">Enviado automaticamente pelo Sistema DCTF — conferência REOA. Não responda a este e-mail.</p>
-      </div>
-    </div>
-  </div>`;
+  const totalMeses = naoOk.reduce(
+    (s: number, c: any) =>
+      s +
+      c.estabelecimentos.reduce(
+        (t: number, e: any) => t + e.meses.filter((m: any) => m.abaixo).length,
+        0
+      ),
+    0
+  );
+
+  return moldura({
+    titulo: TITULO_EMAIL_REOA,
+    subtitulo: janelaTxt,
+    cobertura: `Faturamento mensal abaixo de ${limite}`,
+    faixas: painelTotais([
+      { valor: naoOk.length, titulo: 'Clientes fora do limite', cor: C.ALERTA },
+      { valor: totalMeses, titulo: 'Meses abaixo', detalhe: 'no total', cor: C.ATENCAO },
+      { valor: limite, titulo: 'Limite mensal', detalhe: 'por estabelecimento', cor: C.TINTA },
+    ]),
+    corpo:
+      naoOk.length > 0
+        ? blocos
+        : blocoVazio(
+            'Nenhum cliente abaixo do limite.',
+            `Todos os estabelecimentos do grupo faturaram acima de ${limite} em ${janelaTxt}.`
+          ),
+    cta: { url: REOA_PAGE_URL, texto: 'Abrir a conferência' },
+    rodape: {
+      titulo: 'Conferência REOA',
+      texto:
+        'Faturamento por estabelecimento, apurado no SCI. Enviado automaticamente; não responda.',
+    },
+  });
 }
 
 export class SubstitutoService {
@@ -463,7 +485,9 @@ export class SubstitutoService {
     }
 
     const html = montarHtmlAviso(conf, naoOk);
-    const subject = `REOA — ${naoOk.length} cliente(s) com faturamento abaixo de ${brlSrv.format(conf.threshold)}`;
+    // Assunto pelo padrão único dos avisos: prefixo, contagem e data. Antes era
+    // string livre, e o aviso não se agrupava com os outros na caixa de entrada.
+    const subject = EmailService.montarAssunto(TITULO_EMAIL_REOA, naoOk.length);
     await EmailService.sendEmail({ to: destinatarios.join(', '), subject, html });
 
     return { success: true, enviado: true, totalNaoOk: naoOk.length, destinatarios };
