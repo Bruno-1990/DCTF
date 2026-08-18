@@ -97,8 +97,16 @@ DCTF_MPC (192.168.0.47)
 Direção mantida: **OneClick → DCTF (pull, read-only)**. Upsert por `cnpj_limpo`, não-destrutivo.
 
 ### Filtro equivalente ao v1 ("Mensais + Ativos")
+> ⚠️ **Multi-tenant por coluna.** `public.clientes.empresa_id` separa os escritórios:
+> `cmnn7xm6e00009gqgoii3ims2` (Central Contábil), `jrg-empresa` (Brasília/GO) e um tenant
+> de demo. Toda query de sincronização **precisa** filtrar por `empresa_id` — ver
+> `EMPRESA_ID_CENTRAL` / `getEmpresaId()` em `src/services/oneclick.mappers.ts`
+> (override por `ONECLICK_EMPRESA_ID`). Sem isso o preview trazia ~950 clientes
+> (os três tenants) em vez dos ~470 da Central.
+
 ```sql
-WHERE situacao = 'MENSAL'
+WHERE empresa_id = 'cmnn7xm6e00009gqgoii3ims2'
+  AND situacao = 'MENSAL'
   AND status   = 'ATIVA'
   AND is_active = true
   AND deleted_at IS NULL

@@ -16,6 +16,8 @@ import {
   mapTributacaoToRegimeCode,
   mapClienteRowToOneClick,
   MENSAIS_ATIVOS_WHERE,
+  EMPRESA_ID_CENTRAL,
+  getEmpresaId,
   type ClienteProdRow,
 } from '../oneclick.mappers';
 
@@ -131,5 +133,28 @@ describe('MENSAIS_ATIVOS_WHERE (filtro de comparação)', () => {
 
   it('exclui registros soft-deletados', () => {
     expect(MENSAIS_ATIVOS_WHERE).toMatch(/deleted_at\s+IS\s+NULL/i);
+  });
+
+  it('filtra pelo tenant (empresa_id) via parâmetro $1', () => {
+    expect(MENSAIS_ATIVOS_WHERE).toMatch(/empresa_id\s*=\s*\$1/i);
+  });
+});
+
+describe('getEmpresaId (tenant do OneClick)', () => {
+  const original = process.env['ONECLICK_EMPRESA_ID'];
+
+  afterEach(() => {
+    if (original === undefined) delete process.env['ONECLICK_EMPRESA_ID'];
+    else process.env['ONECLICK_EMPRESA_ID'] = original;
+  });
+
+  it('usa a Central Contábil por padrão', () => {
+    delete process.env['ONECLICK_EMPRESA_ID'];
+    expect(getEmpresaId()).toBe(EMPRESA_ID_CENTRAL);
+  });
+
+  it('permite override por env (outro escritório/ambiente)', () => {
+    process.env['ONECLICK_EMPRESA_ID'] = 'jrg-empresa';
+    expect(getEmpresaId()).toBe('jrg-empresa');
   });
 });

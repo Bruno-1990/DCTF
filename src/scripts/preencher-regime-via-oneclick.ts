@@ -5,7 +5,7 @@
 
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import { mapTributacaoToRegimeCode } from '../services/oneclick.mappers';
+import { mapTributacaoToRegimeCode, getEmpresaId } from '../services/oneclick.mappers';
 
 const projectRoot = path.resolve(__dirname, '../..');
 dotenv.config({ path: path.join(projectRoot, '.env') });
@@ -54,8 +54,9 @@ async function main() {
          FROM public.clientes
          WHERE regexp_replace(documento, '\\D', '', 'g') = $1
            AND tipo_documento = 'CNPJ'
+           AND empresa_id = $2
          LIMIT 1`,
-        [cnpjLimpo]
+        [cnpjLimpo, getEmpresaId()]
       );
 
       if (!ocRows.length) {

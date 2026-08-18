@@ -74,11 +74,28 @@ export const SELECT_CLIENTE_COLUMNS = `
 `;
 
 /**
+ * Tenant da Central Contábil em `public.clientes.empresa_id`.
+ * O OneClick de prod é multi-tenant por coluna (não por schema): além da Central
+ * convivem ali `jrg-empresa` (escritório de Brasília/GO) e um tenant de demo.
+ * Sem este filtro o preview do OneClick trazia os ~950 mensais/ativos dos três
+ * juntos, em vez dos ~470 da Central. Confirmado empiricamente em 2026-08-18:
+ * 217 dos 220 clientes já cadastrados no DCTF pertencem a este empresa_id.
+ */
+export const EMPRESA_ID_CENTRAL = 'cmnn7xm6e00009gqgoii3ims2';
+
+/** Tenant efetivo (override por env para outros ambientes/escritórios). */
+export function getEmpresaId(): string {
+  return process.env['ONECLICK_EMPRESA_ID'] || EMPRESA_ID_CENTRAL;
+}
+
+/**
  * Filtro "Mensais/Ativos" acordado: só MENSAL + ATIVA + CNPJ, sem soft-delete,
  * com documento preenchido. NÃO inclui inativos. (Filtro de área desligado por ora.)
+ * `$1` = empresa_id (tenant) — ver `getEmpresaId()`.
  */
 export const MENSAIS_ATIVOS_WHERE = `
-  situacao = 'MENSAL'
+  empresa_id = $1
+  AND situacao = 'MENSAL'
   AND status = 'ATIVA'
   AND tipo_documento = 'CNPJ'
   AND deleted_at IS NULL
