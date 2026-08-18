@@ -3037,6 +3037,91 @@ export class Cliente extends DatabaseService<ICliente> {
   }
 
   // =====================================================================
+  //  Acessórias — Sincronizar clientes
+  // =====================================================================
+
+  /**
+   * Importa/atualiza clientes a partir da carteira ATIVA do Sistema Acessórias.
+   * Mesmo contrato do `sincronizarComOneClick`: upsert por `cnpj_limpo` e
+   * NÃO-DESTRUTIVO — só preenche campo que estiver vazio no DCTF.
+   *
+   * A Acessórias traz poucos campos (razão, fantasia, telefone, UF); endereço,
+   * e-mail e regime ficam para a ReceitaWS completar na varredura cadastral.
+   *
+   * @param ids ids da Acessórias a importar. Vazio/omitido = toda a carteira ativa.
+   */
+  async sincronizarComAcessorias(ids?: string[]): Promise<ApiResponse<any>> {
+    const { AcessoriasService } = await import('../services/AcessoriasService');
+    const { camposParaCadastro } = await import('../services/acessorias.mappers');
+    const acessorias = new AcessoriasService();
+    const resumo = { total: 0, novos: 0, atualizados: 0, ignorados: 0, erros: 0, detalhes: [] as any[] };
+
+    try {
+      const empresas = ids && ids.length > 0
+        ? await acessorias.buscarEmpresasPorIds(ids)
+        : await acessorias.buscarEmpresasAtivas();
+      resumo.total = empresas.length;
+
+      for (const emp of empresas) {
+        try {
+          // buscarEmpresas* já filtra por CNPJ válido; a guarda cobre chamada direta.
+          if (emp.cnpj_limpo.length !== 14) {
+            resumo.ignorados++;
+            continue;
+          }
+
+          const existente = await this.findBy({ cnpj_limpo: emp.cnpj_limpo });
+          const clienteLocal = existente.success && existente.data?.length ? existente.data[0] : null;
+          const campos = camposParaCadastro(emp);
+
+          if (clienteLocal) {
+            const updates: Record<string, any> = {};
+            for (const [campo, valor] of Object.entries(campos)) {
+              if (!valor) continue; // Acessórias sem valor, não sobrescreve
+              const valorLocal = (clienteLocal as any)[campo];
+              const vazio = valorLocal === null || valorLocal === undefined || String(valorLocal).trim() === '';
+              if (vazio) updates[campo] = valor;
+            }
+
+            if (Object.keys(updates).length > 0) {
+              const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
+              const values = [...Object.values(updates), (clienteLocal as any).id];
+              await this.executeCustomQuery<any>(
+                `UPDATE \`clientes\` SET ${setClauses} WHERE \`id\` = ?`,
+                values
+              );
+              resumo.atualizados++;
+              resumo.detalhes.push({ cnpj: emp.cnpj_limpo, razao: emp.razao_social, acao: 'atualizado', campos: Object.keys(updates) });
+            } else {
+              resumo.ignorados++;
+            }
+          } else {
+            const id = uuidv4();
+            await this.executeCustomQuery<any>(
+              `INSERT INTO \`clientes\` (\`id\`, \`cnpj_limpo\`, \`razao_social\`, \`fantasia\`, \`telefone\`, \`uf\`)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              [id, emp.cnpj_limpo, campos.razao_social || 'SEM RAZAO SOCIAL', campos.fantasia, campos.telefone, campos.uf]
+            );
+            resumo.novos++;
+            resumo.detalhes.push({ cnpj: emp.cnpj_limpo, razao: emp.razao_social, acao: 'novo' });
+          }
+        } catch (err: any) {
+          resumo.erros++;
+          resumo.detalhes.push({ cnpj: emp.cnpj, razao: emp.razao_social, acao: 'erro', erro: err?.message });
+        }
+      }
+
+      return {
+        success: true,
+        data: resumo,
+        message: `Sincronizacao concluida: ${resumo.novos} novo(s), ${resumo.atualizados} atualizado(s), ${resumo.ignorados} sem alteracao, ${resumo.erros} erro(s)`,
+      };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erro ao sincronizar com a Acessórias' };
+    }
+  }
+
+  // =====================================================================
   //  e-BEF — Beneficiários Finais
   // =====================================================================
 

@@ -245,6 +245,23 @@ export const clientesService = {
     return response.data; // { success, data: { total, novos, atualizados, ignorados, erros }, message }
   },
 
+  // ── Acessórias (Sincronizar clientes) ──
+
+  async acessoriasStatus() {
+    const response = await api.get('/clientes/acessorias/status');
+    return response.data; // { success, data: { configurada, baseUrl, ativa, erro? } }
+  },
+
+  async previewAcessorias() {
+    const response = await api.get('/clientes/acessorias/preview');
+    return response.data; // { success, data: AcessoriasPreviewItem[] }
+  },
+
+  async sincronizarAcessorias(ids?: string[]) {
+    const response = await api.post('/clientes/sincronizar-acessorias', ids ? { ids } : {});
+    return response.data; // { success, data: { total, novos, atualizados, ignorados, erros }, message }
+  },
+
   // ── e-BEF (Beneficiários Finais) ──
 
   async listarEBEF() {

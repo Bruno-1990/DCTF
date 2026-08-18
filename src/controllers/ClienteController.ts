@@ -3253,6 +3253,79 @@ export class ClienteController {
   }
 
   // =====================================================================
+  //  Acessórias — Sincronizar clientes
+  // =====================================================================
+
+  /**
+   * GET /api/clientes/acessorias/status
+   * Diz se o token está configurado e se a API responde (indicador no frontend).
+   */
+  async acessoriasStatus(_req: Request, res: Response): Promise<void> {
+    try {
+      const { AcessoriasService } = await import('../services/AcessoriasService');
+      const status = await new AcessoriasService().status();
+      res.json({ success: true, data: status });
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao consultar status da Acessórias:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao consultar status da Acessórias' });
+    }
+  }
+
+  /**
+   * GET /api/clientes/acessorias/preview
+   * Lista a carteira ATIVA da Acessórias para seleção antes de importar,
+   * indicando quais CNPJs já existem no DCTF.
+   */
+  async previewAcessorias(_req: Request, res: Response): Promise<void> {
+    try {
+      const { AcessoriasService } = await import('../services/AcessoriasService');
+      const empresas = await new AcessoriasService().buscarEmpresasAtivas();
+
+      const preview = [];
+      for (const emp of empresas) {
+        const existente = await this.clienteModel.findBy({ cnpj_limpo: emp.cnpj_limpo });
+        const jaExiste = Boolean(existente.success && existente.data && existente.data.length > 0);
+        preview.push({ ...emp, ja_existe: jaExiste });
+      }
+
+      res.json({
+        success: true,
+        data: preview,
+        message: `${preview.length} empresa(s) ativa(s) na Acessórias. ${preview.filter(p => p.ja_existe).length} já cadastrada(s).`,
+      });
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao listar preview da Acessórias:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao conectar com a Acessórias' });
+    }
+  }
+
+  /**
+   * POST /api/clientes/sincronizar-acessorias
+   * Importa as empresas selecionadas. Body: { ids: string[] } — vazio = todas.
+   */
+  async sincronizarAcessorias(req: Request, res: Response): Promise<void> {
+    try {
+      const idsArray = Array.isArray(req.body?.ids) && req.body.ids.length > 0
+        ? req.body.ids.map(String)
+        : undefined;
+
+      console.log(`[ClienteController] Iniciando sincronizacao com a Acessorias... (${idsArray ? idsArray.length + ' selecionadas' : 'todas'})`);
+      const result = await this.clienteModel.sincronizarComAcessorias(idsArray);
+
+      if (!result.success) {
+        res.status(500).json(result);
+        return;
+      }
+
+      console.log(`[ClienteController] Acessorias sync: ${result.message}`);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[ClienteController] Erro ao sincronizar com a Acessórias:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao sincronizar com a Acessórias' });
+    }
+  }
+
+  // =====================================================================
   //  e-BEF — Beneficiários Finais
   // =====================================================================
 

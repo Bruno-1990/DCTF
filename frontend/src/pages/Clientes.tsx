@@ -615,6 +615,79 @@ const Clientes: React.FC = () => {
     const id = setInterval(refreshOneClickTunnel, 30_000);
     return () => clearInterval(id);
   }, []);
+
+  // ── Acessórias (mesmo fluxo do OneClick: preview → seleção → importar) ──
+  const [sincronizandoAcessorias, setSincronizandoAcessorias] = useState(false);
+  const [showAcessoriasModal, setShowAcessoriasModal] = useState(false);
+  const [acessoriasPreview, setAcessoriasPreview] = useState<any[]>([]);
+  const [acessoriasSelected, setAcessoriasSelected] = useState<Set<string>>(new Set());
+  const [acessoriasLoading, setAcessoriasLoading] = useState(false);
+  const [acessoriasConfirm, setAcessoriasConfirm] = useState(false);
+  const [acessoriasSearch, setAcessoriasSearch] = useState('');
+  const [acessoriasFiltro, setAcessoriasFiltro] = useState<'todos' | 'novos' | 'cadastrados'>('novos');
+  // Status da API (null = ainda não verificado). Sem túnel aqui: é REST com token.
+  const [acessoriasAtiva, setAcessoriasAtiva] = useState<boolean | null>(null);
+
+  const refreshAcessoriasStatus = async () => {
+    try {
+      const res = await clientesService.acessoriasStatus();
+      setAcessoriasAtiva(res?.success ? !!res.data?.ativa : false);
+    } catch {
+      setAcessoriasAtiva(false);
+    }
+  };
+
+  // Verifica a API ao montar e a cada 5min (a sondagem gasta 1 req do limite de 100/min).
+  useEffect(() => {
+    refreshAcessoriasStatus();
+    const id = setInterval(refreshAcessoriasStatus, 300_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Lista visível do modal da Acessórias (filtro + busca + ordenação), reaproveitada
+  // pelo botão "marcar/desmarcar visíveis" e pela tabela.
+  const acessoriasVisiveis = acessoriasPreview
+    .filter(c => {
+      if (acessoriasFiltro === 'novos') return !c.ja_existe;
+      if (acessoriasFiltro === 'cadastrados') return c.ja_existe;
+      return true;
+    })
+    .filter(c => {
+      const t = acessoriasSearch.toLowerCase();
+      if (!t) return true;
+      return (c.razao_social || '').toLowerCase().includes(t)
+        || (c.fantasia || '').toLowerCase().includes(t)
+        || (c.cnpj || '').includes(t);
+    })
+    .sort((a, b) => {
+      if (a.ja_existe !== b.ja_existe) return a.ja_existe ? 1 : -1;
+      return (a.razao_social || '').localeCompare(b.razao_social || '');
+    });
+
+  const abrirModalAcessorias = async () => {
+    try {
+      setAcessoriasLoading(true);
+      setShowAcessoriasModal(true);
+      setAcessoriasSearch('');
+      setAcessoriasFiltro('novos');
+      const res = await clientesService.previewAcessorias();
+      if (res.success) {
+        setAcessoriasPreview(res.data || []);
+        // Pré-selecionar apenas as que ainda não existem no DCTF
+        const novas = (res.data || []).filter((c: any) => !c.ja_existe);
+        setAcessoriasSelected(new Set(novas.map((c: any) => String(c.id))));
+      } else {
+        toast.error(res.error || 'Erro ao buscar empresas da Acessórias');
+        setShowAcessoriasModal(false);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao conectar com a Acessórias');
+      setShowAcessoriasModal(false);
+    } finally {
+      setAcessoriasLoading(false);
+      refreshAcessoriasStatus();
+    }
+  };
   const [mostrarCadastroCompleto, setMostrarCadastroCompleto] = useState(false);
   const [mostrarAtividadesSecundarias, setMostrarAtividadesSecundarias] = useState(false);
   // const [ultimaImportacaoMeta, setUltimaImportacaoMeta] = useState<any>(null); // Não utilizado no momento
@@ -5096,12 +5169,40 @@ const Clientes: React.FC = () => {
                       {sincronizandoOneClick ? 'Importando...' : oneClickLoading ? 'Conectando...' : 'OneClick'}
                     </button>
                   </div>
+                  <div className="relative">
+                    {/* Indicador da API: verde=respondendo, vermelho=sem resposta/token, cinza=verificando */}
+                    <span
+                      title={
+                        acessoriasAtiva === null
+                          ? 'Verificando a API da Acessórias...'
+                          : acessoriasAtiva
+                            ? 'API da Acessórias respondendo'
+                            : 'API da Acessórias sem resposta (verifique o token no .env)'
+                      }
+                      className={`absolute -top-1 -right-1 z-10 h-3.5 w-3.5 rounded-full ring-2 ring-white ${
+                        acessoriasAtiva === null
+                          ? 'bg-gray-400'
+                          : acessoriasAtiva
+                            ? 'bg-green-500 shadow-[0_0_6px_1px] shadow-green-400'
+                            : 'bg-red-500'
+                      } ${acessoriasAtiva ? 'animate-pulse' : ''}`}
+                    />
+                    <button
+                      onClick={abrirModalAcessorias}
+                      disabled={sincronizandoAcessorias || acessoriasLoading}
+                      className="px-6 py-3 bg-gradient-to-r from-sky-500 to-cyan-600 text-white rounded-xl hover:from-sky-600 hover:to-cyan-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-sky-500/30 hover:shadow-xl hover:shadow-sky-500/40 hover:scale-105 transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    >
+                      <ArrowPathIcon className={`h-5 w-5 ${sincronizandoAcessorias || acessoriasLoading ? 'animate-spin' : ''}`} />
+                      {sincronizandoAcessorias ? 'Importando...' : acessoriasLoading ? 'Conectando...' : 'Acessórias'}
+                    </button>
+                  </div>
                   <button
                     onClick={() => setShowExportModal(true)}
-                    className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 hover:scale-105 transform"
+                    title="Exportar Personalizado"
+                    aria-label="Exportar Personalizado"
+                    className="px-3 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 font-semibold transition-all duration-300 flex items-center justify-center shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 hover:scale-105 transform"
                   >
                     <DocumentArrowDownIcon className="h-5 w-5" />
-                    Exportar Personalizado
                   </button>
                 </div>
               </div>
@@ -8775,6 +8876,210 @@ const Clientes: React.FC = () => {
                       className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50"
                     >
                       {sincronizandoOneClick ? 'Importando...' : 'Confirmar'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal Acessórias — Seleção de empresas para importar */}
+      {showAcessoriasModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50" onClick={() => { if (!sincronizandoAcessorias) { setShowAcessoriasModal(false); setAcessoriasConfirm(false); } }} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-sky-500 to-cyan-600 rounded-t-2xl">
+                <h2 className="text-lg font-bold text-white">Importar Clientes da Acessórias</h2>
+                <p className="text-sm text-white/80 mt-0.5">
+                  {acessoriasLoading ? 'Carregando carteira...' : `${acessoriasPreview.length} empresa(s) ativa(s) encontradas`}
+                </p>
+              </div>
+
+              {!acessoriasConfirm ? (
+                <>
+                  {/* Filtros + Busca */}
+                  <div className="px-6 py-3 border-b border-gray-100 space-y-2">
+                    <div className="flex items-center gap-2">
+                      {(['novos', 'cadastrados', 'todos'] as const).map(f => {
+                        const labels = { novos: 'Novos', cadastrados: 'Já cadastrados', todos: 'Todos' };
+                        const counts = {
+                          novos: acessoriasPreview.filter(c => !c.ja_existe).length,
+                          cadastrados: acessoriasPreview.filter(c => c.ja_existe).length,
+                          todos: acessoriasPreview.length,
+                        };
+                        return (
+                          <button
+                            key={f}
+                            onClick={() => setAcessoriasFiltro(f)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                              acessoriasFiltro === f
+                                ? 'bg-sky-500 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {labels[f]} ({counts[f]})
+                          </button>
+                        );
+                      })}
+                      <div className="flex-1" />
+                      <span className="text-xs text-gray-500 font-medium">
+                        {acessoriasSelected.size} selecionada(s)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allSelected = acessoriasVisiveis.every(c => acessoriasSelected.has(String(c.id)));
+                          const next = new Set(acessoriasSelected);
+                          acessoriasVisiveis.forEach(c => {
+                            if (allSelected) next.delete(String(c.id)); else next.add(String(c.id));
+                          });
+                          setAcessoriasSelected(next);
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
+                      >
+                        Marcar/Desmarcar visíveis
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MagnifyingGlassIcon className="h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={acessoriasSearch}
+                        onChange={e => setAcessoriasSearch(e.target.value)}
+                        placeholder="Buscar por razão social, fantasia ou CNPJ..."
+                        className="flex-1 text-sm border-0 focus:ring-0 outline-none bg-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Lista */}
+                  <div className="flex-1 overflow-auto">
+                    {acessoriasLoading ? (
+                      <div className="flex flex-col items-center justify-center py-12 gap-3">
+                        <ArrowPathIcon className="h-8 w-8 text-sky-500 animate-spin" />
+                        <p className="text-xs text-gray-500">A carteira vem paginada de 20 em 20 — leva alguns segundos.</p>
+                      </div>
+                    ) : (
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-2 w-10"></th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Razão Social</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">CNPJ</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">UF</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {acessoriasVisiveis.map(c => (
+                            <tr
+                              key={c.id}
+                              className={`hover:bg-sky-50/50 cursor-pointer transition-colors ${acessoriasSelected.has(String(c.id)) ? 'bg-sky-50/30' : ''}`}
+                              onClick={() => {
+                                const next = new Set(acessoriasSelected);
+                                const key = String(c.id);
+                                if (next.has(key)) next.delete(key); else next.add(key);
+                                setAcessoriasSelected(next);
+                              }}
+                            >
+                              <td className="px-4 py-2.5 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={acessoriasSelected.has(String(c.id))}
+                                  onChange={() => {}}
+                                  className="h-4 w-4 text-sky-600 rounded border-gray-300 focus:ring-sky-500"
+                                />
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-gray-800 font-medium">
+                                {c.razao_social}
+                                {c.fantasia && c.fantasia !== c.razao_social && (
+                                  <span className="block text-xs text-gray-400 font-normal">{c.fantasia}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-gray-600 font-mono">{c.cnpj}</td>
+                              <td className="px-4 py-2.5 text-sm text-gray-600">{c.uf || '—'}</td>
+                              <td className="px-4 py-2.5">
+                                {c.ja_existe ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Cadastrado</span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Novo</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+                    <button
+                      onClick={() => { setShowAcessoriasModal(false); setAcessoriasConfirm(false); }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => setAcessoriasConfirm(true)}
+                      disabled={acessoriasSelected.size === 0}
+                      className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Importar {acessoriasSelected.size} empresa(s)
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* Tela de Confirmação */
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <div className="w-16 h-16 rounded-full bg-sky-100 flex items-center justify-center mb-4">
+                    <ArrowPathIcon className={`h-8 w-8 text-sky-600 ${sincronizandoAcessorias ? 'animate-spin' : ''}`} />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Confirmar Importação</h3>
+                  <p className="text-sm text-gray-500 mb-6">
+                    Deseja importar <strong>{acessoriasSelected.size} empresa(s)</strong> da Acessórias para o DCTF?
+                    <br />Clientes já cadastrados terão apenas campos vazios preenchidos.
+                    <br /><span className="text-xs">A Acessórias traz razão social, fantasia, telefone e UF — o resto do cadastro é completado pela ReceitaWS.</span>
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setAcessoriasConfirm(false)}
+                      disabled={sincronizandoAcessorias}
+                      className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          setSincronizandoAcessorias(true);
+                          const ids = Array.from(acessoriasSelected);
+                          const res = await clientesService.sincronizarAcessorias(ids);
+                          if (res.success) {
+                            const d = res.data || {};
+                            toast.success(`Acessórias: ${d.novos || 0} novo(s), ${d.atualizados || 0} atualizado(s), ${d.erros || 0} erro(s)`, 8000);
+                            const usaListaLonga = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes';
+                            loadClientes({ page: usaListaLonga ? 1 : page, limit: usaListaLonga ? 500 : limit, search: debouncedSearch });
+                          } else {
+                            toast.error(res.error || 'Erro ao importar');
+                          }
+                        } catch (err: any) {
+                          toast.error(err.message || 'Erro ao importar');
+                        } finally {
+                          setSincronizandoAcessorias(false);
+                          setShowAcessoriasModal(false);
+                          setAcessoriasConfirm(false);
+                          refreshAcessoriasStatus();
+                        }
+                      }}
+                      disabled={sincronizandoAcessorias}
+                      className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700 rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50"
+                    >
+                      {sincronizandoAcessorias ? 'Importando...' : 'Confirmar'}
                     </button>
                   </div>
                 </div>

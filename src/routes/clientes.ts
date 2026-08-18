@@ -105,6 +105,11 @@ router.get('/oneclick/status', (req, res) => clienteController.oneClickStatus(re
 router.get('/oneclick/preview', (req, res) => clienteController.previewOneClick(req, res));
 router.post('/sincronizar-oneclick', (req, res) => clienteController.sincronizarOneClick(req, res));
 
+// ── Acessórias (Sincronizar clientes) ──
+router.get('/acessorias/status', (req, res) => clienteController.acessoriasStatus(req, res));
+router.get('/acessorias/preview', (req, res) => clienteController.previewAcessorias(req, res));
+router.post('/sincronizar-acessorias', (req, res) => clienteController.sincronizarAcessorias(req, res));
+
 // GET /api/clientes/:id - Obter cliente por ID (DEVE ser a última rota GET com :id)
 // GET /api/clientes/historico-receita - Registro do que a ReceitaWS alterou no cadastro
 // ?desde=YYYY-MM-DD&ate=YYYY-MM-DD&cliente_id=&formato=xlsx
