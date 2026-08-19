@@ -123,6 +123,10 @@ export async function listarClientesSemDCTFVigente(): Promise<ClienteSemDCTFVige
         OR TRIM(d.periodo_apuracao) = ?
       )
       AND (c.id IS NOT NULL OR d.cnpj IS NOT NULL)
+        -- Cliente fora da carteira sai da conferência. A forma "IS NULL OR
+        -- ativo" preserva a declaração que não casou com nenhum cliente:
+        -- um "c.ativo = 1" seco faria este LEFT JOIN virar INNER.
+      AND (c.id IS NULL OR c.ativo = 1)
       -- Qualquer tipo de declaração conta como "tem DCTF" (Original, Retificadora, etc.)
       `,
       [periodoSql, competencia]

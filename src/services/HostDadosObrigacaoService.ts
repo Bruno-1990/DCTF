@@ -190,6 +190,9 @@ export class HostDadosObrigacaoService {
         -- IMPORTANTE: Considerar apenas clientes "Matriz", excluir "Filial"
         -- Filiais não têm obrigatoriedade de enviar DCTF
         AND (c.tipo_empresa = 'Matriz' OR c.tipo_empresa IS NULL)
+        -- Cliente fora da carteira não é cobrado de obrigação. Fica no ON, e
+        -- não no WHERE: no WHERE este LEFT JOIN viraria INNER.
+        AND c.ativo = 1
       LEFT JOIN dctf_declaracoes d
         ON (
           (
@@ -350,7 +353,8 @@ export class HostDadosObrigacaoService {
           REPLACE(REPLACE(REPLACE(h.cnpj, '.', ''), '/', ''), '-', '') = c.cnpj_limpo
           OR (h.cod_emp = c.cod_emp AND h.cod_emp IS NOT NULL AND c.cod_emp IS NOT NULL)
         )
-        WHERE h.ano = ? AND h.mes = ?
+        WHERE c.ativo = 1
+          AND h.ano = ? AND h.mes = ?
           AND (h.movimentacao IS NULL OR h.movimentacao > 0)
         GROUP BY c.id, c.cnpj_limpo
         ORDER BY c.cnpj_limpo ASC
@@ -513,6 +517,8 @@ export class HostDadosObrigacaoService {
             OR (h.cod_emp = c.cod_emp AND h.cod_emp IS NOT NULL)
           )
         WHERE 
+          c.ativo = 1
+          AND
           -- FILTRO ESTRITO: Verificar movimento APENAS no mês específico (1 mês antes da competência vigente)
           -- Isso evita falsos positivos com movimentações antigas de meses anteriores
           -- Exemplo: Para DCTF 11/2025, verificamos movimento APENAS em 10/2025

@@ -65,6 +65,10 @@ export async function listarClientesHistoricoAtraso(): Promise<ClienteHistoricoA
         AND d.periodo_apuracao IS NOT NULL
         AND TRIM(d.periodo_apuracao) != ''
         AND (d.tipo IS NULL OR UPPER(d.tipo) NOT LIKE '%RETIFICADORA%')
+        -- Cliente fora da carteira sai da conferência. A forma "IS NULL OR
+        -- ativo" preserva a declaração que não casou com nenhum cliente:
+        -- um "c.ativo = 1" seco faria este LEFT JOIN virar INNER.
+        AND (c.id IS NULL OR c.ativo = 1)
       ORDER BY d.cnpj, d.data_transmissao DESC
       `,
       [limite12Meses.toISOString().split('T')[0]]

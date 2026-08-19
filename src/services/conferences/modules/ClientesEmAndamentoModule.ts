@@ -51,6 +51,10 @@ export async function listarDCTFsEmAndamento(): Promise<DCTFEmAndamento[]> {
       WHERE (d.situacao = ? OR d.status = ?)
         AND d.cnpj IS NOT NULL
         AND TRIM(d.cnpj) != ''
+        -- Cliente fora da carteira sai da conferência. A forma "IS NULL OR
+        -- ativo" preserva a declaração que não casou com nenhum cliente:
+        -- um "c.ativo = 1" seco faria este LEFT JOIN virar INNER.
+        AND (c.id IS NULL OR c.ativo = 1)
       ORDER BY d.cnpj, d.periodo_apuracao
       `,
       [SITUACAO_EM_ANDAMENTO, SITUACAO_EM_ANDAMENTO]

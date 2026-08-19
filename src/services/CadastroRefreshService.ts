@@ -108,10 +108,13 @@ export class CadastroRefreshService {
 
     try {
       // Inclui BAIXADA e INAPTA de propósito: é justamente a varredura que
-      // descobre a baixa nova, e empresa baixada sai da obrigação.
+      // descobre a baixa nova, e empresa baixada sai da obrigação. Isso vale
+      // para a SITUAÇÃO NA RECEITA — quem saiu da carteira (`ativo = 0`) fica
+      // de fora: não é apurado em lugar nenhum e cada CNPJ custa 20s de API.
       const linhas = await executeQuery<{ cnpj_limpo: string; razao_social: string }>(
         `SELECT cnpj_limpo, razao_social FROM clientes
-          WHERE cnpj_limpo IS NOT NULL AND CHAR_LENGTH(cnpj_limpo) = 14
+          WHERE ativo = 1
+            AND cnpj_limpo IS NOT NULL AND CHAR_LENGTH(cnpj_limpo) = 14
           ORDER BY razao_social ASC`
       );
 

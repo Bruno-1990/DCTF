@@ -94,7 +94,10 @@ export const clienteSchemas = {
       Joi.string().allow('')
     ).optional()
     ,
-    socio: Joi.string().allow('').optional()
+    socio: Joi.string().allow('').optional(),
+    // Filtro Ativo/Inativo da tela de Clientes. Default 'ativos': quem saiu da
+    // carteira some da listagem do dia a dia, mas segue na base (nada é excluído).
+    ativo: Joi.string().valid('ativos', 'inativos', 'todos').optional()
   })
 };
 

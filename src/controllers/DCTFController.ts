@@ -1091,12 +1091,14 @@ export class DCTFController {
         FROM dctf_declaracoes d
         INNER JOIN clientes c ON (
           TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(d.cnpj, '.', ''), '/', ''), '-', ''), ' ', ''), CHAR(9), ''), CHAR(13), '')) = c.cnpj_limpo
+          AND c.ativo = 1
         )
         INNER JOIN (
           SELECT MAX(d2.id) AS id_manter
           FROM dctf_declaracoes d2
           INNER JOIN clientes c2 ON (
             TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(d2.cnpj, '.', ''), '/', ''), '-', ''), ' ', ''), CHAR(9), ''), CHAR(13), '')) = c2.cnpj_limpo
+            AND c2.ativo = 1
           )
           WHERE d2.situacao = ?
             AND c2.razao_social IS NOT NULL

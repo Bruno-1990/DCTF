@@ -93,6 +93,33 @@ export function getEmpresaId(): string {
  * com documento preenchido. NÃO inclui inativos. (Filtro de área desligado por ora.)
  * `$1` = empresa_id (tenant) — ver `getEmpresaId()`.
  */
+/**
+ * Normaliza CNPJ para 14 dígitos. `documento` vem misto no OneClick
+ * (`04.900.790/0001-12` e `37511891000150` convivem na mesma coluna).
+ */
+export function somenteDigitos(valor: string | null | undefined): string {
+  return String(valor ?? '').replace(/\D/g, '');
+}
+
+/**
+ * Filtro "cliente inativo" — MESMA regra que o próprio OneClick usa na tela.
+ * Espelha `apps/api/src/cliente/cliente.service.ts` (opção "Inativo" do filtro
+ * "Cliente Ativo / Inativo"), que trata como inativo tanto `status='INATIVA'`
+ * quanto o que está na lixeira (`deleted_at` preenchido).
+ *
+ * Não usar `is_active`: naquele banco a coluna acompanha o soft-delete, não o
+ * filtro da tela, e sozinha não reproduz o que o usuário vê no OneClick.
+ *
+ * `$1` = empresa_id (tenant) — ver `getEmpresaId()`.
+ */
+export const INATIVOS_WHERE = `
+  empresa_id = $1
+  AND tipo_documento = 'CNPJ'
+  AND documento IS NOT NULL
+  AND btrim(documento) <> ''
+  AND (status = 'INATIVA' OR deleted_at IS NOT NULL)
+`;
+
 export const MENSAIS_ATIVOS_WHERE = `
   empresa_id = $1
   AND situacao = 'MENSAL'

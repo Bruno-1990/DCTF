@@ -67,6 +67,7 @@ export async function listarClientesSemMovimentacao(): Promise<ClienteSemMovimen
         GROUP BY REPLACE(REPLACE(REPLACE(COALESCE(cnpj, ''), '.', ''), '/', ''), '-', '')
       ) ult_mov ON ult_mov.cnpj_limpo = c.cnpj_limpo
       LEFT JOIN dctf_declaracoes d ON REPLACE(REPLACE(REPLACE(COALESCE(d.cnpj, ''), '.', ''), '/', ''), '-', '') = c.cnpj_limpo
+      WHERE c.ativo = 1
       GROUP BY c.cnpj_limpo, c.razao_social, ult_mov.ano, ult_mov.mes
       HAVING ultima_movimentacao IS NULL 
          OR (ult_mov.ano < ? OR (ult_mov.ano = ? AND ult_mov.mes < ?))

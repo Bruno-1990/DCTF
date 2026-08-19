@@ -146,6 +146,10 @@ export class BeneficioCompete extends DatabaseService<IBeneficioCompete> {
         FROM clientes c
         INNER JOIN ${TABLE_NAME} bc
           ON c.cnpj_limpo = REPLACE(REPLACE(REPLACE(bc.cnpj, '.', ''), '/', ''), '-', '')
+        -- Cliente fora da carteira nao entra na comparacao. A VIEW e
+        -- recriada (CREATE OR REPLACE) a cada chamada, entao o filtro passa a
+        -- valer na proxima leitura, sem migration.
+        WHERE c.ativo = 1
         GROUP BY c.cnpj_limpo, c.razao_social, c.beneficios_fiscais
       `);
     } catch (err: any) {

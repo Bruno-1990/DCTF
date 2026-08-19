@@ -101,6 +101,14 @@ router.patch('/ebef/:id/envio', (req, res) => clienteController.atualizarEBEFEnv
 router.post('/abrir-pasta', (req, res) => clienteController.abrirPasta(req, res));
 
 // ── OneClick (Sincronizar clientes) ──
+// Status Ativo/Inativo — espelho local do OneClick. Somente leitura lá; aqui
+// inativar NUNCA exclui: o histórico do cliente (DCTF, IRPF, cota) permanece.
+// GET /api/clientes/oneclick/status-preview - Quem seria inativado/reativado
+router.get('/oneclick/status-preview', (req, res) => clienteController.previewStatusOneClick(req, res));
+
+// POST /api/clientes/sincronizar-status-oneclick - Aplica o preview
+router.post('/sincronizar-status-oneclick', (req, res) => clienteController.sincronizarStatusOneClick(req, res));
+
 router.get('/oneclick/status', (req, res) => clienteController.oneClickStatus(req, res));
 router.get('/oneclick/preview', (req, res) => clienteController.previewOneClick(req, res));
 router.post('/sincronizar-oneclick', (req, res) => clienteController.sincronizarOneClick(req, res));
@@ -116,6 +124,11 @@ router.post('/sincronizar-acessorias', (req, res) => clienteController.sincroniz
 // IMPORTANTE: precisa vir ANTES de '/:id', senão a rota dinâmica captura o caminho.
 router.get('/historico-receita', (req, res) => {
   clienteController.historicoReceitaWS(req, res);
+});
+
+// PATCH /api/clientes/:id/ativo - Ativar/inativar cliente manualmente
+router.patch('/:id/ativo', validateParams(clienteSchemas.params), (req, res) => {
+  clienteController.definirClienteAtivo(req, res);
 });
 
 router.get('/:id', validateParams(clienteSchemas.params), (req, res) => {

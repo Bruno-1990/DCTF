@@ -7,7 +7,7 @@ export type ClientesListResponse = {
 };
 
 export const clientesService = {
-  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string; socio?: string; payments?: 'all' | 'with' | 'without'; semCodigoSci?: boolean }): Promise<ClientesListResponse> {
+  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string; socio?: string; payments?: 'all' | 'with' | 'without'; semCodigoSci?: boolean; ativo?: 'ativos' | 'inativos' | 'todos' }): Promise<ClientesListResponse> {
     const response = await api.get<any>('/clientes', { params });
     const body = response.data;
     if (Array.isArray(body)) {
@@ -243,6 +243,27 @@ export const clientesService = {
   async sincronizarOneClick(ids?: number[]) {
     const response = await api.post('/clientes/sincronizar-oneclick', ids ? { ids } : {});
     return response.data; // { success, data: { total, novos, atualizados, ignorados, erros }, message }
+  },
+
+  // ── Status Ativo/Inativo ──
+  // Inativar NÃO exclui: o cadastro e todo o histórico (DCTF, IRPF, cota,
+  // sócios) continuam na base — o cliente só sai das listagens do dia a dia.
+
+  async definirAtivo(id: string, ativo: boolean, motivo?: string) {
+    const response = await api.patch(`/clientes/${id}/ativo`, { ativo, motivo });
+    return response.data; // { success, data: { id, ativo }, message }
+  },
+
+  /** Compara DCTF x OneClick sem gravar nada nos dois lados. */
+  async previewStatusOneClick() {
+    const response = await api.get('/clientes/oneclick/status-preview');
+    return response.data; // { success, data: { inativar[], reativar[], total_dctf, total_inativos_oneclick } }
+  },
+
+  /** Aplica o preview no DCTF. `ids` limita aos clientes escolhidos. */
+  async sincronizarStatusOneClick(ids?: string[]) {
+    const response = await api.post('/clientes/sincronizar-status-oneclick', ids ? { ids } : {});
+    return response.data; // { success, data: { inativados, reativados, detalhes }, message }
   },
 
   // ── Acessórias (Sincronizar clientes) ──

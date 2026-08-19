@@ -264,7 +264,8 @@ export class SubstitutoService {
     }>(
       `SELECT id, razao_social, cnpj_limpo, codigo_sci
        FROM clientes
-       WHERE FIND_IN_SET('SUBSTITUTO', REPLACE(REPLACE(UPPER(beneficios_fiscais), ', ', ','), ' ,', ',')) > 0
+       WHERE ativo = 1
+         AND FIND_IN_SET('SUBSTITUTO', REPLACE(REPLACE(UPPER(beneficios_fiscais), ', ', ','), ' ,', ',')) > 0
        ORDER BY razao_social`
     );
 

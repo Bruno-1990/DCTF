@@ -228,7 +228,8 @@ async function fetchSitfMetrics() {
         DATEDIFF(sed.certidao_data_validade, CURDATE()) as days_until_expiration
       FROM sitf_extracted_data sed
       LEFT JOIN clientes c ON c.cnpj_limpo = sed.cnpj
-      WHERE sed.certidao_data_validade IS NOT NULL
+      WHERE (c.cnpj_limpo IS NULL OR c.ativo = 1)
+        AND sed.certidao_data_validade IS NOT NULL
         AND sed.certidao_data_validade <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
       ORDER BY sed.certidao_data_validade ASC
       LIMIT 5

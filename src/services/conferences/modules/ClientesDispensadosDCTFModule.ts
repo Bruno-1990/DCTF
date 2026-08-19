@@ -128,6 +128,10 @@ export async function listarClientesDispensadosDCTF(): Promise<ClienteDispensado
         d.tipo IS NOT NULL
         AND LOWER(TRIM(d.tipo)) LIKE '%original%sem%movimento%'
         AND d.data_transmissao IS NOT NULL
+        -- Cliente fora da carteira sai da conferência. A forma "IS NULL OR
+        -- ativo" preserva a declaração que não casou com nenhum cliente:
+        -- um "c.ativo = 1" seco faria este LEFT JOIN virar INNER.
+        AND (c.id IS NULL OR c.ativo = 1)
         AND UPPER(TRIM(d.tipo)) NOT LIKE '%RETIFICADORA%'
         AND d.periodo_apuracao IS NOT NULL
         AND TRIM(d.periodo_apuracao) != ''

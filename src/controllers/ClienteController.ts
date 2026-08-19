@@ -190,9 +190,14 @@ export class ClienteController {
    */
   async listarClientes(req: Request, res: Response): Promise<void> {
     try {
-      const { page = 1, limit = 10, search, nome, cnpj, socio } = req.query;
+      const { page = 1, limit = 10, search, nome, cnpj, socio, ativo } = req.query;
 
-      let result: ApiResponse<any> = await this.clienteModel.findAll();
+      // 'inativos' e 'todos' precisam que o banco devolva os inativos também —
+      // o default de findAll() é só ativos.
+      const filtroAtivo = String(ativo ?? 'ativos').toLowerCase();
+      let result: ApiResponse<any> = await this.clienteModel.findAll({
+        incluirInativos: filtroAtivo !== 'ativos',
+      });
 
       if (!result.success) {
         res.status(400).json(result);
@@ -200,6 +205,12 @@ export class ClienteController {
       }
 
       let data = result.data || [];
+
+      // 'ativos' já veio filtrado do banco; aqui resta separar o caso
+      // 'inativos' (o 'todos' não filtra nada).
+      if (filtroAtivo === 'inativos') {
+        data = data.filter((c: any) => c.ativo === false);
+      }
 
       // Filtros (compatível com 'search' legado e novos 'nome'/'cnpj')
       // Regra do campo de busca: até 3 números = Código SCI; acima de 3 dígitos = CNPJ; texto = Razão Social
@@ -2991,7 +3002,8 @@ export class ClienteController {
         `SELECT DISTINCT c.id, c.razao_social, c.capital_social, c.cnpj_limpo
          FROM clientes c
          INNER JOIN clientes_socios cs ON cs.cliente_id = c.id
-         WHERE c.capital_social IS NOT NULL 
+         WHERE c.ativo = 1
+           AND c.capital_social IS NOT NULL 
            AND c.capital_social > 0
            AND cs.participacao_percentual IS NOT NULL
            AND cs.participacao_percentual > 0
@@ -3608,5 +3620,100 @@ export class ClienteController {
       res.status(500).json({ success: false, error: error.message });
     }
   }
-}
 
+  /**
+   * PATCH /api/clientes/:id/ativo — ativa/inativa um cliente manualmente.
+   * Não exclui nada: o histórico do cliente continua na base.
+   */
+  async definirClienteAtivo(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { ativo, motivo } = req.body ?? {};
+
+      if (typeof ativo !== 'boolean') {
+        res.status(400).json({ success: false, error: 'Campo "ativo" é obrigatório e deve ser true ou false' });
+        return;
+      }
+      if (!id) {
+        res.status(400).json({ success: false, error: 'ID do cliente é obrigatório' });
+        return;
+      }
+
+      const result = await this.clienteModel.definirAtivo(
+        id,
+        ativo,
+        typeof motivo === 'string' && motivo.trim() ? motivo.trim() : null,
+        'manual'
+      );
+
+      if (!result.success) {
+        res.status(result.error === 'Cliente não encontrado' ? 404 : 400).json(result);
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: result.data,
+        message: ativo ? 'Cliente reativado' : 'Cliente inativado (nenhum dado foi excluído)',
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * GET /api/clientes/oneclick/status-preview — compara DCTF x OneClick e mostra
+   * quem seria inativado/reativado. Somente leitura nos dois lados.
+   */
+  async previewStatusOneClick(req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.clienteModel.previewStatusOneClick();
+      if (!result.success) {
+        res.status(502).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao consultar o OneClick',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+  /**
+   * POST /api/clientes/sincronizar-status-oneclick — aplica o preview.
+   * Body opcional `{ ids: string[] }` restringe a aplicação aos clientes
+   * escolhidos pelo usuário. Nada é escrito no OneClick.
+   */
+  async sincronizarStatusOneClick(req: Request, res: Response): Promise<void> {
+    try {
+      const { ids } = req.body ?? {};
+      const listaIds = Array.isArray(ids) ? ids.map((v: any) => String(v)) : undefined;
+
+      const result = await this.clienteModel.sincronizarStatusOneClick(listaIds);
+      if (!result.success) {
+        res.status(502).json(result);
+        return;
+      }
+
+      const { inativados, reativados } = result.data!;
+      res.json({
+        ...result,
+        message: `${inativados} cliente(s) inativado(s) e ${reativados} reativado(s). Nenhum dado foi excluído.`,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao sincronizar status com o OneClick',
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
+    }
+  }
+
+}

@@ -11,6 +11,15 @@ export interface Cliente {
   endereco?: string;
   /** Nome da pasta na rede. Label na UI: Rede. */
   nome_pasta_rede?: string | null;
+
+  /**
+   * Cliente ativo na carteira (espelho do OneClick). Inativo NÃO é exclusão:
+   * o cadastro e o histórico continuam na base, só saem das listagens padrão.
+   */
+  ativo?: boolean;
+  inativado_em?: string | null;
+  inativado_motivo?: string | null;
+  inativado_origem?: 'oneclick' | 'manual' | null;
   cidade?: string;
   estado?: string;
   cep?: string;

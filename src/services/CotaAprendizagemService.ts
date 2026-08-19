@@ -436,13 +436,15 @@ export class CotaAprendizagemService {
     const rows = await executeQuery<{ id: string }>(
       `SELECT f.id
        FROM clientes f
-       WHERE UPPER(COALESCE(f.tipo_estabelecimento,'')) = 'FILIAL'
+       WHERE f.ativo = 1
+         AND UPPER(COALESCE(f.tipo_estabelecimento,'')) = 'FILIAL'
          AND LENGTH(COALESCE(f.cnpj_limpo,'')) = 14
          AND EXISTS (
            SELECT 1 FROM clientes m
            WHERE UPPER(COALESCE(m.tipo_estabelecimento,'')) = 'MATRIZ'
              AND LENGTH(COALESCE(m.cnpj_limpo,'')) = 14
              AND LEFT(m.cnpj_limpo, 8) = LEFT(f.cnpj_limpo, 8)
+             AND m.ativo = 1
          )`
     );
     return new Set(rows.map((r) => r.id));
@@ -453,13 +455,15 @@ export class CotaAprendizagemService {
     const rows = await executeQuery<{ id: string }>(
       `SELECT f.id
        FROM clientes f
-       WHERE UPPER(COALESCE(f.tipo_estabelecimento,'')) = 'FILIAL'
+       WHERE f.ativo = 1
+         AND UPPER(COALESCE(f.tipo_estabelecimento,'')) = 'FILIAL'
          AND LENGTH(COALESCE(f.cnpj_limpo,'')) = 14
          AND NOT EXISTS (
            SELECT 1 FROM clientes m
            WHERE UPPER(COALESCE(m.tipo_estabelecimento,'')) = 'MATRIZ'
              AND LENGTH(COALESCE(m.cnpj_limpo,'')) = 14
              AND LEFT(m.cnpj_limpo, 8) = LEFT(f.cnpj_limpo, 8)
+             AND m.ativo = 1
          )`
     );
     return new Set(rows.map((r) => r.id));
@@ -676,9 +680,11 @@ export class CotaAprendizagemService {
     };
 
     try {
+      // Cliente inativo (saiu da carteira) nao e apurado: nao entra na tela,
+      // no aviso nem na planilha, e cada consulta ao SCI custa segundos.
       const filtro = opts?.clienteIds?.length
-        ? `WHERE id IN (${opts.clienteIds.map(() => '?').join(',')})`
-        : '';
+        ? `WHERE ativo = 1 AND id IN (${opts.clienteIds.map(() => '?').join(',')})`
+        : 'WHERE ativo = 1';
       const clientes = await executeQuery<any>(
         `SELECT id, razao_social, cnpj_limpo, codigo_sci, uf, porte, abertura, regime_tributario
          FROM clientes ${filtro}
@@ -900,6 +906,7 @@ export class CotaAprendizagemService {
          FROM cota_classificacao_mensal cc
          INNER JOIN clientes c ON c.id = cc.cliente_id
          WHERE cc.bdref = ?${filtroCliente}
+           AND c.ativo = 1
            AND NOT (
              UPPER(COALESCE(c.tipo_estabelecimento,'')) = 'FILIAL'
              AND LENGTH(COALESCE(c.cnpj_limpo,'')) = 14
@@ -908,6 +915,7 @@ export class CotaAprendizagemService {
                WHERE UPPER(COALESCE(m.tipo_estabelecimento,'')) = 'MATRIZ'
                  AND LENGTH(COALESCE(m.cnpj_limpo,'')) = 14
                  AND LEFT(m.cnpj_limpo, 8) = LEFT(c.cnpj_limpo, 8)
+                 AND m.ativo = 1
              )
            )
          ORDER BY c.razao_social ASC`,
@@ -1106,7 +1114,8 @@ export class CotaAprendizagemService {
       };
     }
 
-    // O filtro de filial também vale na LEITURA, e não só na apuração: as
+    // Cliente inativo e filial suprimida saem também na LEITURA, e não só na
+    // apuração: as
     // linhas gravadas antes desta regra continuam no histórico (a tabela é
     // UPSERT e nunca apaga), e sem isto elas voltariam a aparecer duplicando a
     // PJ na tela, no e-mail e na planilha.
@@ -1115,6 +1124,7 @@ export class CotaAprendizagemService {
        FROM cota_classificacao_mensal cc
        INNER JOIN clientes c ON c.id = cc.cliente_id
        WHERE cc.bdref = ?
+         AND c.ativo = 1
          AND NOT (
            UPPER(COALESCE(c.tipo_estabelecimento,'')) = 'FILIAL'
            AND LENGTH(COALESCE(c.cnpj_limpo,'')) = 14
@@ -1123,6 +1133,7 @@ export class CotaAprendizagemService {
              WHERE UPPER(COALESCE(m.tipo_estabelecimento,'')) = 'MATRIZ'
                AND LENGTH(COALESCE(m.cnpj_limpo,'')) = 14
                AND LEFT(m.cnpj_limpo, 8) = LEFT(c.cnpj_limpo, 8)
+               AND m.ativo = 1
            )
          )
        ORDER BY cc.mudou DESC, cc.sujeita_cota DESC, c.razao_social ASC`,

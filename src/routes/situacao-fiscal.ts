@@ -862,7 +862,11 @@ router.get('/protocols/archived', async (req, res, next) => {
         c.razao_social
       FROM sitf_protocols sp
       LEFT JOIN clientes c ON c.cnpj_limpo = sp.cnpj
-      WHERE sp.protocolo IS NOT NULL 
+      -- Protocolo de cliente fora da carteira sai da tela. A forma
+      -- "IS NULL OR ativo" preserva o protocolo que nao casou com nenhum
+      -- cliente: um "c.ativo = 1" seco faria este LEFT JOIN virar INNER.
+      WHERE (c.cnpj_limpo IS NULL OR c.ativo = 1)
+        AND sp.protocolo IS NOT NULL 
         AND sp.protocolo != ''
       ORDER BY sp.updated_at DESC
     `;

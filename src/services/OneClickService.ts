@@ -15,6 +15,8 @@ import {
   mapClienteRowToOneClick,
   SELECT_CLIENTE_COLUMNS,
   MENSAIS_ATIVOS_WHERE,
+  INATIVOS_WHERE,
+  somenteDigitos,
   getEmpresaId,
   type ClienteProdRow,
 } from './oneclick.mappers';
@@ -69,6 +71,55 @@ export class OneClickService {
    * Mantém o filtro de tenant: um id de outro escritório não deve ser importável
    * nem que chegue no corpo da requisição.
    */
+  /**
+   * CNPJs que o OneClick considera INATIVOS (status INATIVA ou na lixeira).
+   *
+   * Um mesmo CNPJ pode ter várias linhas no OneClick (ex.: cadastro vivo +
+   * duplicata mandada pra lixeira). Por isso a decisão não pode sair de uma
+   * linha isolada: só é inativo o CNPJ que NÃO tem nenhuma linha viva. Sem
+   * isso, um cliente ativo com uma duplicata na lixeira seria inativado aqui.
+   *
+   * Somente leitura — nada é escrito no OneClick.
+   */
+  async buscarCnpjsInativos(): Promise<Map<string, { razaoSocial: string; situacao: string; status: string; naLixeira: boolean }>> {
+    const pool = getOneClickPool();
+    const empresaId = getEmpresaId();
+
+    const { rows: inativos } = await pool.query<{
+      documento: string; razao_social: string; situacao: string; status: string; deleted_at: Date | null;
+    }>(
+      `SELECT documento, razao_social, situacao::text AS situacao, status::text AS status, deleted_at
+       FROM public.clientes
+       WHERE ${INATIVOS_WHERE}`,
+      [empresaId],
+    );
+
+    // CNPJs com ao menos uma linha viva não entram, mesmo tendo linhas inativas.
+    const { rows: vivos } = await pool.query<{ documento: string }>(
+      `SELECT documento
+       FROM public.clientes
+       WHERE empresa_id = $1
+         AND tipo_documento = 'CNPJ'
+         AND status <> 'INATIVA'
+         AND deleted_at IS NULL`,
+      [empresaId],
+    );
+    const cnpjsVivos = new Set(vivos.map((r) => somenteDigitos(r.documento)));
+
+    const mapa = new Map<string, { razaoSocial: string; situacao: string; status: string; naLixeira: boolean }>();
+    for (const row of inativos) {
+      const cnpj = somenteDigitos(row.documento);
+      if (!cnpj || cnpjsVivos.has(cnpj) || mapa.has(cnpj)) continue;
+      mapa.set(cnpj, {
+        razaoSocial: row.razao_social,
+        situacao: row.situacao,
+        status: row.status,
+        naLixeira: row.deleted_at !== null,
+      });
+    }
+    return mapa;
+  }
+
   async buscarClientesPorIds(ids: string[]): Promise<OneClickCliente[]> {
     if (ids.length === 0) return [];
     const pool = getOneClickPool();

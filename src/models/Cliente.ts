@@ -140,10 +140,19 @@ export class Cliente extends DatabaseService<ICliente> {
   /**
    * Buscar todos os registros (com mock temporário)
    */
-  async findAll(): Promise<ApiResponse<ICliente[]>> {
+  async findAll(opts?: { incluirInativos?: boolean }): Promise<ApiResponse<ICliente[]>> {
     try {
-      // Usa MySQL através do DatabaseService
-      const result = await super.findAll();
+      // Por padrão a listagem traz SÓ CLIENTES ATIVOS. Este método é a raiz de
+      // praticamente toda tela, planilha e rotina em lote do sistema, então o
+      // default seguro é o da carteira viva — quem sai da carteira some do dia
+      // a dia sem ser excluído (a linha continua na base).
+      //
+      // `incluirInativos` é para quem precisa ver os dois lados: a tela de
+      // Clientes com o filtro em "Inativos"/"Todos" e a sincronização de status
+      // com o OneClick, que só consegue REATIVAR alguém se enxergar inativos.
+      const result = opts?.incluirInativos
+        ? await super.findAll()
+        : await this.executeCustomQuery<any>('SELECT * FROM `clientes` WHERE `ativo` = 1');
       
       if (!result.success || !result.data) {
         return result;
@@ -229,7 +238,7 @@ export class Cliente extends DatabaseService<ICliente> {
   /**
    * Obter estatísticas (com mock temporário)
    */
-  async getStats(): Promise<ApiResponse<{ total: number; ativos: number }>> {
+  async getStats(): Promise<ApiResponse<{ total: number; ativos: number; inativos: number }>> {
     try {
       // Usa MySQL através do DatabaseService
       const totalResult = await this.count();
@@ -240,11 +249,24 @@ export class Cliente extends DatabaseService<ICliente> {
         };
       }
 
+      // Contagem real desde a migration 042 (coluna `ativo`). Se a coluna ainda
+      // não existir (base desatualizada), cai no comportamento antigo.
+      let ativos = totalResult.data!;
+      let inativos = 0;
+      const contagem = await this.executeCustomQuery<any>(
+        'SELECT SUM(`ativo` = 1) AS ativos, SUM(`ativo` = 0) AS inativos FROM `clientes`'
+      );
+      if (contagem.success && contagem.data && contagem.data[0]) {
+        ativos = Number(contagem.data[0].ativos ?? 0);
+        inativos = Number(contagem.data[0].inativos ?? 0);
+      }
+
       return {
         success: true,
         data: {
           total: totalResult.data!,
-          ativos: totalResult.data!, // Por enquanto, todos são considerados ativos
+          ativos,
+          inativos,
         },
       };
     } catch (error) {
@@ -327,6 +349,12 @@ export class Cliente extends DatabaseService<ICliente> {
       receita_ws_consulta_em: row.receita_ws_consulta_em ?? undefined,
       receita_ws_ultima_atualizacao: row.receita_ws_ultima_atualizacao ?? undefined,
       receita_ws_payload: row.receita_ws_payload ?? undefined,
+      // `ativo` só existe a partir da migration 042; linhas antigas em cache ou
+      // consultas que não selecionam a coluna caem no default "ativo".
+      ativo: row.ativo === undefined || row.ativo === null ? true : Boolean(row.ativo),
+      inativado_em: row.inativado_em ?? undefined,
+      inativado_motivo: row.inativado_motivo ?? undefined,
+      inativado_origem: row.inativado_origem ?? undefined,
       createdAt: row.created_at ? new Date(row.created_at) : new Date(),
       updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
     };
@@ -739,7 +767,9 @@ export class Cliente extends DatabaseService<ICliente> {
   async listarSociosDistinct(): Promise<ApiResponse<Array<{ nome: string }>>> {
     try {
       const resp = await this.executeCustomQuery<{ nome: string }>(
-        'SELECT DISTINCT `nome` FROM `clientes_socios` WHERE `nome` IS NOT NULL AND TRIM(`nome`) <> "" ORDER BY `nome` ASC'
+        'SELECT DISTINCT cs.`nome` FROM `clientes_socios` cs ' +
+        'INNER JOIN `clientes` c ON c.`id` = cs.`cliente_id` ' +
+        'WHERE c.`ativo` = 1 AND cs.`nome` IS NOT NULL AND TRIM(cs.`nome`) <> "" ORDER BY cs.`nome` ASC'
       );
       if (!resp.success) return resp as any;
       return { success: true, data: resp.data || [] };
@@ -3142,7 +3172,8 @@ export class Cliente extends DatabaseService<ICliente> {
         `SELECT DISTINCT c.id, c.razao_social, c.cnpj_limpo${envioSelect}
          FROM clientes c
          INNER JOIN clientes_socios cs ON cs.cliente_id = c.id
-         WHERE LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14
+         WHERE c.ativo = 1
+           AND LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14
          ORDER BY c.razao_social ASC`
       );
       if (!parentResp.success) return parentResp as any;
@@ -3270,7 +3301,9 @@ export class Cliente extends DatabaseService<ICliente> {
         `INSERT IGNORE INTO ebef_consultas (id, cliente_id, socio_id, cnpj_filho, status)
          SELECT UUID(), cs.cliente_id, cs.id, REPLACE(COALESCE(cs.cpf,''), ' ', ''), 'pendente'
          FROM clientes_socios cs
-         WHERE LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14`
+         INNER JOIN clientes c ON c.id = cs.cliente_id
+         WHERE c.ativo = 1
+           AND LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14`
       );
       const inseridos = (resp as any)?.data?.affectedRows ?? 0;
       return { success: true, data: { inseridos } };
@@ -3357,7 +3390,11 @@ export class Cliente extends DatabaseService<ICliente> {
   async obterProgressoEBEF(): Promise<ApiResponse<any>> {
     try {
       const resp = await this.executeCustomQuery<any>(
-        `SELECT status, COUNT(*) AS total FROM ebef_consultas GROUP BY status`
+        `SELECT ec.status, COUNT(*) AS total
+           FROM ebef_consultas ec
+           INNER JOIN clientes c ON c.id = ec.cliente_id
+          WHERE c.ativo = 1
+          GROUP BY ec.status`
       );
       if (!resp.success) return resp as any;
 
@@ -3400,5 +3437,187 @@ export class Cliente extends DatabaseService<ICliente> {
     }
   }
 
-}
 
+  /**
+   * Ativa/inativa um cliente. NÃO exclui nada: o cadastro e todo o histórico
+   * vinculado (DCTF, IRPF, cota, sócios) permanecem intactos.
+   *
+   * `origem` marca quem decidiu — 'oneclick' (sincronização) ou 'manual'
+   * (usuário na tela). Reativar limpa os campos de inativação.
+   */
+  async definirAtivo(
+    id: string,
+    ativo: boolean,
+    motivo?: string | null,
+    origem: 'oneclick' | 'manual' = 'manual'
+  ): Promise<ApiResponse<{ id: string; ativo: boolean }>> {
+    try {
+      const { getConnection } = await import('../config/mysql');
+      const connection = await getConnection();
+      try {
+        const [rows] = await connection.execute(
+          'SELECT `id` FROM `clientes` WHERE `id` = ? LIMIT 1',
+          [id]
+        );
+        if ((rows as any[]).length === 0) {
+          return { success: false, error: 'Cliente não encontrado' };
+        }
+
+        if (ativo) {
+          await connection.execute(
+            'UPDATE `clientes` SET `ativo` = 1, `inativado_em` = NULL, `inativado_motivo` = NULL, `inativado_origem` = NULL, `updated_at` = NOW() WHERE `id` = ?',
+            [id]
+          );
+        } else {
+          await connection.execute(
+            'UPDATE `clientes` SET `ativo` = 0, `inativado_em` = NOW(), `inativado_motivo` = ?, `inativado_origem` = ?, `updated_at` = NOW() WHERE `id` = ?',
+            [motivo ?? null, origem, id]
+          );
+        }
+
+        return { success: true, data: { id, ativo } };
+      } finally {
+        connection.release();
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao alterar status do cliente',
+      };
+    }
+  }
+
+  /**
+   * Compara a base do DCTF com o OneClick e devolve quais clientes deveriam ser
+   * inativados aqui (estão inativos lá) e quais poderiam voltar a ficar ativos.
+   *
+   * Só LEITURA nos dois lados — nada é gravado. Use `sincronizarStatusOneClick`
+   * para aplicar.
+   *
+   * Reativação é conservadora de propósito: só reativa quem foi inativado pela
+   * própria sincronização (`inativado_origem = 'oneclick'`). Quem o usuário
+   * inativou na mão continua inativo até ele mesmo desfazer.
+   */
+  async previewStatusOneClick(): Promise<ApiResponse<{
+    inativar: Array<{ id: string; cnpj_limpo: string; razao_social: string; codigo_sci?: string; motivo: string }>;
+    reativar: Array<{ id: string; cnpj_limpo: string; razao_social: string; codigo_sci?: string }>;
+    total_dctf: number;
+    total_inativos_oneclick: number;
+  }>> {
+    try {
+      const { OneClickService } = await import('../services/OneClickService');
+      const inativosOneClick = await new OneClickService().buscarCnpjsInativos();
+
+      const resp = await this.executeCustomQuery<any>(
+        'SELECT `id`, `cnpj_limpo`, `razao_social`, `codigo_sci`, `ativo`, `inativado_origem` FROM `clientes`'
+      );
+      if (!resp.success) {
+        return { success: false, error: resp.error || 'Erro ao ler clientes do DCTF' };
+      }
+      const clientes = resp.data || [];
+
+      const inativar: any[] = [];
+      const reativar: any[] = [];
+
+      for (const c of clientes) {
+        const cnpj = String(c.cnpj_limpo || '').replace(/\D/g, '');
+        // Sem CNPJ não há como cruzar com o OneClick — fica como está.
+        if (!cnpj) continue;
+
+        const inativoLa = inativosOneClick.get(cnpj);
+        const ativoAqui = Boolean(c.ativo);
+
+        if (inativoLa && ativoAqui) {
+          const motivo = inativoLa.naLixeira
+            ? `OneClick: na lixeira (${inativoLa.situacao}/${inativoLa.status})`
+            : `OneClick: ${inativoLa.situacao}/${inativoLa.status}`;
+          inativar.push({
+            id: c.id,
+            cnpj_limpo: c.cnpj_limpo,
+            razao_social: c.razao_social,
+            codigo_sci: c.codigo_sci ?? undefined,
+            motivo,
+          });
+        } else if (!inativoLa && !ativoAqui && c.inativado_origem === 'oneclick') {
+          reativar.push({
+            id: c.id,
+            cnpj_limpo: c.cnpj_limpo,
+            razao_social: c.razao_social,
+            codigo_sci: c.codigo_sci ?? undefined,
+          });
+        }
+      }
+
+      const ordenar = (a: any, b: any) =>
+        String(a.razao_social || '').localeCompare(String(b.razao_social || ''), 'pt-BR', { sensitivity: 'base' });
+
+      return {
+        success: true,
+        data: {
+          inativar: inativar.sort(ordenar),
+          reativar: reativar.sort(ordenar),
+          total_dctf: clientes.length,
+          total_inativos_oneclick: inativosOneClick.size,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao comparar status com o OneClick',
+      };
+    }
+  }
+
+  /**
+   * Aplica o resultado do preview: inativa no DCTF quem está inativo no OneClick
+   * (e reativa quem voltou). Nenhuma linha é excluída, aqui ou lá.
+   *
+   * `ids` restringe a aplicação a clientes específicos — usado quando o usuário
+   * revisa a lista e desmarca alguns antes de confirmar.
+   */
+  async sincronizarStatusOneClick(ids?: string[]): Promise<ApiResponse<{
+    inativados: number;
+    reativados: number;
+    detalhes: { inativados: any[]; reativados: any[] };
+  }>> {
+    try {
+      const preview = await this.previewStatusOneClick();
+      if (!preview.success || !preview.data) {
+        return { success: false, error: preview.error || 'Erro ao gerar preview' };
+      }
+
+      const filtro = ids && ids.length > 0 ? new Set(ids) : null;
+      const paraInativar = preview.data.inativar.filter((c) => !filtro || filtro.has(c.id));
+      const paraReativar = preview.data.reativar.filter((c) => !filtro || filtro.has(c.id));
+
+      const inativados: any[] = [];
+      const reativados: any[] = [];
+
+      for (const c of paraInativar) {
+        const r = await this.definirAtivo(c.id, false, c.motivo, 'oneclick');
+        if (r.success) inativados.push(c);
+        else console.warn(`[Cliente] Falha ao inativar ${c.razao_social}:`, r.error);
+      }
+      for (const c of paraReativar) {
+        const r = await this.definirAtivo(c.id, true, null, 'oneclick');
+        if (r.success) reativados.push(c);
+        else console.warn(`[Cliente] Falha ao reativar ${c.razao_social}:`, r.error);
+      }
+
+      return {
+        success: true,
+        data: {
+          inativados: inativados.length,
+          reativados: reativados.length,
+          detalhes: { inativados, reativados },
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao sincronizar status com o OneClick',
+      };
+    }
+  }
+
+}

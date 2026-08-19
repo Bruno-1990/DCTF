@@ -35,7 +35,7 @@ import { clientesService } from '../services';
 import { beneficiosService } from '../services/beneficios';
 import { useToast } from '../hooks/useToast';
 import { irpfService, type FaturamentoAnual, type FaturamentoPorEmpresa } from '../services/irpf';
-import { CurrencyDollarIcon, CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { CurrencyDollarIcon, CalendarIcon, ChevronLeftIcon, ChevronRightIcon, NoSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
@@ -588,6 +588,16 @@ const Clientes: React.FC = () => {
   const [manualDataIni, setManualDataIni] = useState<string>('');
   const [manualDataFim, setManualDataFim] = useState<string>('');
   const [importandoReceita, setImportandoReceita] = useState(false);
+  // Filtro Ativo/Inativo da carteira. Default 'ativos': cliente que saiu não
+  // polui o dia a dia, mas continua na base (inativar nunca exclui nada).
+  const [filtroAtivo, setFiltroAtivo] = useState<'ativos' | 'inativos' | 'todos'>('ativos');
+  const [alterandoAtivoId, setAlterandoAtivoId] = useState<string | null>(null);
+  // Sincronização de status com o OneClick (leitura lá, gravação só aqui)
+  const [showStatusOneClickModal, setShowStatusOneClickModal] = useState(false);
+  const [statusOneClickPreview, setStatusOneClickPreview] = useState<any>(null);
+  const [statusOneClickLoading, setStatusOneClickLoading] = useState(false);
+  const [statusOneClickAplicando, setStatusOneClickAplicando] = useState(false);
+  const [statusOneClickSelecionados, setStatusOneClickSelecionados] = useState<Set<string>>(new Set());
   const [sincronizandoOneClick, setSincronizandoOneClick] = useState(false);
   const [showOneClickModal, setShowOneClickModal] = useState(false);
   const [oneClickPreview, setOneClickPreview] = useState<any[]>([]);
@@ -1693,11 +1703,11 @@ const Clientes: React.FC = () => {
     // Não aplicar filtro de sócio fora da aba participação
     // Quando filtro "Sem Cod SCI" ativo, buscar todos para filtrar no frontend
     const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
-    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined }).then(({ pagination }) => {
+    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined , ativo: filtroAtivo }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
-  }, [page, limit, debouncedSearch, activeTab, ordenacaoClientes]);
+  }, [page, limit, debouncedSearch, activeTab, ordenacaoClientes, filtroAtivo]);
 
   // Carregar todos os clientes para a aba Participação
   useEffect(() => {
@@ -3008,6 +3018,46 @@ const Clientes: React.FC = () => {
     }
   };
 
+  /**
+   * Ativa/inativa um cliente. Inativar NÃO exclui: DCTFs, IRPF, cota, sócios e
+   * todo o histórico continuam na base — o cliente só sai da listagem padrão.
+   */
+  const handleToggleAtivo = async (cliente: Cliente) => {
+    const estaAtivo = cliente.ativo !== false;
+    const nome = cliente.razao_social || cliente.nome || 'este cliente';
+
+    if (estaAtivo) {
+      const ok = window.confirm(
+        `Inativar "${nome}"?
+
+` +
+        'O cliente sai das listagens do dia a dia, mas NADA é excluído: ' +
+        'DCTFs, IRPF, cota e histórico continuam na base. Dá para reativar quando quiser.'
+      );
+      if (!ok) return;
+    }
+
+    try {
+      setAlterandoAtivoId(cliente.id!);
+      const res = await clientesService.definirAtivo(cliente.id!, !estaAtivo);
+      if (res?.success) {
+        toast.success(estaAtivo ? `${nome} inativado` : `${nome} reativado`);
+        await loadClientes({
+          page,
+          limit,
+          search: debouncedSearch,
+          ativo: filtroAtivo,
+        }).catch(() => {});
+      } else {
+        toast.error(res?.error || 'Erro ao alterar status do cliente');
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || err?.message || 'Erro ao alterar status do cliente');
+    } finally {
+      setAlterandoAtivoId(null);
+    }
+  };
+
   const handleEdit = async (cliente: Cliente) => {
     if (!cliente?.id) {
       toast.error('Cliente sem ID. Não é possível editar.');
@@ -3284,7 +3334,7 @@ const Clientes: React.FC = () => {
 
       // Recarregar lista de clientes mantendo filtros ativos
       const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
-      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch });
+      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch , ativo: filtroAtivo });
     } catch (error) {
       // Erro já é tratado pelo hook useClientes
       setShowError(true);
@@ -4968,6 +5018,34 @@ const Clientes: React.FC = () => {
               </div>
             </div>
           )}
+          {activeTab === 'clientes' && (
+            <div className="w-full md:w-56">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
+                <UserGroupIcon className="h-4 w-4 text-blue-600" />
+                Cliente Ativo / Inativo
+              </label>
+              <div className="relative">
+                <select
+                  value={filtroAtivo}
+                  onChange={(e) => {
+                    setFiltroAtivo(e.target.value as 'ativos' | 'inativos' | 'todos');
+                    setPage(1);
+                  }}
+                  className="w-full pl-10 pr-10 h-12 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm hover:shadow-md appearance-none cursor-pointer font-medium text-gray-700 hover:border-blue-300"
+                >
+                  <option value="ativos">Ativos</option>
+                  <option value="inativos">Inativos</option>
+                  <option value="todos">Todos</option>
+                </select>
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <UserGroupIcon className="h-5 w-5 text-blue-500" />
+                </div>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                </div>
+              </div>
+            </div>
+          )}
           {activeTab === 'clientes' && ordenacaoClientes === 'beneficio-fiscal' && (
             <div className="w-full md:w-64">
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
@@ -5169,6 +5247,42 @@ const Clientes: React.FC = () => {
                       {sincronizandoOneClick ? 'Importando...' : oneClickLoading ? 'Conectando...' : 'OneClick'}
                     </button>
                   </div>
+                  {/* Status Ativo/Inativo: lê o OneClick e inativa AQUI quem saiu de lá.
+                      Só leitura no OneClick; nada é excluído no DCTF. */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        setStatusOneClickLoading(true);
+                        setShowStatusOneClickModal(true);
+                        setStatusOneClickPreview(null);
+                        const res = await clientesService.previewStatusOneClick();
+                        if (res?.success) {
+                          setStatusOneClickPreview(res.data);
+                          // Pré-selecionar tudo: o padrão é espelhar o OneClick.
+                          const ids = [
+                            ...(res.data?.inativar || []).map((c: any) => c.id),
+                            ...(res.data?.reativar || []).map((c: any) => c.id),
+                          ];
+                          setStatusOneClickSelecionados(new Set(ids));
+                        } else {
+                          toast.error(res?.error || 'Erro ao comparar status com o OneClick');
+                          setShowStatusOneClickModal(false);
+                        }
+                      } catch (err: any) {
+                        toast.error(err?.response?.data?.error || err?.message || 'Erro ao conectar com OneClick');
+                        setShowStatusOneClickModal(false);
+                      } finally {
+                        setStatusOneClickLoading(false);
+                        refreshOneClickTunnel();
+                      }
+                    }}
+                    disabled={statusOneClickLoading || statusOneClickAplicando}
+                    title="Compara com o OneClick e inativa aqui quem saiu da carteira (não exclui nada)"
+                    className="px-6 py-3 bg-gradient-to-r from-slate-600 to-slate-700 text-white rounded-xl hover:from-slate-700 hover:to-slate-800 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-slate-500/30 hover:shadow-xl hover:scale-105 transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    <NoSymbolIcon className={`h-5 w-5 ${statusOneClickLoading ? 'animate-spin' : ''}`} />
+                    {statusOneClickLoading ? 'Comparando...' : 'Status OneClick'}
+                  </button>
                   <div className="relative">
                     {/* Indicador da API: verde=respondendo, vermelho=sem resposta/token, cinza=verificando */}
                     <span
@@ -5920,6 +6034,14 @@ const Clientes: React.FC = () => {
                           >
                             {displayUppercase(cliente.razao_social || cliente.nome, '-')}
                           </button>
+                          {cliente.ativo === false && (
+                            <span
+                              className="shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200"
+                              title={cliente.inativado_motivo || 'Cliente inativo (nenhum dado foi excluído)'}
+                            >
+                              Inativo
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -6034,6 +6156,25 @@ const Clientes: React.FC = () => {
                             title="Editar cliente"
                           >
                             <PencilIcon className="h-4 w-4" strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={alterandoAtivoId === cliente.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleToggleAtivo(cliente);
+                            }}
+                            className={`p-2.5 rounded-xl transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
+                              cliente.ativo === false
+                                ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-500 hover:text-white focus:ring-emerald-400'
+                                : 'text-slate-500 bg-slate-100 hover:bg-amber-500 hover:text-white focus:ring-amber-400'
+                            }`}
+                            title={cliente.ativo === false ? 'Reativar cliente' : 'Inativar cliente (não exclui nada)'}
+                          >
+                            {cliente.ativo === false
+                              ? <CheckCircleIcon className="h-4 w-4" strokeWidth={2} />
+                              : <NoSymbolIcon className="h-4 w-4" strokeWidth={2} />}
                           </button>
                           <button
                             onClick={() => handleDeleteClick(cliente)}
@@ -8654,6 +8795,154 @@ const Clientes: React.FC = () => {
         />
       )}
 
+      {/* Modal Status OneClick — revisar antes de inativar/reativar no DCTF */}
+      {showStatusOneClickModal && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={() => { if (!statusOneClickAplicando) setShowStatusOneClickModal(false); }}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col pointer-events-auto">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Status pelo OneClick</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Espelha aqui quem está inativo lá. O OneClick é apenas consultado — nada é alterado nele,
+                    e nada é excluído no DCTF.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { if (!statusOneClickAplicando) setShowStatusOneClickModal(false); }}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                {statusOneClickLoading && (
+                  <div className="py-12 text-center text-gray-500">Consultando o OneClick...</div>
+                )}
+
+                {!statusOneClickLoading && statusOneClickPreview && (
+                  <>
+                    <div className="grid grid-cols-3 gap-3 mb-5">
+                      <div className="bg-gray-50 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-bold text-gray-900">{statusOneClickPreview.total_dctf}</div>
+                        <div className="text-xs text-gray-500 mt-0.5">clientes no DCTF</div>
+                      </div>
+                      <div className="bg-amber-50 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-bold text-amber-700">{statusOneClickPreview.inativar?.length ?? 0}</div>
+                        <div className="text-xs text-amber-700 mt-0.5">a inativar</div>
+                      </div>
+                      <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-bold text-emerald-700">{statusOneClickPreview.reativar?.length ?? 0}</div>
+                        <div className="text-xs text-emerald-700 mt-0.5">a reativar</div>
+                      </div>
+                    </div>
+
+                    {(statusOneClickPreview.inativar?.length ?? 0) === 0 &&
+                     (statusOneClickPreview.reativar?.length ?? 0) === 0 && (
+                      <div className="py-10 text-center text-gray-500">
+                        Tudo em dia — nenhum cliente para inativar ou reativar.
+                      </div>
+                    )}
+
+                    {[
+                      { chave: 'inativar', titulo: 'Serão inativados', cor: 'amber' },
+                      { chave: 'reativar', titulo: 'Serão reativados', cor: 'emerald' },
+                    ].map(({ chave, titulo, cor }) => {
+                      const lista = (statusOneClickPreview as any)[chave] || [];
+                      if (lista.length === 0) return null;
+                      return (
+                        <div key={chave} className="mb-5">
+                          <h4 className={`text-sm font-bold mb-2 ${cor === 'amber' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                            {titulo} ({lista.length})
+                          </h4>
+                          <div className="border border-gray-200 rounded-xl overflow-hidden">
+                            {lista.map((c: any) => (
+                              <label
+                                key={c.id}
+                                className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={statusOneClickSelecionados.has(c.id)}
+                                  onChange={(e) => {
+                                    setStatusOneClickSelecionados((prev) => {
+                                      const novo = new Set(prev);
+                                      if (e.target.checked) novo.add(c.id);
+                                      else novo.delete(c.id);
+                                      return novo;
+                                    });
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium text-gray-900 truncate">{c.razao_social}</div>
+                                  <div className="text-xs text-gray-500 font-mono">
+                                    {c.cnpj_limpo}{c.codigo_sci ? ` · SCI ${c.codigo_sci}` : ''}
+                                  </div>
+                                </div>
+                                {c.motivo && (
+                                  <span className="shrink-0 text-xs text-gray-500">{c.motivo}</span>
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
+                <span className="text-sm text-gray-500">
+                  {statusOneClickSelecionados.size} selecionado(s)
+                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => { if (!statusOneClickAplicando) setShowStatusOneClickModal(false); }}
+                    disabled={statusOneClickAplicando}
+                    className="px-5 py-2.5 border-2 border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-colors disabled:opacity-60"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        setStatusOneClickAplicando(true);
+                        const res = await clientesService.sincronizarStatusOneClick(
+                          Array.from(statusOneClickSelecionados)
+                        );
+                        if (res?.success) {
+                          toast.success(res.message || 'Status sincronizado');
+                          setShowStatusOneClickModal(false);
+                          await loadClientes({ page, limit, search: debouncedSearch, ativo: filtroAtivo }).catch(() => {});
+                        } else {
+                          toast.error(res?.error || 'Erro ao sincronizar status');
+                        }
+                      } catch (err: any) {
+                        toast.error(err?.response?.data?.error || err?.message || 'Erro ao sincronizar status');
+                      } finally {
+                        setStatusOneClickAplicando(false);
+                      }
+                    }}
+                    disabled={statusOneClickAplicando || statusOneClickSelecionados.size === 0}
+                    className="px-5 py-2.5 bg-gradient-to-r from-slate-600 to-slate-700 text-white rounded-xl hover:from-slate-700 hover:to-slate-800 font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <CheckCircleIcon className="h-5 w-5" />
+                    {statusOneClickAplicando ? 'Aplicando...' : 'Aplicar no DCTF'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Modal OneClick — Seleção de clientes para importar */}
       {showOneClickModal && (
         <>
@@ -8859,7 +9148,7 @@ const Clientes: React.FC = () => {
                             const d = res.data || {};
                             toast.success(`OneClick: ${d.novos || 0} novo(s), ${d.atualizados || 0} atualizado(s), ${d.erros || 0} erro(s)`, 8000);
                             const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
-                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch });
+                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch , ativo: filtroAtivo });
                           } else {
                             toast.error(res.error || 'Erro ao importar');
                           }

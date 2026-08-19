@@ -22,6 +22,19 @@ export interface Cliente extends BaseEntity {
   endereco?: string;
   /** Nome da pasta do cliente na rede (ex.: servidor de arquivos). Label na UI: Rede. */
   nome_pasta_rede?: string | null;
+
+  /**
+   * Cliente ativo na carteira. Espelho local do OneClick (fonte de verdade).
+   * Inativo NÃO é exclusão: o cadastro e todo o histórico (DCTF, IRPF, cota,
+   * sócios) continuam na base — só saem das listagens e relatórios do dia a dia.
+   */
+  ativo?: boolean;
+  /** Quando o cliente foi inativado (null enquanto ativo). */
+  inativado_em?: string | Date | null;
+  /** Por que foi inativado (ex.: situação no OneClick que motivou). */
+  inativado_motivo?: string | null;
+  /** Quem inativou: 'oneclick' (sincronização) ou 'manual' (usuário na tela). */
+  inativado_origem?: 'oneclick' | 'manual' | null;
   /** Indica se o cliente possui movimentação fiscal. */
   movimentacao_fiscal?: boolean | null;
   /** Indica se o cliente possui movimentação trabalhista. */

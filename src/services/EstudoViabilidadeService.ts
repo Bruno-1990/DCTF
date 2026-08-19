@@ -438,7 +438,7 @@ export async function listarCidadesComClientes(query: string, limit = 20): Promi
   const q = String(query || '').trim();
   const safeLimit = Math.max(1, Math.min(50, limit));
   const params: any[] = [];
-  let where = `WHERE c.municipio IS NOT NULL AND c.municipio <> ''`;
+  let where = `WHERE c.ativo = 1 AND c.municipio IS NOT NULL AND c.municipio <> ''`;
   if (q) {
     where += ` AND c.municipio LIKE ?`;
     params.push(`%${q}%`);
@@ -500,6 +500,7 @@ export async function listarClientesPorLegislacao(opts: {
       OR REPLACE(REPLACE(REPLACE(IFNULL(c.atividade_principal_code, ''), '.', ''), '-', ''), '/', '') = ec.cnae_normalizado
       OR c.atividades_secundarias LIKE CONCAT('%', ec.cnae_normalizado, '%')
     )
+    AND c.ativo = 1
   `;
 
   const [countRows] = await mysqlPool.query<any[]>(
