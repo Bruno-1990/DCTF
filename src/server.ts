@@ -32,6 +32,7 @@ import beneficiosRoutes from './routes/beneficios';
 import estudoViabilidadeRoutes from './routes/estudo-viabilidade';
 import cotaAprendizagemRoutes from './routes/cota-aprendizagem';
 import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
+import substitutoScheduler from './services/SubstitutoScheduler';
 
 class Server {
   private app: express.Application;
@@ -51,6 +52,7 @@ class Server {
     // Scheduler de faturamento IRPF desabilitado: consulta ao banco apenas manual (quando o usuário clica em atualizar).
     // Cota de aprendizagem: apuração mensal automática, atrás de COTA_SCHEDULER_ENABLED.
     cotaAprendizagemScheduler.start();
+    substitutoScheduler.start();
   }
 
   private setupMiddleware(): void {

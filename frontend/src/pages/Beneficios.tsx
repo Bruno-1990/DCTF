@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CloudArrowUpIcon, TrashIcon, MagnifyingGlassIcon, DocumentTextIcon, XMarkIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 import { beneficiosService } from '../services/beneficios';
 import type { ComparacaoItem, PaginatedResponse } from '../services/beneficios';
@@ -82,7 +83,31 @@ const INVEST_COLS: { key: string; label: string; date?: boolean }[] = [
 // ─── Componente principal ───
 
 const Beneficios: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabId>('compete');
+  /**
+   * A aba vem da URL (`/beneficios?aba=reoa`).
+   *
+   * O e-mail do REOA manda para esta página, e sem o parâmetro ela abria em
+   * Compete — quem clicava em "Abrir a conferência" caía numa tela de importar
+   * planilha, sem relação nenhuma com o alerta que acabara de ler.
+   *
+   * Valor desconhecido cai em Compete em vez de quebrar: link velho ou
+   * digitado errado abre a página, não uma tela vazia.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const abaDaUrl = (searchParams.get('aba') || '').toLowerCase();
+  const [activeTab, setActiveTab] = useState<TabId>(
+    TABS.some(t => t.id === abaDaUrl) ? (abaDaUrl as TabId) : 'compete'
+  );
+
+  /**
+   * Trocar de aba reescreve a URL, para o endereço poder ser copiado e colado.
+   * `replace` porque cada clique de aba no histórico faria o botão "voltar" do
+   * navegador percorrer abas em vez de sair da página.
+   */
+  const trocarAba = (id: TabId) => {
+    setActiveTab(id);
+    setSearchParams(id === 'compete' ? {} : { aba: id }, { replace: true });
+  };
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
@@ -93,7 +118,7 @@ const Beneficios: React.FC = () => {
         <div className="px-6 pt-4 pb-2">
           <div className="flex space-x-1">
             {TABS.map(tab => (
-              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)}
+              <button key={tab.id} type="button" onClick={() => trocarAba(tab.id)}
                 className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
                   activeTab === tab.id
                     ? `bg-gradient-to-r ${tab.gradient} text-white shadow-lg transform scale-105`

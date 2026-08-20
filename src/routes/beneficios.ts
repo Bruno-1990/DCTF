@@ -22,6 +22,9 @@ router.post('/tipos', (req, res) => controller.criarTipo(req, res));
 
 // REOA — conferência de faturamento do grupo SUBSTITUTO
 router.get('/substituto/conferencia', (req, res) => controller.conferenciaSubstituto(req, res));
+// Coleta em lote (todos os clientes do grupo) — assíncrona; acompanhe pelo status.
+router.post('/substituto/coletar', (req, res) => controller.coletarSubstituto(req, res));
+router.get('/substituto/coleta/status', (req, res) => controller.statusColetaSubstituto(req, res));
 router.get('/substituto/faturamento/:clienteId', (req, res) => controller.faturamentoAoVivoSubstituto(req, res));
 router.post('/substituto/aviso', (req, res) => controller.enviarAvisoSubstituto(req, res));
 

@@ -3,6 +3,8 @@ import {
   MagnifyingGlassIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
+  QuestionMarkCircleIcon,
+  CloudArrowDownIcon,
   ArrowPathIcon,
   XMarkIcon,
   BuildingOfficeIcon,
@@ -12,7 +14,7 @@ import {
   ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { beneficiosService } from '../../services/beneficios';
-import type { ConferenciaSubstituto, SubstitutoCliente, SubstitutoEstabelecimento, FaturamentoAoVivoResp } from '../../services/beneficios';
+import type { ConferenciaSubstituto, SubstitutoCliente, SubstitutoEstabelecimento, FaturamentoAoVivoResp, EstadoColeta } from '../../services/beneficios';
 
 const MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const labelMes = (ano: number, mes: number) => `${MESES_ABREV[mes - 1]}/${String(ano).slice(2)}`;
@@ -42,13 +44,48 @@ const corMes = (abaixo: boolean, semDados: boolean, forte = false) => {
 const mesesAbaixoDoCliente = (c: SubstitutoCliente) =>
   c.estabelecimentos.reduce((acc, e) => acc + e.meses.filter(m => m.abaixo).length, 0);
 
-const dadosAteDoCliente = (c: SubstitutoCliente) => {
-  let max = 0; let label = '';
-  for (const e of c.estabelecimentos) for (const m of e.meses) {
-    if (!m.semDados && m.bdref > max) { max = m.bdref; label = labelMes(m.ano, m.mes); }
-  }
-  return label || '—';
+const mesesSemColetaDoCliente = (c: SubstitutoCliente) =>
+  c.estabelecimentos.reduce((acc, e) => acc + e.mesesSemDados, 0);
+
+/**
+ * Selo de status. Três, e não dois, pelo mesmo motivo do backend: "conferido e
+ * dentro do limite" e "não conferido" não podem sair verdes iguais.
+ */
+const SELO_STATUS: Record<string, { texto: string; classe: string; borda: string }> = {
+  ABAIXO: {
+    texto: 'Alerta',
+    classe: 'bg-red-100 text-red-700',
+    borda: 'border-red-200 hover:border-red-300',
+  },
+  INDETERMINADO: {
+    texto: 'A conferir',
+    classe: 'bg-amber-100 text-amber-700',
+    borda: 'border-amber-200 hover:border-amber-300',
+  },
+  OK: {
+    texto: 'Ok',
+    classe: 'bg-emerald-100 text-emerald-700',
+    borda: 'border-gray-100 hover:border-gray-200',
+  },
 };
+
+/**
+ * Há quanto tempo o SCI foi consultado para este cliente.
+ *
+ * Substitui o "● SCI ao vivo", que dizia apenas "existe linha na tabela" — e
+ * seguia dizendo isso para dado de um mês atrás. O que o Fiscal precisa saber
+ * antes de confiar no verde é a DATA, não a origem.
+ */
+const rotuloColeta = (c: SubstitutoCliente, agora: boolean) => {
+  if (agora) return 'coletado agora';
+  if (!c.coletadoEm) return 'nunca coletado';
+  const d = new Date(c.coletadoEm);
+  if (Number.isNaN(d.getTime())) return 'nunca coletado';
+  const dias = Math.floor((Date.now() - d.getTime()) / 86_400_000);
+  const data = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return dias <= 1 ? `coletado ${data}` : `coletado ${data} · ${dias} dias`;
+};
+
 
 // ─── Cartão de resumo do topo ───
 const CardResumo: React.FC<{ titulo: string; valor: React.ReactNode; sub?: string; tom?: 'neutro' | 'alerta' | 'ok' }> = ({ titulo, valor, sub, tom = 'neutro' }) => {
@@ -80,7 +117,9 @@ const ReoaTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'ok' | 'abaixo'>('todos');
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'ok' | 'abaixo' | 'indeterminado'>(
+    'todos'
+  );
   const [selecionado, setSelecionado] = useState<SubstitutoCliente | null>(null);
   // Dados ao vivo do SCI já puxados nesta sessão (por cliente). Sobrepõem o cache
   // no card e no modal — assim, ao fechar o modal, os faturamentos reais permanecem.
@@ -164,10 +203,80 @@ const ReoaTab: React.FC = () => {
   }, [data, liveByCliente]);
 
   const comAlerta = useMemo(
-    () => (data?.clientes ?? []).filter(c => efetivo(c).temAlgumAbaixo).length,
+    () => (data?.clientes ?? []).filter(c => efetivo(c).status === 'ABAIXO').length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data, liveByCliente]
   );
+
+  // Nem alerta nem conformidade: falta mês na janela. A ação é outra — não é
+  // cobrar o cliente, é abrir o card e puxar o SCI.
+  const aConferir = useMemo(
+    () => (data?.clientes ?? []).filter(c => efetivo(c).status === 'INDETERMINADO').length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, liveByCliente]
+  );
+
+  /**
+   * Andamento da coleta em lote.
+   *
+   * O polling só existe ENQUANTO ela roda, e recarrega a conferência quando
+   * termina — a varredura leva minutos e quem clicou precisa ver o resultado
+   * sem apertar "Atualizar" de novo. Ao montar, uma consulta única cobre o caso
+   * de a coleta ter sido disparada pelo job mensal ou por outra aba.
+   */
+  const [coleta, setColeta] = useState<EstadoColeta | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const consultar = async () => {
+      try {
+        const r = await beneficiosService.statusColetaSubstituto();
+        if (!vivo) return;
+        setColeta((anterior) => {
+          // Terminou agora: recarrega a conferência para a tela refletir a coleta.
+          if (anterior?.rodando && !r.status.rodando) void carregar();
+          return r.status;
+        });
+        if (!r.status.rodando && timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      } catch {
+        // Status é acessório: falha aqui não pode derrubar a tela.
+      }
+    };
+
+    void consultar();
+    timer = setInterval(consultar, 3000);
+    return () => {
+      vivo = false;
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
+  const coletarTodos = async () => {
+    setErro(null);
+    try {
+      const r = await beneficiosService.coletarTodosSubstituto();
+      if (r.status) setColeta(r.status);
+      // Marca como rodando na hora: o 202 volta antes de o primeiro cliente
+      // entrar, e sem isto o botão piscaria de volta para "Coletar todos".
+      setColeta((a) => ({
+        rodando: true,
+        bdref: a?.bdref ?? null,
+        total: a?.total ?? 0,
+        processados: 0,
+        clienteAtual: null,
+        iniciadoEm: new Date().toISOString(),
+        concluidoEm: null,
+      }));
+    } catch (e) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setErro(msg || 'Falha ao iniciar a coleta.');
+    }
+  };
 
   const clientesFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -175,9 +284,10 @@ const ReoaTab: React.FC = () => {
     return (data?.clientes ?? []).filter(c => {
       // Filtro por status (usa o dado efetivo: ao vivo se já puxado)
       if (filtroStatus !== 'todos') {
-        const alerta = efetivo(c).temAlgumAbaixo;
-        if (filtroStatus === 'abaixo' && !alerta) return false;
-        if (filtroStatus === 'ok' && alerta) return false;
+        const status = efetivo(c).status;
+        if (filtroStatus === 'abaixo' && status !== 'ABAIXO') return false;
+        if (filtroStatus === 'ok' && status !== 'OK') return false;
+        if (filtroStatus === 'indeterminado' && status !== 'INDETERMINADO') return false;
       }
       // Filtro por busca
       if (termo) {
@@ -204,11 +314,53 @@ const ReoaTab: React.FC = () => {
               Os cards são uma prévia rápida (cache); clique num cliente para puxar os <strong>dados reais do SCI</strong> dos últimos 12 meses.
             </p>
           </div>
-          <button type="button" onClick={carregar} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 text-sm font-medium transition-colors disabled:opacity-60">
-            <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
-          </button>
+          <div className="flex items-center gap-2">
+            {/*
+              Coleta em lote — a mesma que o job mensal faz, sob demanda.
+              Existe porque abrir card por card era o único jeito de trazer o mês
+              novo, e cliente que ninguém abre fica com a janela furada.
+            */}
+            <button
+              type="button"
+              onClick={coletarTodos}
+              disabled={coleta?.rodando || loading}
+              title="Puxa o SCI de todos os clientes do grupo, um a um. Leva alguns minutos; a mesma rotina roda sozinha todo mês."
+              className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              <CloudArrowDownIcon className={`h-4 w-4 ${coleta?.rodando ? 'animate-pulse' : ''}`} />
+              {coleta?.rodando
+                ? `Coletando ${coleta.processados}/${coleta.total}…`
+                : 'Coletar todos'}
+            </button>
+            <button type="button" onClick={carregar} disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 text-sm font-medium transition-colors disabled:opacity-60">
+              <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
+            </button>
+          </div>
         </div>
+
+        {coleta?.rodando && (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <div className="flex items-center justify-between gap-3">
+              <span>
+                Coletando do SCI{coleta.clienteAtual ? ` — ${coleta.clienteAtual}` : ''}…
+              </span>
+              <span className="font-mono text-xs">
+                {coleta.processados}/{coleta.total}
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 bg-rose-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-rose-500 rounded-full transition-all duration-300"
+                style={{ width: `${coleta.total ? (coleta.processados / coleta.total) * 100 : 0}%` }}
+              />
+            </div>
+            <p className="mt-2 text-xs text-rose-600">
+              Uma consulta por cliente, em sequência — a procedure do SCI não aceita paralelismo.
+              Pode fechar a tela: a coleta segue no servidor.
+            </p>
+          </div>
+        )}
       </div>
 
       {erro && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{erro}</div>}
@@ -221,9 +373,10 @@ const ReoaTab: React.FC = () => {
       ) : data && (
         <>
           {/* Resumo */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <CardResumo titulo="Clientes no grupo" valor={data.resumo.totalClientes} />
             <CardResumo titulo="Com alerta" valor={comAlerta} sub="algum mês abaixo do limite" tom={comAlerta > 0 ? 'alerta' : 'ok'} />
+            <CardResumo titulo="A conferir" valor={aConferir} sub="falta mês na janela" tom={aConferir > 0 ? 'alerta' : 'ok'} />
             <CardResumo titulo="Limite mensal" valor={brl.format(data.threshold)} />
             <CardResumo
               titulo="Janela"
@@ -306,12 +459,15 @@ const ReoaTab: React.FC = () => {
                 <FunnelIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-rose-500 pointer-events-none" />
                 <select
                   value={filtroStatus}
-                  onChange={e => setFiltroStatus(e.target.value as 'todos' | 'ok' | 'abaixo')}
+                  onChange={e =>
+                    setFiltroStatus(e.target.value as 'todos' | 'ok' | 'abaixo' | 'indeterminado')
+                  }
                   className="pl-9 pr-8 py-2.5 border-2 border-gray-200 rounded-xl bg-white text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 appearance-none cursor-pointer"
                 >
                   <option value="todos">Todos</option>
                   <option value="abaixo">Abaixo (alerta)</option>
-                  <option value="ok">OK</option>
+                  <option value="indeterminado">A conferir (falta coletar)</option>
+                  <option value="ok">OK (janela completa)</option>
                 </select>
                 <ChevronDownIcon className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
               </div>
@@ -334,29 +490,39 @@ const ReoaTab: React.FC = () => {
                 const c = efetivo(base); // usa o dado ao vivo se já foi puxado nesta sessão
                 const ehLive = liveByCliente.has(base.id) || !!c.aoVivo; // aoVivo = persistido no banco
                 const abaixo = mesesAbaixoDoCliente(c);
+                const semColeta = mesesSemColetaDoCliente(c);
+                const selo = SELO_STATUS[c.status] ?? SELO_STATUS['OK'];
                 return (
                   <button
                     key={base.id}
                     type="button"
                     onClick={() => setSelecionado(base)}
-                    className={`text-left bg-white rounded-2xl border shadow-sm p-4 transition-all hover:shadow-md hover:-translate-y-0.5 ${
-                      c.temAlgumAbaixo ? 'border-red-200 hover:border-red-300' : 'border-gray-100 hover:border-gray-200'
-                    }`}
+                    className={`text-left bg-white rounded-2xl border shadow-sm p-4 transition-all hover:shadow-md hover:-translate-y-0.5 ${selo.borda}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-semibold text-gray-900 truncate" title={c.razao_social}>{c.razao_social}</p>
                         <p className="text-xs text-gray-400 font-mono truncate">{formatCnpj(c.cnpj)}{c.codigo_sci ? ` · SCI ${c.codigo_sci}` : ''}</p>
                       </div>
-                      {c.temAlgumAbaixo ? (
-                        <span className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                          <ExclamationTriangleIcon className="h-3.5 w-3.5" /> Alerta
-                        </span>
-                      ) : (
-                        <span className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                          <CheckCircleIcon className="h-3.5 w-3.5" /> Ok
-                        </span>
-                      )}
+                      <span
+                        className={`shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${selo.classe}`}
+                        title={
+                          c.status === 'ABAIXO'
+                            ? 'Algum mês da janela ficou comprovadamente abaixo do limite.'
+                            : c.status === 'INDETERMINADO'
+                              ? 'Falta mês na janela: o SCI não foi consultado para todo o período, então não dá para afirmar nem que está dentro do limite nem que está fora. Abra o card para puxar.'
+                              : 'Os 12 meses da janela foram conferidos e todos ficaram acima do limite.'
+                        }
+                      >
+                        {c.status === 'ABAIXO' ? (
+                          <ExclamationTriangleIcon className="h-3.5 w-3.5" />
+                        ) : c.status === 'INDETERMINADO' ? (
+                          <QuestionMarkCircleIcon className="h-3.5 w-3.5" />
+                        ) : (
+                          <CheckCircleIcon className="h-3.5 w-3.5" />
+                        )}
+                        {selo.texto}
+                      </span>
                     </div>
 
                     <div className="mt-3 space-y-2">
@@ -371,11 +537,23 @@ const ReoaTab: React.FC = () => {
                     </div>
 
                     <div className="mt-3 flex items-center justify-between text-xs">
-                      <span className={abaixo > 0 ? 'text-red-600 font-medium' : 'text-gray-400'}>
-                        {abaixo > 0 ? `${abaixo} ${abaixo === 1 ? 'mês' : 'meses'} abaixo` : 'nenhum mês abaixo'}
+                      <span
+                        className={
+                          abaixo > 0
+                            ? 'text-red-600 font-medium'
+                            : semColeta > 0
+                              ? 'text-amber-600 font-medium'
+                              : 'text-gray-400'
+                        }
+                      >
+                        {abaixo > 0
+                          ? `${abaixo} ${abaixo === 1 ? 'mês' : 'meses'} abaixo`
+                          : semColeta > 0
+                            ? `${semColeta} ${semColeta === 1 ? 'mês' : 'meses'} sem coleta`
+                            : '12 meses conferidos'}
                       </span>
-                      <span className={ehLive ? 'text-emerald-600 font-medium' : 'text-gray-400'}>
-                        {ehLive ? '● SCI ao vivo' : `dados até ${dadosAteDoCliente(c)}`}
+                      <span className={ehLive ? 'text-gray-500' : 'text-gray-400'}>
+                        {rotuloColeta(c, liveByCliente.has(base.id))}
                       </span>
                     </div>
                   </button>
@@ -453,15 +631,20 @@ const ModalDetalhe: React.FC<{
               className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50">
               <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            {view.temAlgumAbaixo ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                <ExclamationTriangleIcon className="h-3.5 w-3.5" /> Alerta
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                <CheckCircleIcon className="h-3.5 w-3.5" /> Ok
-              </span>
-            )}
+            <span
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                (SELO_STATUS[view.status] ?? SELO_STATUS['OK']).classe
+              }`}
+            >
+              {view.status === 'ABAIXO' ? (
+                <ExclamationTriangleIcon className="h-3.5 w-3.5" />
+              ) : view.status === 'INDETERMINADO' ? (
+                <QuestionMarkCircleIcon className="h-3.5 w-3.5" />
+              ) : (
+                <CheckCircleIcon className="h-3.5 w-3.5" />
+              )}
+              {(SELO_STATUS[view.status] ?? SELO_STATUS['OK']).texto}
+            </span>
             <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"><XMarkIcon className="h-5 w-5" /></button>
           </div>
         </div>

@@ -19,21 +19,47 @@ export interface SubstitutoMes {
   ano: number; mes: number; bdref: number;
   faturamento: number | null; abaixo: boolean; semDados: boolean;
 }
+/**
+ * Três respostas, não duas. "Doze meses conferidos e acima do limite" e "doze
+ * meses vazios" davam o mesmo `temAlgumAbaixo: false` — e como a janela desliza
+ * pelo relógio enquanto os dados só entram sob demanda, a segunda virava a
+ * primeira sozinha com o tempo. Espelha `StatusSubstituto` do backend.
+ */
+export type StatusSubstituto = 'ABAIXO' | 'OK' | 'INDETERMINADO';
 export interface SubstitutoEstabelecimento {
   codigo_empresa: number; rotulo: string;
   meses: SubstitutoMes[]; temAlgumAbaixo: boolean; mesesSemDados: number;
+  status: StatusSubstituto;
 }
 export interface SubstitutoCliente {
   id: string; razao_social: string; cnpj: string; codigo_sci: number | null;
   estabelecimentos: SubstitutoEstabelecimento[]; temAlgumAbaixo: boolean;
+  status: StatusSubstituto;
   aoVivo?: boolean; // true = dados reais persistidos do SCI; ausente = prévia do cache
+  /** ISO da última consulta ao SCI, ou null se este cliente nunca foi puxado. */
+  coletadoEm?: string | null;
 }
 export interface ConferenciaSubstituto {
   success: boolean;
   threshold: number;
   janela: { ano: number; mes: number; bdref: number }[];
   clientes: SubstitutoCliente[];
-  resumo: { totalClientes: number; comAlerta: number; totalEstabelecimentos: number };
+  resumo: {
+    totalClientes: number; comAlerta: number;
+    /** Nem alerta nem conformidade: falta mês na janela para concluir. */
+    indeterminados: number;
+    totalEstabelecimentos: number;
+  };
+}
+/** Andamento da coleta em lote (job mensal ou execução manual). */
+export interface EstadoColeta {
+  rodando: boolean;
+  bdref: number | null;
+  total: number;
+  processados: number;
+  clienteAtual: string | null;
+  iniciadoEm: string | null;
+  concluidoEm: string | null;
 }
 export interface FaturamentoAoVivoResp {
   success: boolean;
@@ -110,6 +136,18 @@ export const beneficiosService = {
   },
 
   // ─── REOA (conferência de faturamento SUBSTITUTO) ───
+  /**
+   * Dispara a coleta de TODOS os clientes do grupo. Responde 202 na hora — quem
+   * acompanha é `statusColetaSubstituto`, porque a varredura leva minutos.
+   */
+  async coletarTodosSubstituto(): Promise<{ success: boolean; iniciada?: boolean; status?: EstadoColeta; error?: string }> {
+    const r = await api.post('/beneficios/substituto/coletar');
+    return r.data;
+  },
+  async statusColetaSubstituto(): Promise<{ success: boolean; status: EstadoColeta }> {
+    const r = await api.get('/beneficios/substituto/coleta/status');
+    return r.data;
+  },
   async conferenciaSubstituto(): Promise<ConferenciaSubstituto> {
     const r = await api.get('/beneficios/substituto/conferencia');
     return r.data;

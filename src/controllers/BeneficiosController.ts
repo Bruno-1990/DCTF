@@ -8,6 +8,7 @@ import path from 'path';
 import { BeneficiosService } from '../services/BeneficiosService';
 import { FontePlanilhaService } from '../services/FontePlanilhaService';
 import { SubstitutoService } from '../services/SubstitutoService';
+import substitutoScheduler from '../services/SubstitutoScheduler';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -183,6 +184,46 @@ export class BeneficiosController {
       const status = error?.status === 404 ? 404 : 500;
       res.status(status).json({ success: false, error: error?.message || 'Erro ao consultar o SCI' });
     }
+  }
+
+  /**
+   * Coleta em lote de TODOS os clientes do grupo — o mesmo que o job mensal faz.
+   *
+   * Responde 202 sem esperar o fim, e não 200 com o resultado: são seis ou mais
+   * consultas à SP_BI_FAT em sequência, cada uma com timeout de 150s. Segurar a
+   * requisição por vários minutos entregaria o pior dos dois mundos — o
+   * navegador desiste, a coleta continua rodando no servidor, e quem clicou não
+   * sabe se deu certo. Quem acompanha é o endpoint de status.
+   */
+  async coletarSubstituto(_req: Request, res: Response): Promise<void> {
+    try {
+      if (this.substitutoService.statusColeta.rodando) {
+        res.status(409).json({
+          success: false,
+          error: 'Já existe uma coleta em andamento.',
+          status: this.substitutoService.statusColeta,
+        });
+        return;
+      }
+
+      void substitutoScheduler.forcar().catch((err: any) => {
+        console.error('[BENEFICIOS] Coleta REOA em lote falhou:', err?.message || err);
+      });
+
+      res.status(202).json({
+        success: true,
+        iniciada: true,
+        status: this.substitutoService.statusColeta,
+      });
+    } catch (error: any) {
+      console.error('[BENEFICIOS] Erro coletarSubstituto:', error);
+      res.status(500).json({ success: false, error: error?.message || 'Erro ao iniciar a coleta' });
+    }
+  }
+
+  /** Andamento da coleta em lote, para a tela acompanhar sem segurar requisição. */
+  async statusColetaSubstituto(_req: Request, res: Response): Promise<void> {
+    res.json({ success: true, status: this.substitutoService.statusColeta });
   }
 
   // ─── Fonte da planilha (Portal da Transparência) ───
