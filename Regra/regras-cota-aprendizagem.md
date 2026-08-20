@@ -80,12 +80,38 @@ Os R$ 4.800.000,00 do art. 3º, II definem quem **é** empresa de pequeno porte;
 |---|---|---|
 | **Sócio pessoa jurídica** | **Sim** — §4º, I. Basta existir qualquer PJ no quadro, de qualquer natureza. Vedação "para nenhum efeito legal", não só tributária. | Sim, por consequência |
 | Sócio domiciliado no exterior | Não. O art. 3º não veda por domicílio de sócio. | Sim — art. 17, II (só o **ingresso** no Simples) |
-| Sócio advogado / sociedade de advogados | Não. Podem ser ME/EPP (art. 3º-A) e optar pelo Simples (Anexo IV). | Não |
+| Sócio advogado / sociedade de advogados | Não. Não há vedação por sócio advogado, e a sociedade goza dos benefícios de ME/EPP dentro dos limites de receita — o que ela não consegue é o **enquadramento cadastral**, ver 2.3. | Não — advocacia está no Anexo IV (art. 18, §5º-C) |
 
 Consequência para o sistema: **só o sócio PJ** entra como motivo de revisão do enquadramento. Sócio PJ *domiciliado no exterior* continua sendo acusado — mas pelo inciso I, porque é PJ, não por onde ela mora. Marcar exterior e advogado enchia a fila do jurídico com casos que a lei não questiona.
 - A isenção da cota de aprendizagem vale para ME/EPP **optante ou não pelo Simples Nacional** — ou seja, a isenção é por **porte de receita**, não por regime tributário. Uma EPP no Lucro Presumido, por exemplo, continua isenta.
 - Empresa em início de atividade tem limite proporcional (ano civil incompleto) — vale sinalizar esse caso à parte se o sistema precisar tratar empresas recém-abertas.
 - Como essa extensão da regra do art. 3º §9º/§9º-A para o campo trabalhista é uma construção por analogia (a IN 146/2018 não repete literalmente a data de corte, ela só remete à condição de ME/EPP da LC 123), recomenda-se validação com o jurídico/compliance antes de automatizar a mudança de obrigatoriedade no meio do ano com efeitos de autuação.
+
+### 2.3 Sociedade de advogados — porte "Demais" obrigatório no CNPJ, benefícios de ME/EPP preservados
+
+Sociedade de advogados **nunca** consta como ME ou EPP no cadastro da Receita, por mais baixo que seja o faturamento. Não é cadastro atrasado: é o resultado de três normas encadeadas.
+
+| Norma | O que diz | Impacto |
+|---|---|---|
+| **Lei 8.906/94 (Estatuto da Advocacia), art. 16** | Veda à sociedade de advogados adotar forma ou característica mercantil. | O registro dos atos constitutivos é feito **exclusivamente no Conselho Seccional da OAB** (art. 15, §1º) — não passa por Junta Comercial nem pelo Registro Civil de Pessoas Jurídicas. |
+| **LC 123/2006, art. 3º** | Vincula o enquadramento formal como ME/EPP a quem está inscrito no Registro de Empresas Mercantis **ou** no RCPJ. | A OAB não é nenhum dos dois. Sem órgão de registro que comunique o enquadramento, o sistema cadastral da Receita classifica o porte como **"Demais"**, e as siglas ME/EPP não podem entrar no nome empresarial. |
+| **Código Civil, art. 966, parágrafo único** | Exercício de profissão intelectual e de natureza científica não constitui atividade empresária. | Reforça o caráter civil, e não mercantil, do escritório — fechando a porta da Junta Comercial pelo outro lado. |
+
+**A restrição é cadastral e de nomenclatura, não de direito.** O escritório pode aderir ao Simples Nacional (advocacia está no Anexo IV — LC 123, art. 18, §5º-C) e usufrui das mesmas alíquotas e benefícios de ME/EPP, respeitados os limites de receita do art. 3º.
+
+**Consequência para a cota de aprendizagem:** nenhuma mudança no cálculo. A isenção da IN 146/2018, art. 3º, I alcança quem **é** ME/EPP — a condição, não a anotação cadastral —, e o motor sempre classificou pela receita bruta apurada, nunca pelo porte do CNPJ. Estas empresas já saíam isentas antes de a distinção existir.
+
+**O que muda é a leitura da divergência.** Quando o cadastro diz "Demais" e a receita apurada diz ME/EPP, o sistema classifica a discordância em três casos:
+
+| Caso | Situação | Leitura |
+|---|---|---|
+| `DESENQUADRAR` | Consta ME/EPP na Receita, receita apurada de Demais | **Crítico** — muda a conclusão sobre a cota. Ou o desenquadramento não foi pedido, ou o faturamento veio do código SCI errado. Confirmar no cartão CNPJ. |
+| `REENQUADRAR` | Consta Demais, receita caberia em ME/EPP | Sinaliza sem alarme — pode ser reenquadramento nunca pedido. Não muda a cota. |
+| `REGISTRO_OAB` | O mesmo, numa **sociedade de advogados** | **Não é pendência.** O "Demais" é permanente e correto; não há reenquadramento a protocolar. |
+
+Sem essa terceira leitura, a tela mandava o Fiscal atrás de um pedido que a lei não permite fazer.
+
+**Detecção (`ehSociedadeDeAdvogados`, em `src/services/cotaAprendizagem.rules.ts`):** exige natureza jurídica **não empresária** — "Sociedade Simples" ou "Sociedade Unipessoal de Advocacia" — junto com a atividade principal de **serviços advocatícios (CNAE 69.11-7/01)**. A razão social não conta, e a exigência dupla tem motivo concreto na carteira: há cliente com "ADVOGADOS" no nome e CNAE 69.11-7 que é Sociedade Empresária Limitada com atividade de agente de propriedade industrial (69.11-7/03) — essa registra na Junta e consta EPP normalmente. Sem natureza jurídica no cadastro, a função devolve `false`: na dúvida, o sinal não é suprimido.
 
 ---
 

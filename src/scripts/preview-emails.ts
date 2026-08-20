@@ -36,6 +36,7 @@ function demoCota(over: Partial<LinhaClassificacao>): LinhaClassificacao {
     uf: 'ES',
     porte_declarado: null,
     abertura: null,
+    sociedade_advogados: false,
     ano: 2026,
     mes: 7,
     bdref: 202607,

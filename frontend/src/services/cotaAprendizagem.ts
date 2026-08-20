@@ -37,6 +37,8 @@ export interface LinhaClassificacao {
   uf: string | null;
   porte_declarado: string | null;
   abertura: string | null;
+  /** Registro só na OAB: o porte "Demais" do CNPJ é imposto, não desatualizado. */
+  sociedade_advogados: boolean;
   ano: number;
   mes: number;
   bdref: number;

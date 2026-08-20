@@ -452,6 +452,70 @@ export function divergenciaComSimples(input: {
   return rbaCentavos > LIMITE_SIMPLES_CENTAVOS;
 }
 
+// ─── Sociedade de advogados: o "Demais" que não é cadastro atrasado ──────────
+
+/**
+ * A empresa é sociedade de advogados — aquela para a qual o porte "Demais" no
+ * CNPJ é obrigatório, e não sinal de cadastro desatualizado.
+ *
+ * Três leis encadeadas produzem esse resultado:
+ *
+ *   1. Lei 8.906/94, art. 16 — sociedade de advogados não pode adotar forma ou
+ *      característica mercantil, e o registro dos atos constitutivos é feito
+ *      exclusivamente no Conselho Seccional da OAB (art. 15, §1º): nem Junta
+ *      Comercial, nem Registro Civil de Pessoas Jurídicas.
+ *   2. LC 123/2006, art. 3º — o enquadramento formal como ME/EPP é reservado a
+ *      quem está inscrito no Registro de Empresas Mercantis OU no RCPJ. A OAB
+ *      não é nenhum dos dois, então não existe órgão para comunicar o
+ *      enquadramento à Receita e o porte do CNPJ permanece "Demais".
+ *   3. Código Civil, art. 966, parágrafo único — profissão intelectual não é
+ *      atividade empresária, o que fecha a porta da Junta pelo outro lado.
+ *
+ * A consequência aqui: quando o cadastro diz "Demais" e a receita apurada diz
+ * ME/EPP, no resto da carteira isso é um reenquadramento que ninguém pediu —
+ * nesta empresa é o estado permanente e correto. Tratar como pendência manda o
+ * Fiscal atrás de um pedido que a lei não permite protocolar.
+ *
+ * A ISENÇÃO DA COTA NÃO MUDA. A IN SIT/MTE 146/2018, art. 3º, I dispensa "ME e
+ * EPP" — a condição, não a anotação cadastral. O motor sempre classificou pela
+ * receita bruta e nunca pelo porte do CNPJ, e é por isso que estas empresas já
+ * saíam isentas: o mesmo desenho que acerta uma EPP com cadastro atrasado
+ * acerta a sociedade de advogados.
+ *
+ * DETECÇÃO CONSERVADORA, por um motivo concreto na base: há cliente com
+ * "ADVOGADOS" na razão social e CNAE 69.11-7 que é Sociedade Empresária
+ * Limitada com atividade de agente de propriedade industrial (69.11-7/03) —
+ * essa registra na Junta e pode constar EPP normalmente. Daí exigir natureza
+ * jurídica não-empresária JUNTO com a atividade, e ignorar a razão social:
+ * nome não é órgão de registro.
+ *
+ * Sem natureza jurídica no cadastro devolve `false`. É a assimetria de sempre —
+ * na dúvida não se apaga um sinal.
+ */
+export function ehSociedadeDeAdvogados(input: {
+  naturezaJuridica: string | null | undefined;
+  atividadePrincipalCodigo: string | null | undefined;
+  atividadePrincipalTexto: string | null | undefined;
+}): boolean {
+  const nj = String(input.naturezaJuridica ?? '');
+  if (!nj.trim()) return false;
+
+  // "Sociedade Unipessoal de Advocacia" é natureza jurídica própria e dispensa
+  // conferir a atividade: só advogado a constitui.
+  if (/advocacia|advogad/i.test(nj)) return true;
+
+  // Fora dela, sociedade simples é a forma que resta a quem não pode ser
+  // empresária. Qualquer natureza empresária cai fora por aqui.
+  if (!/sociedade\s+simples/i.test(nj)) return false;
+
+  const codigo = String(input.atividadePrincipalCodigo ?? '').replace(/\D/g, '');
+  const texto = String(input.atividadePrincipalTexto ?? '');
+  // 69.11-7/01 — Serviços advocatícios. As outras subclasses do 69.11-7 são
+  // atividades auxiliares da justiça (/02) e agente de propriedade industrial
+  // (/03), que não constituem sociedade de advogados.
+  return codigo.startsWith('6911701') || /servi[çc]os?\s+advocat[íi]cios/i.test(texto);
+}
+
 // ─── Receita zerada: ausência de dado disfarçada de fato ─────────────────────
 
 export interface ReceitaZerada {
@@ -805,4 +869,97 @@ export function detectarEventos(
   }
 
   return eventos;
+}
+// ─── Cadastro da Receita × porte apurado: a leitura da divergência ───────────
+
+/**
+ * O texto por extenso do porte no cartão CNPJ vira a sigla que o motor usa.
+ *
+ * A Receita grava "MICROEMPRESA", "EMPRESA DE PEQUENO PORTE" e "DEMAIS";
+ * comparar isso com o `Porte` apurado exigiria fazer a tradução na cabeça em
+ * todo lugar onde os dois aparecem lado a lado.
+ *
+ * ESTA FUNÇÃO TEM UMA GÊMEA no frontend (`CotaAprendizagemTab.tsx`), porque a
+ * tela recebe `porte_declarado` cru da API. As duas precisam concordar: é a
+ * mesma frase que sai na tabela e na planilha.
+ */
+export function normalizarPorteDeclarado(texto: string | null | undefined): Porte | null {
+  const t = String(texto ?? '').trim().toUpperCase();
+  if (!t) return null;
+  if (t.includes('MICRO')) return 'ME';
+  if (t.includes('PEQUENO')) return 'EPP';
+  if (t.includes('DEMAIS')) return 'DEMAIS';
+  return null;
+}
+
+export type DivergenciaCadastro = 'DESENQUADRAR' | 'REENQUADRAR' | 'REGISTRO_OAB';
+
+/**
+ * O que significa o cadastro discordar do porte apurado — e não é a mesma coisa
+ * nos três casos. Gêmea da função homônima no frontend.
+ *
+ * DESENQUADRAR: consta ME/EPP e a receita apurada já é de Demais. Único caso
+ * que muda a conclusão sobre a cota: ou o desenquadramento não foi pedido, ou o
+ * faturamento veio do código SCI errado.
+ *
+ * REENQUADRAR: o inverso. Não muda a cota (a isenção sai do porte apurado), mas
+ * a empresa pode simplesmente não ter pedido o reenquadramento.
+ *
+ * REGISTRO_OAB: o mesmo desenho numa sociedade de advogados, onde o "Demais" do
+ * CNPJ é obrigatório e permanente — ver `ehSociedadeDeAdvogados`. Não é
+ * pendência: não há reenquadramento a protocolar.
+ */
+export function divergenciaCadastro(
+  declarado: Porte | null,
+  apurado: Porte,
+  sociedadeAdvogados = false
+): DivergenciaCadastro | null {
+  if (declarado === null || apurado === 'SEM_DADOS' || declarado === apurado) return null;
+  if (apurado === 'DEMAIS') return 'DESENQUADRAR';
+  if (declarado === 'DEMAIS') return sociedadeAdvogados ? 'REGISTRO_OAB' : 'REENQUADRAR';
+  return null;
+}
+
+/** Rótulos de situação quando não há pendência de cadastro a relatar. */
+const ROTULO_SITUACAO: Record<SituacaoFaixa, string> = {
+  DENTRO_DA_FAIXA: 'Permanece',
+  MUDA_EM_JANEIRO: 'Muda em 1º de janeiro',
+  MUDOU_NO_ANO: 'Mudou dentro do ano',
+  JA_SUJEITA: 'Permanece Demais',
+  INDETERMINADO: 'A conferir',
+};
+
+/**
+ * A frase da coluna "Situação" da planilha. A tela tem a sua própria versão,
+ * em duas linhas (título e subtítulo), mas os rótulos de PENDÊNCIA saem daqui
+ * palavra por palavra: quem confere o Excel e quem confere a tela precisa ler a
+ * mesma coisa sobre a mesma empresa.
+ *
+ * "PERMANECE" SÓ QUANDO NÃO HÁ NADA A FAZER. O `Diagnostico` sozinho não sabe
+ * disso: ele compara a empresa com os limites da lei e conclui "já é Demais e
+ * segue Demais" — verdade sobre a receita, e leitura errada quando a Receita
+ * Federal ainda registra ME/EPP. Numa competência real, 43 linhas saíram com o
+ * mesmo "Permanece Demais" e em 4 delas o desenquadramento nunca foi feito: a
+ * coluna dizia que estava tudo no lugar justamente onde faltava providência.
+ *
+ * Quando há pendência, o rótulo deixa de descrever o PRAZO e passa a descrever
+ * a PROVIDÊNCIA. "Deveria ser" e não "passa a ser" porque não há data futura
+ * envolvida — o enquadramento pela receita já é este, o que falta é o cadastro
+ * acompanhar.
+ *
+ * Sociedade de advogados fica de fora de propósito: ela ESTÁ onde deveria
+ * estar, e "Permanece" é a leitura correta.
+ */
+export function rotuloSituacao(input: {
+  situacao: SituacaoFaixa;
+  porteApurado: Porte;
+  /** Porte que consta na Receita, já normalizado. Sem ele não há pendência. */
+  declarado: Porte | null;
+  sociedadeAdvogados?: boolean;
+}): string {
+  const { situacao, porteApurado, declarado, sociedadeAdvogados = false } = input;
+  const divergencia = divergenciaCadastro(declarado, porteApurado, sociedadeAdvogados);
+  if (divergencia === 'DESENQUADRAR') return 'Deveria ser Demais';
+  if (divergencia === 'REENQUADRAR') return `Poderia ser ${porteApurado === 'ME' ? 'ME' : 'EPP'}`;
+  return ROTULO_SITUACAO[situacao] ?? situacao;
 }

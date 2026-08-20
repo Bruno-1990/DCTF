@@ -334,25 +334,84 @@ function BadgePorte({ porte }: { porte: Porte }) {
 }
 
 /**
- * Célula de enquadramento: o que a empresa é hoje na Receita → o que a receita
- * bruta apurada diz que ela é.
+ * O que significa o cadastro da Receita discordar do porte apurado — e não é a
+ * mesma coisa nos dois sentidos.
  *
- * Os dois lado a lado com a seta é o que torna a divergência legível de
- * relance. Em colunas separadas, o leitor tinha que comparar de cabeça
- * "EMPRESA DE PEQUENO PORTE" com um selo "Demais" a duas colunas de distância.
- * Quando são iguais, a seta some e fica um selo só — não há nada a comparar.
+ * DESENQUADRAR: a Receita ainda registra ME/EPP e a receita bruta apurada já é
+ * de Demais. A empresa TEM faturamento para deixar de ser EPP, mas isso não
+ * aconteceu no cadastro — ou o desenquadramento não foi pedido, ou o
+ * faturamento veio do lugar errado (código SCI apontando para outra empresa).
+ * É o único caso que muda a conclusão sobre a cota e precisa de alguém.
+ *
+ * REENQUADRAR: o inverso — consta Demais e a receita caberia em ME/EPP. Não
+ * altera a conclusão sobre a cota (que sai do porte apurado, nunca do porte do
+ * cadastro) e a empresa pode simplesmente não ter pedido o reenquadramento.
+ * Sinaliza sem alarme.
+ *
+ * REGISTRO_OAB: o mesmo desenho do anterior, numa sociedade de advogados — e aí
+ * não existe reenquadramento a pedir. Ela registra os atos constitutivos só no
+ * Conselho Seccional da OAB (Lei 8.906/94, art. 15, §1º, c/c art. 16, que veda
+ * forma mercantil), e a OAB não é nem Junta Comercial nem Registro Civil de
+ * Pessoas Jurídicas — os dois órgãos que o art. 3º da LC 123 exige para anotar
+ * ME/EPP. O porte "Demais" no CNPJ é, portanto, permanente e correto. Tratá-lo
+ * como pendência mandaria o Fiscal atrás de um pedido que a lei não permite
+ * protocolar.
+ *
+ * A ISENÇÃO NÃO MUDA nesse caso: a IN SIT/MTE 146/2018, art. 3º, I dispensa
+ * quem É ME/EPP, não quem tem a sigla anotada no cadastro — e é por isso que
+ * estas empresas já saíam isentas antes desta distinção existir.
+ *
+ * ME × EPP volta `null` de propósito: as duas são isentas, então a divergência
+ * existe mas não tem consequência nenhuma aqui.
  */
-function TransicaoPorte({
+export function divergenciaCadastro(
+  declarado: Porte | null,
+  apurado: Porte,
+  sociedadeAdvogados = false
+): 'DESENQUADRAR' | 'REENQUADRAR' | 'REGISTRO_OAB' | null {
+  if (declarado === null || apurado === 'SEM_DADOS' || declarado === apurado) return null;
+  // A ordem importa: numa sociedade de advogados que consta ME/EPP e apurou
+  // Demais, o caso crítico continua crítico — o registro na OAB explica o
+  // "Demais" no cadastro, não o contrário.
+  if (apurado === 'DEMAIS') return 'DESENQUADRAR';
+  if (declarado === 'DEMAIS') return sociedadeAdvogados ? 'REGISTRO_OAB' : 'REENQUADRAR';
+  return null;
+}
+
+/**
+ * Célula de enquadramento: o que a empresa É hoje na Receita, ao lado do que a
+ * receita bruta apurada diz que ela seria.
+ *
+ * A versão anterior ligava os dois com uma SETA — "EPP → Demais" — e a seta
+ * conta uma história que não aconteceu: quem lê entende que a empresa passou a
+ * Demais, quando na Receita ela continua EPP. Ter faturado acima do teto no ano
+ * anterior é ter MOTIVO para o desenquadramento, não o desenquadramento feito.
+ *
+ * Daí a gramática visual desta célula, que vale a leitura inteira sem legenda:
+ *
+ *   selo SÓLIDO   = o que está registrado, fato
+ *   selo TRACEJADO = o que a receita indica e o cadastro ainda não reflete
+ *   ⚠ no meio      = os dois discordam de um jeito que muda a cota
+ *
+ * O selo do apurado continua com a cor do porte (Demais é vermelho) porque a
+ * coluna do aprendiz vai dizer "Sujeita" com base nele — apagar essa ligação
+ * criaria uma segunda contradição no lugar da primeira.
+ */
+function CelulaPorte({
   declarado,
   apurado,
   impedimento = false,
+  sociedadeAdvogados = false,
 }: {
   declarado: Porte | null;
   apurado: Porte;
   /** Sócio PJ no quadro: o porte pela receita não conclui sozinho. */
   impedimento?: boolean;
+  /** Registro só na OAB: o "Demais" do cadastro é imposto, não atrasado. */
+  sociedadeAdvogados?: boolean;
 }) {
   const diverge = declarado !== null && declarado !== apurado;
+  const divergencia = divergenciaCadastro(declarado, apurado, sociedadeAdvogados);
 
   // Com sócio PJ, o art. 3º §4º I afasta ME/EPP independentemente da receita.
   // Mostrar "Demais → ME" aqui seria anunciar um enquadramento que a própria
@@ -384,14 +443,51 @@ function TransicaoPorte({
     );
   }
 
+  const critico = divergencia === 'DESENQUADRAR';
+  const porRegistro = divergencia === 'REGISTRO_OAB';
+
+  const explicacao = critico
+    ? `Na Receita Federal esta empresa AINDA CONSTA como ${ROTULO_PORTE[declarado!]}. Pela receita bruta apurada ela já teria porte Demais — ou seja, tem faturamento de sobra para deixar de ser ${ROTULO_PORTE[declarado!]}, mas o desenquadramento não aparece no cadastro. Duas causas possíveis, e as duas mudam a conclusão: o desenquadramento não foi feito, ou o faturamento consultado no SCI não é o desta empresa. Confira o cartão CNPJ antes de tratar como fato.`
+    : porRegistro
+      ? `Sociedade de advogados. O registro é feito só no Conselho Seccional da OAB (Lei 8.906/94, art. 15, §1º), que não é Junta Comercial nem Registro Civil de Pessoas Jurídicas — os dois órgãos que o art. 3º da LC 123 exige para anotar ME/EPP no CNPJ. Por isso o porte "Demais" aqui é permanente e correto, não cadastro atrasado: não há reenquadramento a pedir. Pela receita bruta apurada a empresa é ${ROTULO_PORTE[apurado]}, e é essa condição — não a sigla do cadastro — que vale para a isenção da cota (IN SIT/MTE 146/2018, art. 3º, I) e para o Simples Nacional.`
+      : divergencia === 'REENQUADRAR'
+        ? `Na Receita consta Demais; pela receita bruta apurada a empresa caberia em ${ROTULO_PORTE[apurado]}. Não muda a conclusão sobre a cota — ela sai do porte apurado, e ME/EPP é isenta —, mas pode ser reenquadramento nunca pedido ou cadastro desatualizado.`
+        : `Na Receita consta ${ROTULO_PORTE[declarado!]}; pela receita bruta apurada é ${ROTULO_PORTE[apurado]}. As duas faixas são isentas da cota, então a divergência não altera nada aqui.`;
+
   return (
-    <div
-      className="flex items-center justify-center gap-1.5"
-      title={`Na Receita consta ${ROTULO_PORTE[declarado]}; pela receita bruta apurada é ${ROTULO_PORTE[apurado]}.`}
-    >
-      <span className="text-xs font-medium text-gray-400">{ROTULO_PORTE[declarado]}</span>
-      <span className="text-gray-400 text-xs">&rarr;</span>
-      <BadgePorte porte={apurado} />
+    <div className="flex flex-col items-center gap-0.5" title={explicacao}>
+      <div className="flex items-center justify-center gap-1.5">
+        <BadgePorte porte={declarado!} />
+        {critico ? (
+          <ExclamationTriangleIcon className="h-4 w-4 shrink-0 text-amber-500" />
+        ) : porRegistro ? (
+          // Nem "≠" nem seta: os dois valores não se contradizem, cada um diz
+          // uma coisa diferente. O "·" apenas junta os dois sem acusar nada.
+          <span className="text-xs font-semibold text-slate-400">&middot;</span>
+        ) : (
+          <span className="text-xs font-semibold text-gray-400">&ne;</span>
+        )}
+        <span
+          className={`inline-flex px-2 py-0.5 rounded-md text-xs font-semibold border border-dashed ${CORES_PORTE[apurado]}`}
+        >
+          {ROTULO_PORTE[apurado]}
+        </span>
+      </div>
+      <span
+        className={`text-[10px] leading-tight ${
+          critico
+            ? 'font-semibold text-amber-700'
+            : porRegistro
+              ? 'text-slate-500'
+              : 'text-gray-400'
+        }`}
+      >
+        {critico
+          ? 'pela receita · não migrou'
+          : porRegistro
+            ? 'sociedade de advogados'
+            : 'divergente'}
+      </span>
     </div>
   );
 }
@@ -401,15 +497,34 @@ function TransicaoPorte({
  * coluna de enquadramento). A barra mede contra o teto DA EMPRESA, não contra
  * um limite fixo: uma EPP a R$ 2 mi está a 42% do teto dela; a mesma barra
  * medida contra R$ 360 mil daria 555% e não significaria nada.
+ *
+ * "PERMANECE" SÓ QUANDO NÃO HÁ NADA A FAZER. O `Diagnostico` sozinho não sabe
+ * disso: ele compara a empresa com os limites da lei e conclui "já é Demais e
+ * segue Demais" — verdade sobre a receita, e leitura errada na tela quando a
+ * Receita Federal ainda registra ME/EPP. Numa competência real, 43 linhas
+ * apareceram com o mesmo "Permanece · segue Demais", e em 4 delas o
+ * desenquadramento ainda não tinha sido feito: a coluna dizia que estava tudo
+ * no lugar justamente nas linhas que precisavam de alguém.
+ *
+ * Por isso o porte declarado entra aqui. Quando ele discorda do apurado de um
+ * jeito que pede providência, o título deixa de descrever o prazo e passa a
+ * descrever a pendência.
  */
 function SituacaoCelula({
   diagnostico,
   pct,
+  declarado = null,
+  sociedadeAdvogados = false,
 }: {
   diagnostico: Diagnostico;
   pct: number | null;
+  /** Porte que consta na Receita. Sem ele não há pendência a afirmar. */
+  declarado?: Porte | null;
+  /** Registro só na OAB: "Demais" no cadastro é o certo, não uma pendência. */
+  sociedadeAdvogados?: boolean;
 }) {
-  const { situacao, proximoPorte, folgaCentavos, dataEfeito } = diagnostico;
+  const { situacao, proximoPorte, folgaCentavos, dataEfeito, porteAtual } = diagnostico;
+  const divergencia = divergenciaCadastro(declarado, porteAtual, sociedadeAdvogados);
 
   const cores: Record<string, string> = {
     DENTRO_DA_FAIXA: 'bg-emerald-500',
@@ -448,10 +563,46 @@ function SituacaoCelula({
     INDETERMINADO: 'text-slate-500',
   };
 
+  /**
+   * A pendência de cadastro, quando existe, fala mais alto que o prazo.
+   *
+   * DESENQUADRAR é o caso forte: a receita já põe a empresa em Demais e o
+   * cadastro ainda diz ME/EPP. "Deveria ser" e não "passa a ser" porque não há
+   * data futura envolvida — o enquadramento pela receita já é este; o que falta
+   * é o cadastro acompanhar.
+   *
+   * REENQUADRAR é o inverso e não pede providência nenhuma para a cota (Demais
+   * ou ME/EPP, a linha continua isenta pelo porte apurado), mas dizer
+   * "Permanece" ali também seria falso: a empresa não está no porte em que
+   * caberia. Sai em cinza, como informação.
+   *
+   * REGISTRO_OAB fica de fora de propósito: numa sociedade de advogados o
+   * "Demais" do cadastro é obrigatório, então ela ESTÁ onde deveria estar e
+   * "Permanece" é a leitura correta.
+   */
+  const pendencia =
+    divergencia === 'DESENQUADRAR'
+      ? {
+          texto: 'Deveria ser Demais',
+          subtexto: `consta ${ROTULO_PORTE[declarado!]} na Receita`,
+          cor: 'text-amber-700',
+          titulo: `Pela receita bruta apurada esta empresa já tem porte Demais, mas na Receita Federal ainda consta ${ROTULO_PORTE[declarado!]}. O desenquadramento não foi feito — ou o faturamento consultado no SCI não é o desta empresa. Confira o cartão CNPJ e o código SCI.`,
+        }
+      : divergencia === 'REENQUADRAR'
+        ? {
+            texto: `Poderia ser ${ROTULO_PORTE[porteAtual]}`,
+            subtexto: 'consta Demais na Receita',
+            cor: 'text-gray-600',
+            titulo: `Na Receita Federal consta Demais; pela receita bruta apurada a empresa caberia em ${ROTULO_PORTE[porteAtual]}. Não muda a conclusão sobre a cota — ela sai do porte apurado, e ME/EPP é isenta —, mas pode ser reenquadramento nunca pedido ou cadastro desatualizado.`,
+          }
+        : null;
+
   return (
-    <div className="w-44" title={diagnostico.resumo}>
-      <div className={`text-xs font-semibold ${textoCor[situacao]}`}>{textos[situacao]}</div>
-      <div className="text-[11px] text-gray-500">{subtextos[situacao]}</div>
+    <div className="w-44" title={pendencia?.titulo ?? diagnostico.resumo}>
+      <div className={`text-xs font-semibold ${pendencia?.cor ?? textoCor[situacao]}`}>
+        {pendencia?.texto ?? textos[situacao]}
+      </div>
+      <div className="text-[11px] text-gray-500">{pendencia?.subtexto ?? subtextos[situacao]}</div>
 
       {pct !== null && situacao !== 'INDETERMINADO' && situacao !== 'JA_SUJEITA' && (
         <>
@@ -513,7 +664,7 @@ const TONS = {
     ativo: 'border-red-400 bg-red-50/60 ring-2 ring-red-100',
     inativo: 'border-red-200 hover:border-red-300',
   },
-  semDados: {
+  atencao: {
     valor: 'text-amber-600',
     barra: 'bg-amber-500',
     consequencia: 'text-amber-700',
@@ -541,6 +692,7 @@ function CardResumo({
   faixa,
   consequencia,
   proporcao,
+  ajuda,
   ativo = false,
   onClick,
 }: {
@@ -551,6 +703,8 @@ function CardResumo({
   consequencia?: string;
   /** Fração do total (0 a 1). Sem isso, a barra não é renderizada. */
   proporcao?: number;
+  /** Explicação no hover, para o grupo cuja régua não cabe em duas linhas. */
+  ajuda?: string;
   ativo?: boolean;
   onClick?: () => void;
 }) {
@@ -563,7 +717,7 @@ function CardResumo({
       title={
         ativo
           ? 'Filtrando por este grupo — clique para mostrar todos'
-          : `Clique para ver só estes ${valor} cliente(s)`
+          : (ajuda ?? `Clique para ver só estes ${valor} cliente(s)`)
       }
       className={`text-left bg-white rounded-xl border-2 p-4 shadow-sm transition-all duration-150
         hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400
@@ -727,6 +881,31 @@ function ComoFunciona() {
             "isenta": é empresa que não deu para classificar por falta de faturamento, e pode muito
             bem estar sujeita. E o porte da Receita Federal não substitui o apurado aqui — quando os
             dois divergem, a tela mostra os dois lado a lado, sem corrigir um pelo outro.
+          </div>
+
+          <div>
+            <div className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+              Como ler a coluna Porte
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <BadgePorte porte="EPP" />
+              <ExclamationTriangleIcon className="h-4 w-4 text-amber-500" />
+              <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-semibold border border-dashed bg-red-100 text-red-800 border-red-200">
+                Demais
+              </span>
+              <span className="text-[11px] font-semibold text-amber-700">
+                pela receita · não migrou
+              </span>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              O selo <strong>sólido</strong> é o que está registrado na Receita Federal; o{' '}
+              <strong>tracejado</strong> é o que a receita bruta apurada indica e o cadastro ainda
+              não reflete. Ter faturado acima do teto no ano anterior é <strong>motivo</strong> para
+              o desenquadramento — não o desenquadramento feito. Antes de tratar a empresa como
+              Demais, confira as duas hipóteses: o desenquadramento não foi pedido, ou o
+              faturamento consultado no SCI não é o dessa empresa. O cartão{' '}
+              <strong>"A desenquadrar"</strong>, no topo da tela, isola esses casos.
+            </p>
           </div>
 
           <div className="text-xs text-gray-500 leading-relaxed">
@@ -1287,7 +1466,14 @@ function ModalEmail({
   );
 }
 
-type FiltroStatus = 'todos' | 'sujeitas' | 'mudou' | 'projecao' | 'sem-dados' | 'revisar';
+type FiltroStatus =
+  | 'todos'
+  | 'sujeitas'
+  | 'mudou'
+  | 'projecao'
+  | 'sem-dados'
+  | 'revisar'
+  | 'divergente';
 
 export default function CotaAprendizagemTab() {
   const [dados, setDados] = useState<Classificacao | null>(null);
@@ -1528,6 +1714,14 @@ export default function CotaAprendizagemTab() {
           return c.porte === 'SEM_DADOS';
         case 'revisar':
           return c.revisar_juridico;
+        // Só o sentido que muda a conclusão: consta ME/EPP na Receita e a
+        // receita apurada já é de Demais. O sentido inverso não gera pendência
+        // — quem consta Demais segue sujeito de todo jeito.
+        case 'divergente':
+          return (
+            divergenciaCadastro(normalizarPorteDeclarado(c.porte_declarado), c.porte) ===
+            'DESENQUADRAR'
+          );
         default:
           return true;
       }
@@ -1536,6 +1730,23 @@ export default function CotaAprendizagemTab() {
 
   const viradas = useMemo(
     () => (dados?.clientes ?? []).filter((c) => c.mudou && c.porte === 'DEMAIS'),
+    [dados]
+  );
+  /**
+   * Quantos ainda constam ME/EPP na Receita com receita apurada de Demais.
+   *
+   * Vira um contador clicável junto dos filtros, e não uma faixa de alerta: o
+   * caso pede conferência, não anuncia obrigação vencida — e faixa grande para
+   * pendência de cadastro é exatamente o bloco que já saiu daqui por repetir a
+   * tabela. Some quando é zero.
+   */
+  const divergentes = useMemo(
+    () =>
+      (dados?.clientes ?? []).filter(
+        (c) =>
+          divergenciaCadastro(normalizarPorteDeclarado(c.porte_declarado), c.porte) ===
+          'DESENQUADRAR'
+      ),
     [dados]
   );
   /** Contagem por porte — o resumo do backend traz "sujeitas/isentas", que são
@@ -1556,6 +1767,14 @@ export default function CotaAprendizagemTab() {
   const filtrarPorPorte = (porte: Porte) => {
     setFiltroStatus('todos');
     setFiltroPorte((atual) => (atual === porte ? 'todos' : porte));
+  };
+
+  // O cartão "A desenquadrar" filtra por STATUS, não por porte — e zera o de
+  // porte pelo mesmo motivo do outro: o número do cartão tem de ser o número
+  // de linhas da tabela depois do clique.
+  const filtrarDivergentes = () => {
+    setFiltroPorte('todos');
+    setFiltroStatus((atual) => (atual === 'divergente' ? 'todos' : 'divergente'));
   };
 
   const limparFiltros = () => {
@@ -1703,15 +1922,21 @@ export default function CotaAprendizagemTab() {
             ativo={filtroPorte === 'DEMAIS'}
             onClick={() => filtrarPorPorte('DEMAIS')}
           />
+          {/* No lugar do cartão "Sem dados", que contava um grupo sem ação
+              associada — quem não deu para classificar continua alcançável
+              pelos dois filtros abaixo. Este conta o único caso que pede
+              providência de alguém, e ele estava escondido num contador
+              pequeno ao lado dos filtros. */}
           <CardResumo
-            titulo="Sem dados"
-            valor={porPorte.SEM_DADOS}
-            tom="semDados"
-            proporcao={fracao(porPorte.SEM_DADOS)}
-            faixa="faturamento insuficiente"
-            consequencia="não são isentas"
-            ativo={filtroPorte === 'SEM_DADOS'}
-            onClick={() => filtrarPorPorte('SEM_DADOS')}
+            titulo="A desenquadrar"
+            valor={divergentes.length}
+            tom="atencao"
+            proporcao={fracao(divergentes.length)}
+            faixa="constam ME/EPP na Receita"
+            consequencia="receita apurada já é Demais"
+            ajuda="Empresas que ainda constam ME ou EPP na Receita Federal e cujo faturamento apurado já é de porte Demais. Ter receita acima do teto é motivo para o desenquadramento — não o desenquadramento feito. Confira o cartão CNPJ e o código SCI antes de tratar como Demais."
+            ativo={filtroStatus === 'divergente'}
+            onClick={filtrarDivergentes}
           />
         </div>
       )}
@@ -1782,7 +2007,9 @@ export default function CotaAprendizagemTab() {
           <option value="projecao">Mudam em 1º de janeiro</option>
           <option value="sem-dados">Não foi possível classificar</option>
           <option value="revisar">A conferir antes de valer</option>
+          <option value="divergente">Consta ME/EPP na Receita, mas a receita dá Demais</option>
         </select>
+
       </div>
 
       {/* Tabela */}
@@ -1808,7 +2035,7 @@ export default function CotaAprendizagemTab() {
                 <th className="px-4 py-3 text-center font-semibold text-gray-600">
                   Porte
                   <div className="text-[10px] font-normal text-gray-400 mt-0.5">
-                    na Receita &rarr; apurado
+                    na Receita &times; apurado
                   </div>
                 </th>
                 <th className="px-4 py-3 text-right font-semibold text-gray-600">
@@ -1862,16 +2089,22 @@ export default function CotaAprendizagemTab() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <TransicaoPorte
+                      <CelulaPorte
                         declarado={normalizarPorteDeclarado(c.porte_declarado)}
                         apurado={c.porte}
                         impedimento={c.impedimento_societario}
+                        sociedadeAdvogados={c.sociedade_advogados}
                       />
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">{moeda(c.rbaa)}</td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">{moeda(c.rba)}</td>
                     <td className="px-4 py-3">
-                      <SituacaoCelula diagnostico={c.diagnostico} pct={pct} />
+                      <SituacaoCelula
+                        diagnostico={c.diagnostico}
+                        pct={pct}
+                        declarado={normalizarPorteDeclarado(c.porte_declarado)}
+                        sociedadeAdvogados={c.sociedade_advogados}
+                      />
                     </td>
                     <td className="px-4 py-3 text-center">
                       {c.sujeita_cota === null ? (
@@ -2020,16 +2253,73 @@ export default function CotaAprendizagemTab() {
                           const declarado = normalizarPorteDeclarado(
                             linhaDoCliente?.porte_declarado ?? null
                           );
-                          if (!declarado || declarado === diagnosticoDoCliente.porteAtual) {
-                            return null;
+                          const apurado = diagnosticoDoCliente.porteAtual;
+                          if (!declarado || declarado === apurado) return null;
+
+                          // Este é o modal em que a pessoa vem conferir o caso,
+                          // então aqui a divergência vem por extenso — com as
+                          // DUAS hipóteses, porque a tabela só cabe o aviso.
+                          const divergencia = divergenciaCadastro(
+                            declarado,
+                            apurado,
+                            linhaDoCliente?.sociedade_advogados ?? false
+                          );
+                          const critico = divergencia === 'DESENQUADRAR';
+
+                          // Sociedade de advogados não tem pendência de
+                          // cadastro a resolver — dizer "confira qual dos dois
+                          // está desatualizado" mandaria conferir uma coisa que
+                          // a lei já resolveu. Aqui a explicação é o porquê.
+                          if (divergencia === 'REGISTRO_OAB') {
+                            return (
+                              <div className="mb-2 text-xs text-gray-600 bg-white/70 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
+                                Na Receita Federal consta <strong>Demais</strong>, e nesta empresa
+                                isso é <strong>permanente</strong>: sociedade de advogados registra
+                                os atos constitutivos só no Conselho Seccional da OAB (Lei 8.906/94,
+                                art. 15, §1º, e art. 16, que veda forma mercantil). Como a OAB não é
+                                Junta Comercial nem Registro Civil de Pessoas Jurídicas — os órgãos
+                                que o art. 3º da LC 123 exige —, não há como anotar ME/EPP no CNPJ.{' '}
+                                <strong>Não há reenquadramento a pedir.</strong> Pela receita bruta
+                                apurada a empresa é <strong>{ROTULO_PORTE[apurado]}</strong>, e é
+                                essa condição que vale para a isenção da cota (IN SIT/MTE 146/2018,
+                                art. 3º, I) e para o Simples Nacional.
+                              </div>
+                            );
+                          }
+
+                          if (!critico) {
+                            return (
+                              <div className="mb-2 text-xs text-gray-600 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
+                                Na Receita Federal consta{' '}
+                                <strong>{ROTULO_PORTE[declarado]}</strong>; pela receita bruta
+                                apurada é <strong>{ROTULO_PORTE[apurado]}</strong>. O cadastro da
+                                Receita não muda o porte apurado aqui — vale conferir qual dos dois
+                                está desatualizado.
+                              </div>
+                            );
                           }
                           return (
-                            <div className="mb-2 text-xs text-gray-600 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
-                              Na Receita Federal consta{' '}
-                              <strong>{ROTULO_PORTE[declarado]}</strong>; pela receita bruta apurada
-                              é <strong>{ROTULO_PORTE[diagnosticoDoCliente.porteAtual]}</strong>. O
-                              cadastro da Receita não muda o porte apurado aqui — vale conferir qual
-                              dos dois está desatualizado.
+                            <div className="mb-2 flex items-start gap-2 text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-900">
+                              <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-600" />
+                              <div className="leading-relaxed">
+                                Na Receita Federal esta empresa{' '}
+                                <strong>ainda consta como {ROTULO_PORTE[declarado]}</strong>. Pela
+                                receita bruta apurada ela já teria porte{' '}
+                                <strong>Demais</strong> — tem faturamento de sobra para deixar de
+                                ser {ROTULO_PORTE[declarado]}, mas o desenquadramento não aparece no
+                                cadastro. <strong>Isso ainda não é fato consumado.</strong> Duas
+                                causas possíveis, e as duas mudam a conclusão:
+                                <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                                  <li>o desenquadramento não foi pedido/processado; ou</li>
+                                  <li>
+                                    o faturamento consultado no SCI não é o desta empresa (código
+                                    trocado, ou soma de estabelecimentos de PJs diferentes).
+                                  </li>
+                                </ul>
+                                <div className="mt-1">
+                                  Confira o cartão CNPJ e o código SCI antes de tratar como Demais.
+                                </div>
+                              </div>
                             </div>
                           );
                         })()}

@@ -10,6 +10,7 @@ import type { LinhaClassificacao } from '../services/CotaAprendizagemService';
 import { buildStandardSheet } from '../services/reports/XlsxStandardSheet';
 import type { ColumnFormat, CellValue } from '../services/reports/XlsxStandardSheet';
 import { labelCompetencia, formatCnpj } from '../services/cotaAprendizagem.email';
+import { normalizarPorteDeclarado, rotuloSituacao } from '../services/cotaAprendizagem.rules';
 
 type LinhaExport = LinhaClassificacao;
 
@@ -39,14 +40,6 @@ const ROTULO_MOTIVO: Record<string, string> = {
   RBAA: 'Receita do ano anterior',
   EXCESSO_20PCT: 'Excedeu os 20%',
   SEM_DADOS: 'Sem dados suficientes',
-};
-
-const ROTULO_SITUACAO: Record<string, string> = {
-  DENTRO_DA_FAIXA: 'Permanece',
-  MUDA_EM_JANEIRO: 'Muda em 1º de janeiro',
-  MUDOU_NO_ANO: 'Mudou dentro do ano',
-  JA_SUJEITA: 'Permanece Demais',
-  INDETERMINADO: 'A conferir',
 };
 
 const ROTULO_RESSALVA: Record<string, string> = {
@@ -251,7 +244,11 @@ export class CotaAprendizagemController {
         fmt?: ColumnFormat;
       }> = [
         // ── Identificação ──
-        { titulo: 'Razão Social', valor: (c) => c.razao_social, fmt: { width: 42 } },
+        {
+          titulo: 'Razão Social',
+          valor: (c) => c.razao_social,
+          fmt: { align: 'center', width: 42 },
+        },
         { titulo: 'CNPJ', valor: (c) => formatCnpj(c.cnpj), fmt: { align: 'center', width: 20 } },
         {
           titulo: 'SCI',
@@ -268,9 +265,20 @@ export class CotaAprendizagemController {
           fmt: { align: 'center', width: 24 },
         },
         {
+          // A mesma frase da tela, e pelo mesmo motivo: "Permanece" só quando a
+          // empresa já está no porte em que deveria estar. Enquanto a Receita
+          // registrar outro porte, a coluna descreve a providência que falta,
+          // não o prazo — senão a planilha declara que está tudo no lugar
+          // justamente nas linhas que precisam de alguém.
           titulo: 'Situação',
-          valor: (c) => ROTULO_SITUACAO[c.diagnostico.situacao] ?? c.diagnostico.situacao,
-          fmt: { width: 22 },
+          valor: (c) =>
+            rotuloSituacao({
+              situacao: c.diagnostico.situacao,
+              porteApurado: c.porte,
+              declarado: normalizarPorteDeclarado(c.porte_declarado),
+              sociedadeAdvogados: c.sociedade_advogados,
+            }),
+          fmt: { align: 'center', width: 24 },
         },
         {
           titulo: 'Muda para',
@@ -310,7 +318,7 @@ export class CotaAprendizagemController {
         {
           titulo: 'Base do porte',
           valor: (c) => ROTULO_MOTIVO[c.motivo] ?? c.motivo,
-          fmt: { width: 24 },
+          fmt: { align: 'center', width: 24 },
         },
         {
           titulo: 'Mês que passou de R$ 4,8 mi',
@@ -341,7 +349,7 @@ export class CotaAprendizagemController {
           valor: (c) =>
             c.revisar_motivos.map((m) => ROTULO_RESSALVA[m] ?? m).join('; ') ||
             (c.revisar_juridico ? 'Revisar' : ''),
-          fmt: { width: 34 },
+          fmt: { align: 'center', width: 34 },
         },
         {
           titulo: 'Meses sem dado',

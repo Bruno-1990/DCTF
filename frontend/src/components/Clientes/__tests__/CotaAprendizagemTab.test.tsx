@@ -5,6 +5,7 @@ import CotaAprendizagemTab, {
   rotuloMotivo,
   portePorAno,
   normalizarPorteDeclarado,
+  divergenciaCadastro,
   SELO_REVISAO,
 } from '../CotaAprendizagemTab';
 import type { Classificacao, LinhaClassificacao } from '../../../services/cotaAprendizagem';
@@ -49,6 +50,7 @@ function linha(over: Partial<LinhaClassificacao> = {}): LinhaClassificacao {
     uf: 'ES',
     porte_declarado: 'EMPRESA DE PEQUENO PORTE',
     abertura: null,
+    sociedade_advogados: false,
     ano: 2026,
     mes: 7,
     bdref: 202607,
@@ -372,7 +374,7 @@ describe('CotaAprendizagemTab', () => {
     expect(screen.getAllByText(/jul\/2026/).length).toBeGreaterThan(0);
   });
 
-  it('mostra a transição declarado → apurado quando divergem', async () => {
+  it('mostra declarado e apurado lado a lado quando divergem', async () => {
     // Divergir é normal; a tela não deve esconder um nem "corrigir" o outro.
     // Busca dentro da linha da tabela — "Demais"/"ME" também existem como
     // <option> nos filtros, então getByText global acharia vários.
@@ -785,9 +787,9 @@ describe('CotaAprendizagemTab', () => {
   });
 
   it('ao abrir o cliente, a divergência com a Receita continua visível', async () => {
-    // Na tabela a linha mostra "ME → Demais"; abrindo o cliente, o modal só
-    // dizia "Demais" e a divergência sumia — justamente na tela em que a
-    // pessoa foi conferir o caso.
+    // Abrindo o cliente, o modal só dizia "Demais" e a divergência sumia —
+    // justamente na tela em que a pessoa foi conferir o caso. E aqui ela vem
+    // por extenso: consta ME, a receita dá Demais, e isso ainda não é fato.
     mockClassificacao.mockResolvedValue(
       resposta([
         linha({
@@ -828,9 +830,49 @@ describe('CotaAprendizagemTab', () => {
     fireEvent.click(screen.getByText('ILHA DAS FERRAMENTAS LTDA'));
 
     await waitFor(() => {
+      expect(screen.getByText(/ainda consta como ME/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/ainda não é fato consumado/)).toBeInTheDocument();
+    // As duas hipóteses, porque as duas mudam a conclusão sobre a cota.
+    expect(screen.getByText(/desenquadramento não foi pedido/)).toBeInTheDocument();
+    expect(screen.getByText(/não é o desta empresa/)).toBeInTheDocument();
+  });
+
+  it('no sentido inverso o modal continua neutro — não há pendência de cota', async () => {
+    // Consta Demais e a receita caberia em EPP: enquanto o cadastro disser
+    // Demais, a empresa segue sujeita. É divergência, não alerta.
+    mockClassificacao.mockResolvedValue(
+      resposta([
+        linha({
+          razao_social: 'ILHA DAS FERRAMENTAS LTDA',
+          porte: 'EPP',
+          porte_declarado: 'DEMAIS',
+        }),
+      ])
+    );
+    mockHistorico.mockResolvedValue({
+      cliente: {
+        id: 'c1',
+        razao_social: 'ILHA DAS FERRAMENTAS LTDA',
+        cnpj: '11222333000181',
+        codigo_sci: 320,
+        porte_declarado: 'DEMAIS',
+      },
+      faturamento: [],
+      classificacoes: [],
+    });
+
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('ILHA DAS FERRAMENTAS LTDA')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('ILHA DAS FERRAMENTAS LTDA'));
+
+    await waitFor(() => {
       expect(screen.getByText(/Na Receita Federal consta/)).toBeInTheDocument();
     });
     expect(screen.getByText(/vale conferir qual dos dois está desatualizado/)).toBeInTheDocument();
+    expect(screen.queryByText(/ainda não é fato consumado/)).toBeNull();
   });
 
   it('o envio deixa escolher qual dos dois relatórios sai e para quem', async () => {
@@ -1012,5 +1054,276 @@ describe('CotaAprendizagemTab', () => {
       expect(screen.getByText(/Nenhuma apuração ainda/)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: 'Atualizar' })).toBeInTheDocument();
+  });
+});
+
+describe('divergenciaCadastro', () => {
+  it('consta ME/EPP na Receita e a receita apurada dá Demais: desenquadrar', () => {
+    expect(divergenciaCadastro('EPP', 'DEMAIS')).toBe('DESENQUADRAR');
+    expect(divergenciaCadastro('ME', 'DEMAIS')).toBe('DESENQUADRAR');
+  });
+
+  it('consta Demais e a receita caberia em ME/EPP: reenquadrar', () => {
+    expect(divergenciaCadastro('DEMAIS', 'EPP')).toBe('REENQUADRAR');
+  });
+
+  it('numa sociedade de advogados, "Demais" no cadastro não é pendência', () => {
+    expect(divergenciaCadastro('DEMAIS', 'EPP', true)).toBe('REGISTRO_OAB');
+    expect(divergenciaCadastro('DEMAIS', 'ME', true)).toBe('REGISTRO_OAB');
+  });
+
+  it('mas o sentido crítico continua crítico numa sociedade de advogados', () => {
+    expect(divergenciaCadastro('EPP', 'DEMAIS', true)).toBe('DESENQUADRAR');
+  });
+
+  it('ME × EPP não é pendência — as duas são isentas da cota', () => {
+    expect(divergenciaCadastro('ME', 'EPP')).toBeNull();
+    expect(divergenciaCadastro('EPP', 'ME')).toBeNull();
+  });
+
+  it('sem declarado, iguais ou sem dados: nada a apontar', () => {
+    expect(divergenciaCadastro(null, 'DEMAIS')).toBeNull();
+    expect(divergenciaCadastro('EPP', 'EPP')).toBeNull();
+    expect(divergenciaCadastro('EPP', 'SEM_DADOS')).toBeNull();
+  });
+});
+
+describe('cadastro da Receita × porte apurado', () => {
+  /**
+   * O ponto que estes testes seguram: faturar acima do teto no ano anterior é
+   * MOTIVO para o desenquadramento, não o desenquadramento feito. A célula não
+   * pode dar a entender que a empresa já passou a Demais na Receita.
+   */
+  const desenquadrar = () =>
+    linha({
+      porte: 'DEMAIS',
+      sujeita_cota: true,
+      porte_declarado: 'EMPRESA DE PEQUENO PORTE',
+      rbaa: 6841344.78,
+    });
+
+  it('marca "não migrou" quando consta EPP na Receita e a receita dá Demais', async () => {
+    mockClassificacao.mockResolvedValue(resposta([desenquadrar()]));
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('EMPRESA TESTE LTDA').closest('tr')!;
+    expect(within(linhaTabela).getByText(/não migrou/)).toBeInTheDocument();
+    // O apurado sai TRACEJADO — é o que a receita indica, não o que o cadastro diz.
+    expect(within(linhaTabela).getByText('Demais').className).toContain('border-dashed');
+    // E o declarado NÃO some: continua sendo o que está registrado hoje.
+    expect(within(linhaTabela).getByText('EPP')).toBeInTheDocument();
+  });
+
+  it('quem já consta Demais na Receita não recebe a marca', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([linha({ porte: 'DEMAIS', sujeita_cota: true, porte_declarado: 'DEMAIS' })])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('EMPRESA TESTE LTDA').closest('tr')!;
+    expect(within(linhaTabela).queryByText(/não migrou/)).toBeNull();
+    expect(within(linhaTabela).getByText('Demais').className).not.toContain('border-dashed');
+  });
+
+  it('ME × EPP fica neutro: divergem, mas as duas são isentas', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([linha({ porte: 'EPP', porte_declarado: 'MICRO EMPRESA' })])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('EMPRESA TESTE LTDA').closest('tr')!;
+    expect(within(linhaTabela).queryByText(/não migrou/)).toBeNull();
+    expect(within(linhaTabela).getByText('divergente')).toBeInTheDocument();
+  });
+
+  /**
+   * Sociedade de advogados registra só na OAB, que não é nenhum dos órgãos do
+   * art. 3º da LC 123 — o porte "Demais" do CNPJ é imposto e permanente. Sem
+   * esta distinção, a célula pedia um reenquadramento que a lei não permite
+   * protocolar.
+   */
+  it('sociedade de advogados: o cadastro Demais é explicado, não acusado', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([
+        linha({
+          razao_social: 'PARIS, GUERZET E AZEVEDO ADVOGADOS',
+          porte: 'EPP',
+          sujeita_cota: false,
+          porte_declarado: 'DEMAIS',
+          sociedade_advogados: true,
+        }),
+      ])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('PARIS, GUERZET E AZEVEDO ADVOGADOS')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('PARIS, GUERZET E AZEVEDO ADVOGADOS').closest('tr')!;
+    expect(within(linhaTabela).getByText('sociedade de advogados')).toBeInTheDocument();
+    expect(within(linhaTabela).queryByText('divergente')).toBeNull();
+    expect(within(linhaTabela).queryByText(/não migrou/)).toBeNull();
+    // Continua isenta: a isenção sai do porte apurado, não da sigla do cadastro.
+    expect(within(linhaTabela).getByText(/Isenta/i)).toBeInTheDocument();
+  });
+
+  it('o mesmo cadastro sem ser sociedade de advogados segue como divergência', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([linha({ porte: 'EPP', porte_declarado: 'DEMAIS', sociedade_advogados: false })])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('EMPRESA TESTE LTDA').closest('tr')!;
+    expect(within(linhaTabela).getByText('divergente')).toBeInTheDocument();
+  });
+
+
+  /**
+   * A coluna "Situação" dizia "Permanece · segue Demais" em toda linha de porte
+   * Demais — inclusive nas que ainda constam ME/EPP na Receita. Quem lia
+   * entendia que estava tudo no lugar exatamente onde faltava providência.
+   */
+  const jaDemais = (over: Partial<LinhaClassificacao> = {}) =>
+    linha({
+      porte: 'DEMAIS',
+      porte_base: 'DEMAIS',
+      sujeita_cota: true,
+      porte_declarado: 'DEMAIS',
+      diagnostico: {
+        porteAtual: 'DEMAIS',
+        proximoPorte: null,
+        situacao: 'JA_SUJEITA',
+        limiteDaFaixaCentavos: null,
+        folgaCentavos: null,
+        percentualDoLimite: null,
+        dataEfeito: null,
+        resumo: 'Enquadrada como Demais pela receita do ano anterior.',
+        sujeitaCota: true,
+      },
+      ...over,
+    });
+
+  it('cadastro ainda em EPP: a situação cobra a mudança, não diz "Permanece"', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([jaDemais({ porte_declarado: 'EMPRESA DE PEQUENO PORTE' })])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('EMPRESA TESTE LTDA').closest('tr')!;
+    expect(within(linhaTabela).getByText('Deveria ser Demais')).toBeInTheDocument();
+    expect(within(linhaTabela).getByText('consta EPP na Receita')).toBeInTheDocument();
+    expect(within(linhaTabela).queryByText('Permanece')).toBeNull();
+    expect(within(linhaTabela).queryByText('segue Demais')).toBeNull();
+  });
+
+  it('cadastro já em Demais: "Permanece" continua sendo a leitura certa', async () => {
+    mockClassificacao.mockResolvedValue(resposta([jaDemais()]));
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('EMPRESA TESTE LTDA').closest('tr')!;
+    expect(within(linhaTabela).getByText('Permanece')).toBeInTheDocument();
+    expect(within(linhaTabela).getByText('segue Demais')).toBeInTheDocument();
+  });
+
+  it('consta Demais e caberia em EPP: informa sem cobrar', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([linha({ porte: 'EPP', porte_declarado: 'DEMAIS' })])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('EMPRESA TESTE LTDA').closest('tr')!;
+    expect(within(linhaTabela).getByText('Poderia ser EPP')).toBeInTheDocument();
+    expect(within(linhaTabela).getByText('consta Demais na Receita')).toBeInTheDocument();
+  });
+
+  it('sociedade de advogados está onde deveria: segue "Permanece"', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([linha({ porte: 'EPP', porte_declarado: 'DEMAIS', sociedade_advogados: true })])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    const linhaTabela = screen.getByText('EMPRESA TESTE LTDA').closest('tr')!;
+    expect(within(linhaTabela).getByText('Permanece')).toBeInTheDocument();
+    expect(within(linhaTabela).queryByText('Poderia ser EPP')).toBeNull();
+  });
+
+
+  /** O cartão "A desenquadrar" — que substituiu o de "Sem dados". */
+  const cartaoDesenquadrar = () => screen.getByText('A desenquadrar').closest('button')!;
+
+  it('o cartão "A desenquadrar" conta só o sentido que muda a conclusão', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([
+        desenquadrar(),
+        // Consta Demais e a receita caberia em EPP: não é pendência de cota.
+        linha({ id: 'c2', razao_social: 'OUTRA LTDA', porte: 'EPP', porte_declarado: 'DEMAIS' }),
+      ])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    expect(within(cartaoDesenquadrar()).getByText('1')).toBeInTheDocument();
+  });
+
+  it('o cartão filtra a tabela ao ser clicado', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([
+        desenquadrar(),
+        linha({ id: 'c2', razao_social: 'OUTRA LTDA', porte_declarado: 'EMPRESA DE PEQUENO PORTE' }),
+      ])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('OUTRA LTDA')).toBeInTheDocument();
+    });
+    fireEvent.click(cartaoDesenquadrar());
+    await waitFor(() => {
+      expect(screen.queryByText('OUTRA LTDA')).toBeNull();
+    });
+    expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+  });
+
+  /**
+   * Ao contrário do contador que ele substituiu, o cartão NÃO some quando zera:
+   * a fileira tem largura fixa e uma coluna que aparece e desaparece faz os
+   * outros quatro cartões pularem de lugar entre uma competência e outra.
+   */
+  it('sem divergência o cartão continua na tela, zerado', async () => {
+    mockClassificacao.mockResolvedValue(resposta([linha()]));
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    expect(within(cartaoDesenquadrar()).getByText('0')).toBeInTheDocument();
+  });
+
+  it('o cartão "Sem dados" saiu da fileira', async () => {
+    mockClassificacao.mockResolvedValue(
+      resposta([linha({ porte: 'SEM_DADOS', sujeita_cota: null })])
+    );
+    render(<CotaAprendizagemTab />);
+    await waitFor(() => {
+      expect(screen.getByText('EMPRESA TESTE LTDA')).toBeInTheDocument();
+    });
+    // O selo da linha e a opção do filtro continuam existindo — o que saiu
+    // é o cartão, e é por ele que a asserção pergunta.
+    expect(screen.queryByRole('button', { name: /Sem dados/ })).toBeNull();
+    expect(screen.getByRole('option', { name: 'Sem dados' })).toBeInTheDocument();
   });
 });

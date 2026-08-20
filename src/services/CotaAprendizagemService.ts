@@ -45,6 +45,7 @@ import {
   detectarEventos,
   diagnosticar,
   divergenciaComSimples,
+  ehSociedadeDeAdvogados,
   receitaZeradaSuspeita,
   mesReferencia,
   bdrefDe,
@@ -169,6 +170,12 @@ export interface LinhaClassificacao extends ClienteCota {
   porte_anterior: Porte | null;
   mudou: boolean;
   eventos: Evento[];
+  /**
+   * Sociedade de advogados: o porte "Demais" do CNPJ é imposto pelo registro
+   * na OAB, não é cadastro atrasado. Derivado na leitura, como o diagnóstico —
+   * a classificação não usa isto, porque o porte sempre veio da receita.
+   */
+  sociedade_advogados: boolean;
   /**
    * Leitura pronta da situação: onde está, para onde vai e em que prazo.
    * Derivado na leitura (não é coluna) — assim mudar a redação não exige
@@ -508,8 +515,12 @@ export class CotaAprendizagemService {
    *    Sócio PJ domiciliado no exterior continua acusado, mas pelo inciso I:
    *    o que impede é ser PJ, não onde ela mora.
    *  - **Sócio advogado / OAB.** Não há vedação a sócio advogado no art. 3º
-   *    nem no 17. Sociedade de advogados pode ser ME/EPP (art. 3º-A) e até
-   *    optar pelo Simples (Anexo IV).
+   *    nem no 17: a advocacia está no Anexo IV do Simples (LC 123 art. 18,
+   *    §5º-C) e a sociedade goza dos mesmos benefícios de ME/EPP dentro dos
+   *    limites de receita. O que ela NÃO tem é o enquadramento CADASTRAL —
+   *    o registro é só na OAB (Lei 8.906/94 art. 15, §1º), fora dos órgãos
+   *    que o art. 3º da LC 123 exige, então o CNPJ fica em "Demais" para
+   *    sempre. Ver `ehSociedadeDeAdvogados` em cotaAprendizagem.rules.ts.
    *
    * Marcar os dois enchia a fila do jurídico com casos que a lei não questiona
    * — e fila cheia de falso positivo é fila que ninguém confere.
@@ -1120,7 +1131,9 @@ export class CotaAprendizagemService {
     // UPSERT e nunca apaga), e sem isto elas voltariam a aparecer duplicando a
     // PJ na tela, no e-mail e na planilha.
     const rows = await executeQuery<any>(
-      `SELECT cc.*, c.razao_social, c.cnpj_limpo, c.codigo_sci, c.uf, c.porte AS porte_declarado, c.abertura
+      `SELECT cc.*, c.razao_social, c.cnpj_limpo, c.codigo_sci, c.uf, c.porte AS porte_declarado,
+              c.abertura, c.natureza_juridica, c.atividade_principal_code,
+              c.atividade_principal_text
        FROM cota_classificacao_mensal cc
        INNER JOIN clientes c ON c.id = cc.cliente_id
        WHERE cc.bdref = ?
@@ -1148,6 +1161,11 @@ export class CotaAprendizagemService {
       uf: r.uf ?? null,
       porte_declarado: r.porte_declarado ?? null,
       abertura: dataParaIso(r.abertura),
+      sociedade_advogados: ehSociedadeDeAdvogados({
+        naturezaJuridica: r.natureza_juridica,
+        atividadePrincipalCodigo: r.atividade_principal_code,
+        atividadePrincipalTexto: r.atividade_principal_text,
+      }),
       ano: Number(r.ano),
       mes: Number(r.mes),
       bdref: Number(r.bdref),

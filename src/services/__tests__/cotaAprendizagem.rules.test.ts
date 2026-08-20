@@ -30,6 +30,10 @@ import {
   detectarEventos,
   diagnosticar,
   divergenciaComSimples,
+  divergenciaCadastro,
+  normalizarPorteDeclarado,
+  rotuloSituacao,
+  ehSociedadeDeAdvogados,
   receitaZeradaSuspeita,
   limitesRelevantes,
   type MesReceita,
@@ -848,5 +852,153 @@ describe('receita zerada — ausência de dado disfarçada de fato', () => {
 
   it('receita real no ano anterior não gera ressalva', () => {
     expect(z({ rbaaCentavos: 50_000_000 }).anoAnterior).toBe(false);
+  });
+});
+describe('sociedade de advogados — o "Demais" que o cadastro não pode mudar', () => {
+  /**
+   * Os três casos abaixo são clientes reais da carteira, e o terceiro é a razão
+   * de a detecção exigir natureza jurídica não-empresária: tem "ADVOGADOS" no
+   * nome e CNAE 69.11-7, mas é Sociedade Empresária Limitada de agente de
+   * propriedade industrial — registra na Junta e consta EPP normalmente.
+   */
+  const adv = (over: Partial<Parameters<typeof ehSociedadeDeAdvogados>[0]> = {}) =>
+    ehSociedadeDeAdvogados({
+      naturezaJuridica: '223-2 - Sociedade Simples Pura',
+      atividadePrincipalCodigo: '69.11-7-01',
+      atividadePrincipalTexto: 'Serviços advocatícios',
+      ...over,
+    });
+
+  it('sociedade simples com serviços advocatícios é sociedade de advogados', () => {
+    expect(adv()).toBe(true);
+  });
+
+  it('reconhece pelo texto da atividade quando o código não vem', () => {
+    expect(adv({ atividadePrincipalCodigo: null })).toBe(true);
+  });
+
+  it('natureza jurídica de advocacia dispensa conferir a atividade', () => {
+    expect(
+      ehSociedadeDeAdvogados({
+        naturezaJuridica: '232-1 - Sociedade Unipessoal de Advocacia',
+        atividadePrincipalCodigo: null,
+        atividadePrincipalTexto: null,
+      })
+    ).toBe(true);
+  });
+
+  it('sociedade EMPRESÁRIA com CNAE 69.11-7 não entra — registra na Junta', () => {
+    expect(
+      adv({
+        naturezaJuridica: '206-2 - Sociedade Empresária Limitada',
+        atividadePrincipalCodigo: '69.11-7-03',
+        atividadePrincipalTexto: 'Agente de propriedade industrial',
+      })
+    ).toBe(false);
+  });
+
+  it('as outras subclasses do 69.11-7 não constituem sociedade de advogados', () => {
+    expect(
+      adv({
+        atividadePrincipalCodigo: '69.11-7-02',
+        atividadePrincipalTexto: 'Atividades auxiliares da justiça',
+      })
+    ).toBe(false);
+  });
+
+  it('sociedade simples de outra atividade não entra', () => {
+    expect(
+      adv({
+        atividadePrincipalCodigo: '86.30-5-03',
+        atividadePrincipalTexto: 'Atividade médica ambulatorial',
+      })
+    ).toBe(false);
+  });
+
+  it('nome não é órgão de registro: sem natureza jurídica, devolve false', () => {
+    expect(adv({ naturezaJuridica: null })).toBe(false);
+    expect(adv({ naturezaJuridica: '   ' })).toBe(false);
+  });
+});
+describe('rótulo da situação — "Permanece" só quando não há nada a fazer', () => {
+  const r = (over: Partial<Parameters<typeof rotuloSituacao>[0]> = {}) =>
+    rotuloSituacao({
+      situacao: 'JA_SUJEITA',
+      porteApurado: 'DEMAIS',
+      declarado: 'DEMAIS',
+      ...over,
+    });
+
+  it('cadastro e apurado iguais: descreve o prazo, como antes', () => {
+    expect(r()).toBe('Permanece Demais');
+    expect(r({ situacao: 'DENTRO_DA_FAIXA', porteApurado: 'EPP', declarado: 'EPP' })).toBe(
+      'Permanece'
+    );
+    expect(r({ situacao: 'MUDA_EM_JANEIRO', porteApurado: 'EPP', declarado: 'EPP' })).toBe(
+      'Muda em 1º de janeiro'
+    );
+  });
+
+  it('consta EPP e a receita já dá Demais: cobra a providência', () => {
+    expect(r({ declarado: 'EPP' })).toBe('Deveria ser Demais');
+    expect(r({ declarado: 'ME' })).toBe('Deveria ser Demais');
+    // Inclusive quando a virada foi dentro do ano: o prazo já passou, o que
+    // falta é o cadastro.
+    expect(r({ situacao: 'MUDOU_NO_ANO', declarado: 'EPP' })).toBe('Deveria ser Demais');
+  });
+
+  it('consta Demais e caberia em ME/EPP: informa, sem cobrar', () => {
+    expect(r({ situacao: 'DENTRO_DA_FAIXA', porteApurado: 'EPP' })).toBe('Poderia ser EPP');
+    expect(r({ situacao: 'DENTRO_DA_FAIXA', porteApurado: 'ME' })).toBe('Poderia ser ME');
+  });
+
+  it('sociedade de advogados está onde deveria: segue "Permanece"', () => {
+    expect(
+      r({ situacao: 'DENTRO_DA_FAIXA', porteApurado: 'EPP', sociedadeAdvogados: true })
+    ).toBe('Permanece');
+  });
+
+  it('sem porte na Receita não há pendência a afirmar', () => {
+    expect(r({ declarado: null })).toBe('Permanece Demais');
+  });
+
+  it('sem dados de receita não vira pendência de cadastro', () => {
+    expect(r({ situacao: 'INDETERMINADO', porteApurado: 'SEM_DADOS', declarado: 'EPP' })).toBe(
+      'A conferir'
+    );
+  });
+});
+
+describe('normalizarPorteDeclarado — texto do cartão CNPJ vira sigla', () => {
+  it('traduz as três formas que a Receita grava', () => {
+    expect(normalizarPorteDeclarado('MICROEMPRESA')).toBe('ME');
+    expect(normalizarPorteDeclarado('MICRO EMPRESA')).toBe('ME');
+    expect(normalizarPorteDeclarado('EMPRESA DE PEQUENO PORTE')).toBe('EPP');
+    expect(normalizarPorteDeclarado('DEMAIS')).toBe('DEMAIS');
+  });
+
+  it('vazio, nulo ou desconhecido devolve null — sem porte, sem comparação', () => {
+    expect(normalizarPorteDeclarado(null)).toBeNull();
+    expect(normalizarPorteDeclarado('  ')).toBeNull();
+    expect(normalizarPorteDeclarado('COOPERATIVA')).toBeNull();
+  });
+});
+
+describe('divergenciaCadastro (motor) — mesma leitura da tela', () => {
+  it('consta ME/EPP com receita de Demais é o caso crítico', () => {
+    expect(divergenciaCadastro('EPP', 'DEMAIS')).toBe('DESENQUADRAR');
+    expect(divergenciaCadastro('EPP', 'DEMAIS', true)).toBe('DESENQUADRAR');
+  });
+
+  it('consta Demais com receita de ME/EPP depende de ser sociedade de advogados', () => {
+    expect(divergenciaCadastro('DEMAIS', 'EPP')).toBe('REENQUADRAR');
+    expect(divergenciaCadastro('DEMAIS', 'EPP', true)).toBe('REGISTRO_OAB');
+  });
+
+  it('ME × EPP, iguais, sem declarado ou sem dados: nada a apontar', () => {
+    expect(divergenciaCadastro('ME', 'EPP')).toBeNull();
+    expect(divergenciaCadastro('EPP', 'EPP')).toBeNull();
+    expect(divergenciaCadastro(null, 'DEMAIS')).toBeNull();
+    expect(divergenciaCadastro('EPP', 'SEM_DADOS')).toBeNull();
   });
 });
