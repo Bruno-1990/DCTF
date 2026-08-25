@@ -18,7 +18,6 @@ import relatoriosRoutes from './routes/relatorios';
 import spreadsheetRoutes from './routes/spreadsheet';
 import flagsRoutes from './routes/flags';
 import adminDashboardRoutes from './routes/admin-dashboard';
-import adminDashboardConferenceRoutes from './routes/admin-dashboard-conferences';
 import receitaRoutes from './routes/receita';
 import conferenciasRoutes from './routes/conferencias';
 import conferencesRoutes from './routes/conferences';
@@ -31,8 +30,10 @@ import cfopRoutes from './routes/cfop';
 import beneficiosRoutes from './routes/beneficios';
 import estudoViabilidadeRoutes from './routes/estudo-viabilidade';
 import cotaAprendizagemRoutes from './routes/cota-aprendizagem';
+import detRoutes from './routes/det';
 import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
 import substitutoScheduler from './services/SubstitutoScheduler';
+import detScheduler from './services/DetScheduler';
 
 class Server {
   private app: express.Application;
@@ -53,6 +54,8 @@ class Server {
     // Cota de aprendizagem: apuração mensal automática, atrás de COTA_SCHEDULER_ENABLED.
     cotaAprendizagemScheduler.start();
     substitutoScheduler.start();
+  // DET: varredura diária das caixas postais, atrás de DET_SCHEDULER_ENABLED.
+  detScheduler.start();
   }
 
   private setupMiddleware(): void {
@@ -146,7 +149,6 @@ class Server {
     this.app.use('/api/spreadsheet', spreadsheetRoutes);
     this.app.use('/api/flags', flagsRoutes);
     this.app.use('/api/dashboard/admin', adminDashboardRoutes);
-    this.app.use('/api/dashboard/admin/conferences', adminDashboardConferenceRoutes);
     // Limiters dedicados para rotas sensíveis (evita que o limiter global derrube o app inteiro)
     const receitaLimiter = rateLimit({
       windowMs: 60 * 1000, // 1 minute
@@ -184,6 +186,7 @@ class Server {
     this.app.use('/api/beneficios', beneficiosRoutes);
     this.app.use('/api/estudo-viabilidade', estudoViabilidadeRoutes);
     this.app.use('/api/cota-aprendizagem', cotaAprendizagemRoutes);
+    this.app.use('/api/det', detRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {

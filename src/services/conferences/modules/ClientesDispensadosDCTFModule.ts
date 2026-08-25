@@ -14,7 +14,7 @@
 import { randomUUID } from 'crypto';
 import { BASE_LEGAL_DISPENSADOS } from '../legislacao-dctf';
 import { executeQuery } from '../../../config/mysql';
-import { calcularCompetenciaVigente, parsePeriodo, formatarPeriodo } from '../utils/dateUtils';
+import { calcularCompetenciaVigente, parsePeriodo } from '../utils/dateUtils';
 import { normalizarCNPJ, formatarCNPJ } from '../utils/cnpjUtils';
 
 export interface ClienteDispensadoDCTF {

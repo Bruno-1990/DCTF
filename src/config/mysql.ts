@@ -3,8 +3,6 @@
  */
 
 import mysql, { Pool, PoolConnection, PoolOptions } from 'mysql2/promise';
-import config from './index';
-
 // Interface para configuração do MySQL
 interface MySQLConfig {
   host: string;
@@ -25,7 +23,13 @@ const mysqlConfig: MySQLConfig = {
   password: process.env['MYSQL_PASSWORD'] || '',
   database: process.env['MYSQL_DATABASE'] || 'dctf_web',
   charset: 'utf8mb4',
-  timezone: '+00:00',
+  // 'local' faz o mysql2 interpretar os TIMESTAMP no fuso do processo Node,
+  // que roda na mesma máquina e fuso do MySQL (Hora oficial do Brasil, -03:00).
+  // Antes, '+00:00' lia os horários gravados por NOW() (que é BRT) como se
+  // fossem UTC — deixando TODA data 3h "mais velha" ao serializar para o front:
+  // uma coleta de 1h atrás aparecia como "há 4h". Override por MYSQL_TIMEZONE
+  // (ex.: '-03:00' para fixar, já que o Brasil não usa mais horário de verão).
+  timezone: process.env['MYSQL_TIMEZONE'] || 'local',
   connectionLimit: parseInt(process.env['MYSQL_CONNECTION_LIMIT'] || '10', 10),
 };
 

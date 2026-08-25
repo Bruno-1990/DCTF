@@ -30,6 +30,7 @@ import {
   detectarEventos,
   diagnosticar,
   divergenciaComSimples,
+  ehConsorcio,
   divergenciaCadastro,
   normalizarPorteDeclarado,
   rotuloSituacao,
@@ -1000,5 +1001,115 @@ describe('divergenciaCadastro (motor) — mesma leitura da tela', () => {
     expect(divergenciaCadastro('EPP', 'EPP')).toBeNull();
     expect(divergenciaCadastro(null, 'DEMAIS')).toBeNull();
     expect(divergenciaCadastro('EPP', 'SEM_DADOS')).toBeNull();
+  });
+});
+describe('consórcio — fora do regime, não "acima do teto"', () => {
+  it('reconhece a natureza jurídica, com e sem acento', () => {
+    expect(ehConsorcio('215-1 - Consórcio de Sociedades')).toBe(true);
+    expect(ehConsorcio('215-1 - Consorcio de Sociedades')).toBe(true);
+    expect(ehConsorcio('CONSÓRCIO PÚBLICO DE DIREITO PRIVADO')).toBe(true);
+  });
+
+  it('não confunde com sociedade comum nem com campo vazio', () => {
+    expect(ehConsorcio('206-2 - Sociedade Empresária Limitada')).toBe(false);
+    expect(ehConsorcio('223-2 - Sociedade Simples Pura')).toBe(false);
+    expect(ehConsorcio(null)).toBe(false);
+    expect(ehConsorcio('')).toBe(false);
+  });
+
+  /**
+   * O caso que motivou a regra: o consórcio da carteira tem receita zerada no
+   * SCI, e receita zerada classificava como ME. O que impedia a tela de afirmar
+   * "ME, isenta" era o sócio PJ — um sinal acessório, que depende de a tabela de
+   * sócios estar preenchida. Sem ele, a linha declarava uma isenção
+   * juridicamente impossível.
+   */
+  it('receita zerada NÃO o torna ME, mesmo sem nenhum outro impedimento', () => {
+    const semRegra = classificar({
+      ano: 2026,
+      rbaaCentavos: 0,
+      mesesAnoCorrente: anoCompleto(0),
+      ateMes: 12,
+    });
+    expect(semRegra.porte).toBe('ME');
+    expect(semRegra.sujeitaCota).toBe(false); // o que a regra nova impede
+
+    const comRegra = classificar({
+      ano: 2026,
+      rbaaCentavos: 0,
+      mesesAnoCorrente: anoCompleto(0),
+      ateMes: 12,
+      semPersonalidade: true,
+    });
+    expect(comRegra.porte).toBe('DEMAIS');
+    expect(comRegra.motivo).toBe('SEM_PERSONALIDADE');
+    expect(comRegra.sujeitaCota).toBe(true);
+    expect(comRegra.semPersonalidade).toBe(true);
+  });
+
+  it('decide sozinho: não depende do sócio PJ estar cadastrado', () => {
+    const r = classificar({
+      ano: 2026,
+      rbaaCentavos: 10_000_00,
+      mesesAnoCorrente: anoCompleto(10_000_00),
+      ateMes: 12,
+      impedimentoSuspeita: false,
+      semPersonalidade: true,
+    });
+    expect(r.porte).toBe('DEMAIS');
+    expect(r.sujeitaCota).toBe(true);
+  });
+
+  it('receita alta não muda nada — já estava fora do regime', () => {
+    const r = classificar({
+      ano: 2026,
+      rbaaCentavos: 600_000_000, // R$ 6 mi
+      mesesAnoCorrente: anoCompleto(600_000_000),
+      ateMes: 12,
+      semPersonalidade: true,
+    });
+    expect(r.porte).toBe('DEMAIS');
+    // O motivo é a natureza jurídica, não o excesso: dizer "excedeu os 20%"
+    // descreveria uma perda de enquadramento que nunca existiu.
+    expect(r.motivo).toBe('SEM_PERSONALIDADE');
+  });
+
+  it('coleta incompleta não vira SEM_DADOS: a conclusão não depende de receita', () => {
+    const r = classificar({
+      ano: 2026,
+      rbaaCentavos: null,
+      mesesAnoCorrente: [],
+      ateMes: 12,
+      semPersonalidade: true,
+    });
+    expect(r.porte).toBe('DEMAIS');
+    expect(r.sujeitaCota).toBe(true);
+  });
+
+  it('o diagnóstico explica pela lei, e não pela receita', () => {
+    const r = classificar({
+      ano: 2026,
+      rbaaCentavos: 0,
+      mesesAnoCorrente: anoCompleto(0),
+      ateMes: 12,
+      semPersonalidade: true,
+    });
+    const d = diagnosticar({ resultado: r, ano: 2026 });
+    expect(d.sujeitaCota).toBe(true);
+    expect(d.resumo).toContain('personalidade jurídica');
+    expect(d.resumo).not.toContain('receita do ano anterior');
+  });
+
+  it('empresa comum segue classificada pela receita', () => {
+    const r = classificar({
+      ano: 2026,
+      rbaaCentavos: 10_000_00,
+      mesesAnoCorrente: anoCompleto(10_000_00),
+      ateMes: 12,
+      semPersonalidade: false,
+    });
+    expect(r.porte).toBe('ME');
+    expect(r.motivo).toBe('RBAA');
+    expect(r.semPersonalidade).toBe(false);
   });
 });

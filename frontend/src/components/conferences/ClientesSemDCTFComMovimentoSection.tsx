@@ -277,7 +277,7 @@ export function ClientesSemDCTFComMovimentoSection({
               <div className="space-y-4">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">DETALHES DA MOVIMENTAÇÃO</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="bg-white border border-gray-200 rounded-lg p-3">
                       <p className="text-xs text-gray-500 mb-1">Competência com Movimento</p>
                       <p className="text-base font-semibold text-gray-900">{modalCliente.competencia_movimento}</p>
@@ -396,7 +396,7 @@ export function ClientesSemDCTFComMovimentoSection({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-wrap items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
           <div className="text-sm font-semibold text-gray-700 bg-white px-5 py-2.5 rounded-xl border-2 border-gray-300">
             {loading ? (
               <span className="text-gray-500">Carregando...</span>

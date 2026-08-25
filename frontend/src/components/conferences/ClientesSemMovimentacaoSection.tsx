@@ -222,7 +222,7 @@ export function ClientesSemMovimentacaoSection({ clientes, loading = false, erro
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-wrap items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
           <div className="text-sm font-semibold text-gray-700 bg-white px-5 py-2.5 rounded-xl border-2 border-gray-300">
             {loading ? (
               <span className="text-gray-500">Carregando...</span>

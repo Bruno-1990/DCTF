@@ -52,7 +52,7 @@ async function main() {
       const { rows: ocRows } = await ocPool.query<{ tributacao: string | null }>(
         `SELECT tributacao
          FROM public.clientes
-         WHERE regexp_replace(documento, '\\D', '', 'g') = $1
+         WHERE regexp_replace(documento, '[^0-9]', '', 'g') = $1
            AND tipo_documento = 'CNPJ'
            AND empresa_id = $2
          LIMIT 1`,

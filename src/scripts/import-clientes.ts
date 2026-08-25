@@ -7,8 +7,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import csvParser from 'csv-parser';
 import { Cliente } from '../models/Cliente';
-import { supabase } from '../config/database';
-
 interface CSVRow {
   'Número de Identificação': string;
   'CNPJ LIMPO': string;

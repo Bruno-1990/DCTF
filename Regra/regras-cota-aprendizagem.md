@@ -80,6 +80,7 @@ Os R$ 4.800.000,00 do art. 3º, II definem quem **é** empresa de pequeno porte;
 |---|---|---|
 | **Sócio pessoa jurídica** | **Sim** — §4º, I. Basta existir qualquer PJ no quadro, de qualquer natureza. Vedação "para nenhum efeito legal", não só tributária. | Sim, por consequência |
 | Sócio domiciliado no exterior | Não. O art. 3º não veda por domicílio de sócio. | Sim — art. 17, II (só o **ingresso** no Simples) |
+| **Consórcio** (natureza jurídica 215-1) | **Sim, e de forma absoluta** — não tem personalidade jurídica (Lei 6.404/76 art. 278 §1º) e não é sujeito do art. 3º. Ver 2.4. | Sim, por consequência |
 | Sócio advogado / sociedade de advogados | Não. Não há vedação por sócio advogado, e a sociedade goza dos benefícios de ME/EPP dentro dos limites de receita — o que ela não consegue é o **enquadramento cadastral**, ver 2.3. | Não — advocacia está no Anexo IV (art. 18, §5º-C) |
 
 Consequência para o sistema: **só o sócio PJ** entra como motivo de revisão do enquadramento. Sócio PJ *domiciliado no exterior* continua sendo acusado — mas pelo inciso I, porque é PJ, não por onde ela mora. Marcar exterior e advogado enchia a fila do jurídico com casos que a lei não questiona.
@@ -115,6 +116,27 @@ Sem essa terceira leitura, a tela mandava o Fiscal atrás de um pedido que a lei
 
 ---
 
+### 2.4 Consórcio — fora do regime, não "acima do teto"
+
+**Consórcio não pode ser ME nem EPP, por receita nenhuma.** É o inverso do caso da seção 2.3: a sociedade de advogados *é* ME/EPP em substância e só não consegue a anotação no cadastro; o consórcio não é ME/EPP nem em substância.
+
+| Norma | O que diz | Impacto |
+|---|---|---|
+| **Lei 6.404/76, art. 278, §1º** | "O consórcio não tem personalidade jurídica e as consorciadas somente se obrigam nas condições previstas no respectivo contrato." | Não é sociedade nem empresário: é união contratual entre empresas **que já existem**, para executar um empreendimento específico (arts. 278 e 279). |
+| **LC 123/2006, art. 3º** | Alcança a sociedade empresária, a sociedade simples, a EIRELI e o empresário do art. 966 do CC, registrados no Registro de Empresas Mercantis ou no RCPJ. | O consórcio não é nenhum desses sujeitos e não está em nenhum desses registros — logo, **não há faixa de receita que o enquadre**. |
+| **LC 123/2006, art. 3º, §4º, I** | Veda o enquadramento quando há pessoa jurídica no capital. | Chega à mesma conclusão pelo outro caminho: o quadro do consórcio é todo de PJs. |
+
+**Consequência para a cota:** sem enquadramento diferenciado, a isenção do art. 3º, I da IN 146/2018 não alcança. O motor classifica o consórcio como **Demais** com motivo próprio (`SEM_PERSONALIDADE`), e não pela receita.
+
+**Por que isto DECIDE, e o sócio PJ apenas sinaliza.** O quadro societário vem de um retrato do cartão CNPJ que pode estar meses desatualizado — daí a suspeita de sócio PJ só ligar `revisar_juridico` sem mudar o porte. A natureza jurídica não é retrato: é o que a empresa **é**, e um consórcio não vira sociedade no mês seguinte.
+
+**O que isso corrigiu.** O consórcio da carteira tem receita zerada no SCI, e receita zerada classificava como **ME**. Ele não saiu como "isenta" por sorte: o sócio PJ derrubou a conclusão para indefinida. Ou seja, o que impedia a tela de afirmar uma isenção juridicamente impossível era um sinal acessório, que depende de a tabela de sócios estar preenchida — com o quadro vazio, a mesma linha diria "ME, isenta".
+
+**Detecção** (`ehConsorcio`, em `src/services/cotaAprendizagem.rules.ts`): natureza jurídica contendo "consórcio", com ou sem acento — cobre a 215-1 (Consórcio de Sociedades) e as naturezas de consórcio público. Motor 1.2.0.
+
+> **Adjacente, ainda não tratado:** "Grupo de Sociedades" (216-0, arts. 265 a 277 da mesma lei) também é união sem personalidade própria. Não há cliente com essa natureza na carteira; se aparecer, a regra provavelmente deve alcançá-lo.
+
+---
 ## 3. Cálculo da cota (para empresas "Demais")
 
 ### 3.1 Base de cálculo

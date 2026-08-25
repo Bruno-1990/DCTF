@@ -228,7 +228,7 @@ export function DCTFsForaDoPrazoSection({ dctfs, loading = false, error = null, 
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-wrap items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
           <SeverityTag severity={dctfsPorProcuracao.length > 0 ? (dctfsPorProcuracao.length > 10 ? 'high' : 'medium') : 'low'} />
           {!loading && dctfs.length > 0 && (
             <motion.button

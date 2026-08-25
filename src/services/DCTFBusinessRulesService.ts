@@ -7,8 +7,6 @@ import { createSupabaseAdapter } from './SupabaseAdapter';
 
 const supabase = createSupabaseAdapter() as any;
 import { DCTFValidationService } from './DCTFValidationService';
-import { DCTFCalculationService } from './DCTFCalculationService';
-
 export interface BusinessRuleResult {
   isValid: boolean;
   errors: string[];

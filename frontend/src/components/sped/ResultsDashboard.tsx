@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ChartBarIcon, ArrowDownTrayIcon, ArrowPathIcon, DocumentCheckIcon, ExclamationTriangleIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline';
 import { spedService } from '../../services/sped';
-import DivergenciasTable from './DivergenciasTable';
 import DivergenciasValoresConferencia from './DivergenciasValoresConferencia';
 import DivergenciasInteligentes from './DivergenciasInteligentes';
 import AjusteSpedComponent from './AjusteSpedComponent';

@@ -2,17 +2,16 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   HomeIcon,
-  Squares2X2Icon,
   ClipboardDocumentCheckIcon,
   DocumentTextIcon,
   UsersIcon,
   ChartBarIcon,
-  ClockIcon,
   CodeBracketIcon,
   DocumentCheckIcon,
   CurrencyDollarIcon,
   GiftIcon,
   ScaleIcon,
+  BriefcaseIcon,
 } from '@heroicons/react/24/outline';
 import {
   PaperClipIcon,
@@ -20,18 +19,17 @@ import {
 
 const navigation = [
   { name: 'Visão Geral', href: '/', icon: HomeIcon },
-  { name: 'Dashboard', href: '/dashboard', icon: Squares2X2Icon },
   { name: 'Conferências', href: '/conferencias', icon: ClipboardDocumentCheckIcon },
   { name: 'DCTF', href: '/dctf', icon: DocumentTextIcon },
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },
   { name: 'Relatórios', href: '/relatorios', icon: ChartBarIcon },
   { name: 'Situação Fiscal', href: '/situacao-fiscal', icon: DocumentTextIcon },
-  { name: 'SCI - Banco de Horas', href: '/sci/banco-horas', icon: ClockIcon },
   { name: 'SCI - Gerador SQL', href: '/sci/gerador-sql', icon: CodeBracketIcon },
   { name: 'SPED Validação', href: '/sped', icon: DocumentCheckIcon },
   { name: 'IRPF 2026', href: '/irpf-2026', icon: CurrencyDollarIcon },
   { name: 'Benefícios', href: '/beneficios', icon: GiftIcon },
   { name: 'Legalização', href: '/legalizacao', icon: ScaleIcon },
+  { name: 'Trabalhista', href: '/trabalhista', icon: BriefcaseIcon },
 ];
 
 interface SidebarProps {

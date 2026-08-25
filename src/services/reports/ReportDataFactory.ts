@@ -8,7 +8,6 @@ import {
   ClientesReportStatusSummary,
   DCTFReportData,
   DCTFConferenciaReportItem,
-  DCTFReportItem,
   ConferenceReportData,
   PendentesReportData,
   PendentesReportItem,

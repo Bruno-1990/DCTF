@@ -834,11 +834,11 @@ export default function SituacaoFiscal() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-6 border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+      <div className="mb-6 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
+        <nav className="-mb-px flex space-x-8 min-w-max">
           <button
             onClick={() => setActiveTab('consulta')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === 'consulta'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -851,7 +851,7 @@ export default function SituacaoFiscal() {
           </button>
           <button
             onClick={() => setActiveTab('empresas')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === 'empresas'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -869,7 +869,7 @@ export default function SituacaoFiscal() {
           </button>
           <button
             onClick={() => setActiveTab('lixeira')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === 'lixeira'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -987,15 +987,15 @@ export default function SituacaoFiscal() {
                 </span>
               )}
             </h2>
-            <div className="flex items-center gap-2">
-              <div className="relative">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-auto">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
                   value={historyFilter}
                   onChange={(e) => setHistoryFilter(e.target.value)}
                   placeholder="Digite o CNPJ para filtrar..."
-                  className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+                  className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full sm:w-64"
                 />
               </div>
             </div>
@@ -1102,7 +1102,7 @@ export default function SituacaoFiscal() {
             <div className="text-sm text-gray-600">
               Mostrando {history.length > 0 ? ((historyPage - 1) * historyLimit) + 1 : 0} a {Math.min(historyPage * historyLimit, historyTotal)} de {historyTotal} registros
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap justify-center items-center gap-2">
               <button
                 onClick={() => {
                   const newPage = historyPage - 1;
@@ -1253,7 +1253,7 @@ export default function SituacaoFiscal() {
             
             if (filteredCompanies.length > 0) {
               return (
-                <div className="px-6 py-3 bg-gray-100 border-b border-gray-200">
+                <div className="hidden sm:block px-6 py-3 bg-gray-100 border-b border-gray-200">
                   <div className="grid grid-cols-12 gap-4 items-center">
                     <div className="col-span-5">
                       <span className="text-xs font-semibold text-gray-600 uppercase">Empresa</span>
@@ -1324,9 +1324,9 @@ export default function SituacaoFiscal() {
                       className="px-6 py-4 cursor-pointer"
                       onClick={() => toggleCompany(company.cnpj)}
                     >
-                      <div className="grid grid-cols-12 gap-4 items-center">
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4 sm:items-center">
                         {/* Coluna do Chevron e Nome */}
-                        <div className="col-span-5 flex items-center gap-3 min-w-0">
+                        <div className="sm:col-span-5 flex items-center gap-3 min-w-0">
                           {isExpanded ? (
                             <ChevronDownIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
                           ) : (
@@ -1361,7 +1361,7 @@ export default function SituacaoFiscal() {
                         </div>
                         
                         {/* Coluna Status */}
-                        <div className="col-span-3 flex items-center justify-center">
+                        <div className="sm:col-span-3 flex items-center justify-start sm:justify-center">
                           {(() => {
                             const certidaoStatus = getCertidaoStatus(company.registros);
                             if (certidaoStatus) {
@@ -1382,7 +1382,7 @@ export default function SituacaoFiscal() {
                         </div>
                         
                         {/* Coluna Ações */}
-                        <div className="col-span-4 flex items-center justify-end">
+                        <div className="sm:col-span-4 flex flex-wrap items-center justify-start sm:justify-end">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

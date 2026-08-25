@@ -83,11 +83,6 @@ export async function fetchAdminDashboardRecords(months = 5): Promise<DashboardD
   return recentRecords;
 }
 
-export async function getAdminDashboardSnapshot(months = 5): Promise<AdminDashboardSnapshot> {
-  const records = await fetchAdminDashboardRecords(months);
-  return buildAdminDashboardSnapshot({ records });
-}
-
 export function buildAdminDashboardSnapshot(
   options: BuildAdminDashboardSnapshotOptions
 ): AdminDashboardSnapshot {

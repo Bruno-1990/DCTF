@@ -4,8 +4,6 @@
  */
 
 import { executeQuery, getConnection } from '../config/mysql';
-import { ApiResponse } from '../types';
-
 export interface SupabaseQueryBuilder {
   from(table: string): SupabaseQueryBuilder;
   select(columns?: string, options?: { count?: 'exact'; head?: boolean }): SupabaseQueryBuilder;

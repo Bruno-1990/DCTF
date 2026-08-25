@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { clientesService } from '../../services/clientes';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import Alert from '../UI/Alert';

@@ -5,8 +5,7 @@
 
 import 'dotenv/config';
 import { executeCrud } from './mysql-crud';
-import { executeSQL, executeModification } from './mysql-query';
-import { v4 as uuidv4 } from 'uuid';
+import { executeSQL } from './mysql-query';
 
 async function demo() {
   console.log('🚀 Demonstração de CRUD MySQL\n');

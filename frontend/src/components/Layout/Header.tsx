@@ -2,7 +2,6 @@ import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   HomeIcon,
-  Squares2X2Icon,
   ClipboardDocumentCheckIcon,
   DocumentTextIcon,
   UsersIcon,
@@ -12,7 +11,6 @@ import {
 
 const navigation = [
   { name: 'Início', href: '/', icon: HomeIcon },
-  { name: 'Dashboard', href: '/dashboard', icon: Squares2X2Icon },
   { name: 'Conferências', href: '/conferencias', icon: ClipboardDocumentCheckIcon },
   { name: 'DCTF', href: '/dctf', icon: DocumentTextIcon },
   { name: 'Clientes', href: '/clientes', icon: UsersIcon },

@@ -172,7 +172,7 @@ function DivergenciaRow({ divergencia }: { divergencia: DivergenciaValor }) {
 
   return (
     <div className="pl-6 pr-4 py-3 border-b border-gray-200 bg-white hover:bg-gray-50 transition-colors">
-      <div className="grid grid-cols-4 gap-4 items-center">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
       {/* Campo */}
       <div className="flex items-center gap-2 min-w-[120px]">
         <SeverityTag severity={divergencia.severidade} />
@@ -721,7 +721,7 @@ const DivergenciasValoresConferencia: React.FC<Props> = ({ divergencias, notesDf
                     {isExpanded && (
                       <div className="bg-gray-50 border-t border-gray-200">
                         {/* Cabeçalho da tabela */}
-                        <div className="pl-6 pr-4 py-2 bg-white border-b border-gray-300 grid grid-cols-4 gap-4 text-xs font-semibold text-gray-700">
+                        <div className="pl-6 pr-4 py-2 bg-white border-b border-gray-300 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-semibold text-gray-700">
                           <div className="min-w-[120px]">CAMPO</div>
                           <div className="min-w-[150px]">XML</div>
                           <div className="min-w-[150px]">SPED</div>

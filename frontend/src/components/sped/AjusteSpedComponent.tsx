@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   WrenchScrewdriverIcon, 
   ArrowDownTrayIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon 
+  CheckCircleIcon 
 } from '@heroicons/react/24/outline';
 import { spedService } from '../../services/sped';
 
@@ -140,7 +139,7 @@ const AjusteSpedComponent: React.FC<AjusteSpedComponentProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <p className="text-sm text-gray-600">Total de Ajustes</p>
             <p className="text-2xl font-bold text-blue-600">{ajustes.length}</p>

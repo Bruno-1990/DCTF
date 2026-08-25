@@ -40,6 +40,8 @@
     "migrate:sitf-extracted": "ts-node src/scripts/run-sitf-migration.ts",
     "migrate:clientes-receitaws": "ts-node src/scripts/migrate-clientes-receitaws-fields.ts",
     "migrate:clientes-ativo": "ts-node --transpile-only src/scripts/run-clientes-ativo-migration.ts",
+    "migrate:det": "ts-node --transpile-only src/scripts/run-det-migration.ts",
+    "det:coleta": "ts-node --transpile-only src/scripts/run-det-coleta.ts",
     "verify:clientes-schema": "ts-node src/scripts/verify-clientes-schema.ts",
     "fix:clientes-schema": "ts-node src/scripts/fix-clientes-schema.ts",
     "test:clientes-persistence": "ts-node src/scripts/test-clientes-persistence.ts",
@@ -56,7 +58,10 @@
     "prebuild": "npm run clean",
     "type-check": "tsc --noEmit",
     "lint:unused": "knip",
-    "deps:check": "depcheck"
+    "deps:check": "depcheck",
+    "det:procuracoes:dry": "ts-node src/scripts/det-procuracoes-sync.ts --dry",
+    "det:procuracoes": "ts-node src/scripts/det-procuracoes-sync.ts",
+    "det:migrate:046": "ts-node src/scripts/run-det-migration-046.ts"
   },
   "keywords": [
     "dctf",
@@ -99,6 +104,7 @@
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.13.0",
     "pg": "^8.22.0",
+    "puppeteer-core": "^25.8.0",
     "sharp": "^0.33.5",
     "socket.io": "^4.8.1",
     "task-master-ai": "^0.18.0",

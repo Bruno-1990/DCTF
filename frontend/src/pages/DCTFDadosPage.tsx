@@ -275,7 +275,7 @@ export default function DCTFDadosPage() {
         </div>
       </div>
       {showAnalysis && analysis && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40" onClick={() => setShowAnalysis(false)}>
+        <div className="fixed inset-0 p-4 bg-black/40 flex items-center justify-center z-40" onClick={() => setShowAnalysis(false)}>
           <div className="bg-white rounded shadow-lg max-w-5xl w-full p-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-lg font-semibold">Análise e Plano de Ação</h2>

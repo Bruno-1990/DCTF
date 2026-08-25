@@ -3,7 +3,7 @@
  * Gerencia códigos válidos, categorização e validações específicas
  */
 
-import { DCTFCode, DCTFReceitaCode, DCTFAliquota, IDCTFCode } from '../models/DCTFCode';
+import { DCTFCode, DCTFReceitaCode, DCTFAliquota } from '../models/DCTFCode';
 import { DCTFValidationService } from './DCTFValidationService';
 
 export interface CodeCategory {

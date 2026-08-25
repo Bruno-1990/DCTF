@@ -98,7 +98,7 @@ const ModalConfirmacaoCorrecoes: React.FC<ModalConfirmacaoCorrecoesProps> = ({
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
-                    className="grid grid-cols-2 gap-4"
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-4"
                   >
                     {/* Total de Correções */}
                     <motion.div
@@ -139,7 +139,7 @@ const ModalConfirmacaoCorrecoes: React.FC<ModalConfirmacaoCorrecoesProps> = ({
                     className="bg-gray-50 rounded-xl p-5 border border-gray-200"
                   >
                     <p className="text-sm font-semibold text-gray-700 mb-4">Distribuição por Prioridade</p>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       <motion.div
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}

@@ -115,11 +115,11 @@ const Beneficios: React.FC = () => {
 
       {/* Tabs */}
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 mb-6 overflow-hidden">
-        <div className="px-6 pt-4 pb-2">
-          <div className="flex space-x-1">
+        <div className="px-6 pt-4 pb-2 overflow-x-auto overflow-y-hidden">
+          <div className="flex space-x-1 min-w-max">
             {TABS.map(tab => (
               <button key={tab.id} type="button" onClick={() => trocarAba(tab.id)}
-                className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative ${
+                className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                   activeTab === tab.id
                     ? `bg-gradient-to-r ${tab.gradient} text-white shadow-lg transform scale-105`
                     : 'text-gray-600 hover:text-gray-900 hover:bg-white'
@@ -316,10 +316,10 @@ const BeneficioTab: React.FC<BeneficioTabProps> = ({ columns, importar, listar, 
             <TrashIcon className="h-4 w-4" /> Limpar tudo
           </button>
         )}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex flex-wrap items-center gap-3">
           <form onSubmit={(e) => { e.preventDefault(); carregar(1); }} className="flex items-center gap-2">
             <input type="text" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar razão social, CNPJ ou município..."
-              className={`w-72 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${accent.ring}`} />
+              className={`w-full sm:w-72 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${accent.ring}`} />
             <button type="submit" className={`p-2 text-gray-500 hover:text-${accentColor}-600`}><MagnifyingGlassIcon className="h-5 w-5" /></button>
           </form>
           <button type="button" onClick={() => { setCompVisible(true); carregarComp(1); }}
@@ -370,7 +370,7 @@ const BeneficioTab: React.FC<BeneficioTabProps> = ({ columns, importar, listar, 
 
       {/* Modal Confirmar Exclusão */}
       {confirmLimpar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => !limpando && setConfirmLimpar(false)}>
+        <div className="fixed inset-0 p-4 z-50 flex items-center justify-center" onClick={() => !limpando && setConfirmLimpar(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
@@ -389,7 +389,7 @@ const BeneficioTab: React.FC<BeneficioTabProps> = ({ columns, importar, listar, 
 
       {/* Modal Comparação */}
       {compVisible && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setCompVisible(false)}>
+        <div className="fixed inset-0 p-4 z-50 flex items-center justify-center" onClick={() => setCompVisible(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col mx-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">

@@ -98,7 +98,8 @@ const DCTFPage: React.FC = () => {
   const [periodosTransmissaoDisponiveis, setPeriodosTransmissaoDisponiveis] = useState<string[]>([]);
   const [mostrarTodosComProcuracao, setMostrarTodosComProcuracao] = useState(false);
 
-  // Ler parâmetro de busca da URL ao carregar a página (vindo do Dashboard)
+  // Ler parâmetro de busca da URL ao carregar a página: /dctf?search=... continua
+  // valendo como link direto, embora nada no sistema o gere hoje.
   useEffect(() => {
     const searchFromUrl = searchParams.get('search');
     if (searchFromUrl) {

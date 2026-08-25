@@ -262,7 +262,7 @@ export function ClientesSemDCTFVigenteSection({
               <div className="space-y-4">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">DETALHES DA COMPETÊNCIA</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="bg-white border border-gray-200 rounded-lg p-3">
                       <p className="text-xs text-gray-500 mb-1">Competência</p>
                       <p className="text-base font-semibold text-amber-600">{modalCliente.competencia_vigente}</p>
@@ -370,7 +370,7 @@ export function ClientesSemDCTFVigenteSection({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-wrap items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
           <div className="text-sm font-semibold text-gray-700 bg-white px-5 py-2.5 rounded-xl border-2 border-gray-300">
             {loading ? (
               <span className="text-gray-500">Carregando...</span>

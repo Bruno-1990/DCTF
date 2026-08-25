@@ -57,11 +57,14 @@ export const LIMITE_SIMPLES_CENTAVOS = LIMITE_EPP_CENTAVOS;
  *
  * 1.1.0 — sócio no exterior e sócio advogado deixaram de pedir revisão (não são
  *         impedimento do art. 3º §4º); entrou a divergência com o Simples.
+ * 1.2.0 — consórcio deixou de ser classificado pela receita: sem personalidade
+ *         jurídica (Lei 6.404/76 art. 278 §1º), não é sujeito do art. 3º da
+ *         LC 123 e não pode ser ME/EPP por receita nenhuma.
  */
-export const MOTOR_VERSAO = '1.1.0';
+export const MOTOR_VERSAO = '1.2.0';
 
 export type Porte = 'ME' | 'EPP' | 'DEMAIS' | 'SEM_DADOS';
-export type MotivoPorte = 'RBAA' | 'EXCESSO_20PCT' | 'SEM_DADOS';
+export type MotivoPorte = 'RBAA' | 'EXCESSO_20PCT' | 'SEM_DADOS' | 'SEM_PERSONALIDADE';
 
 /**
  * A REGRA, em uma frase: passar de R$ 4,8 mi já torna a empresa Demais — o que
@@ -271,6 +274,11 @@ export interface EntradaClassificacao {
   ateMes: number;
   /** Suspeita de sócio PJ no capital. SINALIZA, não decide — ver abaixo. */
   impedimentoSuspeita?: boolean;
+  /**
+   * Consórcio: sem personalidade jurídica, não é sujeito do art. 3º da LC 123.
+   * Ao contrário da suspeita de sócio PJ, este DECIDE — ver `ehConsorcio`.
+   */
+  semPersonalidade?: boolean;
   /** Empresa aberta no próprio ano: limite seria proporcional (art. 3º §2º). */
   inicioAtividade?: boolean;
 }
@@ -300,6 +308,8 @@ export interface ResultadoClassificacao {
   revisarJuridico: boolean;
   /** Há sócio PJ no quadro — o art. 3º §4º, I afasta ME/EPP por si só. */
   impedimentoSocietario: boolean;
+  /** Consórcio: fora do regime da LC 123, não "acima do teto". */
+  semPersonalidade: boolean;
 }
 
 /**
@@ -340,6 +350,7 @@ export function classificar(entrada: EntradaClassificacao): ResultadoClassificac
     ateMes,
     impedimentoSuspeita = false,
     inicioAtividade = false,
+    semPersonalidade = false,
   } = entrada;
 
   const serie = acumularSerie(mesesAnoCorrente, ateMes);
@@ -368,7 +379,15 @@ export function classificar(entrada: EntradaClassificacao): ResultadoClassificac
   let mesFatoAplicado: number | null = null;
   let dataEfeito: string | null = null;
 
-  if (excessoImediato) {
+  if (semPersonalidade) {
+    // Antes de qualquer conta: consórcio não é sujeito do art. 3º da LC 123, e
+    // por isso não há faixa de receita que o enquadre. Cai em "Demais" porque é
+    // assim que este motor representa "não faz jus ao tratamento diferenciado"
+    // — e não porque tenha estourado teto nenhum. O motivo próprio existe para
+    // a tela e a planilha não dizerem "pela receita do ano anterior".
+    porte = 'DEMAIS';
+    motivo = 'SEM_PERSONALIDADE';
+  } else if (excessoImediato) {
     porte = 'DEMAIS';
     motivo = 'EXCESSO_20PCT';
     // A antecipação é contada do mês em que passou de R$ 5,76 mi.
@@ -420,6 +439,7 @@ export function classificar(entrada: EntradaClassificacao): ResultadoClassificac
     dadoConfiavel,
     revisarJuridico,
     impedimentoSocietario: impedimentoSuspeita,
+    semPersonalidade,
   };
 }
 
@@ -452,6 +472,42 @@ export function divergenciaComSimples(input: {
   return rbaCentavos > LIMITE_SIMPLES_CENTAVOS;
 }
 
+// ─── Consórcio: fora do regime, não "acima do teto" ─────────────────────────
+
+/**
+ * A empresa é um consórcio — e consórcio NÃO PODE ser ME ou EPP, por receita
+ * nenhuma.
+ *
+ * O motivo é anterior a qualquer conta: o consórcio dos arts. 278 e 279 da Lei
+ * 6.404/76 **não tem personalidade jurídica** (art. 278, §1º). Ele é uma união
+ * contratual entre empresas que já existem, para executar um empreendimento
+ * específico — não é sociedade, não é empresário, e não está registrado no
+ * Registro de Empresas Mercantis nem no RCPJ. O art. 3º da LC 123 lista
+ * exatamente esses sujeitos, e o consórcio não é nenhum deles.
+ *
+ * Some-se o art. 3º, §4º, I: o consórcio é composto de pessoas jurídicas, o que
+ * afastaria o enquadramento mesmo que a personalidade existisse. São dois
+ * fundamentos independentes para a mesma conclusão.
+ *
+ * POR QUE ISTO DECIDE, e não apenas sinaliza — ao contrário do sócio PJ. O
+ * quadro societário vem de um retrato do cartão CNPJ que pode estar meses
+ * desatualizado, e por isso a suspeita ali só liga `revisar_juridico`. A
+ * natureza jurídica não é retrato: é o que a empresa É. Um consórcio não vira
+ * sociedade no mês seguinte.
+ *
+ * O QUE ISSO CORRIGE. Sem esta regra o motor classificava pela receita, e o
+ * consórcio da base — receita zerada no SCI — saía como **ME**. Não virou
+ * "isenta" por sorte: o sócio PJ derrubou a conclusão para `null`. Ou seja, o
+ * que impedia a tela de afirmar uma isenção juridicamente impossível era um
+ * sinal acessório, que depende de a tabela de sócios estar preenchida. Com o
+ * quadro vazio, a mesma linha diria "ME, isenta".
+ */
+export function ehConsorcio(naturezaJuridica: string | null | undefined): boolean {
+  // Cobre "215-1 - Consórcio de Sociedades" e as demais naturezas de consórcio
+  // (inclusive as públicas), com ou sem acento — o campo vem digitado do
+  // cadastro e nem sempre acentuado.
+  return /cons[óo]rcio/i.test(String(naturezaJuridica ?? ''));
+}
 // ─── Sociedade de advogados: o "Demais" que não é cadastro atrasado ──────────
 
 /**
@@ -680,6 +736,9 @@ export function diagnosticar(input: {
   // Já é Demais: não há próximo nível, a cota é exigível.
   if (r.porte === 'DEMAIS') {
     const porExcesso = r.motivo === 'EXCESSO_20PCT';
+    // O consórcio também cai aqui, mas a frase não pode falar em receita: ele
+    // não estourou teto, está fora do regime.
+    const semPersonalidade = r.motivo === 'SEM_PERSONALIDADE';
     return {
       porteAtual: 'DEMAIS',
       proximoPorte: null,
@@ -689,9 +748,11 @@ export function diagnosticar(input: {
       percentualDoLimite: null,
       dataEfeito: r.dataEfeito,
       sujeitaCota: true,
-      resumo: porExcesso
-        ? `Passou de ${brl(LIMITE_20PCT_CENTAVOS)} em ${mesPorExtenso(r.mesFatoAplicado ?? 0)} — mais de 20% acima do teto de EPP. Deixou de ser EPP ainda neste ano e a cota de aprendizagem passou a ser exigível.`
-        : `Enquadrada como Demais pela receita do ano anterior. A cota de aprendizagem é exigível.`,
+      resumo: semPersonalidade
+        ? 'Consórcio não tem personalidade jurídica (Lei 6.404/76, art. 278, §1º) e não é sujeito do art. 3º da LC 123 — não pode ser ME nem EPP por receita nenhuma. Sem enquadramento diferenciado, a isenção da cota não alcança.'
+        : porExcesso
+          ? `Passou de ${brl(LIMITE_20PCT_CENTAVOS)} em ${mesPorExtenso(r.mesFatoAplicado ?? 0)} — mais de 20% acima do teto de EPP. Deixou de ser EPP ainda neste ano e a cota de aprendizagem passou a ser exigível.`
+          : `Enquadrada como Demais pela receita do ano anterior. A cota de aprendizagem é exigível.`,
     };
   }
 

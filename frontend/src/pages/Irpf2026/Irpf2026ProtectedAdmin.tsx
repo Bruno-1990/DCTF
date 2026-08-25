@@ -2,8 +2,6 @@
  * Protege rotas da área administrativa IRPF 2026.
  * Redireciona para login se não autenticado; para cliente se não for admin.
  */
-
-import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useIrpf2026Auth } from '../../contexts/Irpf2026AuthContext';
 

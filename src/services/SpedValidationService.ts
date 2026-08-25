@@ -3,7 +3,6 @@ import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { v4 as uuidv4 } from 'uuid';
 import ExcelJS from 'exceljs';
 
 const execAsync = promisify(exec);

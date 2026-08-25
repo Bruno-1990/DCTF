@@ -1025,7 +1025,7 @@ const Administracao: React.FC = () => {
   if (!isAuthenticated || showLoginModal) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 p-4 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full mx-4">
             <div className="flex items-center justify-center mb-6">
               <div className="bg-blue-100 rounded-full p-3">
@@ -1192,7 +1192,7 @@ const Administracao: React.FC = () => {
 
       {/* Modal de Confirmação */}
       {showClearModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 p-4 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-start mb-4">
               <ExclamationTriangleIcon className="h-6 w-6 text-red-600 mr-3 mt-1" />
@@ -1548,7 +1548,7 @@ const Administracao: React.FC = () => {
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-4 gap-4 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-800">{razaoResultado.total}</div>
                     <div className="text-sm text-gray-600">Clientes</div>

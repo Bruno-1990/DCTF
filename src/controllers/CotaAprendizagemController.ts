@@ -40,6 +40,8 @@ const ROTULO_MOTIVO: Record<string, string> = {
   RBAA: 'Receita do ano anterior',
   EXCESSO_20PCT: 'Excedeu os 20%',
   SEM_DADOS: 'Sem dados suficientes',
+  // Consórcio: não é 'acima do teto', é fora do regime da LC 123.
+  SEM_PERSONALIDADE: 'Consórcio — fora do regime',
 };
 
 const ROTULO_RESSALVA: Record<string, string> = {

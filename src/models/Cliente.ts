@@ -3,12 +3,12 @@
  * Implementa validações e operações CRUD específicas
  */
 
-import { DatabaseService, SupabaseAdapterType } from '../services/DatabaseService';
+import { DatabaseService } from '../services/DatabaseService';
 import { Cliente as ICliente, ClienteSocio, ApiResponse } from '../types';
 import Joi from 'joi';
 import { v4 as uuidv4 } from 'uuid';
 import { ReceitaWSService, ReceitaWSResponseOk } from '../services/ReceitaWSService';
-import { OneClickService, OneClickCliente } from '../services/OneClickService';
+import { OneClickService } from '../services/OneClickService';
 
 // Schema de validação para Cliente
 // IMPORTANTE: Apenas cnpj_limpo é salvo no banco. CNPJ formatado é gerado apenas na exibição.

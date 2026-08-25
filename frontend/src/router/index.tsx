@@ -9,11 +9,9 @@ import ErrorPage from '../pages/ErrorPage';
 import UploadDCTF from '../pages/UploadDCTF';
 import DCTFList from '../pages/DCTFList';
 import DCTFDadosPage from '../pages/DCTFDadosPage';
-import AdminDashboard from '../pages/AdminDashboard';
 import Conferencias from '../pages/Conferencias';
 import Administracao from '../pages/Administracao';
 import SituacaoFiscal from '../pages/SituacaoFiscal';
-import BancoHoras from '../pages/BancoHoras';
 import GeradorSQL from '../pages/GeradorSQL';
 import SpedValidacao from '../pages/SpedValidacao';
 import Irpf2025 from '../pages/Irpf2025';
@@ -23,6 +21,7 @@ import Irpf2026VisaoGeral from '../pages/Irpf2026/Irpf2026VisaoGeral';
 import Irpf2026LoginPage from '../pages/Irpf2026/Irpf2026LoginPage';
 import Beneficios from '../pages/Beneficios';
 import Legalizacao from '../pages/Legalizacao';
+import Trabalhista from '../pages/Trabalhista';
 
 const router = createBrowserRouter([
   {
@@ -36,7 +35,6 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Home /> },
           { path: 'admin', element: <Navigate to="/irpf-2026/admin" replace /> },
-          { path: 'dashboard', element: <AdminDashboard /> },
           { path: 'conferencias', element: <Conferencias /> },
           { path: 'clientes', element: <Clientes /> },
           { path: 'clientes/cnae', element: <ClientesCNAE /> },
@@ -47,11 +45,11 @@ const router = createBrowserRouter([
           { path: 'situacao-fiscal', element: <SituacaoFiscal /> },
           { path: 'administracao', element: <Administracao /> },
           { path: 'upload', element: <UploadDCTF /> },
-          { path: 'sci/banco-horas', element: <BancoHoras /> },
           { path: 'sci/gerador-sql', element: <GeradorSQL /> },
           { path: 'sped', element: <SpedValidacao /> },
           { path: 'beneficios', element: <Beneficios /> },
           { path: 'legalizacao', element: <Legalizacao /> },
+          { path: 'trabalhista', element: <Trabalhista /> },
           {
             path: 'irpf-2026',
             element: <Outlet />,
@@ -70,6 +68,10 @@ const router = createBrowserRouter([
               },
             ],
           },
+          // Rota removida (/sci/banco-horas) e qualquer URL desconhecida sob a casca
+          // caem aqui. Sem isto o <Outlet /> nao renderiza nada e o usuario ve
+          // header, menu e rodape com o miolo em branco, parecendo sistema quebrado.
+          { path: '*', element: <Navigate to="/" replace /> },
         ],
       },
     ],

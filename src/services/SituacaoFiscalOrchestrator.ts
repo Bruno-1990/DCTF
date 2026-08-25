@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { randomUUID } from 'crypto';
 import { createSupabaseAdapter } from './SupabaseAdapter';
-import { saveExtractedSitfData, upsertExtractedSitfData, type SitfExtractedData } from './SitfDataExtractorService';
+import { upsertExtractedSitfData, type SitfExtractedData } from './SitfDataExtractorService';
 import { extrairSociosComPythonBase64, converterSociosPythonParaNode } from '../utils/pythonExtractor';
 
 const supabaseAdmin = createSupabaseAdapter() as any;

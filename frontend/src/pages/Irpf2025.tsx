@@ -598,16 +598,16 @@ const Irpf2025: React.FC = () => {
             >
               {/* Cabeçalho */}
               <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-emerald-500 rounded-full p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="bg-emerald-500 rounded-full p-3 flex-shrink-0">
                       <BuildingOfficeIcon className="h-6 w-6 text-white" />
                     </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-gray-900">
+                    <div className="min-w-0">
+                      <h2 className="text-xl font-bold text-gray-900 break-words">
                         {cliente.razao_social || cliente.nome || 'Sem nome'}
                       </h2>
-                      <div className="flex items-center gap-4 mt-1">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
                         <span className="text-sm text-gray-600">
                           CNPJ: {formatarCNPJ(cliente.cnpj_limpo || cliente.cnpj || '')}
                         </span>
@@ -745,7 +745,7 @@ const Irpf2025: React.FC = () => {
                           key={fat.ano}
                           className="bg-gray-50 rounded-lg border border-gray-200 p-4"
                         >
-                          <div className="flex items-center justify-between mb-3">
+                          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3">
                             <h4 className="text-base font-semibold text-gray-900">
                               Faturamento {fat.ano}
                             </h4>
@@ -767,7 +767,7 @@ const Irpf2025: React.FC = () => {
                               <p className="text-xs font-medium text-gray-700 mb-2">
                                 Detalhamento Mensal:
                               </p>
-                              <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
                                 {fat.meses.map((mes, idx) => (
                                   <div
                                     key={idx}

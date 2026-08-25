@@ -4,13 +4,9 @@ import {
   XCircleIcon,
   ArrowPathIcon,
   ChartBarIcon,
-  DocumentTextIcon,
-  ArrowDownTrayIcon,
-  ExclamationTriangleIcon
+  ArrowDownTrayIcon
 } from '@heroicons/react/24/outline';
 import { spedService } from '../../services/sped';
-import { formatCurrency } from '../../utils/formatCurrency';
-
 interface ResultadoCorrecoesProps {
   validationId: string;
   resultadoAplicacao: {

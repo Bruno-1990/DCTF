@@ -188,6 +188,7 @@ const ROTULO_MOTIVO: Record<string, string> = {
   RBAA: 'Receita do ano anterior',
   EXCESSO_20PCT: 'Excedeu os 20%',
   SEM_DADOS: 'Sem dados suficientes',
+  SEM_PERSONALIDADE: 'Consórcio — fora do regime',
 };
 
 const DESCRICAO_MOTIVO: Record<string, string> = {
@@ -195,6 +196,8 @@ const DESCRICAO_MOTIVO: Record<string, string> = {
   EXCESSO_20PCT:
     'A receita do ano corrente passou de R$ 5.760.000,00 — mais de 20% acima do limite de EPP. Pelo art. 3º §9º-A, o enquadramento cai ainda dentro do ano, a partir do mês seguinte ao excesso.',
   SEM_DADOS: 'Não houve faturamento suficiente para concluir o enquadramento.',
+  SEM_PERSONALIDADE:
+    'Consórcio não tem personalidade jurídica (Lei 6.404/76, art. 278, §1º): é união contratual entre empresas que já existem, não sociedade nem empresário, e não está no Registro de Empresas Mercantis nem no RCPJ. Como o art. 3º da LC 123 alcança só esses sujeitos, não há faixa de receita que o enquadre como ME ou EPP — e sem enquadramento diferenciado não há isenção da cota. O art. 3º §4º, I chegaria à mesma conclusão pelo outro caminho: o quadro é todo de pessoas jurídicas.',
 };
 
 export function rotuloMotivo(motivo: string): string {

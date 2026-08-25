@@ -15,7 +15,7 @@
 
 import { randomUUID } from 'crypto';
 import { executeQuery } from '../../../config/mysql';
-import { calcularVencimento, calcularDiasAteVencimento, parsePeriodo, formatarPeriodo } from '../utils/dateUtils';
+import { calcularVencimento, parsePeriodo } from '../utils/dateUtils';
 import { normalizarCNPJ, formatarCNPJ } from '../utils/cnpjUtils';
 
 export interface DCTFForaDoPrazo {

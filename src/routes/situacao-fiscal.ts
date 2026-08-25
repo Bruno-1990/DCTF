@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { SituacaoFiscalOrchestrator, base64ToBuffer, fetchAccessToken, extractDataFromPdfBase64, SerproError, AuthorizationError, NetworkError } from '../services/SituacaoFiscalOrchestrator';
+import { SituacaoFiscalOrchestrator, fetchAccessToken, extractDataFromPdfBase64, SerproError, AuthorizationError, NetworkError } from '../services/SituacaoFiscalOrchestrator';
 import { createSupabaseAdapter } from '../services/SupabaseAdapter';
 import { executeQuery } from '../config/mysql';
 import { Cliente } from '../models/Cliente';

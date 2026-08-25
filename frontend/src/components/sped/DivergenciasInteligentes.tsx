@@ -1678,7 +1678,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                               </p>
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                               <div className="p-2 bg-white rounded border border-gray-200">
                                 <span className="font-medium text-gray-600">Registro:</span>
                                 <span className="ml-1 font-mono text-blue-600">{String(registroCorrigir || '').trim()}</span>
@@ -1782,7 +1782,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
                                   
                                   {/* Valores específicos para contexto */}
                                   {div.valor1 !== undefined && div.valor2 !== undefined && (
-                                    <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
+                                    <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                                       <div className="bg-blue-50 p-3 rounded border-2 border-blue-200">
                                         <div className="flex items-center gap-2 mb-2">
                                           <p className="font-semibold text-blue-900">C170</p>
@@ -1909,7 +1909,7 @@ const DivergenciasInteligentes: React.FC<Props> = ({
 
                     {/* Valores comparativos */}
                     {div.valor1 !== undefined && div.valor2 !== undefined && (
-                      <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                         <div className="bg-blue-50 p-3 rounded border border-blue-200">
                           <div className="flex items-center gap-2 mb-1">
                             <p className="text-blue-900 font-semibold">

@@ -1,10 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { DocumentCheckIcon, ArrowUpTrayIcon, ChartBarIcon } from '@heroicons/react/24/outline';
+import React, { useState } from 'react';
+import { DocumentCheckIcon } from '@heroicons/react/24/outline';
 import FileUploader from '../components/sped/FileUploader';
 import ValidationProgress from '../components/sped/ValidationProgress';
 import ResultsDashboard from '../components/sped/ResultsDashboard';
-import { spedService } from '../services/sped';
-
 const SpedValidacao: React.FC = () => {
   const [validationId, setValidationId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);

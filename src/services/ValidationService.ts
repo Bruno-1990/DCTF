@@ -2,9 +2,6 @@
  * Serviço de Validação Centralizado
  * Centraliza todas as validações de negócio do sistema
  */
-
-import Joi from 'joi';
-
 export class ValidationService {
   /**
    * Validar CNPJ usando algoritmo oficial

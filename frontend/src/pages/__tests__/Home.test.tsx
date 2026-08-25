@@ -27,9 +27,18 @@ describe('Home', () => {
   it('has working navigation links', () => {
     renderWithRouter(<Home />);
     
+    // A expectativa acompanha os cards de Home.tsx, na ordem em que aparecem.
+    // Estava desatualizada desde antes da remoção do Dashboard (esperava 5 cards
+    // quando a página já tinha 7), o que deixava este teste vermelho.
     const accessLinks = screen.getAllByRole('link', { name: /Acessar/i });
     expect(accessLinks).toHaveLength(5);
     const hrefs = accessLinks.map((link) => link.getAttribute('href'));
-    expect(hrefs).toEqual(['/dashboard', '/conferencias', '/clientes', '/dctf', '/relatorios']);
+    expect(hrefs).toEqual([
+      '/conferencias',
+      '/dctf',
+      '/clientes',
+      '/relatorios',
+      '/situacao-fiscal',
+    ]);
   });
 });

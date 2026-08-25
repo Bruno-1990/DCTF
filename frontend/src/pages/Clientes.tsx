@@ -20,7 +20,6 @@ import {
   ArrowRightIcon,
   FunnelIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   ShareIcon,
   DocumentArrowDownIcon,
   DocumentTextIcon,
@@ -231,7 +230,7 @@ const MonthYearPicker: React.FC<{
               </div>
 
               {/* Grid de Meses */}
-              <div className="grid grid-cols-4 gap-2 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
                 {meses.map((mes) => {
                   const isSelected = value === `${anoAtual}-${String(mes.num).padStart(2, '0')}`;
                   return (
@@ -625,6 +624,87 @@ const Clientes: React.FC = () => {
     const id = setInterval(refreshOneClickTunnel, 30_000);
     return () => clearInterval(id);
   }, []);
+
+  /**
+   * As duas ações do OneClick moram no mesmo botão.
+   *
+   * Eram dois botões lado a lado — "OneClick" e "Status OneClick" — e o segundo
+   * parecia uma integração à parte, quando é a mesma fonte: um traz quem entrou
+   * na carteira, o outro espelha quem saiu. Agora o botão principal mantém a
+   * importação (o caminho mais usado, sem clique a mais) e o menu ao lado reúne
+   * as duas, deixando a relação explícita.
+   */
+  const [oneClickMenuAberto, setOneClickMenuAberto] = useState(false);
+
+  // Mesmo padrão do dropdown de grupos: marcador de classe + closest.
+  useEffect(() => {
+    if (!oneClickMenuAberto) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.oneclick-menu-container')) setOneClickMenuAberto(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [oneClickMenuAberto]);
+
+  /** Importar da carteira: preview do OneClick → seleção → gravação aqui. */
+  const abrirImportacaoOneClick = async () => {
+    setOneClickMenuAberto(false);
+    try {
+      setOneClickLoading(true);
+      setShowOneClickModal(true);
+      setOneClickSearch('');
+      setOneClickFiltro('novos');
+      const res = await clientesService.previewOneClick();
+      if (res.success) {
+        setOneClickPreview(res.data || []);
+        // Pré-selecionar apenas os que NÃO existem ainda
+        const novos = (res.data || []).filter((c: any) => !c.ja_existe);
+        setOneClickSelected(new Set(novos.map((c: any) => c.id)));
+      } else {
+        toast.error(res.error || 'Erro ao buscar clientes do OneClick');
+        setShowOneClickModal(false);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao conectar com OneClick');
+      setShowOneClickModal(false);
+    } finally {
+      setOneClickLoading(false);
+      refreshOneClickTunnel(); // o preview pode ter subido o túnel
+    }
+  };
+
+  /**
+   * Status Ativo/Inativo: lê o OneClick e inativa AQUI quem saiu de lá.
+   * Só leitura no OneClick; nada é excluído no DCTF.
+   */
+  const abrirStatusOneClick = async () => {
+    setOneClickMenuAberto(false);
+    try {
+      setStatusOneClickLoading(true);
+      setShowStatusOneClickModal(true);
+      setStatusOneClickPreview(null);
+      const res = await clientesService.previewStatusOneClick();
+      if (res?.success) {
+        setStatusOneClickPreview(res.data);
+        // Pré-selecionar tudo: o padrão é espelhar o OneClick.
+        const ids = [
+          ...(res.data?.inativar || []).map((c: any) => c.id),
+          ...(res.data?.reativar || []).map((c: any) => c.id),
+        ];
+        setStatusOneClickSelecionados(new Set(ids));
+      } else {
+        toast.error(res?.error || 'Erro ao comparar status com o OneClick');
+        setShowStatusOneClickModal(false);
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || err?.message || 'Erro ao conectar com OneClick');
+      setShowStatusOneClickModal(false);
+    } finally {
+      setStatusOneClickLoading(false);
+      refreshOneClickTunnel();
+    }
+  };
 
   // ── Acessórias (mesmo fluxo do OneClick: preview → seleção → importar) ──
   const [sincronizandoAcessorias, setSincronizandoAcessorias] = useState(false);
@@ -3755,7 +3835,7 @@ const Clientes: React.FC = () => {
           nos botões impedem a quebra do rótulo em duas linhas; o container rola
           na horizontal quando a tela for estreita demais para todas as abas. */}
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 mb-6">
-        <div className="px-6 pt-4 pb-2 overflow-x-auto">
+        <div className="px-6 pt-4 pb-2 overflow-x-auto overflow-y-hidden">
           <div className="flex space-x-1 min-w-max">
             <button
               type="button"
@@ -5186,10 +5266,10 @@ const Clientes: React.FC = () => {
             </>
           )}
           {activeTab === 'clientes' && (
-            <div className="flex gap-3 items-end">
+            <div className="flex flex-wrap gap-3 items-end">
               <div className="flex flex-col">
                 <label className="block text-sm font-semibold text-gray-700 mb-2 opacity-0 pointer-events-none">Ações</label>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                   <button
                     onClick={() => setShowForm(true)}
                     className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 transform"
@@ -5197,7 +5277,7 @@ const Clientes: React.FC = () => {
                     <PlusIcon className="h-5 w-5" />
                     Novo Cliente
                   </button>
-                  <div className="relative">
+                  <div className="relative oneclick-menu-container">
                     {/* Indicador do túnel SSH: verde=ativo, vermelho=inativo, cinza=verificando */}
                     <span
                       title={
@@ -5215,74 +5295,81 @@ const Clientes: React.FC = () => {
                             : 'bg-red-500'
                       } ${oneClickTunnelAtivo ? 'animate-pulse' : ''}`}
                     />
-                    <button
-                      onClick={async () => {
-                        try {
-                          setOneClickLoading(true);
-                          setShowOneClickModal(true);
-                          setOneClickSearch('');
-                          setOneClickFiltro('novos');
-                          const res = await clientesService.previewOneClick();
-                          if (res.success) {
-                            setOneClickPreview(res.data || []);
-                            // Pré-selecionar apenas os que NÃO existem ainda
-                            const novos = (res.data || []).filter((c: any) => !c.ja_existe);
-                            setOneClickSelected(new Set(novos.map((c: any) => c.id)));
-                          } else {
-                            toast.error(res.error || 'Erro ao buscar clientes do OneClick');
-                            setShowOneClickModal(false);
-                          }
-                        } catch (err: any) {
-                          toast.error(err.message || 'Erro ao conectar com OneClick');
-                          setShowOneClickModal(false);
-                        } finally {
-                          setOneClickLoading(false);
-                          refreshOneClickTunnel(); // o preview pode ter subido o túnel
-                        }
-                      }}
-                      disabled={sincronizandoOneClick || oneClickLoading}
-                      className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:scale-105 transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
-                    >
-                      <ArrowPathIcon className={`h-5 w-5 ${sincronizandoOneClick || oneClickLoading ? 'animate-spin' : ''}`} />
-                      {sincronizandoOneClick ? 'Importando...' : oneClickLoading ? 'Conectando...' : 'OneClick'}
-                    </button>
+                    {/* Botão dividido: a ação principal é importar; a seta abre as
+                        duas ações do OneClick. O indicador do túnel vale para as
+                        duas, porque as duas passam pelo mesmo túnel SSH. */}
+                    <div className="flex rounded-xl shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 transition-all duration-300 hover:scale-105 transform">
+                      <button
+                        onClick={abrirImportacaoOneClick}
+                        disabled={sincronizandoOneClick || oneClickLoading || statusOneClickLoading}
+                        title="Importa da carteira do OneClick os clientes que ainda não existem aqui"
+                        className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-l-xl hover:from-amber-600 hover:to-orange-600 font-semibold transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        <ArrowPathIcon
+                          className={`h-5 w-5 ${sincronizandoOneClick || oneClickLoading || statusOneClickLoading ? 'animate-spin' : ''}`}
+                        />
+                        {sincronizandoOneClick
+                          ? 'Importando...'
+                          : oneClickLoading
+                            ? 'Conectando...'
+                            : statusOneClickLoading
+                              ? 'Comparando...'
+                              : 'OneClick'}
+                      </button>
+                      <button
+                        onClick={() => setOneClickMenuAberto((a) => !a)}
+                        disabled={sincronizandoOneClick || oneClickLoading || statusOneClickLoading}
+                        aria-haspopup="menu"
+                        aria-expanded={oneClickMenuAberto}
+                        aria-label="Ações do OneClick"
+                        title="Ações do OneClick"
+                        className="px-2 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-r-xl hover:from-orange-600 hover:to-orange-700 border-l border-orange-400/60 transition-colors flex items-center disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        <ChevronDownIcon
+                          className={`h-4 w-4 transition-transform ${oneClickMenuAberto ? 'rotate-180' : ''}`}
+                        />
+                      </button>
+                    </div>
+
+                    {oneClickMenuAberto && (
+                      <div
+                        role="menu"
+                        className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 z-30 overflow-hidden"
+                      >
+                        <button
+                          role="menuitem"
+                          onClick={abrirImportacaoOneClick}
+                          className="w-full text-left px-4 py-3 hover:bg-amber-50 transition-colors flex items-start gap-3"
+                        >
+                          <ArrowPathIcon className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                          <span>
+                            <span className="block text-sm font-semibold text-gray-800">
+                              Importar clientes
+                            </span>
+                            <span className="block text-xs text-gray-500 leading-snug">
+                              Traz da carteira quem ainda não existe aqui
+                            </span>
+                          </span>
+                        </button>
+                        <div className="h-px bg-gray-100" />
+                        <button
+                          role="menuitem"
+                          onClick={abrirStatusOneClick}
+                          className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors flex items-start gap-3"
+                        >
+                          <NoSymbolIcon className="h-5 w-5 text-slate-600 shrink-0 mt-0.5" />
+                          <span>
+                            <span className="block text-sm font-semibold text-gray-800">
+                              Status Ativo/Inativo
+                            </span>
+                            <span className="block text-xs text-gray-500 leading-snug">
+                              Inativa aqui quem saiu da carteira — nada é excluído
+                            </span>
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {/* Status Ativo/Inativo: lê o OneClick e inativa AQUI quem saiu de lá.
-                      Só leitura no OneClick; nada é excluído no DCTF. */}
-                  <button
-                    onClick={async () => {
-                      try {
-                        setStatusOneClickLoading(true);
-                        setShowStatusOneClickModal(true);
-                        setStatusOneClickPreview(null);
-                        const res = await clientesService.previewStatusOneClick();
-                        if (res?.success) {
-                          setStatusOneClickPreview(res.data);
-                          // Pré-selecionar tudo: o padrão é espelhar o OneClick.
-                          const ids = [
-                            ...(res.data?.inativar || []).map((c: any) => c.id),
-                            ...(res.data?.reativar || []).map((c: any) => c.id),
-                          ];
-                          setStatusOneClickSelecionados(new Set(ids));
-                        } else {
-                          toast.error(res?.error || 'Erro ao comparar status com o OneClick');
-                          setShowStatusOneClickModal(false);
-                        }
-                      } catch (err: any) {
-                        toast.error(err?.response?.data?.error || err?.message || 'Erro ao conectar com OneClick');
-                        setShowStatusOneClickModal(false);
-                      } finally {
-                        setStatusOneClickLoading(false);
-                        refreshOneClickTunnel();
-                      }
-                    }}
-                    disabled={statusOneClickLoading || statusOneClickAplicando}
-                    title="Compara com o OneClick e inativa aqui quem saiu da carteira (não exclui nada)"
-                    className="px-6 py-3 bg-gradient-to-r from-slate-600 to-slate-700 text-white rounded-xl hover:from-slate-700 hover:to-slate-800 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-slate-500/30 hover:shadow-xl hover:scale-105 transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
-                  >
-                    <NoSymbolIcon className={`h-5 w-5 ${statusOneClickLoading ? 'animate-spin' : ''}`} />
-                    {statusOneClickLoading ? 'Comparando...' : 'Status OneClick'}
-                  </button>
                   <div className="relative">
                     {/* Indicador da API: verde=respondendo, vermelho=sem resposta/token, cinza=verificando */}
                     <span
@@ -5323,7 +5410,7 @@ const Clientes: React.FC = () => {
             </div>
           )}
           {activeTab === 'lancamentos' && (
-            <div className="flex gap-3 items-end">
+            <div className="flex flex-wrap gap-3 items-end">
               <button
                 type="button"
                 onClick={() => void handleAtualizar()}
@@ -7250,7 +7337,7 @@ const Clientes: React.FC = () => {
 
       {/* Barra de Carregamento Global */}
       {loadingConsultaPersonalizada && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 p-4 bg-black bg-opacity-30 flex items-center justify-center z-[60]">
           <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">
             <div className="text-center">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent mb-4"></div>
@@ -7279,7 +7366,7 @@ const Clientes: React.FC = () => {
       {/* Modal Detalhes Faturamento */}
       {showModalDetalhesFaturamento && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" 
+          className="fixed inset-0 p-4 bg-black bg-opacity-50 flex items-center justify-center z-[100]" 
           onClick={() => {
             console.log('[Faturamento] Fechando modal');
             setShowModalDetalhesFaturamento(false);
@@ -7455,7 +7542,7 @@ const Clientes: React.FC = () => {
 
       {/* Modal Consulta Personalizada */}
       {showModalConsultaPersonalizada && !loadingConsultaPersonalizada && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowModalConsultaPersonalizada(false)}>
+        <div className="fixed inset-0 p-4 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowModalConsultaPersonalizada(false)}>
           <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -7676,7 +7763,7 @@ const Clientes: React.FC = () => {
 
               {/* Consulta Personalizada */}
               {tipoConsulta === 'personalizado' && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Data Inicial
@@ -8748,7 +8835,7 @@ const Clientes: React.FC = () => {
                 </div>
 
                 {/* Botões */}
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                   <button
                     onClick={handleSalvarRegimeTributario}
                     disabled={!regimeSelecionado || salvandoRegime}
@@ -8827,7 +8914,7 @@ const Clientes: React.FC = () => {
 
                 {!statusOneClickLoading && statusOneClickPreview && (
                   <>
-                    <div className="grid grid-cols-3 gap-3 mb-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
                       <div className="bg-gray-50 rounded-xl p-3 text-center">
                         <div className="text-2xl font-bold text-gray-900">{statusOneClickPreview.total_dctf}</div>
                         <div className="text-xs text-gray-500 mt-0.5">clientes no DCTF</div>
@@ -9130,7 +9217,7 @@ const Clientes: React.FC = () => {
                     Deseja importar <strong>{oneClickSelected.size} cliente(s)</strong> do OneClick para o DCTF?
                     <br />Clientes já cadastrados terão apenas campos vazios preenchidos.
                   </p>
-                  <div className="flex gap-3">
+                  <div className="flex flex-wrap gap-3">
                     <button
                       onClick={() => setOneClickConfirm(false)}
                       disabled={sincronizandoOneClick}
@@ -9334,7 +9421,7 @@ const Clientes: React.FC = () => {
                     <br />Clientes já cadastrados terão apenas campos vazios preenchidos.
                     <br /><span className="text-xs">A Acessórias traz razão social, fantasia, telefone e UF — o resto do cadastro é completado pela ReceitaWS.</span>
                   </p>
-                  <div className="flex gap-3">
+                  <div className="flex flex-wrap gap-3">
                     <button
                       onClick={() => setAcessoriasConfirm(false)}
                       disabled={sincronizandoAcessorias}
@@ -9507,7 +9594,7 @@ const Clientes: React.FC = () => {
                             Será excluído ao clicar em Concluir.
                           </p>
                         ) : (
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                               <label className="block text-xs font-medium text-gray-600 mb-1">
                                 Participação (%)

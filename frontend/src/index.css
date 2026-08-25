@@ -105,3 +105,64 @@ code {
 .animate-toast-fade-in {
   animation: toast-fade-in 0.3s ease-out;
 }
+
+/* ==========================================================================
+   Guardas de responsividade
+   Rede de seguranca global: impede que midia, campos de formulario ou blocos
+   de codigo estourem a largura da tela em qualquer pagina, inclusive nas que
+   forem criadas depois. Nao substitui layout responsivo — so evita que um
+   descuido pontual corte conteudo fora do alcance do usuario.
+   ========================================================================== */
+
+img,
+video,
+canvas,
+iframe,
+embed,
+object {
+  max-width: 100%;
+}
+
+img,
+video,
+canvas {
+  height: auto;
+}
+
+/* Campos nunca mais largos que o container que os abriga. As classes utilitarias
+   do Tailwind (w-72, w-full, min-w-*) continuam mandando, pois tem prioridade
+   maior que este seletor de elemento. */
+input,
+select,
+textarea,
+button {
+  max-width: 100%;
+}
+
+/* Texto longo sem espaco (CNPJ, chave de acesso, URL, hash) quebra em vez de
+   empurrar a linha inteira para fora da tela. */
+.quebra-palavra {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Bloco largo (tabela, grafico, timeline) que precisa rolar na horizontal em
+   vez de ser cortado. Usar no wrapper imediato do conteudo largo. */
+.rolagem-horizontal {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* O botao flutuante do menu (mobile) fica em z-[100] e, por isso, passava por cima
+   dos modais (a maioria em z-50). Em vez de re-empilhar dezenas de overlays — o que
+   arriscaria a ordem de sobreposicao no sistema inteiro — ele simplesmente se recolhe
+   enquanto houver um modal aberto. O overlay do proprio menu e excluido pela classe
+   .overlay-menu, senao o botao de fechar (X) sumiria junto. */
+body:has(div.fixed.inset-0:not(.overlay-menu)) .botao-menu-flutuante {
+  display: none;
+}

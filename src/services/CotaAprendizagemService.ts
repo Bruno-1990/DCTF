@@ -45,6 +45,7 @@ import {
   detectarEventos,
   diagnosticar,
   divergenciaComSimples,
+  ehConsorcio,
   ehSociedadeDeAdvogados,
   receitaZeradaSuspeita,
   mesReferencia,
@@ -291,6 +292,8 @@ function diagnosticarDaLinha(r: any): Diagnostico {
     dadoConfiavel: Number(r.dado_confiavel) === 1,
     revisarJuridico: Number(r.revisar_juridico) === 1,
     impedimentoSocietario: Number(r.impedimento_societario) === 1,
+    // Não há coluna: o motivo gravado já identifica o caso.
+    semPersonalidade: r.motivo === 'SEM_PERSONALIDADE',
   };
   return diagnosticar({ resultado: resultadoParcial, ano: Number(r.ano) });
 }
@@ -697,7 +700,8 @@ export class CotaAprendizagemService {
         ? `WHERE ativo = 1 AND id IN (${opts.clienteIds.map(() => '?').join(',')})`
         : 'WHERE ativo = 1';
       const clientes = await executeQuery<any>(
-        `SELECT id, razao_social, cnpj_limpo, codigo_sci, uf, porte, abertura, regime_tributario
+        `SELECT id, razao_social, cnpj_limpo, codigo_sci, uf, porte, abertura, regime_tributario,
+                natureza_juridica
          FROM clientes ${filtro}
          ORDER BY razao_social ASC`,
         opts?.clienteIds?.length ? opts.clienteIds : []
@@ -760,6 +764,7 @@ export class CotaAprendizagemService {
             ateMes: mes,
             impedimentoSuspeita: comSocioPJ.has(cliente.id),
             inicioAtividade,
+            semPersonalidade: ehConsorcio(c.natureza_juridica),
           });
 
           const anterior = await this.lerClassificacaoAnterior(cliente.id, ano, mes);
@@ -913,7 +918,7 @@ export class CotaAprendizagemService {
         : '';
       const clientes = await executeQuery<any>(
         `SELECT c.id, c.razao_social, c.cnpj_limpo, c.codigo_sci, c.uf, c.porte,
-                c.abertura, c.regime_tributario
+                c.abertura, c.regime_tributario, c.natureza_juridica
          FROM cota_classificacao_mensal cc
          INNER JOIN clientes c ON c.id = cc.cliente_id
          WHERE cc.bdref = ?${filtroCliente}
@@ -1021,6 +1026,7 @@ export class CotaAprendizagemService {
           ateMes: mes,
           impedimentoSuspeita: comSocioPJ.has(cliente.id),
           inicioAtividade,
+          semPersonalidade: ehConsorcio(c.natureza_juridica),
         });
 
         const anterior = porClienteAnterior.get(cliente.id);

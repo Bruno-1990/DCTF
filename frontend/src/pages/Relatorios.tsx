@@ -593,13 +593,13 @@ const RelatoriosPage: React.FC = () => {
 
       {/* Filtros e Histórico */}
       <div id="historico" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
             <FunnelIcon className="h-5 w-5 text-gray-600" />
             Histórico de Relatórios
           </h2>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
               <span className="whitespace-nowrap">Filtrar por tipo:</span>
               <select
                 value={tipoRelatorio}
@@ -628,7 +628,7 @@ const RelatoriosPage: React.FC = () => {
         )}
 
         {/* Paginação Superior */}
-        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-gray-600">
             {loading ? (
               <span className="flex items-center gap-2">
@@ -644,17 +644,17 @@ const RelatoriosPage: React.FC = () => {
               <span>Exibindo {filtered.length} relatórios</span>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <select
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value={5}>5 por página</option>
               <option value={10}>10 por página</option>
               <option value={20}>20 por página</option>
             </select>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}

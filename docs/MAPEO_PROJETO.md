@@ -215,20 +215,24 @@ DCTF_MPC/
 
 ---
 
-### 9. **Dashboard Admin** 🎛️
-**Responsabilidade**: Painel administrativo
+### 9. **Dashboard Admin** 🎛️ — REMOVIDO
+A página `/dashboard` e todo o frontend dela saíram em 20/08/2026: não era usada.
 
-#### Frontend
-- **Página**: `frontend/src/pages/AdminDashboard.tsx`
-- **Componentes**: `frontend/src/components/Dashboard/`
-- **Serviços**: `frontend/src/services/dashboard.ts`
+#### Backend (mantido)
+O `src/routes/admin-dashboard.ts` continua servindo `/api/dashboard/admin/reports/*`,
+que é o que a página **Relatórios** consome — o prefixo da URL ficou, o painel não.
+- **Controller**: `src/controllers/AdminDashboardReportController.ts`
+- **Services**: `AdminDashboardService`, `AdminDashboardConferenceService`,
+  `DashboardMetricsService`, `AdminDashboardArchitecture`,
+  `AdminDashboardRequirements` e `DashboardLayoutBlueprint` seguem em uso pelo
+  `src/services/reports/ReportDataFactory.ts`. Apesar do nome, são a base dos
+  **relatórios**, não do painel.
 
-#### Backend
-- **Controllers**: 
-  - `src/controllers/AdminDashboardController.ts`
-  - `src/controllers/AdminDashboardReportController.ts`
-  - `src/controllers/AdminDashboardConferenceController.ts`
-- **Routes**: `src/routes/admin-dashboard.ts`
+Saíram junto com a página: `AdminDashboardController`, `EnhancedDashboardService`,
+`AdminDashboardConferenceController`, `src/routes/admin-dashboard-conferences.ts`,
+`src/frontend/buildAdminDashboardViewModel.ts` e a função
+`getAdminDashboardSnapshot`. Os endpoints `/snapshot`, `/enhanced`,
+`/top-faturamento` e `/conferences/summary` deixaram de existir.
 
 ---
 

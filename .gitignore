@@ -151,3 +151,9 @@ dev-debug.log
 # Task files
 # tasks.json
 # tasks/ 
+
+# Dados reais de clientes (backups DCTF, retrato SPE, planilhas) — nunca versionar
+data/
+
+# Lixo do redirecionamento >/dev/null do Windows no Git Bash
+nul

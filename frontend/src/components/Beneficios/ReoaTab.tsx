@@ -612,7 +612,7 @@ const ModalDetalhe: React.FC<{
   const view: SubstitutoCliente = aoVivoOk ? (live!.cliente as SubstitutoCliente) : cliente;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 p-4 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col mx-4" onClick={e => e.stopPropagation()}>
         {/* Header */}

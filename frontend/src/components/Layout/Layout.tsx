@@ -27,7 +27,10 @@ const Layout: React.FC = () => {
     const lockedClosed = localStorage.getItem('sidebar-locked-closed') === 'true';
     if (pinned) return true;
     if (lockedClosed) return false;
-    return true; // Por padrão começa aberto
+    // Abaixo de lg (1024px) o menu vira overlay sobre o conteúdo: começar fechado,
+    // senão a primeira tela que o usuário vê no celular é o menu, não a página.
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) return false;
+    return true; // No desktop começa aberto
   });
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -100,6 +103,22 @@ const Layout: React.FC = () => {
     }
   }, [sidebarPinned, sidebarLockedClosed]);
 
+  // Acompanhar a largura da janela: abaixo de lg o menu é overlay e precisa ficar
+  // fechado para não cobrir a página; ao voltar ao desktop ele reaparece.
+  // 'pinned' e 'lockedClosed' continuam mandando — a preferência do usuário vence.
+  useEffect(() => {
+    let eraMobile = window.innerWidth < 1024;
+    const handleResize = () => {
+      const agoraMobile = window.innerWidth < 1024;
+      if (agoraMobile === eraMobile) return; // só age ao cruzar o breakpoint
+      eraMobile = agoraMobile;
+      if (sidebarPinned || sidebarLockedClosed) return;
+      setSidebarOpen(!agoraMobile);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [sidebarPinned, sidebarLockedClosed]);
+
   // Detectar scroll para manter o botão visível
   useEffect(() => {
     const handleScroll = () => {
@@ -160,7 +179,7 @@ const Layout: React.FC = () => {
           <button
             type="button"
             onClick={handleToggleSidebar}
-            className="fixed top-16 left-4 z-[100] flex items-center justify-center w-11 h-11 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 ease-in-out lg:hidden cursor-pointer group hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border border-gray-200 hover:border-blue-500"
+            className="botao-menu-flutuante fixed top-16 left-4 z-[100] flex items-center justify-center w-11 h-11 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 ease-in-out lg:hidden cursor-pointer group hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border border-gray-200 hover:border-blue-500"
             aria-label="Toggle sidebar"
           >
             {sidebarOpen ? (
@@ -173,7 +192,7 @@ const Layout: React.FC = () => {
           {/* Overlay para mobile quando menu está aberto */}
           {sidebarOpen && (
             <div
-              className="fixed inset-0 bg-black bg-opacity-50 z-[90] transition-opacity duration-500 ease-in-out lg:hidden"
+              className="overlay-menu fixed inset-0 bg-black bg-opacity-50 z-[90] transition-opacity duration-500 ease-in-out lg:hidden"
               onClick={handleCloseSidebar}
             />
           )}
@@ -254,7 +273,7 @@ const Layout: React.FC = () => {
             </div>
           )}
 
-          <main className={`flex-1 bg-gray-50 p-6 overflow-x-hidden w-full max-w-full transition-all duration-600 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+          <main className={`flex-1 bg-gray-50 p-4 pt-16 lg:p-6 overflow-x-hidden w-full max-w-full transition-all duration-600 ease-[cubic-bezier(0.4,0,0.2,1)] ${
             (sidebarOpen || sidebarPinned) ? 'lg:ml-64' : 'lg:ml-0'
           }`}>
             <Outlet />

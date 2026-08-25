@@ -2,8 +2,6 @@
  * Layout da área administrativa IRPF 2026.
  * Header com Central Admin e logout.
  */
-
-import React from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useIrpf2026Auth } from '../../contexts/Irpf2026AuthContext';
 

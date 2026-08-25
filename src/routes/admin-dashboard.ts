@@ -1,6 +1,16 @@
+/**
+ * Rotas de RELATÓRIOS, montadas sob `/api/dashboard/admin`.
+ *
+ * O prefixo é herança da página `/dashboard`, removida em 20/08/2026 por não ser
+ * usada. As rotas `/snapshot`, `/enhanced` e `/top-faturamento`, que serviam só
+ * àquela página, saíram junto; estas aqui ficaram porque são o que a página
+ * **Relatórios** consome (`frontend/src/services/relatorios.ts`).
+ *
+ * Renomear o prefixo para `/api/reports` seria mais honesto, mas quebraria a URL
+ * que o frontend já usa — fica registrado aqui para quem estranhar o caminho.
+ */
 import { Router } from 'express';
 import multer from 'multer';
-import AdminDashboardController from '../controllers/AdminDashboardController';
 import AdminDashboardReportController from '../controllers/AdminDashboardReportController';
 
 const router = Router();
@@ -13,9 +23,6 @@ const upload = multer({
   },
 });
 
-router.get('/snapshot', (req, res) => AdminDashboardController.getSnapshot(req, res));
-router.get('/enhanced', (req, res) => AdminDashboardController.getEnhanced(req, res));
-router.get('/top-faturamento', (req, res) => AdminDashboardController.getTopFaturamento(req, res));
 router.get('/reports/history', (req, res) => AdminDashboardReportController.listHistory(req, res));
 router.post('/reports/history', upload.single('file'), (req, res) => AdminDashboardReportController.saveHistory(req, res));
 router.get('/reports/history/:id/download', (req, res) => AdminDashboardReportController.downloadHistory(req, res));
