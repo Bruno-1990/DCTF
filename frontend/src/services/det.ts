@@ -11,6 +11,9 @@ export interface DetResumo {
   /** Só tipo='Notificação'. Aviso não entra: chega todo mês e não tem prazo. */
   notificacoesNovas: number;
   vigenciasVencendo: number;
+  /** Data da última vez que as procurações foram lidas do SPE com sucesso.
+   *  null = nunca. Usada no aviso de lista desatualizada. */
+  procuracoesAtualizadasEm: string | null;
   ultimaColeta: {
     iniciado_em: string;
     concluido_em: string | null;

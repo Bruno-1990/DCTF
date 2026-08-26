@@ -323,7 +323,11 @@ const DteTab: React.FC = () => {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
-  const [filtro, setFiltro] = useState<Filtro>('todos');
+  // Abre já filtrado nas empresas COM PROCURAÇÃO (deferidas): são as que entram
+  // na coleta e as que têm caixa postal para acompanhar. As sem procuração
+  // (indeferidas) são ruído para o dia a dia — o usuário troca o filtro se
+  // quiser vê-las. Clicar de novo no card "Com procuração" limpa para 'todos'.
+  const [filtro, setFiltro] = useState<Filtro>('com');
   const [selecionado, setSelecionado] = useState<DetCliente | null>(null);
 
   const carregar = useCallback(async () => {
@@ -435,20 +439,31 @@ const DteTab: React.FC = () => {
           depois dela simplesmente não foi varrido — e nada na tela denunciaria
           isso sem este aviso. */}
       {resumo?.ultimaColeta?.spe_erro && (
-        <div className="flex items-start gap-3 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
-          <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="font-semibold text-amber-900">
-              A lista de procurações não foi atualizada na última coleta
-            </p>
-            <p className="text-amber-800 mt-0.5">
-              A varredura usou a lista da rodada anterior. Quem outorgou procuração
-              depois dela ficou de fora.
-            </p>
-            <p className="text-amber-700 text-xs mt-1 font-mono">
-              {resumo.ultimaColeta.spe_erro}
-            </p>
-          </div>
+        <div
+          className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs"
+          title={`Motivo: ${resumo.ultimaColeta.spe_erro}`}
+        >
+          <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <span className="text-amber-900">
+            <strong>Procurações desatualizadas</strong>
+            {resumo.procuracoesAtualizadasEm && (
+              <>
+                {' — lista de '}
+                <strong>
+                  {new Date(resumo.procuracoesAtualizadasEm).toLocaleString('pt-BR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </strong>{' '}
+                ({desde(resumo.procuracoesAtualizadasEm)})
+              </>
+            )}
+            <span className="text-amber-700">
+              {' · quem outorgou depois ficou de fora'}
+            </span>
+          </span>
         </div>
       )}
 

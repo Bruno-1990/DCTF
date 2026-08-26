@@ -69,6 +69,19 @@ export class DetController {
            AND vigencia_fim <= DATE_ADD(CURDATE(), INTERVAL 90 DAY)`
       );
 
+      // Quando as procurações foram lidas do SPE com sucesso pela última vez.
+      // Só coletas com procuracoes_lidas preenchido leram o SPE; se o SPE falha,
+      // fica NULL. NÃO se usa verificado_em de det_procuracoes porque aquele
+      // campo tem ON UPDATE CURRENT_TIMESTAMP e é tocado pelo marcarColeta a
+      // cada cliente — não refletiria a checagem de procurações.
+      const [proc] = await executeQuery<any>(
+        `SELECT iniciado_em
+         FROM det_coletas
+         WHERE procuracoes_lidas IS NOT NULL
+         ORDER BY iniciado_em DESC
+         LIMIT 1`
+      );
+
       res.json({
         success: true,
         data: {
@@ -81,6 +94,8 @@ export class DetController {
           naoLidas: Number(msg?.nao_lidas ?? 0),
           notificacoesNovas: Number(msg?.notificacoes_novas ?? 0),
           vigenciasVencendo: Number(venc?.n ?? 0),
+          // data da última checagem de procurações bem-sucedida (SPE lido)
+          procuracoesAtualizadasEm: proc?.iniciado_em ?? null,
           ultimaColeta: coleta ?? null,
         },
       });

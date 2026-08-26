@@ -1124,10 +1124,59 @@ export class DetColetorService {
     }
   }
 
+  /**
+   * Coleta SÓ as procurações (login DET + SPE), sem varrer caixas. Registra em
+   * `det_coletas` com `total_clientes = 0` — é o que distingue esta rodada da
+   * de caixas na trava do scheduler e no histórico.
+   *
+   * Existe para separar a checagem de procurações (agendada de noite, ex.: 22h)
+   * da coleta de caixas (madrugada/manhã, ex.: 6h): cada uma faz UM login no
+   * gov.br, ambas frias, e a de caixas roda com a lista já atualizada da véspera
+   * sem refazer o SPE. Ideia do operador em 26/08/2026.
+   */
+  async executarProcuracoes(origem: 'cron' | 'manual' = 'manual'): Promise<void> {
+    if (emAndamento) throw new Error('já existe uma coleta em andamento');
+    emAndamento = true;
+    try {
+      const [ins]: any = await mysqlPool.execute(
+        `INSERT INTO det_coletas (origem, total_clientes) VALUES (?, 0)`,
+        [origem]
+      );
+      const coletaId = Number(ins?.insertId ?? 0);
+      try {
+        const sinc = await this.sincronizarProcuracoes(); // abre nav, loga DET, lê SPE
+        await mysqlPool.execute(
+          `UPDATE det_coletas
+              SET procuracoes_lidas = ?, procuracoes_alteradas = ?,
+                  procuracoes_ganharam = ?, procuracoes_perderam = ?,
+                  concluido_em = NOW()
+            WHERE id = ?`,
+          [sinc.lidasNoSpe, sinc.mudancas.length, sinc.ganharam, sinc.perderam, coletaId]
+        );
+        this.log(
+          `procurações: ${sinc.lidasNoSpe} lida(s) · ${sinc.deferidos} deferido(s), ` +
+            `${sinc.indeferidos} indeferido(s) · ${sinc.ganharam} ganhou, ${sinc.perderam} perdeu`
+        );
+      } catch (e: any) {
+        const motivo = String(e?.message ?? e).slice(0, 500);
+        this.log(`SPE FALHOU: ${motivo}`);
+        await mysqlPool
+          .execute(`UPDATE det_coletas SET spe_erro = ?, concluido_em = NOW() WHERE id = ?`, [
+            motivo,
+            coletaId,
+          ])
+          .catch(() => undefined);
+        throw e;
+      }
+    } finally {
+      emAndamento = false;
+    }
+  }
+
   async executar(
     origem: 'cron' | 'manual' = 'manual',
     limite?: number,
-    opts: { pularColetadosHoje?: boolean } = {}
+    opts: { pularColetadosHoje?: boolean; pularSpe?: boolean } = {}
   ): Promise<ResultadoColeta> {
     if (emAndamento) throw new Error('já existe uma coleta em andamento');
     emAndamento = true;
@@ -1163,20 +1212,26 @@ export class DetColetorService {
     try {
       await this.abrirNavegador();
 
-      // ─── Passo 1: checagem de procurações no SPE — PRIMEIRO login ────────
+      // ─── Passo 1: autenticar no DET ─────────────────────────────────────
+      // O DET entra primeiro e CRIA a sessão gov.br. Isso é pré-requisito do
+      // passo seguinte: o SPE (aplicação separada) não consegue logar sozinho
+      // pelo certificado — como 1º acesso fresh ele trava no SSO (medido no
+      // cron de 26/08/2026: "painel Recebidas não apareceu, parou no login do
+      // SPE"). Com a sessão do DET no ar, o SPE reaproveita via SSO e entra.
+      await this.autenticarComReabertura();
+
+      // ─── Passo 2: checagem de procurações no SPE (reaproveita a sessão) ──
       //
-      // O SPE (spe.sistema.gov.br) é aplicação SEPARADA, com login gov.br
-      // próprio. Fazê-lo ANTES do DET o torna o 1º login do dia — frio, sem
-      // captcha. Quando era o 2º login (logo após o DET), o antiabuse do gov.br
-      // exigia um hCaptcha que o 2Captcha marca como UNSOLVABLE, e a checagem
-      // falhava todo dia. O DET, no passo 2, reaproveita a sessão SSO criada
-      // aqui — um login só para os dois. Medido em 25/08/2026.
+      // Vem antes de escolher os alvos porque é ela que define a lista: o SPE
+      // diz quem tem procuração hoje. Reaproveita a sessão gov.br do DET —
+      // testado frio em 26/08: leu 136 procurações sem captcha.
       //
-      // A checagem vem antes de escolher os alvos porque é ela que define a
-      // lista: o SPE diz quem tem procuração hoje.
-      try {
-        const procs = await this.lerProcuracoesSpe(); // faz o próprio login do SPE
-        const sinc = await reconciliarProcuracoes(procs, { log: (m) => this.log(m) });
+      // `pularSpe` separa isto da coleta de caixas: as procurações são checadas
+      // numa rodada própria (ex.: 22h) e a coleta de caixas (6h) apenas USA a
+      // lista já atualizada, sem refazer o SPE. Assim cada rodada é um login só,
+      // e a de caixas nunca é atrasada nem contaminada pela do SPE.
+      if (!opts.pularSpe) try {
+        const sinc = await this.sincronizarProcuracoes();
         res.procuracoes = sinc;
         await mysqlPool.execute(
           `UPDATE det_coletas
@@ -1211,11 +1266,14 @@ export class DetColetorService {
           .catch(() => undefined);
       }
 
-      // ─── Passo 2: autenticar no DET (reaproveita a sessão SSO do SPE) ────
-      // O passo 1 deixou a página no SPE e já criou a sessão gov.br; aqui o DET
-      // entra sem novo login. `voltarAoProprioPerfil` garante o "Meu Perfil"
-      // antes de começar a trocar para os clientes.
-      await this.autenticarComReabertura();
+      // ─── Passo 3: voltar ao DET para varrer as caixas ───────────────────
+      // O passo 2 deixou a página no SPE (spe.sistema.gov.br). Sem voltar ao
+      // DET, o primeiro `assumirPerfil` procuraria "Trocar Perfil"/"Procurador"
+      // na tela do SPE, que não tem essa opção — e TODOS os clientes recusariam.
+      // `garantirSessao` reautentica se a sessão tiver expirado durante o SPE.
+      await this.page.goto(DET_URL, { waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
+      await sleep(3000);
+      await this.garantirSessao();
       await this.voltarAoProprioPerfil();
 
       // ─── Passo 2: varrer a caixa de quem tem procuração ─────────────────

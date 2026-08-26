@@ -17,19 +17,44 @@ const limite = arg ? Number(arg.split('=')[1]) : undefined;
 // --faltantes: pula quem já foi coletado hoje. Serve para RETOMAR uma coleta
 // interrompida sem refazer os já varridos.
 const faltantes = process.argv.includes('--faltantes');
+// --procuracoes: SÓ checa procurações no SPE (login DET + SPE), sem varrer caixas.
+const soProcuracoes = process.argv.includes('--procuracoes');
+// --pular-spe: coleta de caixas sem refazer a checagem de procurações.
+const pularSpe = process.argv.includes('--pular-spe');
 
 (async () => {
   const t0 = Date.now();
   const coletor = new DetColetorService((m) => console.log('  ' + m));
+
+  // Modo só-procurações: exercita a rodada agendada das 22h.
+  if (soProcuracoes) {
+    console.log('Checagem de procurações (SPE) — sem varrer caixas');
+    try {
+      await coletor.executarProcuracoes('manual');
+      console.log(`\n=== OK em ${Math.round((Date.now() - t0) / 1000)}s ===`);
+    } catch (e: any) {
+      console.error('FALHOU:', e?.message ?? e);
+      process.exitCode = 1;
+    } finally {
+      await mysqlPool.end();
+    }
+    return;
+  }
+
   console.log(
     limite
       ? `Coleta manual (limite ${limite})`
       : faltantes
         ? 'Coleta manual (só os que faltam hoje)'
-        : 'Coleta manual (todos)'
+        : pularSpe
+          ? 'Coleta de caixas (sem refazer SPE)'
+          : 'Coleta manual (todos)'
   );
   try {
-    const r = await coletor.executar('manual', limite, { pularColetadosHoje: faltantes });
+    const r = await coletor.executar('manual', limite, {
+      pularColetadosHoje: faltantes,
+      pularSpe,
+    });
     const seg = Math.round((Date.now() - t0) / 1000);
     console.log('\n=== RESULTADO ===');
     console.log(`  coleta #${r.coletaId} em ${seg}s`);
