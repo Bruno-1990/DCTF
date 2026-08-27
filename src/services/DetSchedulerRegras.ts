@@ -43,3 +43,30 @@ export function nomesDias(dias = DIAS_SEMANA): string {
   const nomes = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   return dias.map((d) => nomes[d] ?? String(d)).join(', ');
 }
+
+// ─── Trava contra rodar duas vezes no mesmo dia ─────────────────────────────
+
+/** Linha de `det_coletas` do dia, no mínimo que a decisão precisa. */
+export interface RodadaDoDia {
+  total_clientes: number | null;
+  procuracoes_lidas: number | null;
+}
+
+/** A coleta de CAIXAS já rodou hoje? A marca é ter varrido algum cliente. */
+export function jaColetouCaixas(rodadas: RodadaDoDia[]): boolean {
+  return rodadas.some((r) => Number(r.total_clientes ?? 0) > 0);
+}
+
+/**
+ * A checagem de PROCURAÇÕES já rodou hoje? A marca é o SPE LIDO — não a mera
+ * ausência de caixas varridas.
+ *
+ * Uma coleta de caixas que morre no login grava `total_clientes = 0` e, pela
+ * regra antiga, se disfarçava de procuração feita: em 27/08/2026 a falha das
+ * 6h teria calado a rodada das 22h do mesmo dia, sem erro nenhum à vista.
+ */
+export function jaChecouProcuracoes(rodadas: RodadaDoDia[]): boolean {
+  return rodadas.some(
+    (r) => Number(r.total_clientes ?? 0) === 0 && r.procuracoes_lidas != null
+  );
+}

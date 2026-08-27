@@ -161,6 +161,12 @@ export class DetColetorService {
   private processo: any = null;
   /** Conectou num Edge que já estava aberto — não é nosso para fechar. */
   private reaproveitou = false;
+  /**
+   * Já descartamos um navegador órfão nesta rodada? Então não se reaproveita
+   * mais nada: se o `close()` não matou o processo do Edge, reconectar nele
+   * seria voltar exatamente ao órfão que acabamos de recusar.
+   */
+  private orfaoDescartado = false;
   private reautenticacoes = 0;
   private log: (m: string) => void;
 
@@ -185,8 +191,10 @@ export class DetColetorService {
     // refazer o login, que é a etapa que exige uma pessoa (o gov.br protege a
     // tela de login com captcha).
     try {
-      const r = await fetch(`http://127.0.0.1:${PORTA_CDP}/json/version`);
-      if (r.ok) {
+      const r = this.orfaoDescartado
+        ? null
+        : await fetch(`http://127.0.0.1:${PORTA_CDP}/json/version`);
+      if (r?.ok) {
         this.browser = await puppeteer.connect({
           browserURL: `http://127.0.0.1:${PORTA_CDP}`,
           defaultViewport: null,
@@ -415,19 +423,63 @@ export class DetColetorService {
         return;
       } catch (e: any) {
         this.log(`autenticação falhou (tentativa ${tentativa}/${maxTentativas}): ${e?.message ?? e}`);
-
-        if (this.reaproveitou) {
-          // Não é nosso para fechar e reabrir. Sobe o erro.
-          throw e;
-        }
         if (tentativa === maxTentativas) throw e;
 
-        this.log('reabrindo o navegador do zero para reiniciar o login');
-        await this.fechar();
+        if (this.reaproveitou) {
+          // Um navegador reaproveitado que NÃO consegue autenticar não tem
+          // login algum a preservar: é sobra de uma rodada anterior, parada na
+          // tela de login. Manter a mão longe dele custou a coleta inteira de
+          // 27/08/2026 — o Edge dos testes da véspera ficou aberto na porta
+          // CDP, cada rodada o reaproveitou e o erro subia na primeira
+          // tentativa, sem chance de reabrir limpo.
+          //
+          // A carência é o que ainda protege o caso que motivou a regra
+          // original: se houver uma PESSOA no meio do login à mão, ela termina
+          // dentro dela e a sessão dela é aproveitada, não destruída.
+          if (await this.esperarLoginHumano()) {
+            this.log('login humano concluído durante a carência — seguindo nesta sessão');
+            return;
+          }
+          this.log('navegador reaproveitado está sem login — descartando para abrir um limpo');
+          await this.descartarNavegadorSemLogin();
+        } else {
+          this.log('reabrindo o navegador do zero para reiniciar o login');
+          await this.fechar();
+        }
         await sleep(3000);
         await this.abrirNavegador();
       }
     }
+  }
+
+  /**
+   * Carência para um login manual em andamento: confere o cabeçalho do
+   * empregador a cada 4s. Só existe para não fechar a janela na cara de quem
+   * está digitando o código no gov.br.
+   */
+  private async esperarLoginHumano(segundos = 20): Promise<boolean> {
+    for (let i = 0; i < Math.ceil(segundos / 4); i++) {
+      await sleep(4000);
+      if (await this.empregadorAtual()) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Fecha um navegador que apenas CONECTAMOS (não abrimos) — e só quando já se
+   * sabe que ele não tem sessão. Diferente de `fechar()`, que nesse caso apenas
+   * solta a conexão e deixaria o órfão vivo para envenenar a próxima rodada.
+   */
+  private async descartarNavegadorSemLogin(): Promise<void> {
+    try {
+      await this.browser?.close();
+    } catch {
+      /* já morreu ou recusou fechar — abrirNavegador() decide o que dá */
+    }
+    this.page = null;
+    this.browser = null;
+    this.reaproveitou = false;
+    this.orfaoDescartado = true;
   }
 
   private async empregadorAtual(): Promise<string | null> {

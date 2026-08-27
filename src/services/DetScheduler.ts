@@ -36,29 +36,28 @@ import {
   PROC_MINUTO,
   HABILITADO,
   janelaDeDisparo,
+  jaChecouProcuracoes,
+  jaColetouCaixas,
   nomesDias,
 } from './DetSchedulerRegras';
+import type { RodadaDoDia } from './DetSchedulerRegras';
 
 const INTERVALO_MS = 60 * 1000; // confere a cada minuto
 
 let timer: NodeJS.Timeout | null = null;
 
-/** Já rodou a coleta de CAIXAS hoje? (registro cron com clientes varridos) */
-async function jaColetouCaixasHoje(): Promise<boolean> {
+/**
+ * Rodadas do cron de hoje — UMA consulta que alimenta as duas travas. Quem
+ * decide o que cada registro significa é `DetSchedulerRegras`, onde a regra é
+ * pura e coberta por teste (contar linhas em SQL escondia a distinção entre
+ * "procuração feita" e "coleta que morreu no login").
+ */
+async function rodadasCronDeHoje(): Promise<RodadaDoDia[]> {
   const r = await executeQuery<any>(
-    `SELECT COUNT(*) AS n FROM det_coletas
-     WHERE origem = 'cron' AND total_clientes > 0 AND DATE(iniciado_em) = CURDATE()`
+    `SELECT total_clientes, procuracoes_lidas FROM det_coletas
+     WHERE origem = 'cron' AND DATE(iniciado_em) = CURDATE()`
   );
-  return Number(r?.[0]?.n ?? 0) > 0;
-}
-
-/** Já checou as PROCURAÇÕES hoje? (registro cron sem caixas: total_clientes = 0) */
-async function jaChecouProcuracoesHoje(): Promise<boolean> {
-  const r = await executeQuery<any>(
-    `SELECT COUNT(*) AS n FROM det_coletas
-     WHERE origem = 'cron' AND total_clientes = 0 AND DATE(iniciado_em) = CURDATE()`
-  );
-  return Number(r?.[0]?.n ?? 0) > 0;
+  return Array.isArray(r) ? (r as RodadaDoDia[]) : [];
 }
 
 async function verificar(): Promise<void> {
@@ -68,7 +67,7 @@ async function verificar(): Promise<void> {
 
     // ─── PROCURAÇÕES (noite) ───────────────────────────────────────────────
     if (janelaDeDisparo(agora, PROC_HORA, PROC_MINUTO)) {
-      if (await jaChecouProcuracoesHoje()) return;
+      if (jaChecouProcuracoes(await rodadasCronDeHoje())) return;
       console.log('[DET-Scheduler] iniciando checagem de procurações (SPE)');
       const coletor = new DetColetorService((m) => console.log('[DET]', m));
       await coletor.executarProcuracoes('cron');
@@ -78,7 +77,7 @@ async function verificar(): Promise<void> {
 
     // ─── CAIXAS (manhã) ────────────────────────────────────────────────────
     if (janelaDeDisparo(agora, HORA, MINUTO)) {
-      if (await jaColetouCaixasHoje()) return;
+      if (jaColetouCaixas(await rodadasCronDeHoje())) return;
       console.log('[DET-Scheduler] iniciando coleta das caixas (sem refazer SPE)');
       const coletor = new DetColetorService((m) => console.log('[DET]', m));
       const res = await coletor.executar('cron', undefined, { pularSpe: true });
