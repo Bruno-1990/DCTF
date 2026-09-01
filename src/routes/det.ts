@@ -10,6 +10,7 @@ router.get('/resumo', (req, res) => controller.resumo(req, res));
 router.get('/clientes', (req, res) => controller.listar(req, res));
 router.get('/coleta/status', (req, res) => controller.statusColeta(req, res));
 router.post('/coletar', (req, res) => controller.coletar(req, res));
+router.post('/notificacoes/email', (req, res) => controller.enviarEmailNotificacoes(req, res));
 
 router.get('/clientes/:cnpj/notificacoes', (req, res) => controller.notificacoes(req, res));
 // Varredura do SPE avulsa (a coleta já faz isto sozinha no início da rodada).

@@ -54,6 +54,10 @@ export interface DetCliente {
    *  de "nunca", que antes eram o mesmo "nunca". */
   ultima_coleta_status?: 'ok' | 'vazia' | 'erro' | null;
   ultima_coleta_msgs?: number | null;
+  /** Quando o acervo que aparece na tela foi visto pela última vez. Não é o
+   *  mesmo que `ultima_coleta`: uma tentativa que falha sobrescreve aquele
+   *  carimbo, e este continua marcando a coleta que de fato trouxe o dado. */
+  visto_em?: string | null;
 }
 
 export interface DetNotificacao {
@@ -76,6 +80,20 @@ export const detService = {
 
   async clientes(): Promise<DetCliente[]> {
     const { data } = await api.get('/det/clientes');
+    return data.data;
+  },
+
+  /**
+   * Envia por e-mail a lista de empresas com notificação no DET.
+   *
+   * Aceita só o prefixo ("ti") — o domínio é fixo e o backend completa. A lista
+   * NÃO vai daqui: o servidor a relê do banco na hora do envio, para o e-mail
+   * refletir o estado real e não o que estava na tela.
+   */
+  async enviarEmailNotificacoes(
+    destinatario: string
+  ): Promise<{ destinatario: string; empresas: number; notificacoes: number }> {
+    const { data } = await api.post('/det/notificacoes/email', { to: destinatario.trim() });
     return data.data;
   },
 
@@ -135,6 +153,55 @@ export const rotuloColeta = (c: {
   if (c.ultima_coleta_status === 'vazia') return 'sem mensagens';
   if (c.ultima_coleta_status === 'erro') return 'falhou';
   return desde(c.ultima_coleta);
+};
+
+/** Data e hora curtas, para caber no tooltip: "26/08 09:28". */
+const dataHoraCurta = (iso: string | null): string => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+/**
+ * O que o tooltip da coluna de coleta explica.
+ *
+ * O caso que motivou: uma linha com "1 notif." e "falhou" ao lado parece
+ * contraditória — se falhou, de onde veio a notificação? Não é contradição: o
+ * badge é o ACERVO (coletado dias antes) e "falhou" é só a ÚLTIMA TENTATIVA. O
+ * rótulo da coluna continua curto; quem quiser entender passa o mouse.
+ */
+export const tituloColeta = (c: {
+  ultima_coleta: string | null;
+  ultima_coleta_status?: 'ok' | 'vazia' | 'erro' | null;
+  ultima_coleta_msgs?: number | null;
+  visto_em?: string | null;
+  mensagens?: number;
+}): string => {
+  if (!c.ultima_coleta) return 'Nunca coletado — este cliente ainda não foi varrido.';
+
+  const quando = dataHoraCurta(c.ultima_coleta);
+
+  if (c.ultima_coleta_status === 'erro') {
+    const base = `Falhou na última tentativa (${quando}).`;
+    if (!c.visto_em) return `${base} Nada foi coletado deste cliente até agora.`;
+    const total = Number(c.mensagens ?? 0);
+    return (
+      `${base} O que aparece aqui${total > 0 ? ` (${total} ${total > 1 ? 'mensagens' : 'mensagem'})` : ''}` +
+      ` é o registro de ${dataHoraCurta(c.visto_em)} — não se perdeu, só não foi atualizado.`
+    );
+  }
+
+  if (c.ultima_coleta_status === 'vazia') {
+    return `Coletado em ${quando} — a caixa postal estava vazia.`;
+  }
+
+  return `Coletado em ${quando}.`;
 };
 
 export const formatData = (iso: string | null): string => {

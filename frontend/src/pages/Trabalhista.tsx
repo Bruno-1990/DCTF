@@ -5,17 +5,25 @@ import {
   MagnifyingGlassIcon,
   ArrowPathIcon,
   XMarkIcon,
+  EnvelopeIcon,
+  CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import {
   detService,
   formatCnpj,
   desde,
   rotuloColeta,
+  tituloColeta,
   formatData,
   type DetResumo,
   type DetCliente,
   type DetNotificacao,
 } from '../services/det';
+import {
+  DOMINIO_EMAIL,
+  PREFIXO_VALIDO,
+  normalizarPrefixoEmail,
+} from '../utils/emailDestino';
 
 type TabId = 'det';
 
@@ -313,9 +321,291 @@ const PainelCliente: React.FC<{
   );
 };
 
+// ─── Envio por e-mail ──────────────────────────────────────────────────────
+
+/**
+ * Manda a lista de empresas com notificação para alguém do escritório.
+ *
+ * O QUE VAI no e-mail não se escolhe aqui: é sempre o recorte "tem
+ * Notificação" — o mesmo do filtro da tela. O que se escolhe é PARA QUEM, e o
+ * domínio é fixo, então o campo pede só o prefixo.
+ *
+ * A prévia existe para conferir antes de disparar: mandar um aviso de prazo
+ * legal para o departamento errado, ou mandar um relatório vazio sem perceber,
+ * são os dois erros que ela evita. A lista mostrada é a mesma que o servidor
+ * relê do banco na hora de montar o e-mail.
+ */
+const ModalEmailNotificacoes: React.FC<{
+  empresas: DetCliente[];
+  onFechar: () => void;
+}> = ({ empresas, onFechar }) => {
+  const [prefixo, setPrefixo] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [enviado, setEnviado] = useState<{ empresas: number; notificacoes: number } | null>(null);
+
+  const prefixoLimpo = normalizarPrefixoEmail(prefixo);
+  const prefixoOk = PREFIXO_VALIDO.test(prefixoLimpo);
+  const emailFinal = `${prefixoLimpo}${DOMINIO_EMAIL}`;
+
+  const totalNotificacoes = empresas.reduce((s, c) => s + numero(c.notificacoes), 0);
+  const totalSemCiencia = empresas.reduce((s, c) => s + numero(c.nao_lidas), 0);
+
+  const enviar = async () => {
+    if (!prefixoOk || enviando) return;
+    setEnviando(true);
+    setErro(null);
+    try {
+      const r = await detService.enviarEmailNotificacoes(emailFinal);
+      setEnviado({ empresas: r.empresas, notificacoes: r.notificacoes });
+    } catch (e: any) {
+      setErro(e?.response?.data?.message ?? e?.message ?? 'Falha ao enviar');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  // Durante o envio não há o que cancelar: fechar deixaria o disparo órfão e o
+  // usuário sem o retorno.
+  const fechar = () => {
+    if (!enviando) onFechar();
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" onClick={fechar} />
+      <div className="fixed inset-0 z-[101] flex items-center justify-center p-4">
+        <div
+          className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+            <div>
+              <h3 className="text-base font-bold text-gray-800">Enviar notificações do DET</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {enviado
+                  ? 'Resultado'
+                  : enviando
+                    ? 'Enviando'
+                    : `${empresas.length} empresa(s) com notificação`}
+              </p>
+            </div>
+            {!enviando && (
+              <button
+                type="button"
+                onClick={fechar}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          {enviando ? (
+            <div className="p-8 flex flex-col items-center text-center">
+              <div className="relative h-16 w-16 mb-5">
+                {/* Trilho estático + arco girando: leitura de progresso sem dar
+                    um percentual que não temos como medir de verdade. */}
+                <div className="absolute inset-0 rounded-full border-4 border-blue-100" />
+                <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-600 animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <EnvelopeIcon className="h-6 w-6 text-blue-600 animate-pulse" />
+                </div>
+              </div>
+              <div className="text-sm font-semibold text-gray-800">Enviando...</div>
+              <div className="text-xs text-gray-500 mt-1.5 break-all">
+                para <span className="font-semibold text-gray-700">{emailFinal}</span>
+              </div>
+              <div className="text-[11px] text-gray-400 mt-3">Isso pode levar alguns segundos.</div>
+            </div>
+          ) : enviado ? (
+            <>
+              <div className="p-6 flex flex-col items-center text-center">
+                <div className="h-16 w-16 rounded-full bg-emerald-100 ring-8 ring-emerald-50 flex items-center justify-center">
+                  <CheckCircleIcon className="h-9 w-9 text-emerald-600" />
+                </div>
+                <div className="text-base font-bold text-gray-800 mt-4">Enviado com sucesso</div>
+                <div className="text-xs text-gray-600 mt-2 break-all">
+                  {enviado.empresas} empresa(s) e {enviado.notificacoes} notificação(ões) para{' '}
+                  <span className="font-semibold text-gray-800">{emailFinal}</span>
+                </div>
+              </div>
+              <div className="px-5 pb-5">
+                <button
+                  type="button"
+                  onClick={onFechar}
+                  className="w-full px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-semibold text-sm"
+                >
+                  Fechar
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="p-5 space-y-4 overflow-y-auto">
+                <div>
+                  <label
+                    htmlFor="det-email-prefixo"
+                    className="block text-xs font-semibold text-gray-700 mb-1.5"
+                  >
+                    Enviar para
+                  </label>
+                  {/* Domínio como sufixo fixo, fora do input: o usuário não
+                      consegue apagá-lo nem duplicá-lo sem perceber. */}
+                  <div className="flex items-stretch rounded-xl border-2 border-gray-200 overflow-hidden focus-within:border-blue-500 transition-colors">
+                    <input
+                      id="det-email-prefixo"
+                      type="text"
+                      autoFocus
+                      value={prefixo}
+                      onChange={(e) => setPrefixo(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') enviar();
+                      }}
+                      placeholder="seu.nome"
+                      className="flex-1 min-w-0 px-3 py-2.5 text-sm focus:outline-none"
+                    />
+                    <span className="px-3 py-2.5 bg-gray-50 text-gray-600 text-sm font-medium border-l-2 border-gray-200 whitespace-nowrap">
+                      {DOMINIO_EMAIL}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1.5">
+                    Só endereços {DOMINIO_EMAIL} — a caixa postal é dado de cliente.
+                  </p>
+                </div>
+
+                {/* Prévia: o que exatamente vai no e-mail. */}
+                <div>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <span className="text-xs font-semibold text-gray-700">Vai no e-mail</span>
+                    <span className="text-[11px] text-gray-400">
+                      {empresas.length} empresa(s) · {totalNotificacoes} notificação(ões)
+                      {totalSemCiencia > 0 && ` · ${totalSemCiencia} sem ciência`}
+                    </span>
+                  </div>
+
+                  {empresas.length === 0 ? (
+                    <p className="text-sm text-gray-500 bg-amber-50 border border-amber-100 rounded-xl p-3">
+                      Nenhuma empresa com notificação no momento. O e-mail sairia vazio.
+                    </p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-xl max-h-52 overflow-y-auto divide-y divide-gray-100">
+                      {empresas.map((c) => (
+                        <div key={c.cnpj} className="flex items-center gap-2 px-3 py-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-gray-800 truncate">
+                              {c.razao_social}
+                            </p>
+                            <p className="text-[11px] text-gray-400">{formatCnpj(c.cnpj)}</p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px] font-bold flex-shrink-0">
+                            {numero(c.notificacoes)} notif.
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+                    Só Notificação — Aviso não entra, porque chega todo mês e não tem prazo.
+                    Notificação já lida continua na lista: abrir no portal é o que dispara o
+                    prazo.
+                  </p>
+                </div>
+
+                {erro && (
+                  <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2 break-words">
+                    {erro}
+                  </p>
+                )}
+              </div>
+
+              <div className="px-5 pb-5 pt-1 flex gap-3 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={onFechar}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-semibold text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={enviar}
+                  disabled={!prefixoOk}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Enviar
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
 // ─── Aba DET ───────────────────────────────────────────────────────────────
 
 type Filtro = 'todos' | 'com' | 'sem' | 'novas';
+
+/** Eixo de conteúdo da caixa postal — independente do de procuração acima.
+ *  Os três estados são EXCLUSIVOS: quem tem notificação não reaparece em
+ *  "Caixa postal". Assim as contagens somam a lista inteira e ninguém precisa
+ *  raciocinar sobre sobreposição para saber quantos clientes faltam olhar. */
+type FiltroCaixa = 'todas' | 'notificacoes' | 'avisos' | 'vazias';
+
+const numero = (v: number | string | null | undefined) => Number(v) || 0;
+
+/** Notificação tem precedência sobre aviso: um cliente com os dois é um caso
+ *  de prazo legal, e é assim que ele precisa aparecer. */
+const classeCaixa = (c: DetCliente): Exclude<FiltroCaixa, 'todas'> =>
+  numero(c.notificacoes) > 0 ? 'notificacoes' : numero(c.mensagens) > 0 ? 'avisos' : 'vazias';
+
+const PILL_TONS: Record<FiltroCaixa, { ativo: string; inativo: string }> = {
+  todas: {
+    ativo: 'bg-gray-800 text-white border-gray-800',
+    inativo: 'bg-white text-gray-600 border-gray-200 hover:border-gray-400',
+  },
+  notificacoes: {
+    ativo: 'bg-red-600 text-white border-red-600 shadow-sm shadow-red-500/30',
+    inativo: 'bg-white text-red-700 border-red-200 hover:border-red-400',
+  },
+  avisos: {
+    ativo: 'bg-sky-600 text-white border-sky-600 shadow-sm shadow-sky-500/30',
+    inativo: 'bg-white text-sky-700 border-sky-200 hover:border-sky-400',
+  },
+  vazias: {
+    ativo: 'bg-gray-500 text-white border-gray-500',
+    inativo: 'bg-white text-gray-500 border-gray-200 hover:border-gray-400',
+  },
+};
+
+const PillCaixa: React.FC<{
+  id: FiltroCaixa;
+  label: string;
+  valor: number;
+  atual: FiltroCaixa;
+  titulo?: string;
+  onSelect: (f: FiltroCaixa) => void;
+}> = ({ id, label, valor, atual, titulo, onSelect }) => {
+  const ativo = atual === id;
+  const t = PILL_TONS[id];
+  return (
+    <button
+      type="button"
+      title={titulo}
+      /* Clicar na pílula ativa desfaz e volta para "Todas" — mesmo gesto dos
+         cartões de cima, para o filtro nunca ficar preso. */
+      onClick={() => onSelect(ativo && id !== 'todas' ? 'todas' : id)}
+      className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors ${
+        ativo ? t.ativo : t.inativo
+      }`}
+    >
+      {label}
+      <span className={`ml-1.5 tabular-nums ${ativo ? 'opacity-80' : 'opacity-60'}`}>{valor}</span>
+    </button>
+  );
+};
 
 const DteTab: React.FC = () => {
   const [resumo, setResumo] = useState<DetResumo | null>(null);
@@ -328,7 +618,9 @@ const DteTab: React.FC = () => {
   // (indeferidas) são ruído para o dia a dia — o usuário troca o filtro se
   // quiser vê-las. Clicar de novo no card "Com procuração" limpa para 'todos'.
   const [filtro, setFiltro] = useState<Filtro>('com');
+  const [caixa, setCaixa] = useState<FiltroCaixa>('todas');
   const [selecionado, setSelecionado] = useState<DetCliente | null>(null);
+  const [modalEmail, setModalEmail] = useState(false);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -348,7 +640,10 @@ const DteTab: React.FC = () => {
     carregar();
   }, [carregar]);
 
-  const lista = useMemo(() => {
+  /** Lista pelos outros eixos (procuração + busca), ANTES do filtro de caixa:
+   *  é sobre ela que as pílulas contam, para o número em cada uma ser
+   *  exatamente quantas linhas aparecem se você clicar nela. */
+  const listaBase = useMemo(() => {
     const q = busca.trim().toLowerCase().replace(/\D/g, '');
     const qTexto = busca.trim().toLowerCase();
     return clientes.filter((c) => {
@@ -362,6 +657,24 @@ const DteTab: React.FC = () => {
       );
     });
   }, [clientes, busca, filtro]);
+
+  const contagens = useMemo(() => {
+    const acc = { todas: listaBase.length, notificacoes: 0, avisos: 0, vazias: 0 };
+    for (const c of listaBase) acc[classeCaixa(c)]++;
+    return acc;
+  }, [listaBase]);
+
+  /** Recorte do e-mail: NAO segue os filtros da tela, para que o que sai por
+   *  e-mail seja sempre o mesmo conjunto, tenha quem clicou filtrado o que for. */
+  const comNotificacao = useMemo(
+    () => clientes.filter((c) => numero(c.notificacoes) > 0),
+    [clientes]
+  );
+
+  const lista = useMemo(
+    () => (caixa === 'todas' ? listaBase : listaBase.filter((c) => classeCaixa(c) === caixa)),
+    [listaBase, caixa]
+  );
 
   /** Clicar no cartão ativo desfaz; clicar em outro troca e limpa a busca. */
   const filtrarPor = (f: Filtro) => {
@@ -522,6 +835,22 @@ const DteTab: React.FC = () => {
           <span className="text-xs text-gray-400 flex-shrink-0">
             {lista.length} de {clientes.length}
           </span>
+          {/* Envio por e-mail. Fica junto do recarregar por ser acao sobre a
+              lista inteira, nao sobre a linha — as acoes de linha vivem no
+              painel lateral. O contador no cantinho diz de quantas empresas se
+              trata antes de abrir. */}
+          <button
+            onClick={() => setModalEmail(true)}
+            title={`Enviar por e-mail as ${comNotificacao.length} empresa(s) com notificacao`}
+            className="relative p-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-blue-300 flex-shrink-0 group"
+          >
+            <EnvelopeIcon className="w-5 h-5 text-gray-500 group-hover:text-blue-600" />
+            {comNotificacao.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center">
+                {comNotificacao.length}
+              </span>
+            )}
+          </button>
           <button
             onClick={carregar}
             title="Recarregar"
@@ -529,6 +858,47 @@ const DteTab: React.FC = () => {
           >
             <ArrowPathIcon className={`w-5 h-5 text-gray-500 ${carregando ? 'animate-spin' : ''}`} />
           </button>
+        </div>
+
+        {/* Conteúdo da caixa postal. Combina com os cartões de cima em vez de
+            competir com eles: "Com procuração" + "Notificações" é a pergunta
+            do dia a dia — quem eu consigo acessar e tem prazo correndo. */}
+        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+          <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mr-1">
+            Caixa
+          </span>
+          <PillCaixa
+            id="todas"
+            label="Todas"
+            valor={contagens.todas}
+            atual={caixa}
+            titulo="Sem filtrar pelo conteúdo da caixa postal"
+            onSelect={setCaixa}
+          />
+          <PillCaixa
+            id="notificacoes"
+            label="Notificações"
+            valor={contagens.notificacoes}
+            atual={caixa}
+            titulo="Têm ao menos uma Notificação — prazo legal correndo, lida ou não"
+            onSelect={setCaixa}
+          />
+          <PillCaixa
+            id="avisos"
+            label="Caixa postal"
+            valor={contagens.avisos}
+            atual={caixa}
+            titulo="Têm mensagem, mas nenhuma Notificação — só Avisos, sem prazo"
+            onSelect={setCaixa}
+          />
+          <PillCaixa
+            id="vazias"
+            label="Sem mensagem"
+            valor={contagens.vazias}
+            atual={caixa}
+            titulo="Nada na caixa postal — inclui quem nunca foi coletado"
+            onSelect={setCaixa}
+          />
         </div>
       </div>
 
@@ -638,12 +1008,7 @@ const DteTab: React.FC = () => {
                           ? 'text-gray-400 italic'
                           : 'text-gray-400'
                     }`}
-                    title={
-                      c.ultima_coleta
-                        ? `Última coleta: ${c.ultima_coleta}` +
-                          (c.ultima_coleta_status === 'vazia' ? ' — caixa vazia' : '')
-                        : 'nunca coletado'
-                    }
+                    title={tituloColeta(c)}
                   >
                     {rotuloColeta(c)}
                   </span>
@@ -653,6 +1018,13 @@ const DteTab: React.FC = () => {
           </ul>
         )}
       </div>
+
+      {modalEmail && (
+        <ModalEmailNotificacoes
+          empresas={comNotificacao}
+          onFechar={() => setModalEmail(false)}
+        />
+      )}
 
       {selecionado && (
         <PainelCliente

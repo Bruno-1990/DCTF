@@ -18,6 +18,11 @@ import cotaAprendizagemService, {
 } from '../../services/cotaAprendizagem';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import Alert from '../UI/Alert';
+import {
+  DOMINIO_EMAIL,
+  PREFIXO_VALIDO,
+  normalizarPrefixoEmail,
+} from '../../utils/emailDestino';
 
 /**
  * Aba "Cota de Aprendizagem" — quem está sujeito à cota (LC 123/2006 art. 3º +
@@ -1033,25 +1038,13 @@ function ModalAtualizar({
 }
 
 /**
- * Domínio fixo dos destinatários. O usuário digita só o prefixo — quem usa a
- * tela é sempre alguém de dentro, e digitar o domínio inteiro toda vez é onde
- * nascem os erros de digitação que fazem o relatório sumir sem aviso.
+ * Domínio, validação e normalização do destinatário vêm do módulo comum
+ * (`utils/emailDestino`) — a tela do DET manda e-mail pela mesma regra, e duas
+ * cópias divergiriam na primeira mudança. Reexportado aqui porque
+ * `normalizarPrefixoEmail` é parte da interface deste módulo desde antes de o
+ * util existir.
  */
-const DOMINIO_EMAIL = '@central-rnc.com.br';
-
-/** Prefixos válidos de caixa: sem espaço, sem @ e sem acento. */
-const PREFIXO_VALIDO = /^[a-z0-9._+-]+$/;
-
-/**
- * Normaliza o que foi digitado no campo de prefixo.
- *
- * Aceita colar o endereço inteiro ("ti@central-rnc.com.br") e fica só com o
- * que vem antes do @ — caso contrário o envio sairia para
- * "ti@central-rnc.com.br@central-rnc.com.br".
- */
-export function normalizarPrefixoEmail(valor: string): string {
-  return (valor || '').trim().toLowerCase().split('@')[0] ?? '';
-}
+export { normalizarPrefixoEmail };
 
 /** Nome do aviso na linguagem da tela (o backend usa o enum). */
 const rotuloAviso = (t: TipoAviso) =>

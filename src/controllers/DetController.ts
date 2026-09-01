@@ -15,6 +15,22 @@
 import { Request, Response } from 'express';
 import { executeQuery } from '../config/mysql';
 import { DetColetorService, coletaEmAndamento } from '../services/DetColetorService';
+import EmailService from '../services/EmailService';
+import {
+  montarHtmlNotificacoesDet,
+  TITULO_EMAIL_DET,
+  type EmpresaComNotificacoes,
+  type NotificacaoDet,
+} from '../services/det.email';
+
+/**
+ * Domínio único dos destinatários — mesma regra do envio em conferências.
+ *
+ * Quem usa a tela é sempre alguém de dentro; aceitar endereço externo aqui
+ * abriria caminho para a caixa postal de um cliente sair do escritório por um
+ * erro de digitação.
+ */
+const DOMINIO_EMAIL = '@central-rnc.com.br';
 
 const soDigitos = (s: unknown): string => String(s ?? '').replace(/\D/g, '');
 
@@ -133,14 +149,21 @@ export class DetController {
            -- "nunca". As colunas de mensagem seguem vindo de det_notificacoes.
            p.ultima_coleta_em                                    AS ultima_coleta,
            p.ultima_coleta_status,
-           p.ultima_coleta_msgs
+           p.ultima_coleta_msgs,
+           -- Quando o ACERVO que está na tela foi visto pela última vez.
+           -- Difere de ultima_coleta_em: aquele é sobrescrito pela tentativa
+           -- que FALHOU, e aí a data da coleta que de fato trouxe o dado se
+           -- perderia — a linha ficava "falhou" ao lado de "1 notif." sem
+           -- nada dizer que a notificação era de dias antes.
+           n.visto_em
          FROM clientes c
          LEFT JOIN det_procuracoes p ON p.cnpj = c.cnpj_limpo
          LEFT JOIN (
            SELECT cnpj,
                   COUNT(*)                                    AS total,
                   SUM(nao_lida = 1)                           AS nao_lidas,
-                  SUM(tipo = 'Notificação')                   AS notificacoes
+                  SUM(tipo = 'Notificação')                   AS notificacoes,
+                  MAX(ultima_coleta_em)                       AS visto_em
            FROM det_notificacoes
            GROUP BY cnpj
          ) n ON n.cnpj = c.cnpj_limpo
@@ -287,6 +310,99 @@ export class DetController {
         ? `Coleta iniciada (limitada a ${limite} cliente(s)).`
         : 'Coleta iniciada.',
     });
+  }
+
+  /**
+   * POST /api/det/notificacoes/email — manda a lista de empresas com
+   * notificação para alguém do escritório.
+   *
+   * O recorte é `tipo = 'Notificação'`, o MESMO do card e do filtro da tela —
+   * Aviso não entra. Notificação já lida entra: abrir a mensagem no portal gera
+   * ciência e inicia o prazo, então é justamente aí que ela precisa continuar
+   * visível.
+   *
+   * A lista é relida do banco no momento do envio, e não recebida do navegador:
+   * o que sai no e-mail é o estado real da base, não o que estava na tela de
+   * quem clicou — que pode ser de horas atrás.
+   */
+  async enviarEmailNotificacoes(req: Request, res: Response): Promise<void> {
+    const destinoBruto = String(req.body?.to ?? req.body?.email ?? '').trim();
+    if (!destinoBruto) {
+      res.status(400).json({
+        success: false,
+        message: `Informe o destinatário (ex: ti ou ti${DOMINIO_EMAIL}).`,
+      });
+      return;
+    }
+    // Aceita só o prefixo ("ti") ou o endereço inteiro — quem cola o endereço
+    // completo não deve receber erro por isso.
+    const destino = destinoBruto.includes('@')
+      ? destinoBruto.toLowerCase()
+      : `${destinoBruto.toLowerCase()}${DOMINIO_EMAIL}`;
+    if (!destino.endsWith(DOMINIO_EMAIL)) {
+      res.status(400).json({
+        success: false,
+        message: `Só é permitido enviar para endereços ${DOMINIO_EMAIL}`,
+      });
+      return;
+    }
+
+    try {
+      // Uma linha por notificação, já na ordem em que o e-mail as consome
+      // (mais recente primeiro dentro de cada cliente). O agrupamento fica em
+      // JS: são ~150 linhas, e GROUP_CONCAT truncaria assunto a 1024 bytes.
+      const rows = await executeQuery<any>(
+        `SELECT c.cnpj_limpo AS cnpj,
+                c.razao_social,
+                n.assunto, n.remetente, n.data_texto, n.data_envio, n.nao_lida
+         FROM det_notificacoes n
+         JOIN clientes c ON c.cnpj_limpo = n.cnpj
+         WHERE c.ativo = 1
+           AND n.tipo = 'Notificação'
+         ORDER BY c.razao_social ASC, n.data_envio DESC, n.id DESC`
+      );
+
+      const porCnpj = new Map<string, EmpresaComNotificacoes>();
+      for (const r of rows) {
+        let empresa = porCnpj.get(r.cnpj);
+        if (!empresa) {
+          empresa = { cnpj: r.cnpj, razao_social: r.razao_social, notificacoes: [] };
+          porCnpj.set(r.cnpj, empresa);
+        }
+        empresa.notificacoes.push({
+          assunto: r.assunto,
+          remetente: r.remetente,
+          data_texto: r.data_texto,
+          data_envio: r.data_envio,
+          nao_lida: r.nao_lida,
+        } as NotificacaoDet);
+      }
+      const empresas = [...porCnpj.values()];
+      const totalNotificacoes = rows.length;
+
+      await EmailService.sendEmail({
+        to: destino,
+        // Contagem no assunto = empresas, que é a unidade da lista.
+        subject: EmailService.montarAssunto(TITULO_EMAIL_DET, empresas.length),
+        html: montarHtmlNotificacoesDet(empresas),
+      });
+
+      res.json({
+        success: true,
+        message: `E-mail enviado para ${destino}`,
+        data: {
+          destinatario: destino,
+          empresas: empresas.length,
+          notificacoes: totalNotificacoes,
+        },
+      });
+    } catch (e: any) {
+      console.error('[DET] falha ao enviar e-mail de notificações:', e?.message ?? e);
+      res.status(500).json({
+        success: false,
+        message: e?.message ?? 'Não foi possível enviar o e-mail.',
+      });
+    }
   }
 
   /** GET /api/det/coleta/status — acompanha a rodada em curso ou a última. */
