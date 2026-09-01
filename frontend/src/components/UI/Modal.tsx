@@ -43,38 +43,50 @@ const Modal: React.FC<ModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        {/* Overlay */}
+    <div className="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true">
+      {/* Overlay. Fica FORA do contêiner do painel e o painel é `relative`:
+          sem isso o overlay — que é posicionado — pinta por cima do painel, que
+          não era, e o modal virava uma tela cinza vazia.
+
+          Isso passou despercebido porque a marcação original era a do Tailwind
+          2/3, onde a classe `transform` do painel criava contexto de
+          empilhamento sozinha. No Tailwind 4 (4.1 aqui) ela deixou de criar, e
+          o empilhamento passou a depender do `relative` explícito. */}
+      <div
+        className="fixed inset-0 bg-gray-900/50 transition-opacity"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* `min-h-full` com flex centraliza de verdade em qualquer altura de tela.
+          O arranjo anterior (`inline-block` + `align-middle`) dependia de um
+          espaçador de altura total que não existia neste arquivo, e por isso o
+          painel encostava no topo. */}
+      <div className="relative flex min-h-full items-center justify-center p-4">
         <div
-          className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-          onClick={onClose}
-        />
-        
-        {/* Modal */}
-        <div className={`inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full ${sizeClasses[size]}`}>
+          className={`w-full overflow-hidden rounded-2xl bg-white text-left shadow-2xl ${sizeClasses[size]}`}
+        >
           {title && (
-            <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">
-                  {title}
-                </h3>
-                <button
-                  onClick={onClose}
-                  className="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600"
-                >
-                  <span className="sr-only">Fechar</span>
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <h3 className="text-base font-bold text-gray-900">{title}</h3>
+              <button
+                onClick={onClose}
+                className="rounded-lg p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+              >
+                <span className="sr-only">Fechar</span>
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
             </div>
           )}
-          
-          <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pt-0">
-            {children}
-          </div>
+
+          <div className="px-5 py-5">{children}</div>
         </div>
       </div>
     </div>

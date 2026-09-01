@@ -16,11 +16,13 @@ import {
   type DetCliente,
   type DetNotificacao,
 } from '../services/det';
+import DarfTab from '../components/Trabalhista/DarfTab';
 
-type TabId = 'det';
+type TabId = 'det' | 'darf';
 
 const TABS: { id: TabId; label: string; gradient: string }[] = [
   { id: 'det', label: 'DET', gradient: 'from-sky-500 to-blue-600 shadow-sky-500/30' },
+  { id: 'darf', label: 'DARF', gradient: 'from-emerald-500 to-teal-600 shadow-emerald-500/30' },
 ];
 
 // ─── Cartão de contagem — e filtro ─────────────────────────────────────────
@@ -680,30 +682,44 @@ const Trabalhista: React.FC = () => {
         Rotinas trabalhistas dos clientes do escritório.
       </p>
 
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 mb-6 overflow-hidden">
-        <div className="px-6 pt-4 pb-2">
-          <div className="flex flex-wrap gap-1">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-300 ${
-                  activeTab === tab.id
-                    ? `bg-gradient-to-r ${tab.gradient} text-white shadow-lg`
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Controle segmentado, e nao um cartao de largura cheia: com duas abas
+          curtas, o cartao era uma faixa branca quase vazia ocupando altura que
+          a lista embaixo aproveita melhor. */}
+      <div
+        role="tablist"
+        aria-label="Rotinas trabalhistas"
+        className="mb-6 inline-flex gap-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-gray-200/80"
+      >
+        {TABS.map((tab) => {
+          const ativa = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={ativa}
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-lg px-5 py-2 text-sm font-semibold transition ${
+                ativa
+                  ? `bg-gradient-to-r ${tab.gradient} text-white shadow-md`
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
+      {/* A aba DET fica montada e apenas escondida — trocar de aba e voltar nao
+          pode custar uma recarga da lista inteira de estabelecimentos. A DARF,
+          ao contrario, so monta quando aberta: ela nao busca nada sozinha ate
+          alguem escolher um contribuinte. */}
       <div className={activeTab === 'det' ? '' : 'hidden'}>
         <DteTab />
       </div>
+
+      {activeTab === 'darf' && <DarfTab />}
     </div>
   );
 };

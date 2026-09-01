@@ -61,7 +61,8 @@
     "deps:check": "depcheck",
     "det:procuracoes:dry": "ts-node src/scripts/det-procuracoes-sync.ts --dry",
     "det:procuracoes": "ts-node src/scripts/det-procuracoes-sync.ts",
-    "det:migrate:046": "ts-node src/scripts/run-det-migration-046.ts"
+    "det:migrate:046": "ts-node src/scripts/run-det-migration-046.ts",
+    "migrate:darf": "ts-node --transpile-only src/scripts/run-darf-migration.ts"
   },
   "keywords": [
     "dctf",

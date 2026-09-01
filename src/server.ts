@@ -31,6 +31,7 @@ import beneficiosRoutes from './routes/beneficios';
 import estudoViabilidadeRoutes from './routes/estudo-viabilidade';
 import cotaAprendizagemRoutes from './routes/cota-aprendizagem';
 import detRoutes from './routes/det';
+import darfRoutes from './routes/darf';
 import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
 import substitutoScheduler from './services/SubstitutoScheduler';
 import detScheduler from './services/DetScheduler';
@@ -187,6 +188,18 @@ class Server {
     this.app.use('/api/estudo-viabilidade', estudoViabilidadeRoutes);
     this.app.use('/api/cota-aprendizagem', cotaAprendizagemRoutes);
     this.app.use('/api/det', detRoutes);
+
+    // DARF: cada chamada aqui é uma ida ao SERPRO, que é
+    // cota contratada. Este limiter protege a cota, não o servidor — por isso é
+    // mais apertado que o geral mesmo em desenvolvimento.
+    const darfLimiter = rateLimit({
+      windowMs: 60 * 1000, // 1 minuto
+      max: config.nodeEnv === 'development' ? 60 : 30,
+      message: 'Muitas requisições de DARF em sequência. Aguarde um instante.',
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+    this.app.use('/api/darf', darfLimiter, darfRoutes);
 
     // Root endpoint
     this.app.get('/', (_req, res) => {
