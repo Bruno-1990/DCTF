@@ -177,6 +177,107 @@ export const darfService = {
   },
 };
 
+// ─── Lote mensal para a Acessórias ─────────────────────────────────────────
+
+/**
+ * A carteira que o job mensal emite sozinho.
+ *
+ * Quem entra aqui tem o DARF previdenciário emitido, gravado na pasta da
+ * Acessórias e relatado por e-mail ao DP todo mês, sem ninguém clicar. É por
+ * isso que a tela mostra desde quando o cliente está no lote e permite desligar
+ * em vez de só remover: cliente que sai da rotina costuma voltar.
+ */
+export interface ClienteLote {
+  id: number;
+  cnpj: string;
+  razaoSocial: string | null;
+  codigoSci: string | null;
+  ativo: boolean;
+  observacao: string | null;
+  criadoEm: string;
+}
+
+export type StatusItemLote = 'emitido' | 'reaproveitado' | 'falha';
+
+export interface ItemLote {
+  cnpj: string;
+  razaoSocial: string | null;
+  codigoSci: string | null;
+  status: StatusItemLote;
+  darfId: number | null;
+  numeroDocumento: string | null;
+  valorTotal: number | null;
+  vencimento: string | null;
+  arquivo: string | null;
+  erro: string | null;
+}
+
+export interface ExecucaoLote {
+  id: number;
+  ano_pa: string;
+  mes_pa: string;
+  categoria: CategoriaId;
+  disparado_por: string | null;
+  iniciado_em: string;
+  concluido_em: string | null;
+  total: number;
+  emitidos: number;
+  reaproveitados: number;
+  falhas: number;
+  valor_total: string | number | null;
+  email_enviado: number;
+  email_erro: string | null;
+  /** Array de itens, ou `{ abortadoPor, itens }` quando a rodada nem começou. */
+  itens: ItemLote[] | { abortadoPor: string; itens: ItemLote[] };
+}
+
+/** Desembrulha `itens`, que muda de forma quando a rodada abortou. */
+export function itensDaExecucao(e: ExecucaoLote): ItemLote[] {
+  if (Array.isArray(e.itens)) return e.itens;
+  return e.itens?.itens ?? [];
+}
+
+export function abortoDaExecucao(e: ExecucaoLote): string | null {
+  return Array.isArray(e.itens) ? null : (e.itens?.abortadoPor ?? null);
+}
+
+export const darfLoteService = {
+  async listar(): Promise<ClienteLote[]> {
+    const { data } = await api.get('/darf/lote');
+    return data.data ?? [];
+  },
+
+  async adicionar(cnpj: string): Promise<ClienteLote> {
+    try {
+      const { data } = await api.post('/darf/lote', { cnpj });
+      return data.data;
+    } catch (e) {
+      throw new Error(mensagemDoErro(e, 'Não foi possível incluir o cliente no lote.'));
+    }
+  },
+
+  async alternarAtivo(id: number, ativo: boolean): Promise<void> {
+    try {
+      await api.patch(`/darf/lote/${id}`, { ativo });
+    } catch (e) {
+      throw new Error(mensagemDoErro(e, 'Não foi possível alterar o cliente.'));
+    }
+  },
+
+  async remover(id: number): Promise<void> {
+    try {
+      await api.delete(`/darf/lote/${id}`);
+    } catch (e) {
+      throw new Error(mensagemDoErro(e, 'Não foi possível remover o cliente do lote.'));
+    }
+  },
+
+  async execucoes(limit = 12): Promise<ExecucaoLote[]> {
+    const { data } = await api.get('/darf/lote/execucoes', { params: { limit } });
+    return data.data ?? [];
+  },
+};
+
 // ─── Formatação ────────────────────────────────────────────────────────────
 
 export const formatCnpj = (v: string): string => {

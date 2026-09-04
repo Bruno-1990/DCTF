@@ -19,8 +19,7 @@
  */
 
 import { Request, Response } from 'express';
-import type { ResultSetHeader } from 'mysql2';
-import { executeQuery, mysqlPool } from '../config/mysql';
+import { executeQuery } from '../config/mysql';
 import {
   gerarGuia,
   CATEGORIAS,
@@ -30,20 +29,8 @@ import {
   type DadosGuiaDctfWeb,
 } from '../services/DctfWebService';
 import { IntegraContadorError, soDigitos } from '../services/integraContador';
-
-/**
- * Tira do payload qualquer campo que carregue o PDF antes de gravá-lo em
- * `resposta_json`. O PDF já tem coluna própria; deixá-lo também no JSON
- * dobraria o tamanho da linha sem acrescentar nada à auditoria.
- */
-const semPdf = (payload: unknown): unknown => {
-  if (!payload || typeof payload !== 'object') return payload;
-  const copia: Record<string, unknown> = { ...(payload as Record<string, unknown>) };
-  for (const [k, v] of Object.entries(copia)) {
-    if (typeof v === 'string' && v.length > 1000) copia[k] = `<${v.length} chars omitidos>`;
-  }
-  return copia;
-};
+import { gravarNoHistorico } from '../services/darf.historico';
+import darfLoteService from '../services/DarfLoteService';
 
 /**
  * Traduz a exceção para status HTTP. O `IntegraContadorError` já vem com a
@@ -118,56 +105,11 @@ export class DarfController {
       return;
     }
 
-    let id: number | null = null;
-    let avisoHistorico: string | null = null;
-    try {
-      const env = guia.dadosEnviados as Record<string, any>;
-
-      const [cliente] = await executeQuery<any>(
-        'SELECT razao_social FROM clientes WHERE cnpj_limpo = ? LIMIT 1',
-        [dados.contribuinte]
-      );
-
-      const [resultado] = await mysqlPool.execute<ResultSetHeader>(
-        `INSERT INTO darfs_emitidos
-           (cnpj, razao_social,
-            categoria, categoria_numero, ano_pa, mes_pa, dia_pa,
-            cno_afericao, num_proc_reclamatoria, numero_recibo,
-            valor_imposto, valor_total, vencimento,
-            numero_documento, pdf_base64, emitido_por, resposta_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          dados.contribuinte,
-          cliente?.razao_social ?? null,
-          dados.categoria,
-          env['categoria'] ?? null,
-          env['anoPA'] ?? null,
-          env['mesPA'] ?? null,
-          env['diaPA'] ?? null,
-          env['cnoAfericao'] != null ? String(env['cnoAfericao']) : null,
-          env['numProcReclamatoria'] ?? null,
-          // O recibo lido do PDF vale mais do que o enviado: quando o pedido
-          // omite o recibo, a RFB escolhe o mais recente, e é o dela que conta.
-          guia.lidos.numeroRecibo ??
-            (env['numeroReciboEntrega'] != null ? String(env['numeroReciboEntrega']) : null),
-          // Lidos do PDF — a API não devolve nenhum valor.
-          guia.lidos.valorPrincipal,
-          guia.lidos.valorTotal,
-          guia.lidos.vencimento,
-          guia.numeroDocumento || null,
-          guia.pdf,
-          (req.headers['x-usuario'] as string) || b.emitidoPor || null,
-          // Sem o PDF: são ~150 KB de base64 que já estão na coluna própria, e
-          // duplicá-los dentro do JSON dobraria o tamanho de cada linha à toa.
-          JSON.stringify(semPdf(guia.respostaBruta)),
-        ]
-      );
-      id = resultado?.insertId ?? null;
-    } catch (erro) {
-      console.error('[Darf] Guia emitida mas não gravada no histórico:', erro);
-      avisoHistorico =
-        'A guia foi emitida, mas não foi possível gravá-la no histórico. Baixe o PDF agora.';
-    }
+    const { id, aviso: avisoHistorico } = await gravarNoHistorico(
+      dados,
+      guia,
+      (req.headers['x-usuario'] as string) || b.emitidoPor || null
+    );
 
     res.json({
       success: true,
@@ -405,6 +347,107 @@ export class DarfController {
       res.json({ success: true });
     } catch (erro) {
       responderErro(res, erro, 'restaurar o registro');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Lote mensal para a Acessórias
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** GET /api/darf/lote — a carteira, com razão social e código SCI. */
+  async loteListar(_req: Request, res: Response): Promise<void> {
+    try {
+      res.json({ success: true, data: await darfLoteService.listar() });
+    } catch (erro) {
+      responderErro(res, erro, 'listar a carteira do lote');
+    }
+  }
+
+  /** POST /api/darf/lote — inclui (ou religa) um CNPJ. */
+  async loteAdicionar(req: Request, res: Response): Promise<void> {
+    try {
+      const autor = (req.headers['x-usuario'] as string) || null;
+      const item = await darfLoteService.adicionar(String(req.body?.cnpj ?? ''), autor);
+      res.json({ success: true, data: item });
+    } catch (erro) {
+      // Erro de validação de CNPJ é do usuário, não do servidor: 400 com a
+      // mensagem, para a tela mostrá-la em vez de "erro interno".
+      res.status(400).json({ success: false, message: (erro as Error).message });
+    }
+  }
+
+  /** PATCH /api/darf/lote/:id — liga/desliga sem apagar. */
+  async loteAlternar(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Number(req.params['id']);
+      if (!Number.isInteger(id) || id <= 0) {
+        res.status(400).json({ success: false, message: 'Identificador inválido.' });
+        return;
+      }
+      await darfLoteService.alternarAtivo(id, req.body?.ativo !== false);
+      res.json({ success: true });
+    } catch (erro) {
+      res.status(400).json({ success: false, message: (erro as Error).message });
+    }
+  }
+
+  /** DELETE /api/darf/lote/:id — tira do lote de vez. */
+  async loteRemover(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Number(req.params['id']);
+      if (!Number.isInteger(id) || id <= 0) {
+        res.status(400).json({ success: false, message: 'Identificador inválido.' });
+        return;
+      }
+      await darfLoteService.remover(id);
+      res.json({ success: true });
+    } catch (erro) {
+      res.status(400).json({ success: false, message: (erro as Error).message });
+    }
+  }
+
+  /** GET /api/darf/lote/execucoes — as rodadas, mais recente primeiro. */
+  async loteExecucoes(req: Request, res: Response): Promise<void> {
+    try {
+      const limit = Number(req.query['limit'] ?? 24);
+      res.json({ success: true, data: await darfLoteService.execucoes(limit) });
+    } catch (erro) {
+      responderErro(res, erro, 'listar as execuções do lote');
+    }
+  }
+
+  /**
+   * POST /api/darf/lote/executar — roda agora, fora do agendador.
+   *
+   * Existe para o dia em que a rodada automática precisa ser refeita: uma
+   * declaração foi retificada, a pasta estava fora do ar, um cliente entrou
+   * atrasado no lote. Sem ela a única saída seria esperar o mês seguinte.
+   *
+   * Guias que já existem na competência são REAPROVEITADAS — repetir a chamada
+   * não cobra cota de novo. `forcar: true` desfaz isso de propósito, e só deve
+   * ser usado quando a guia anterior perdeu a validade.
+   */
+  async loteExecutar(req: Request, res: Response): Promise<void> {
+    const b = req.body ?? {};
+    const anoPA = String(b.anoPA ?? '').trim();
+    const mesPA = String(b.mesPA ?? '').trim();
+
+    if (!/^\d{4}$/.test(anoPA) || !/^\d{1,2}$/.test(mesPA)) {
+      res.status(400).json({ success: false, message: 'Informe ano (AAAA) e mês (MM).' });
+      return;
+    }
+
+    try {
+      const resultado = await darfLoteService.executar({
+        anoPA,
+        mesPA,
+        categoria: b.categoria || 'GERAL_MENSAL',
+        disparadoPor: (req.headers['x-usuario'] as string) || 'manual',
+        forcar: b.forcar === true,
+      });
+      res.json({ success: true, data: resultado });
+    } catch (erro) {
+      responderErro(res, erro, 'executar o lote');
     }
   }
 }

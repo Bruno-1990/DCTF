@@ -4,6 +4,7 @@
  *   049 — generaliza o histórico e renomeia `sicalc_darfs` → `darfs_emitidos`
  *   050 — deixa só o DARF numerado e troca exclusão física por lógica
  *   051 — guia excluída deixa de guardar o PDF
+ *   052 — lote mensal para a Acessórias (carteira + histórico das rodadas)
  *
  * Idempotentes: cada passo consulta o information_schema antes de agir, então
  * rodar de novo é seguro e serve de conferência.
@@ -23,6 +24,7 @@ const MIGRATIONS = [
   '049_darfs_emitidos.sql',
   '050_darfs_somente_numerado.sql',
   '051_darf_excluido_sem_pdf.sql',
+  '052_darf_lote_acessorias.sql',
 ];
 
 function statementsDe(arquivo: string): string[] {
@@ -78,6 +80,18 @@ async function run(): Promise<void> {
     );
     console.log('  linhas:', JSON.stringify(linhas));
     console.log('  (excluidos_com_pdf deve ser 0 — ver migration 051)');
+
+    // 052 — a carteira do lote. Zero aqui significa que o job mensal vai rodar
+    // e não fazer nada, que é a falha mais silenciosa possível.
+    const [lote] = await conn.query<any[]>(
+      `SELECT COUNT(*) total, SUM(ativo = 1) AS ativos FROM darf_lote_acessorias`
+    );
+    console.log(`\nConferência: lote da Acessórias — ${JSON.stringify(lote)}`);
+    const [exec] = await conn.query<any[]>(
+      `SELECT COUNT(*) total FROM darf_lote_execucoes`
+    );
+    console.log(`  execuções registradas: ${(exec as any[])[0]?.total ?? 0}`);
+
     console.log('\nMigrations concluídas.');
   } finally {
     conn.release();

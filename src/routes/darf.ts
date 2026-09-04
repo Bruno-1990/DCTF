@@ -17,6 +17,16 @@ const controller = new DarfController();
 router.get('/dctfweb/categorias', (req, res) => controller.categoriasDctfWeb(req, res));
 router.post('/dctfweb', (req, res) => controller.emitirDctfWeb(req, res));
 
+// ─── Lote mensal para a Acessórias ─────────────────────────────────────────
+// Antes das rotas com ':id' pelo mesmo motivo do '/historico' abaixo: 'lote'
+// seria capturado como identificador.
+router.get('/lote/execucoes', (req, res) => controller.loteExecucoes(req, res));
+router.post('/lote/executar', (req, res) => controller.loteExecutar(req, res));
+router.get('/lote', (req, res) => controller.loteListar(req, res));
+router.post('/lote', (req, res) => controller.loteAdicionar(req, res));
+router.patch('/lote/:id', (req, res) => controller.loteAlternar(req, res));
+router.delete('/lote/:id', (req, res) => controller.loteRemover(req, res));
+
 // ─── Histórico ─────────────────────────────────────────────────────────────
 // '/historico' antes de '/:id/pdf' — se registrada depois, a rota com
 // parâmetro capturaria 'historico' como se fosse um id.

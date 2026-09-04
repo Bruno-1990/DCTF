@@ -62,7 +62,8 @@
     "det:procuracoes:dry": "ts-node src/scripts/det-procuracoes-sync.ts --dry",
     "det:procuracoes": "ts-node src/scripts/det-procuracoes-sync.ts",
     "det:migrate:046": "ts-node src/scripts/run-det-migration-046.ts",
-    "migrate:darf": "ts-node --transpile-only src/scripts/run-darf-migration.ts"
+    "migrate:darf": "ts-node --transpile-only src/scripts/run-darf-migration.ts",
+    "preview:darf-lote": "ts-node --transpile-only src/scripts/preview-darf-lote-email.ts"
   },
   "keywords": [
     "dctf",

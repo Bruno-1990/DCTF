@@ -34,6 +34,7 @@ import {
 } from '../../services/darf';
 import { useToast } from '../../hooks/useToast';
 import GuiaDctfWebForm from './GuiaDctfWebForm';
+import LoteAcessorias from './LoteAcessorias';
 import { type ClienteOpcao } from './SeletorCliente';
 
 const MES_CURTO = [
@@ -240,6 +241,8 @@ const DarfTab: React.FC = () => {
         categorias={categorias}
         onEmitido={() => void carregarHistorico()}
       />
+
+      <LoteAcessorias />
 
       {/* ─── Histórico ───────────────────────────────────────────────────── */}
       <section className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm">

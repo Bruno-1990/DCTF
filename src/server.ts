@@ -35,6 +35,7 @@ import darfRoutes from './routes/darf';
 import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
 import substitutoScheduler from './services/SubstitutoScheduler';
 import detScheduler from './services/DetScheduler';
+import darfLoteScheduler from './services/DarfLoteScheduler';
 
 class Server {
   private app: express.Application;
@@ -57,6 +58,8 @@ class Server {
     substitutoScheduler.start();
   // DET: varredura diária das caixas postais, atrás de DET_SCHEDULER_ENABLED.
   detScheduler.start();
+  // DARF: lote mensal para a Acessórias, atrás de DARF_LOTE_ENABLED.
+  darfLoteScheduler.start();
   }
 
   private setupMiddleware(): void {

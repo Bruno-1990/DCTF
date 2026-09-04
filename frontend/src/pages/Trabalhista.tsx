@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ExclamationTriangleIcon,
   ClockIcon,
@@ -673,7 +674,30 @@ const DteTab: React.FC = () => {
 // ─── Página ────────────────────────────────────────────────────────────────
 
 const Trabalhista: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabId>('det');
+  /**
+   * A aba vem da URL (`/trabalhista?aba=darf`), mesmo padrao de Beneficios.
+   *
+   * Sem isto as duas abas dividiam o mesmo endereco: nao dava para mandar a
+   * tela do DARF para alguem, nem voltar direto nela pelo historico — o link
+   * abria sempre no DET.
+   *
+   * A aba e derivada do parametro, e nao copiada para um estado proprio, para
+   * o botao voltar do navegador continuar valendo. Valor desconhecido cai em
+   * DET em vez de quebrar: link velho ou digitado errado abre a pagina.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const abaDaUrl = (searchParams.get('aba') || '').toLowerCase();
+  const activeTab: TabId = TABS.some((t) => t.id === abaDaUrl)
+    ? (abaDaUrl as TabId)
+    : 'det';
+
+  /**
+   * `replace` porque cada clique de aba no historico faria o botao "voltar"
+   * percorrer abas em vez de sair da pagina.
+   */
+  const trocarAba = (id: TabId) => {
+    setSearchParams(id === 'det' ? {} : { aba: id }, { replace: true });
+  };
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
@@ -698,7 +722,7 @@ const Trabalhista: React.FC = () => {
               type="button"
               role="tab"
               aria-selected={ativa}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => trocarAba(tab.id)}
               className={`rounded-lg px-5 py-2 text-sm font-semibold transition ${
                 ativa
                   ? `bg-gradient-to-r ${tab.gradient} text-white shadow-md`
