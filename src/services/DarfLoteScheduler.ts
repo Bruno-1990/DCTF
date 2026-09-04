@@ -1,44 +1,36 @@
 /**
- * Job mensal do lote de DARF para a Acessórias.
+ * Job mensal do lote de DARF para a Acessórias — agendador INTERNO.
  *
- * QUAL COMPETÊNCIA ELE EMITE: a do MÊS ANTERIOR. O DARF previdenciário de
- * agosto é emitido em setembro e vence no dia 20 do mês seguinte ao fato
- * gerador — pedir a guia de setembro dentro de setembro devolve "não foi
- * encontrada Declaração com os dados informados", porque a DCTFWeb daquele mês
- * ainda nem foi transmitida.
+ * DESLIGADO NESTA INSTALAÇÃO: o agendamento mora no Server Manager (:9000),
+ * como tarefa que chama `npm run darf:lote`. Este módulo continua aqui porque
+ * é a alternativa para uma instalação sem Server Manager, e porque ligá-lo é
+ * uma variável de ambiente. NÃO LIGUE OS DOIS AO MESMO TEMPO — não chega a
+ * emitir guia duplicada (a segunda rodada reaproveita a primeira), mas produz
+ * duas execuções e dois e-mails para o DP no mesmo dia.
  *
- * POR QUE O DIA 10 É O PADRÃO: a DCTFWeb do mês fechado vence no dia 15. Rodar
- * antes disso pega o DP no meio da transmissão e produz uma lista de falhas que
- * não são falhas; rodar muito depois espreme quem paga contra o vencimento da
- * guia. O dia 10 dá margem dos dois lados, e é ajustável no .env.
+ * QUAL COMPETÊNCIA ELE EMITE: decidido por `DARF_LOTE_COMPETENCIA`, em
+ * `DarfLoteService` — 'vigente' (o próprio mês) ou 'anterior' (o mês fechado).
  *
  * A JANELA É `dia >= DIA`, E NÃO `dia === DIA`: com igualdade exata, um
  * servidor fora do ar naquela hora faria a competência inteira ser pulada — e
  * ninguém descobriria antes do cliente reclamar da guia que não chegou. Com
- * `>=`, o dia 10 perdido vira dia 11. O que impede rodar de novo todo dia é a
- * consulta ao banco: competência já executada com sucesso encerra a
- * verificação. Essa consulta também é o que sobrevive a um restart do processo,
- * coisa que um flag em memória não faz.
+ * `>=`, o dia perdido vira o dia seguinte. O que impede rodar de novo todo dia
+ * é a consulta ao banco: competência já executada com sucesso encerra a
+ * verificação. Essa consulta também é o que sobrevive a um restart do
+ * processo, coisa que um flag em memória não faz.
  *
  * Desligado por padrão — precisa de `DARF_LOTE_ENABLED=true` no .env.
  */
 
 import { executeQuery } from '../config/mysql';
-import darfLoteService from './DarfLoteService';
+import darfLoteService, { competenciaAlvo, modoCompetencia } from './DarfLoteService';
 
 const HABILITADO = process.env['DARF_LOTE_ENABLED'] === 'true';
-const DIA_PADRAO = Number(process.env['DARF_LOTE_DIA'] || 10);
+const DIA_PADRAO = Number(process.env['DARF_LOTE_DIA'] || 25);
 const HORA_PADRAO = Number(process.env['DARF_LOTE_HORA'] || 6);
 const INTERVALO_MS = 60 * 1000; // confere a cada minuto
 
-/** Competência a emitir hoje: o mês anterior ao corrente. */
-export function competenciaAlvo(agora = new Date()): { anoPA: string; mesPA: string } {
-  const d = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
-  return {
-    anoPA: String(d.getFullYear()),
-    mesPA: String(d.getMonth() + 1).padStart(2, '0'),
-  };
-}
+export { competenciaAlvo };
 
 export class DarfLoteScheduler {
   private intervalId: NodeJS.Timeout | null = null;
@@ -55,7 +47,7 @@ export class DarfLoteScheduler {
 
     console.log(
       `[DarfLote Scheduler] Ativo — todo dia ${DIA_PADRAO} às ` +
-        `${String(HORA_PADRAO).padStart(2, '0')}:00, competência do mês anterior.`
+        `${String(HORA_PADRAO).padStart(2, '0')}:00, competência ${modoCompetencia()}.`
     );
     this.intervalId = setInterval(() => {
       void this.verificar();

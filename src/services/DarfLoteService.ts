@@ -40,6 +40,40 @@ const PASTA_DESTINO =
   process.env['DARF_ACESSORIAS_DIR']?.trim() || '\\\\192.168.0.1\\Envio_Acessorias';
 
 /**
+ * QUAL COMPETÊNCIA A RODADA EMITE.
+ *
+ *   'vigente'  → o próprio mês em que a rodada acontece (padrão)
+ *   'anterior' → o mês fechado
+ *
+ * É configurável porque as duas respostas são defensáveis e a escolha depende
+ * do calendário do escritório, não do código. Rodando no dia 25, 'vigente'
+ * aposta que a folha do mês já está fechada e a DCTFWeb transmitida; se não
+ * estiver, a Receita responde "não foi encontrada Declaração com os dados
+ * informados" e a rodada volta vazia — sem cobrar cota, porque a guia não
+ * chega a ser gerada. Trocar para 'anterior' é uma linha no .env, e o
+ * relatório do primeiro mês diz qual das duas é a certa aqui.
+ */
+const MODO_COMPETENCIA = (process.env['DARF_LOTE_COMPETENCIA']?.trim() || 'vigente').toLowerCase();
+
+/**
+ * A competência que uma rodada de hoje deve emitir.
+ *
+ * Exportada daqui, e não do agendador, porque agora tem dois chamadores: o
+ * agendador interno e o comando de linha que o Server Manager dispara.
+ */
+export function competenciaAlvo(agora = new Date()): { anoPA: string; mesPA: string } {
+  const deslocamento = MODO_COMPETENCIA === 'anterior' ? -1 : 0;
+  const d = new Date(agora.getFullYear(), agora.getMonth() + deslocamento, 1);
+  return {
+    anoPA: String(d.getFullYear()),
+    mesPA: String(d.getMonth() + 1).padStart(2, '0'),
+  };
+}
+
+/** Para o log dizer sob qual regra rodou, em vez de só cuspir um número. */
+export const modoCompetencia = (): string => MODO_COMPETENCIA;
+
+/**
  * Folga entre uma emissão e a próxima. Não é exigência documentada do SERPRO:
  * é para não despejar a carteira inteira de uma vez num serviço que responde em
  * segundos e cuja indisponibilidade custaria a rodada toda.
