@@ -22,6 +22,7 @@ import Irpf2026LoginPage from '../pages/Irpf2026/Irpf2026LoginPage';
 import Beneficios from '../pages/Beneficios';
 import Legalizacao from '../pages/Legalizacao';
 import Trabalhista from '../pages/Trabalhista';
+import Fiscal from '../pages/Fiscal';
 
 const router = createBrowserRouter([
   {
@@ -50,6 +51,7 @@ const router = createBrowserRouter([
           { path: 'beneficios', element: <Beneficios /> },
           { path: 'legalizacao', element: <Legalizacao /> },
           { path: 'trabalhista', element: <Trabalhista /> },
+          { path: 'fiscal', element: <Fiscal /> },
           {
             path: 'irpf-2026',
             element: <Outlet />,

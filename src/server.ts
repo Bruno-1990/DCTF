@@ -32,6 +32,7 @@ import estudoViabilidadeRoutes from './routes/estudo-viabilidade';
 import cotaAprendizagemRoutes from './routes/cota-aprendizagem';
 import detRoutes from './routes/det';
 import darfRoutes from './routes/darf';
+import fiscalRoutes from './routes/fiscal';
 import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
 import substitutoScheduler from './services/SubstitutoScheduler';
 import detScheduler from './services/DetScheduler';
@@ -191,6 +192,7 @@ class Server {
     this.app.use('/api/estudo-viabilidade', estudoViabilidadeRoutes);
     this.app.use('/api/cota-aprendizagem', cotaAprendizagemRoutes);
     this.app.use('/api/det', detRoutes);
+    this.app.use('/api/fiscal', fiscalRoutes);
 
     // DARF: cada chamada aqui é uma ida ao SERPRO, que é
     // cota contratada. Este limiter protege a cota, não o servidor — por isso é

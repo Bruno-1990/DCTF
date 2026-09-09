@@ -12,6 +12,7 @@ import {
   GiftIcon,
   ScaleIcon,
   BriefcaseIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 import {
   PaperClipIcon,
@@ -30,6 +31,7 @@ const navigation = [
   { name: 'Benefícios', href: '/beneficios', icon: GiftIcon },
   { name: 'Legalização', href: '/legalizacao', icon: ScaleIcon },
   { name: 'Trabalhista', href: '/trabalhista', icon: BriefcaseIcon },
+  { name: 'Fiscal', href: '/fiscal', icon: ClipboardDocumentListIcon },
 ];
 
 interface SidebarProps {

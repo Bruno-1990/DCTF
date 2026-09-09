@@ -166,3 +166,26 @@ pre {
 body:has(div.fixed.inset-0:not(.overlay-menu)) .botao-menu-flutuante {
   display: none;
 }
+
+/* Aba Fiscal: a linha que acabou de ser gravada acende em verde e apaga
+   sozinha. Confirma a escrita sem ocupar espaco nem exigir leitura — quem
+   preenche a carteira em sequencia ve o rastro do que ja saiu do lugar.
+
+   Mora aqui, e nao em tailwind.config.js, de proposito: mudanca no config do
+   Tailwind so vale depois de reiniciar o servidor de desenvolvimento, e uma
+   animacao que "some" ate alguem reiniciar o Vite e uma armadilha. CSS global
+   recarrega na hora. */
+@keyframes fiscal-flash-salvo {
+  0%   { background-color: rgba(209, 250, 229, 0.85); }
+  100% { background-color: rgba(209, 250, 229, 0); }
+}
+
+.linha-salva {
+  animation: fiscal-flash-salvo 1.1s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .linha-salva {
+    animation: none;
+  }
+}
