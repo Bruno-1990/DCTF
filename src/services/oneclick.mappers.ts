@@ -104,8 +104,14 @@ export function somenteDigitos(valor: string | null | undefined): string {
 /**
  * Filtro "cliente inativo" — MESMA regra que o próprio OneClick usa na tela.
  * Espelha `apps/api/src/cliente/cliente.service.ts` (opção "Inativo" do filtro
- * "Cliente Ativo / Inativo"), que trata como inativo tanto `status='INATIVA'`
+ * "Cliente Ativo / Inativo"), que trata como inativo tanto `status` inativo
  * quanto o que está na lixeira (`deleted_at` preenchido).
+ *
+ * O enum `ClienteStatus` do OneClick já foi 'ATIVA'/'INATIVA' e hoje é
+ * 'ATIVO'/'INATIVO'. A troca quebrou a sincronização inteira com
+ * `22P02 invalid input value for enum`, porque o literal não casava mais.
+ * Por isso a comparação é feita em texto contra as duas grafias: o sync
+ * continua de pé independentemente de qual delas o banco estiver usando.
  *
  * Não usar `is_active`: naquele banco a coluna acompanha o soft-delete, não o
  * filtro da tela, e sozinha não reproduz o que o usuário vê no OneClick.
@@ -117,13 +123,13 @@ export const INATIVOS_WHERE = `
   AND tipo_documento = 'CNPJ'
   AND documento IS NOT NULL
   AND btrim(documento) <> ''
-  AND (status = 'INATIVA' OR deleted_at IS NOT NULL)
+  AND (status::text = ANY (ARRAY['INATIVO', 'INATIVA']) OR deleted_at IS NOT NULL)
 `;
 
 export const MENSAIS_ATIVOS_WHERE = `
   empresa_id = $1
   AND situacao = 'MENSAL'
-  AND status = 'ATIVA'
+  AND status::text = ANY (ARRAY['ATIVO', 'ATIVA'])
   AND tipo_documento = 'CNPJ'
   AND deleted_at IS NULL
   AND documento IS NOT NULL

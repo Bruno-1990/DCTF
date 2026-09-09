@@ -39,7 +39,7 @@ export interface OneClickCliente {
 
 export class OneClickService {
   /**
-   * Busca clientes Mensais (situacao='MENSAL') e Ativos (status='ATIVA') da
+   * Busca clientes Mensais (situacao='MENSAL') e Ativos (status='ATIVO') da
    * Central Contábil (empresa_id) no OneClick. O banco é multi-tenant por
    * coluna, então sem o filtro de tenant vinham também os clientes do JRG.
    * Somente leitura — nenhuma escrita é feita no banco externo.
@@ -100,7 +100,7 @@ export class OneClickService {
        FROM public.clientes
        WHERE empresa_id = $1
          AND tipo_documento = 'CNPJ'
-         AND status <> 'INATIVA'
+         AND status::text <> ALL (ARRAY['INATIVO', 'INATIVA'])
          AND deleted_at IS NULL`,
       [empresaId],
     );

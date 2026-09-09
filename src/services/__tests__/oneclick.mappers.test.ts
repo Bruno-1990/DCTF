@@ -5,7 +5,7 @@
  *
  * Regras de negócio validadas com o usuário (2026-07-07):
  *  - Fonte: public.clientes (banco `oneclick`).
- *  - Filtro "Mensais/Ativos": situacao='MENSAL' AND status='ATIVA'
+ *  - Filtro "Mensais/Ativos": situacao='MENSAL' AND status ativo
  *    AND tipo_documento='CNPJ' AND deleted_at IS NULL (sem filtro de área por ora).
  *  - Regime `tributacao` (enum) → código inteiro compatível com o regimeMap
  *    já existente no Cliente.sincronizarComOneClick ({1:LP,2:LR,4:SN,5:SN}),
@@ -124,7 +124,10 @@ describe('MENSAIS_ATIVOS_WHERE (filtro de comparação)', () => {
   });
 
   it('só clientes ATIVOS (exclui inativos)', () => {
-    expect(MENSAIS_ATIVOS_WHERE).toMatch(/status\s*=\s*'ATIVA'/i);
+    // Comparacao em texto contra as duas grafias do enum ClienteStatus
+    // ('ATIVO' hoje, 'ATIVA' no passado) — ver comentario em oneclick.mappers.ts.
+    expect(MENSAIS_ATIVOS_WHERE).toMatch(/status::text\s*=\s*ANY/i);
+    expect(MENSAIS_ATIVOS_WHERE).toContain("'ATIVO'");
   });
 
   it('só CNPJ (exclui CPF)', () => {

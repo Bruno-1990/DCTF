@@ -58,10 +58,12 @@ interface OcRow {
   status: string | null;
 }
 
-/** Entre linhas do mesmo CNPJ no OneClick, prefere a que tem tributação e é MENSAL/ATIVA. */
+/** Entre linhas do mesmo CNPJ no OneClick, prefere a que tem tributação e é MENSAL/ATIVO. */
 function melhorLinha(a: OcRow, b: OcRow): OcRow {
   const peso = (r: OcRow): number =>
-    (r.tributacao ? 4 : 0) + (r.status === 'ATIVA' ? 2 : 0) + (r.situacao === 'MENSAL' ? 1 : 0);
+    (r.tributacao ? 4 : 0) +
+    (r.status === 'ATIVO' || r.status === 'ATIVA' ? 2 : 0) +
+    (r.situacao === 'MENSAL' ? 1 : 0);
   return peso(b) > peso(a) ? b : a;
 }
 
