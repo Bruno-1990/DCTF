@@ -282,6 +282,30 @@ export async function extrairSociosComPython(
 /**
  * Converte resultado do Python para o formato esperado pelo Node.js
  */
+/**
+ * A qualificação diz, sozinha, que o sócio não tem capital?
+ *
+ * Serve para separar "0% de verdade" de "a extração não leu a coluna Cap.
+ * Social". Só o primeiro caso pode virar 0 no cadastro; o segundo tem que
+ * preservar o que já estava lá.
+ *
+ * Cuidado com "49-Sócio-Administrador": é sócio e TEM capital, apesar da
+ * palavra Administrador. Por isso a presença de "Sócio" derruba o teste —
+ * exceto quando a própria qualificação diz "sem Capital" (53).
+ */
+export function qualificacaoSemCapital(qual?: string | null): boolean {
+  if (!qual) return false;
+
+  const q = String(qual)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+  if (/SEM\s+CAPITAL/.test(q)) return true; // 53-Socio sem Capital
+  if (/\bSOCIO\b/.test(q)) return false; // 22-Socio, 49-Socio-Administrador
+  return /\bADMINISTRADOR\b/.test(q); // 05-Administrador
+}
+
 export function converterSociosPythonParaNode(pythonSocios: SocioExtracted[]): Array<{
   nome: string;
   cpf?: string;
@@ -322,12 +346,18 @@ export function converterSociosPythonParaNode(pythonSocios: SocioExtracted[]): A
       if (!isNaN(percent) && percent <= 100 && percent >= 0) {
         participacaoPercentual = percent;
       } else {
-        // Se o valor extraído for inválido, definir como 0
-        participacaoPercentual = 0;
+        // Valor ilegível no PDF: isso é "não sei", não "zero". Devolvendo null,
+        // o cadastro preserva a porcentagem que já estava conferida em vez de
+        // trocá-la por 0 por causa de uma falha de extração.
+        console.warn(`[Python Converter] ⚠️ Cap. Social ilegível para ${s['Nome']}: "${s['Cap. Social']}" — porcentagem atual será preservada`);
+        participacaoPercentual = null;
       }
     } else {
-      // Se não há "Cap. Social" (ex: ADMINISTRADOR), definir como 0
-      participacaoPercentual = 0;
+      // Sem "Cap. Social" na página. A qualificação desempata: quem é
+      // Administrador ou Sócio sem Capital tem 0% de verdade; para os demais,
+      // a coluna vazia significa que a extração não leu, e devolver null faz o
+      // cadastro preservar a porcentagem já conferida.
+      participacaoPercentual = qualificacaoSemCapital(s['Qualificação']) ? 0 : null;
     }
     
     // Normalizar CPF/CNPJ (remover formatação)

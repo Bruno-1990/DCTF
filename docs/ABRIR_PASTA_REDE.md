@@ -10,7 +10,7 @@ Navegadores não podem abrir pastas do Windows por segurança. O "Salvar como" s
 
 1. **Copie o script**  
    Copie o arquivo:
-   - `docs\scripts\open-pasta-rede.ps1`  
+   - `scripts\open-pasta-rede.ps1`  
    para uma pasta fixa, por exemplo: **`C:\DCTF\open-pasta-rede.ps1`**  
    (crie a pasta `C:\DCTF` se não existir.)
 
@@ -29,6 +29,18 @@ Navegadores não podem abrir pastas do Windows por segurança. O "Salvar como" s
 
 4. **Pronto**  
    Da próxima vez que clicar em **"Abrir pasta"** no app, o Windows pode perguntar algo como “Abrir open-pasta-rede.ps1?” — escolha **Abrir** (e marque “Sempre abrir” se quiser). O Explorer abrirá na pasta da rede.
+
+> **Copie mesmo para uma pasta fixa.** O registro guarda o caminho absoluto do
+> script. Se você registrar apontando para dentro da pasta do projeto e o projeto
+> mudar de lugar, o protocolo quebra em silêncio — o botão simplesmente para de
+> abrir, sem erro nenhum. Foi o que aconteceu quando o projeto saiu do Desktop
+> para `D:\aplicativos`.
+
+## Se o protocolo estiver certo e mesmo assim não abrir
+
+Aí o problema não é o script: é acesso ao compartilhamento. Teste colando
+`\\192.168.0.9\Clientes` no Explorer. Se falhar lá também, o script nunca vai
+conseguir abrir — ele só chama o Explorer no caminho que você passou.
 
 ## Se não quiser instalar
 

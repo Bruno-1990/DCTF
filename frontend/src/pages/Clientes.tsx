@@ -99,27 +99,54 @@ function getItensFaltantes(c: any): string[] {
   return faltantes;
 }
 
-/** Abre a pasta no Windows: tenta protocolo dctf-openfolder (se instalado), senão copia o caminho. */
+/**
+ * Abre a pasta da rede no Windows Explorer.
+ *
+ * Ordem de tentativa:
+ *  1. protocolo `dctf-openfolder://` — registrado na MÁQUINA DE QUEM CLICOU
+ *     (scripts/open-pasta-rede.ps1 -Register). É o caminho certo: a pasta abre
+ *     na tela do usuário, mesmo quando ele acessa o app de outro PC.
+ *  2. fallback no backend (`explorer` no servidor) — só serve quando o usuário
+ *     está sentado na máquina que roda o DCTF WEB.
+ * Em qualquer caso o caminho vai para a área de transferência.
+ */
 function abrirPastaRede(pathRede: string | undefined | null, toast: { success: (m: string) => void; error: (m: string) => void }) {
   const path = (pathRede || '').trim();
   if (!path) {
     toast.error('Informe o nome da pasta na Rede antes de abrir.');
     return;
   }
-  // Copiar para clipboard
   navigator.clipboard.writeText(path).catch(() => {});
-  // Pedir ao backend para abrir a pasta via explorer.exe (servidor local)
-  clientesService.abrirPasta(path)
-    .then((res: any) => {
-      if (res.success) {
-        toast.success('Pasta aberta no Explorer. Caminho também copiado.');
-      } else {
-        toast.success('Caminho copiado. Cole no Explorer (Win+E) para abrir a pasta.');
-      }
-    })
-    .catch(() => {
-      toast.success('Caminho copiado. Cole no Explorer (Win+E) para abrir a pasta.');
-    });
+
+  // Fallback: pede ao backend para abrir via explorer.exe no servidor.
+  const abrirPeloServidor = () => {
+    clientesService.abrirPasta(path)
+      .then((res: any) => {
+        if (res.success) {
+          toast.success('Pasta aberta no Explorer. Caminho também copiado.');
+        } else {
+          toast.error(`${res.error ?? 'Não foi possível abrir a pasta'}. Caminho copiado — cole no Explorer (Win+E).`);
+        }
+      })
+      .catch((err: any) => {
+        // O backend devolve 404 quando o caminho não existe/está inacessível.
+        const msg = err?.response?.data?.error ?? 'Não foi possível abrir a pasta';
+        toast.error(`${msg}. Caminho copiado — cole no Explorer (Win+E).`);
+      });
+  };
+
+  try {
+    const protocolUrl = 'dctf-openfolder://' + encodeURIComponent(path).replace(/%2F/g, '/');
+    const w = window.open(protocolUrl, '_blank', 'noopener');
+    if (!w || w.closed) {
+      // Protocolo não registrado nesta máquina (ou popup bloqueado).
+      abrirPeloServidor();
+    } else {
+      toast.success('Abrindo pasta no Explorer. Caminho também copiado.');
+    }
+  } catch {
+    abrirPeloServidor();
+  }
 }
 
 // Componente moderno de seleção de Mês/Ano

@@ -2596,11 +2596,30 @@ export class Cliente extends DatabaseService<ICliente> {
           if (socioEncontrado) {
             // ✅ Atualizar sócio existente: apenas porcentagem, valor e CPF (se disponível)
             // A Situação Fiscal deve apenas atualizar os dados já cadastrados do QSA, não criar novos sócios
+            //
+            // SUBSTITUIR, NUNCA APAGAR: o que a Situação Fiscal não trouxer
+            // (extração parcial do PDF, sócio sem percentual na página) fica
+            // como está. Escrever o null da extração por cima descartava
+            // porcentagem e CPF que já estavam conferidos no cadastro.
+            const percentualValido =
+              participacaoPercentual !== null && Number.isFinite(participacaoPercentual);
             console.log(`[Cliente Model] ✅ Match encontrado: ${socioEncontrado.nome} → Atualizando porcentagem e CPF`);
-            
+
+            if (!percentualValido) {
+              console.log(
+                `[Cliente Model] ↩️ SITF sem percentual para "${socioEncontrado.nome}": preservando ${socioEncontrado.participacao_percentual ?? 'NULL'}%`
+              );
+            }
+
             await connection.execute(
-              'UPDATE `clientes_socios` SET `cpf` = ?, `qual` = COALESCE(?, `qual`), `participacao_percentual` = ?, `participacao_valor` = ? WHERE `id` = ?',
-              [cpfLimpo, qual, participacaoPercentual, participacaoValor, socioEncontrado.id]
+              'UPDATE `clientes_socios` SET `cpf` = COALESCE(?, `cpf`), `qual` = COALESCE(?, `qual`), `participacao_percentual` = COALESCE(?, `participacao_percentual`), `participacao_valor` = COALESCE(?, `participacao_valor`) WHERE `id` = ?',
+              [
+                cpfLimpo,
+                qual,
+                percentualValido ? participacaoPercentual : null,
+                percentualValido ? participacaoValor : null,
+                socioEncontrado.id,
+              ]
             );
             atualizados++;
           } else {

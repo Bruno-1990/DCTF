@@ -46,7 +46,7 @@ import type { Colaborador } from './FiscalFichaService';
  * (`DARF_LOTE_EMAILS`, `COTA_ALERT_EMAILS`).
  */
 const DESTINATARIOS_PADRAO = (
-  process.env['FISCAL_ALERT_EMAILS']?.trim() || 'ti@central-rnc.com.br'
+  process.env['FISCAL_ALERT_EMAILS']?.trim() || 'fiscal@central-rnc.com.br'
 )
   .split(',')
   .map((s) => s.trim())

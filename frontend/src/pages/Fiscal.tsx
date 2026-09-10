@@ -677,6 +677,29 @@ const Fiscal: React.FC = () => {
     });
   };
 
+  /**
+   * Abre o modo foco já na fila do que falta responder.
+   *
+   * Troca o filtro junto, de propósito: quem sai do cartão com Esc precisa
+   * encontrar na tabela a mesma lista em que estava trabalhando, e não a
+   * carteira inteira de novo. A sequência é montada aqui em vez de reaproveitar
+   * `visiveis` porque `setFiltro` só vale no próximo render — usar `visiveis`
+   * agora pegaria a lista do filtro ANTIGO.
+   */
+  const focarPendentes = () => {
+    const pendentes = linhas.filter((l) => !l.inutilizado && !estaCompleta(l));
+    if (pendentes.length > 0) {
+      setFiltro('pendentes');
+      setFoco({ sequencia: pendentes.map((l) => l.id), inicial: 0 });
+      return;
+    }
+    // Tudo respondido: o modo ainda serve para reler empresa por empresa.
+    const ativas = linhas.filter((l) => !l.inutilizado);
+    if (ativas.length === 0) return;
+    setFiltro('carteira');
+    setFoco({ sequencia: ativas.map((l) => l.id), inicial: 0 });
+  };
+
   /** Mesma gravação da tabela — o modo foco não tem caminho próprio até o banco. */
   const inutilizarDireto = async (linha: LinhaFicha, motivo: string | null) => {
     try {
@@ -952,6 +975,27 @@ const Fiscal: React.FC = () => {
               }
             />
           </div>
+
+          {/* A conclusão natural de "faltam 15": preencher. Fica colado ao
+              número em vez de escondido na barra de ferramentas — é a ação
+              principal da tela, e era a menos visível. */}
+          {contagem.total > 0 && (
+            <motion.button
+              onClick={focarPendentes}
+              whileHover={reduzido ? undefined : { y: -1 }}
+              whileTap={reduzido ? undefined : { scale: 0.98 }}
+              className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold shadow-md transition-shadow hover:shadow-lg ${
+                completo
+                  ? 'bg-white text-gray-600 shadow-none ring-1 ring-gray-200 hover:bg-gray-50'
+                  : 'bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-blue-600/25 hover:shadow-blue-600/30'
+              }`}
+            >
+              <RectangleStackIcon className="h-4 w-4" />
+              {completo
+                ? 'Revisar uma por uma'
+                : `Preencher ${contagem.pendentes === 1 ? 'a que falta' : `as ${contagem.pendentes} que faltam`}`}
+            </motion.button>
+          )}
         </div>
 
         {/* Indicadores — cada um é também o filtro da lista */}
@@ -1022,7 +1066,7 @@ const Fiscal: React.FC = () => {
               whileHover={reduzido ? undefined : { y: -1 }}
               whileTap={reduzido ? undefined : { scale: 0.97 }}
               title="Uma empresa por vez, em tela cheia — a próxima entra sozinha ao responder as três"
-              className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-600 shadow-sm transition hover:border-blue-300 hover:text-blue-700 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition-shadow hover:shadow-lg hover:shadow-blue-600/30 disabled:opacity-50 disabled:shadow-none"
             >
               <RectangleStackIcon className="h-4 w-4" />
               Modo foco
@@ -1033,7 +1077,8 @@ const Fiscal: React.FC = () => {
               disabled={colaboradorId === null}
               whileHover={reduzido ? undefined : { y: -1 }}
               whileTap={reduzido ? undefined : { scale: 0.97 }}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition-shadow hover:shadow-lg hover:shadow-blue-600/30 disabled:opacity-50 disabled:shadow-none"
+              title="Trazer para esta carteira uma empresa já cadastrada"
+              className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-600 shadow-sm transition hover:border-blue-300 hover:text-blue-700 disabled:opacity-50"
             >
               <PlusIcon className="h-4 w-4" />
               Adicionar empresa
@@ -1296,7 +1341,7 @@ const Fiscal: React.FC = () => {
                             valor={l.volumeNf}
                             opcoes={opcoes?.volumesNf ?? []}
                             desabilitado={l.inutilizado}
-                            largura="w-full min-w-[7.5rem]"
+                            largura="w-full min-w-[9.5rem]"
                             linha={idx}
                             coluna={1}
                             onChange={(v) => salvarCampo(l, { volumeNf: v })}

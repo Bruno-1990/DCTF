@@ -4,7 +4,7 @@ import { SituacaoFiscalOrchestrator, fetchAccessToken, extractDataFromPdfBase64,
 import { createSupabaseAdapter } from '../services/SupabaseAdapter';
 import { executeQuery } from '../config/mysql';
 import { Cliente } from '../models/Cliente';
-import { extrairSociosComPython, converterSociosPythonParaNode } from '../utils/pythonExtractor';
+import { extrairSociosComPython, converterSociosPythonParaNode, qualificacaoSemCapital } from '../utils/pythonExtractor';
 
 const supabase = createSupabaseAdapter() as any;
 const supabaseAdmin = createSupabaseAdapter() as any;
@@ -680,10 +680,14 @@ router.post('/extract/:id', async (req, res, next) => {
               nome: s.nome || '',
               cpf: s.cpf || null, // CPF/CNPJ extraído da SITF (Python ou Node.js)
               qual: s.qual || s.qualificacao || null, // Suporte para ambos os formatos
-              // Usar verificação explícita para não converter 0 em null
+              // Usar verificação explícita para não converter 0 em null.
+              // Quando a extração não trouxe percentual, a qualificação decide:
+              // Administrador / Sócio sem Capital são 0% de verdade; os demais
+              // viram null para o model preservar o que já está cadastrado, em
+              // vez de trocar um percentual conferido por 0 por falha de leitura.
               participacao_percentual: s.participacao_percentual !== null && s.participacao_percentual !== undefined
                 ? s.participacao_percentual
-                : 0, // Se não houver participação definida, usar 0 (não null)
+                : (qualificacaoSemCapital(s.qual || s.qualificacao) ? 0 : null),
             }));
             
             // Log para verificação (sem ajustar)

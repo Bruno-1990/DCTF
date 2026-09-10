@@ -21,6 +21,10 @@ export const PERFIS = ['Serviço', 'Comércio', 'Indústria'] as const;
  * mudar agora invalidaria comparação com o que já foi preenchido na planilha.
  */
 export const VOLUMES_NF = [
+  // Primeiro da escala: empresa que não emite nota nenhuma. Não é o mesmo que
+  // "0 - 499", que é volume baixo de quem opera — e é diferente de deixar o
+  // campo vazio, que continua significando "ainda não respondi".
+  'Sem Movimento',
   '0 - 499',
   '500 - 999',
   '1000 - 4999',

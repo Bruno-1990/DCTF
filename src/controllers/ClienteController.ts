@@ -1952,9 +1952,13 @@ export class ClienteController {
       // Buscar capital social do cliente
       const capitalSocial = (cliente as any).capital_social;
 
-      // Preparar sócios com participação
+      // Preparar sócios com participação.
+      // O CPF PRECISA seguir junto: a Situação Fiscal é a única origem dele
+      // (o cartão CNPJ da ReceitaWS não traz CPF no QSA). Sem repassar aqui,
+      // o model recebia cpf undefined e gravava NULL por cima do que já existia.
       const sociosComParticipacao = socios.map((s: any) => ({
         nome: s.nome || '',
+        cpf: s.cpf ?? null,
         qual: s.qualificacao || s.qual || null,
         participacao_percentual: s.participacao_percentual !== null && s.participacao_percentual !== undefined
           ? parseFloat(String(s.participacao_percentual))
@@ -3145,6 +3149,25 @@ export class ClienteController {
       const isDrive = /^[a-zA-Z]:\\/.test(caminhoTrimmed);
       if (!isUNC && !isDrive) {
         res.status(400).json({ success: false, error: 'Caminho inválido. Deve ser UNC (\\\\server\\...) ou drive (C:\\...)' });
+        return;
+      }
+
+      // O Explorer é aberto na máquina que roda o backend. Se o caminho não
+      // existir (share fora do ar, sem permissão, nome errado), o explorer.exe
+      // abre a pasta padrão ou nada — e o usuário ficava sem saber o motivo.
+      // Por isso conferimos o caminho antes e devolvemos o erro de verdade.
+      const fs = require('fs');
+      let existe = false;
+      try {
+        existe = fs.existsSync(caminhoTrimmed);
+      } catch {
+        existe = false;
+      }
+      if (!existe) {
+        res.status(404).json({
+          success: false,
+          error: `Caminho não encontrado ou inacessível a partir do servidor: ${caminhoTrimmed}`,
+        });
         return;
       }
 
