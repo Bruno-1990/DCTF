@@ -208,13 +208,19 @@ describe('Arquitetura — sem código morto', () => {
     expect(orfaos).toEqual([]);
   });
 
-  it('todo teste importa apenas arquivos que existem', () => {
-    const testFiles = walk(path.join(ROOT, 'tests'), ['.ts']);
+  it('todo teste (backend e frontend) importa apenas arquivos que existem', () => {
+    // Cada teste resolve `@/` contra a própria árvore: tests/ e src/ → src; frontend → frontend/src.
+    const suites: Array<[string[], string]> = [
+      [[...walk(path.join(ROOT, 'tests'), ['.ts']), ...walk(SRC, ['.ts']).filter(isTestFile)], SRC],
+      [walk(FE, ['.ts', '.tsx']).filter(isTestFile), FE],
+    ];
     const quebrados: string[] = [];
-    for (const f of testFiles) {
-      const txt = stripComments(read(f));
-      for (const m of txt.matchAll(/(?:from\s+|require\(\s*|jest\.mock\(\s*)['"](\.[^'"]+)['"]/g)) {
-        if (!resolveTs(f, m[1], SRC)) quebrados.push(`${rel(f)} -> ${m[1]}`);
+    for (const [testFiles, aliasRoot] of suites) {
+      for (const f of testFiles) {
+        const txt = stripComments(read(f));
+        for (const m of txt.matchAll(/(?:from\s+|require\(\s*|(?:jest|vi)\.mock\(\s*)['"](\.[^'"]+)['"]/g)) {
+          if (!resolveTs(f, m[1], aliasRoot)) quebrados.push(`${rel(f)} -> ${m[1]}`);
+        }
       }
     }
     expect(quebrados.sort()).toEqual([]);
