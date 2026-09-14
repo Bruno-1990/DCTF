@@ -4,7 +4,6 @@ import Home from '../pages/Home';
 import Clientes from '../pages/Clientes';
 import ClientesCNAE from '../pages/ClientesCNAE';
 import DCTF from '../pages/DCTF';
-import Relatorios from '../pages/Relatorios';
 import ErrorPage from '../pages/ErrorPage';
 import UploadDCTF from '../pages/UploadDCTF';
 import DCTFList from '../pages/DCTFList';
@@ -42,7 +41,6 @@ const router = createBrowserRouter([
           { path: 'dctf', element: <DCTF /> },
           { path: 'dctf/list', element: <DCTFList /> },
           { path: 'dctf/:id/dados', element: <DCTFDadosPage /> },
-          { path: 'relatorios', element: <Relatorios /> },
           { path: 'situacao-fiscal', element: <SituacaoFiscal /> },
           { path: 'administracao', element: <Administracao /> },
           { path: 'upload', element: <UploadDCTF /> },
@@ -70,7 +68,7 @@ const router = createBrowserRouter([
               },
             ],
           },
-          // Rota removida (/sci/banco-horas) e qualquer URL desconhecida sob a casca
+          // Rotas removidas (/sci/banco-horas, /relatorios) e qualquer URL desconhecida sob a casca
           // caem aqui. Sem isto o <Outlet /> nao renderiza nada e o usuario ve
           // header, menu e rodape com o miolo em branco, parecendo sistema quebrado.
           { path: '*', element: <Navigate to="/" replace /> },

@@ -21,7 +21,7 @@ describe('Home', () => {
     renderWithRouter(<Home />);
     expect(screen.getByText('Clientes')).toBeInTheDocument();
     expect(screen.getByText('DCTF')).toBeInTheDocument();
-    expect(screen.getByText('Relatórios')).toBeInTheDocument();
+    expect(screen.queryByText('Relatórios')).not.toBeInTheDocument();
   });
 
   it('has working navigation links', () => {
@@ -31,13 +31,12 @@ describe('Home', () => {
     // Estava desatualizada desde antes da remoção do Dashboard (esperava 5 cards
     // quando a página já tinha 7), o que deixava este teste vermelho.
     const accessLinks = screen.getAllByRole('link', { name: /Acessar/i });
-    expect(accessLinks).toHaveLength(5);
+    expect(accessLinks).toHaveLength(4);
     const hrefs = accessLinks.map((link) => link.getAttribute('href'));
     expect(hrefs).toEqual([
       '/conferencias',
       '/dctf',
       '/clientes',
-      '/relatorios',
       '/situacao-fiscal',
     ]);
   });

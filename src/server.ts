@@ -37,6 +37,7 @@ import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
 import substitutoScheduler from './services/SubstitutoScheduler';
 import detScheduler from './services/DetScheduler';
 import darfLoteScheduler from './services/DarfLoteScheduler';
+import hostDadosScheduler from './services/HostDadosScheduler';
 
 class Server {
   private app: express.Application;
@@ -61,6 +62,8 @@ class Server {
   detScheduler.start();
   // DARF: lote mensal para a Acessórias, atrás de DARF_LOTE_ENABLED.
   darfLoteScheduler.start();
+  // Lançamentos (SCI): sincronização diária do host_dados, atrás de HOST_DADOS_SCHEDULER_ENABLED.
+  hostDadosScheduler.start();
   }
 
   private setupMiddleware(): void {

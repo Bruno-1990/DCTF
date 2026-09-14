@@ -4,7 +4,6 @@ import {
   ClipboardDocumentCheckIcon,
   DocumentTextIcon,
   UsersIcon,
-  ChartBarIcon,
   DocumentMagnifyingGlassIcon,
   ArrowRightIcon,
 } from '@heroicons/react/24/outline';
@@ -27,12 +26,6 @@ const cards = [
     description: "Gerencie os dados dos clientes e suas informações fiscais.",
     href: "/clientes",
     icon: UsersIcon,
-  },
-  {
-    title: "Relatórios",
-    description: "Gere relatórios detalhados e análises fiscais em diferentes formatos.",
-    href: "/relatorios",
-    icon: ChartBarIcon,
   },
   {
     title: "Situação Fiscal",

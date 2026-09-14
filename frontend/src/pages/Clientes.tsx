@@ -3671,7 +3671,7 @@ const Clientes: React.FC = () => {
       if (response.data?.success) {
         const data = response.data.data;
         const total = data.total || 0;
-        const periodo = `${dataIni} a ${dataFim}`;
+        const periodo = data.periodo || `${dataIni} a ${dataFim}`;
         console.log(`[Clientes] Sincronização por datas concluída: ${total} registros processados`);
         
         setSuccessMessage(`✅ Sincronização manual concluída com sucesso! Período: ${periodo}. Total de registros: ${total}`);
@@ -5501,7 +5501,7 @@ const Clientes: React.FC = () => {
         {activeTab === 'lancamentos' && showManualFilters && (
           <div className="mt-4 border-t border-gray-200 pt-4">
             <p className="text-xs text-gray-600 mb-3">
-              Consulta manual por período de apuração. Informe a data inicial e data final do período que deseja sincronizar.
+              Sincroniza do SCI cada mês tocado pelo período, sempre o mês inteiro (ex.: 10/07 a 20/07 atualiza julho completo). A competência anterior já é atualizada sozinha todo dia às 4h.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 items-end">
               <div>
