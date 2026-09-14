@@ -132,6 +132,8 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+# Script temporário que o BancoHorasService grava e executa; sobra quando a execução cai
+python/temp_gerar_relatorio_*.py
 
 # Excel files
 *.xlsx
