@@ -8,9 +8,6 @@
     "**/*.spec.ts",
     "dist/**"
   ],
-  "ignoreDependencies": [
-    "task-master-ai"
-  ],
   "jest": {
     "entry": ["tests/**/*.test.ts", "tests/**/*.spec.ts"]
   }
