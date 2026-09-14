@@ -1,230 +1,185 @@
-# Trashless Report — remoção da página `/dashboard`
+# Trashless Report — auditoria de uso e remoção de código morto
 
-**Data:** 2026-08-20
-**Commit de segurança:** `b84cfc8` (já pushado em `origin/feat/clientes-status-ativo-inativo`)
-**Para restaurar:** `git reset --hard b84cfc8`
-**Stack detectada:** Node/Express + TypeScript (backend, Jest) · React + Vite + TypeScript (frontend, Vitest) · MySQL
+**Data:** 2026-09-14
+**Branch:** `chore/trashless` (local, sem push), criada a partir de `feat/trabalhista-darf-dctfweb`
+**Commit de segurança:** `def7ea3`
+**Para restaurar:** `git reset --hard def7ea3`
+**Stack detectada:** Node 20/Express + TypeScript (backend, Jest) · React 18 + Vite 7 + TypeScript (frontend, Vitest) · Python (SPED/extração, chamado via `child_process`) · MySQL
 
-> **Nota sobre a Fase 0.** Não criei um commit de checkpoint novo: a árvore já estava
-> limpa no commit `b84cfc8`, exceto por dois arquivos de trabalho em andamento não
-> relacionados (`src/scripts/preencher-regime-via-oneclick.ts` e
-> `src/scripts/sync-regime-tributario-oneclick.ts`). Um `git add -A` teria varrido
-> esse trabalho em progresso para dentro de um commit de limpeza. A rede de segurança
-> existe e é o `b84cfc8`; os dois scripts não são tocados por nada aqui.
+> **Fase 0.** Nenhum commit de checkpoint novo: a árvore estava limpa em `def7ea3`, que é a
+> rede de segurança. O relatório anterior (limpeza da página `/dashboard`, 2026-08-20) está no
+> histórico do git.
 
----
-
-## Escopo
-
-Remover a página `/dashboard` (o `AdminDashboard`) e tudo que ficar órfão com ela.
-
-**O ponto de atenção deste projeto:** existem DUAS coisas com "Dashboard" no nome e
-elas não são a mesma. A página `/dashboard` é uma; o conjunto
-`AdminDashboardService` / `ReportDataFactory` é a espinha dorsal da página
-**Relatórios**, que continua em uso. Remover por nome de arquivo quebraria os
-relatórios.
-
----
-
-## Baseline (antes de qualquer remoção)
-
-| Verificação | Resultado |
-|---|---|
-| Testes backend (Jest) | 267 passando, 9 suítes |
-| Testes frontend (Vitest) | 122 passando, **2 falhando** |
-| `tsc` backend | 17 linhas de erro pré-existentes |
-| `tsc -b` frontend | 96 linhas de erro pré-existentes |
-
-As duas falhas de frontend são **anteriores** a esta auditoria:
-`DCTFList.test.tsx` e `Home.test.tsx`. A segunda é relevante aqui — ver a seção
-"Efeito colateral positivo" no fim.
+> **Método.** TDD. Antes de remover qualquer coisa entraram dois testes (`efd3616`):
+> `tests/architecture/route-table.test.ts`, retrato dos 217 endpoints montados (verde antes e
+> depois), e `tests/architecture/dead-code.test.ts`, que nasceu vermelho com a lista desta
+> auditoria e terminou verde. Cada etapa foi um commit, verificado por: jest, vitest, `vite build`,
+> comparação do conjunto de erros de `tsc` com a baseline e a aplicação rodando (API e Vite).
 
 ---
 
 ## Resumo Executivo
 
-| Categoria | Candidatos | Confirmados | Incertos | Falsos Positivos |
-|---|---|---|---|---|
-| Páginas / componentes frontend | 12 | 12 | 0 | 0 |
-| Serviços frontend | 3 | 2 | 0 | 1 |
-| Rotas e registros | 4 | 4 | 0 | 0 |
-| Controllers / services backend | 11 | 3 | 1 | 7 |
-| Imports que ficam órfãos | 4 | 4 | 0 | 0 |
+| Categoria                              | Candidatos | Confirmados | Incertos | Falsos Positivos |
+|----------------------------------------|-----------:|------------:|---------:|-----------------:|
+| Imports não utilizados                 | —          | —           | —        | —                |
+| Código morto — backend (inclui IRPF)   | 29         | 26          | 1        | 2                |
+| Arquivos órfãos — frontend (inclui IRPF) | 14       | 13          | 0        | 1                |
+| Testes que só cobriam código morto     | 6          | 6           | 0        | 0                |
+| Scripts Python                         | 31         | 7           | 21       | 3                |
+| Arquivos desnecessários                | 3          | 3           | 0        | 0                |
+| Dependências órfãs                     | 14         | 14          | 0        | 0                |
 
-**Total confirmado para remoção:** 25 itens · ~1.900 linhas
+**Total removido:** 55 arquivos e 14 dependências — 17.637 linhas a menos
+(`git diff --shortstat def7ea3..HEAD`, antes deste relatório). Além deles, `App.tsx` e o router
+foram editados.
+"Imports não utilizados" e os 79 exports sem uso apontados pelo `knip` ficaram fora deste escopo.
+
+### Commits
+
+| Etapa | Commit | O que saiu |
+|---|---|---|
+| 0 | `efd3616` | (entrada) testes de caracterização e de código morto; `.gitignore` dos `.py` temporários |
+| 1 | `b984242` | módulos de backend nunca montados e services órfãos |
+| 2 | `1da4429` | módulo IRPF 2026 (backend desligado + telas que davam 404) |
+| 4 | `9cfaef6` | dependências sem import |
+| 5 | `37f4b40` | scripts Python sem chamador e arquivo perdido na raiz |
+| 3 | `0afa9cb` | componentes e barrels órfãos do frontend |
+
+### Baseline x final
+
+| Verificação | Antes (`def7ea3`) | Depois | Observação |
+|---|---|---|---|
+| Endpoints montados | 217 | 217 | snapshot idêntico |
+| Jest | 35 ✓ / 1 ✗ · 467 testes | 34 ✓ / 0 ✗ · 425 testes | o ✗ era o `AdminDashboardViewModel.test`, órfão; os 42 testes a menos cobriam só código removido |
+| Vitest | 10 ✓ / 1 ✗ · 123 ✓ 1 ✗ | 8 ✓ / 1 ✗ · 112 ✓ 1 ✗ | o ✗ é o `DCTFList.test`, **pré-existente**; saíram os testes de `Button`/`Input` |
+| `tsc` backend | 15 erros (3 arquivos) | 15 erros | nenhum novo — todos pré-existentes |
+| `tsc` frontend | 67 erros | 66 erros | nenhum novo; sumiu um aviso do `DivergenciasTable` |
+| `vite build` | ok | ok | |
+| App rodando | — | API reiniciada do zero: `/health`, `/api/clientes`, `/api/dctf`, `/ws/health` 200; `/api/irpf2026/me` 404; Vite compila `App`, router e telas | |
 
 ---
 
-## ✅ Confirmados — Seguros para Remover
+## ✅ Confirmados — Removidos
 
-### Frontend — página e componentes
+### Backend — rotas nunca registradas no `server.ts` (etapa 1)
 
 | Arquivo | Motivo | Verificação |
 |---|---|---|
-| `frontend/src/pages/AdminDashboard.tsx` | Alcançável só por `/dashboard` | Única rota que o monta; `/admin` redireciona para `/irpf-2026/admin` |
-| `frontend/src/components/Dashboard/AlertsSection.tsx` | Importado só pelo `AdminDashboard` | grep em `frontend/src`: 0 refs fora da pasta e da página |
-| `frontend/src/components/Dashboard/ConferenceSummaryCard.tsx` | idem | idem |
-| `frontend/src/components/Dashboard/DashboardFilters.tsx` | idem | idem |
-| `frontend/src/components/Dashboard/FinancialEvolutionChart.tsx` | idem | idem |
-| `frontend/src/components/Dashboard/HeroSection.tsx` | idem | idem |
-| `frontend/src/components/Dashboard/PeriodComparison.tsx` | idem | idem |
-| `frontend/src/components/Dashboard/SitfMetricsSection.tsx` | idem | idem |
-| `frontend/src/components/Dashboard/TopClientsChart.tsx` | idem | idem |
-| `frontend/src/components/Dashboard/TopFaturamentoChart.tsx` | idem | idem |
+| `src/routes/dctf-codes.ts` | Nunca montada (sem registro no histórico do `server.ts`) | grep: só o próprio arquivo; teste de rotas montadas |
+| `src/routes/fiscal-calculation.ts` | Idem | idem |
+| `src/routes/performance.ts` | Idem | idem |
+| `src/controllers/DCTFCodesController.ts` | Só importado pela rota morta | cadeia |
+| `src/controllers/FiscalCalculationController.ts` | Idem | cadeia |
+| `src/controllers/PerformanceController.ts` | Idem | cadeia |
+| `src/services/DCTFCodesService.ts` (+ teste) | Só consumido pelos controllers mortos | cadeia; o teste só o exercitava |
+| `src/services/DCTFCalculationService.ts` (+ teste) | Idem | cadeia |
+| `src/services/PerformanceMonitoringService.ts` | Só o `PerformanceController` | cadeia |
+| `src/models/DCTFCode.ts` | Só a cadeia acima (o `DCTFCode` do `DCTFValidationService` é interface própria) | grep + grafo |
 
-A pasta `components/Dashboard/` inteira sai — nenhum arquivo dela é usado fora da
-própria pasta ou da página.
-
-> Não confundir com `frontend/src/components/sped/ResultsDashboard.tsx`, que é da
-> tela de SPED e **fica**.
-
-### Frontend — serviços
+### Backend — services e models sem nenhum import (etapa 1)
 
 | Arquivo | Motivo | Verificação |
 |---|---|---|
-| `frontend/src/services/enhancedDashboard.ts` | Consumido só pela página e por `TopFaturamentoChart`/`HeroSection`, que também saem | Chama `/dashboard/admin/enhanced` e `/top-faturamento`, endpoints que saem junto |
-| `frontend/src/services/dashboard.ts` | **Já era código morto antes desta limpeza** | `fetchAdminDashboardSnapshot` é reexportado por `services/index.ts` e **nenhum arquivo o importa** |
-| linha em `frontend/src/services/index.ts` | Reexporta o arquivo acima | `export { fetchAdminDashboardSnapshot } from "./dashboard";` |
+| `src/services/AuthService.ts` | 0 imports | grafo a partir de `src/index.ts` e de todos os `src/scripts` |
+| `src/services/ConsultaProgressService.ts` | 0 imports | idem |
+| `src/services/DCTFReportService.ts` | 0 imports | idem |
+| `src/services/ModelFactory.ts` | 0 imports | idem |
+| `src/models/index.ts`, `src/models/Analise.ts` | Só o `ModelFactory` | cadeia |
+| `src/services/conferences/modules/ClientesHistoricoAtrasoModule.ts` | 0 imports | grafo; sem `require` dinâmico no backend |
+| `src/services/conferences/modules/DivergenciasValoresModule.ts` | 0 imports | idem |
+| `src/services/AdminReportPdfService.ts` (+ teste) | Invólucro de uma linha sobre `ReportPdfService`; só o teste chamava, com o serviço real mockado | grep |
+| `tests/frontend/AdminDashboardViewModel.test.ts` | Importava `src/frontend/buildAdminDashboardViewModel`, removido em 20/08; falhava desde então | jest baseline |
 
-### Frontend — rota e navegação
+### IRPF 2026 — decisão do usuário: remover tudo (etapa 2)
 
-| Local | Item |
+Backend desligado desde 17/03/2026 (`a9d0bd5`); as telas seguiam no ar e davam 404.
+
+| Arquivo | Motivo |
 |---|---|
-| `frontend/src/router/index.tsx` | `{ path: 'dashboard', element: <AdminDashboard /> }` + o `import AdminDashboard` |
-| `frontend/src/components/Layout/Header.tsx` | Item de menu `{ name: 'Dashboard', href: '/dashboard' }` |
-| `frontend/src/components/Layout/Sidebar.tsx` | Item de menu `{ name: 'Dashboard', href: '/dashboard' }` |
-| `frontend/src/pages/Home.tsx` | Card "Dashboard" que aponta para `/dashboard` |
+| `src/routes/irpf2026.ts` | Não montada desde `a9d0bd5` |
+| `src/controllers/irpf2026/{Admin,Auth,Documentos,Mensagens}Controller.ts` | Só a rota |
+| `src/services/irpf2026/Irpf2026Service.ts` | Só os controllers |
+| `src/middleware/irpf2026Auth.ts` | Só a rota e o `AuthController` |
+| `frontend/src/pages/Irpf2026/*` (5 arquivos) | Login e Visão Geral chamando `/api/irpf2026` (404) |
+| `frontend/src/contexts/Irpf2026AuthContext.tsx` | Envolvia o app inteiro; sem backend |
+| `frontend/src/services/irpf2026.ts` | Cliente da API removida |
+| `frontend/src/App.tsx`, `frontend/src/router/index.tsx` | **Editados**: sai o provider, as rotas `cliente/login` e `admin` e o atalho `/admin`; `/irpf-2026` continua servindo o `Irpf2025` |
 
-### Frontend — imports que ficam órfãos
+### Dependências (etapa 4)
 
-| Arquivo | Import |
-|---|---|
-| `frontend/src/components/Layout/Header.tsx` | `Squares2X2Icon` (a confirmar após a remoção do item) |
-| `frontend/src/components/Layout/Sidebar.tsx` | `Squares2X2Icon` (idem) |
-| `frontend/src/pages/Home.tsx` | `Squares2X2Icon` (idem) |
-| `frontend/src/router/index.tsx` | `import AdminDashboard from '../pages/AdminDashboard'` |
-
-### Backend
-
-| Arquivo / trecho | Motivo | Verificação |
+| Pacote | Motivo | Verificação |
 |---|---|---|
-| `src/controllers/AdminDashboardController.ts` | Seus 3 handlers (`getSnapshot`, `getEnhanced`, `getTopFaturamento`) servem só a página | Nenhum outro consumidor dos 3 endpoints |
-| `src/services/EnhancedDashboardService.ts` | Importado **apenas** pelo controller acima | grep: 2 refs, ambas no `AdminDashboardController` |
-| 3 rotas em `src/routes/admin-dashboard.ts` | `/snapshot`, `/enhanced`, `/top-faturamento` | O **arquivo fica** — as rotas `/reports/*` são usadas pela página Relatórios |
-| `src/frontend/buildAdminDashboardViewModel.ts` | **Zero referências no projeto inteiro** | Já era órfão; o diretório `src/frontend/` só tem esse arquivo e some junto |
-| `getAdminDashboardSnapshot` em `src/services/AdminDashboardService.ts` | Único chamador era o controller que sai | As outras exportações do arquivo continuam em uso |
+| `fast-xml-parser`, `sharp`, `tesseract.js`, `winston`, `task-master-ai` | 0 imports em `src/` e `tests/` | grep + `npm ls` (nenhum é peer de pacote em uso) |
+| `archiver`, `bcryptjs`, `jsonwebtoken` | Só o IRPF 2026 usava | grep após a etapa 2 (`exceljs` traz o próprio `archiver`) |
+| `@types/bcrypt`, `@types/bcryptjs`, `@types/jsonwebtoken` | Tipos das acima (`bcrypt` nunca foi dependência) | — |
+| `@types/xlsx`, `@types/express-rate-limit`, `@types/uuid` | Os pacotes já trazem os próprios tipos | `tsc` sem erro novo |
 
----
+Lockfile: só perdeu entradas (429 pacotes); nenhuma versão de dependência mantida mudou.
+`.depcheckrc.json` e `knip.json` deixaram de ignorar o que não existe mais.
 
-## ⚠️ Incertos — Revisar Manualmente
+### Frontend — órfãos (etapa 3)
 
-| Item | Situação | Ação sugerida |
+| Arquivo | Motivo | Verificação |
 |---|---|---|
-| `src/routes/admin-dashboard-conferences.ts` + `src/controllers/AdminDashboardConferenceController.ts` + registro em `server.ts:149` | O endpoint `GET /api/dashboard/admin/conferences/summary` **não tem nenhum consumidor no repositório**. O `fetchConferenceSummary` do frontend chama `/conferencias/summary`, que é outra rota. | Endpoint público sem cliente conhecido. Remover é seguro dentro do repo, mas se algo externo (script, Postman, integração) consumir essa URL, ela some. **Recomendo remover**, mas fica destacado para sua decisão. |
+| `components/UI/Button.tsx`, `Input.tsx` (+ testes) | Nenhuma tela importa; os testes só exercitavam o componente | grafo a partir de `main.tsx`; vitest |
+| `components/UI/Table.tsx`, `components/UI/index.ts` | Nenhuma tela importa (as telas importam cada componente pelo caminho) | idem |
+| `hooks/index.ts` | Barrel sem uso (hooks importados um a um) | idem |
+| `components/sped/DivergenciasTable.tsx` | 0 imports | idem |
 
-> O **serviço** `AdminDashboardConferenceService` **não** entra: ele é usado pelo
-> `ReportDataFactory` e fica.
+### Python e arquivos desnecessários (etapa 5)
 
----
-
-## ❌ Falsos Positivos — Manter
-
-| Arquivo | Motivo do descarte |
-|---|---|
-| `src/services/AdminDashboardService.ts` | `ReportDataFactory` importa `buildAdminDashboardSnapshot`, `fetchAllAdminDashboardRecords`, `formatPeriod` e `mapToDashboardRecord` — é a base da página **Relatórios** |
-| `src/services/AdminDashboardConferenceService.ts` | `ReportDataFactory` importa `getConferenceSummary` |
-| `src/services/DashboardMetricsService.ts` | Usado por `AdminDashboardService.buildAdminDashboardSnapshot` (que fica) |
-| `src/services/AdminDashboardArchitecture.ts` | Usado por `AdminDashboardService` (idem) |
-| `src/services/AdminDashboardRequirements.ts` | Usado por `AdminDashboardService` e por `AdminDashboardArchitecture` |
-| `src/services/DashboardLayoutBlueprint.ts` | Usado por `AdminDashboardArchitecture` |
-| `src/controllers/AdminDashboardReportController.ts` | Serve `/dashboard/admin/reports/*`, chamado por `pages/Relatorios.tsx` e `services/relatorios.ts` |
-| `frontend/src/services/conferences-modules.ts` | Também usado por `pages/Conferencias.tsx` e `pages/Administracao.tsx` |
-| `frontend/src/components/sped/ResultsDashboard.tsx` | Da tela de SPED; só coincide no nome |
-
----
-
-## Efeito colateral positivo
-
-`frontend/src/pages/__tests__/Home.test.tsx` **já falha hoje** (é uma das 2 falhas do
-baseline): ele espera 5 cards na Home, na ordem
-`['/dashboard', '/conferencias', '/clientes', '/dctf', '/relatorios']`, e a página tem
-7 numa ordem diferente. O teste ficou para trás de alterações antigas.
-
-Ao remover o card "Dashboard" sobram 6, e vou atualizar a expectativa do teste para o
-que a Home realmente tem. Isso transforma uma falha pré-existente em teste verde —
-**mas é uma mudança de expectativa de teste**, então fica registrada aqui em vez de
-passar despercebida no diff.
-
----
-
-## Endpoints que deixam de existir
-
-| Método | Rota | Consumidor conhecido |
+| Arquivo | Motivo | Verificação |
 |---|---|---|
-| GET | `/api/dashboard/admin/snapshot` | nenhum (o service do frontend que a chamava já era morto) |
-| GET | `/api/dashboard/admin/enhanced` | só a página `/dashboard` |
-| GET | `/api/dashboard/admin/top-faturamento` | só a página `/dashboard` |
-| GET | `/api/dashboard/admin/conferences/summary` | nenhum — ver "Incertos" |
-
-**Continuam existindo:** `/api/dashboard/admin/reports/*` (todas), usadas pela página
-Relatórios.
+| `python/catalog/consulta_colaborador_centro_custo.py`, `consulta_views_especificas.py`, `verificar_views_centro_custo.py` | Consultas avulsas; ninguém chama | grep no repo inteiro (docs, scripts, `.bat`/`.ps1`) |
+| `python/scripts/atualizar_capital_social.py`, `extrair_capital_social_pdf.py`, `extrair_dados_pdf.py` | Ninguém chama nem documenta | idem |
+| `python/sped/debug_find_c170.py` | Script de depuração | idem |
+| `python/temp_gerar_relatorio_1764793714577.py`, `..._1764853441811.py` | Sobras do `BancoHorasService` (grava, roda e apaga; ficaram quando a execução caiu) | padrão adicionado ao `.gitignore` |
+| `eção Exemplos de Divergências Averiguadas explicando tipos de confrontos` (raiz) | Saída de `git log --name-only` salva por engano, nome truncado | leitura do conteúdo |
 
 ---
 
----
+## ⚠️ Incertos — Mantidos, revisar manualmente
 
-# EXECUTADO — 20/08/2026
-
-Decisão do usuário: **"na parte Admin fica intacto, apenas a página dashboard"**.
-Removi **só o frontend**. O backend inteiro (controllers, services e rotas com
-"AdminDashboard" no nome) ficou como estava.
-
-## Removido
-
-| Item | Detalhe |
-|---|---|
-| `frontend/src/pages/AdminDashboard.tsx` | a página |
-| `frontend/src/components/Dashboard/` | 9 componentes; a pasta deixou de existir |
-| `frontend/src/services/enhancedDashboard.ts` | consumido só pela página |
-| `frontend/src/services/dashboard.ts` | já era morto antes desta limpeza |
-| `frontend/src/services/index.ts` | linha que reexportava `fetchAdminDashboardSnapshot` |
-| `frontend/src/router/index.tsx` | rota `dashboard` + o import da página |
-| `frontend/src/components/Layout/Header.tsx` | item de menu + import `Squares2X2Icon` |
-| `frontend/src/components/Layout/Sidebar.tsx` | item de menu + import `Squares2X2Icon` |
-| `frontend/src/pages/Home.tsx` | card "Dashboard" + import `Squares2X2Icon` |
-
-Também: comentário desatualizado em `pages/DCTF.tsx` que citava o Dashboard como
-origem do `?search=` (o comportamento fica — `/dctf?search=X` segue valendo como link
-direto), expectativa do `Home.test.tsx` alinhada aos 6 cards reais, e a seção 9 do
-`docs/MAPEO_PROJETO.md` reescrita.
-
-## Resultado medido
-
-| Verificação | Antes | Depois |
+| Item | Motivo | Ação sugerida |
 |---|---|---|
-| Testes backend | 267 passando | 267 passando |
-| Testes frontend | 122 passando, **2 falhando** | **123 passando, 1 falhando** |
-| `tsc -b` frontend | 96 linhas de erro | **92** |
-| Arquivos | — | **12 arquivos a menos** |
+| `src/services/DCTFBusinessRulesService.ts` | 449 linhas de regras com teste próprio, sem consumidor em runtime | Decidir se volta a ser ligado ou sai. Está na `ALLOWLIST` do teste |
+| `python/scripts/investigar_sp_bi_fat.py` | Sem chamador, mas é ferramenta manual citada em `docs/REOA_CONFERENCIA.md` | Manter. Está na `ALLOWLIST` |
+| 20 módulos `python/sped/` (`validacao_*`, `correcao_c100/c170`, `normalizacao`, `painel_riscos`, `rastreabilidade`, `recalculo_c190`, `relatorios_avancados`, `revalidacao`, `tolerancia`) | Só os testes pytest importam, e o pytest não roda no CI | Decidir se o pipeline SPED v1 vai usá-los; se não, saem com os testes |
+| 42 endpoints sem chamada no frontend (`/api/flags/*`, `/api/sci/banco-horas/*`, `/api/dctf/admin/*`, `/api/darf/lote/executar`...) | Não são código morto: parte é operação manual/administrativa; nenhum outro app em `D:\aplicativos` os chama; a API não grava log de acesso para provar uso | Revisar grupo a grupo. `banco-horas` e `flags` parecem sobra de telas removidas |
+| 36 arquivos de `src/scripts` fora do `package.json` | Ferramentas manuais | Revisar |
+| `src/scripts/run-irpf2026-migration.ts`, `migrate:irpf2026`, migrations do IRPF 2026 | As tabelas continuam no banco; migrations nunca são tocadas | Manter até decidir o destino das tabelas |
+| `src/config/database.ts` (cliente Supabase) | Só scripts usam; chaves vazias no `.env` | Sai junto quando os scripts de migração Supabase forem aposentados |
 
-A falha que sumiu é o `Home.test.tsx`, que já estava vermelho antes por expectativa
-desatualizada. A que resta (`DCTFList.test.tsx`) é pré-existente e não tem relação.
+---
 
-## Deixado no backend, por decisão sua
+## ❌ Falsos Positivos — Mantidos
 
-Estes três ficaram **sem consumidor nenhum** depois da remoção do frontend. Não fazem
-mal — respondem a endpoints que ninguém chama —, mas são código morto a partir de agora:
-
-| Arquivo | Situação |
+| Item | Motivo do descarte |
 |---|---|
-| `src/controllers/AdminDashboardController.ts` | seus 3 handlers (`snapshot`, `enhanced`, `top-faturamento`) perderam o único cliente |
-| `src/services/EnhancedDashboardService.ts` | importado apenas pelo controller acima |
-| `src/frontend/buildAdminDashboardViewModel.ts` | já tinha zero referências antes desta limpeza |
+| `src/routes/sped_correcoes.ts` (apontado pelo `knip`) | Montado via `require('./routes/sped_correcoes')` no `server.ts` |
+| `src/services/SupabaseAdapter.ts` | Apesar do nome, traduz a sintaxe do Supabase para MySQL — é a camada de dados em uso |
+| `python/sped/format.py` | Importado pelo `excelio.py` dentro de um `try` (`from format import ...  # type: ignore`) |
+| `python/sped/ajuste/gerador_sped_ajustado.py`, `cruzamento_inteligente.py`, `rules/cfop_cst_matrix.py` | Carregados por `importlib.util.spec_from_file_location` em `aplicar_ajustes.py`/`processar_ajustes.py` |
+| `frontend/src/types/index.ts` | Só `import type`, mas referenciado — arquivo de tipos vivo |
+| `DCTFValidationService.ts` citando `DCTFCode` | Declara interface própria com esse nome; não importa o model |
 
-E permanece o ⚠️ de antes: `GET /api/dashboard/admin/conferences/summary`
-(`src/routes/admin-dashboard-conferences.ts` + `AdminDashboardConferenceController`)
-segue registrado sem nenhum consumidor no repositório.
+---
 
-Se quiser limpar isso depois, é uma segunda rodada de 4 arquivos + 3 linhas de rota +
-1 registro no `server.ts`. Nada disso toca o `AdminDashboardService` nem os demais,
-que são a base dos **Relatórios**.
+## Pendências pré-existentes (não causadas pela limpeza)
+
+- `frontend/src/pages/__tests__/DCTFList.test.tsx` falha ("Total: 1" não encontrado).
+- `tsc` com erros: backend 15 (`ReportPdfService`, `IrpfController`, `BancoHorasController`); frontend 66.
+- `.github/workflows/ci.yml` documenta que o CI nunca passou.
+- `docs/MAPEO_PROJETO.md` ainda descreve o SPED v2, removido em 08/04/2026 (`86195d3`). A seção de testes foi atualizada nesta limpeza; o resto não.
+
+---
+
+## Próximos Passos
+
+- Decidir os itens ⚠️ acima (principalmente `DCTFBusinessRulesService` e os 20 módulos SPED só de teste).
+- Os testes de `tests/architecture/` rodam no `npm test` e impedem o acúmulo de novos órfãos.
+- A branch `chore/trashless` é local. Integrar/pushar só quando decidido.
+
+Para restaurar o projeto ao estado anterior:
+`git reset --hard def7ea3`

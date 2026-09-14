@@ -454,14 +454,24 @@ class NomeController {
 ## 🧪 Testes
 
 ### **Localização**
-- **Frontend**: `frontend/src/components/UI/__tests__/`
-- **Backend**: `tests/routes/`
-- **Python**: `python/sped/tests/` e `python/sped/v2/*/test_*.py`
+- **Frontend** (Vitest): `frontend/src/**/__tests__/`
+- **Backend** (Jest): `tests/` e `src/**/__tests__/` — os de `tests/integration/` gravam no banco e ficam fora do `npm test`
+- **Arquitetura** (Jest): `tests/architecture/`
+- **Python**: `python/sped/tests/`
+
+### **Testes de arquitetura**
+Dois testes por análise estática (não importam a aplicação, então não abrem banco nem ligam agendador):
+- `route-table.test.ts` — retrato dos endpoints montados no `server.ts`. Se mudar, o diff mostra qual endpoint entrou ou saiu; atualize o snapshot (`npx jest tests/architecture -u`) só quando a mudança na API for intencional.
+- `dead-code.test.ts` — falha quando aparece rota não montada, arquivo que ninguém importa (backend ou frontend), dependência sem import, script Python sem chamador ou teste importando arquivo inexistente. Exceção consciente vai na `ALLOWLIST` do próprio teste, com o motivo.
+
+Criados na limpeza de 2026-09-14 (ver `TRASHLESS_REPORT.md`).
 
 ### **Executar Testes**
 ```bash
-npm test              # Todos os testes
-npm run test:watch    # Modo watch
+npm test                        # Todos os testes do backend (inclui arquitetura)
+npx jest tests/architecture     # Só os de arquitetura
+npm run test:watch              # Modo watch
+cd frontend && npx vitest run   # Frontend
 ```
 
 ---
