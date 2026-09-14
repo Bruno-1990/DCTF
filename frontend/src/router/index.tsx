@@ -14,10 +14,6 @@ import SituacaoFiscal from '../pages/SituacaoFiscal';
 import GeradorSQL from '../pages/GeradorSQL';
 import SpedValidacao from '../pages/SpedValidacao';
 import Irpf2025 from '../pages/Irpf2025';
-import Irpf2026ProtectedAdmin from '../pages/Irpf2026/Irpf2026ProtectedAdmin';
-import Irpf2026AdminLayout from '../pages/Irpf2026/Irpf2026AdminLayout';
-import Irpf2026VisaoGeral from '../pages/Irpf2026/Irpf2026VisaoGeral';
-import Irpf2026LoginPage from '../pages/Irpf2026/Irpf2026LoginPage';
 import Beneficios from '../pages/Beneficios';
 import Legalizacao from '../pages/Legalizacao';
 import Trabalhista from '../pages/Trabalhista';
@@ -34,7 +30,6 @@ const router = createBrowserRouter([
         element: <Layout />,
         children: [
           { index: true, element: <Home /> },
-          { path: 'admin', element: <Navigate to="/irpf-2026/admin" replace /> },
           { path: 'conferencias', element: <Conferencias /> },
           { path: 'clientes', element: <Clientes /> },
           { path: 'clientes/cnae', element: <ClientesCNAE /> },
@@ -50,24 +45,7 @@ const router = createBrowserRouter([
           { path: 'legalizacao', element: <Legalizacao /> },
           { path: 'trabalhista', element: <Trabalhista /> },
           { path: 'fiscal', element: <Fiscal /> },
-          {
-            path: 'irpf-2026',
-            element: <Outlet />,
-            children: [
-              { index: true, element: <Irpf2025 /> },
-              { path: 'cliente/login', element: <Irpf2026LoginPage /> },
-              {
-                path: 'admin',
-                element: <Irpf2026ProtectedAdmin />,
-                children: [
-                  {
-                    element: <Irpf2026AdminLayout />,
-                    children: [{ index: true, element: <Irpf2026VisaoGeral /> }],
-                  },
-                ],
-              },
-            ],
-          },
+          { path: 'irpf-2026', element: <Irpf2025 /> },
           // Rotas removidas (/sci/banco-horas, /relatorios) e qualquer URL desconhecida sob a casca
           // caem aqui. Sem isto o <Outlet /> nao renderiza nada e o usuario ve
           // header, menu e rodape com o miolo em branco, parecendo sistema quebrado.
