@@ -106,6 +106,20 @@ Backend desligado desde 17/03/2026 (`a9d0bd5`); as telas seguiam no ar e davam 4
 | `frontend/src/services/irpf2026.ts` | Cliente da API removida |
 | `frontend/src/App.tsx`, `frontend/src/router/index.tsx` | **Editados**: sai o provider, as rotas `cliente/login` e `admin` e o atalho `/admin`; `/irpf-2026` continua servindo o `Irpf2025` |
 
+**Complemento (2026-09-15)** — confirmado que a área do cliente não será usada. Saíram também:
+
+| Item | Detalhe |
+|---|---|
+| `src/scripts/run-irpf2026-migration.ts` e o script `migrate:irpf2026` | Criavam as tabelas da área do cliente |
+| `docs/IRPF2026_AREA_CLIENTE.md` | Documentação do módulo |
+| Tipos `Irpf2026*` em `src/types/index.ts` | Só o módulo removido usava |
+| Bloco `IRPF 2026` do `.env.example` e 7 linhas do `README.md` | `IRPF2026_ADMIN_EMAILS`, rotas e contexto que não existem mais |
+| **Banco `dctf_web`:** `irpf2026_mensagens`, `irpf2026_documentos`, `irpf2026_admin`, `irpf2026_usuarios` | `DROP` conforme a migration `031` que já existia. Antes: recontagem na hora (0 linhas nas quatro), nenhuma FK externa apontando para elas e `SHOW CREATE TABLE` salvo fora do repositório. Para recriar: migration `030` |
+
+As migrations `030`/`031` ficam como histórico. **Não** é a área do cliente — e continua: a página
+"IRPF 2026" do menu (`/irpf-2026`, relatório de faturamento) com `/api/irpf`, os models e as tabelas
+`irpf_faturamento_*`, usados também pelos jobs de Cota de Aprendizagem e REOA e pela tela Clientes.
+
 ### Dependências (etapa 4)
 
 | Pacote | Motivo | Verificação |
@@ -148,7 +162,6 @@ Lockfile: só perdeu entradas (429 pacotes); nenhuma versão de dependência man
 | 20 módulos `python/sped/` (`validacao_*`, `correcao_c100/c170`, `normalizacao`, `painel_riscos`, `rastreabilidade`, `recalculo_c190`, `relatorios_avancados`, `revalidacao`, `tolerancia`) | Só os testes pytest importam, e o pytest não roda no CI | Decidir se o pipeline SPED v1 vai usá-los; se não, saem com os testes |
 | 42 endpoints sem chamada no frontend (`/api/flags/*`, `/api/sci/banco-horas/*`, `/api/dctf/admin/*`, `/api/darf/lote/executar`...) | Não são código morto: parte é operação manual/administrativa; nenhum outro app em `D:\aplicativos` os chama; a API não grava log de acesso para provar uso | Revisar grupo a grupo. `banco-horas` e `flags` parecem sobra de telas removidas |
 | 36 arquivos de `src/scripts` fora do `package.json` | Ferramentas manuais | Revisar |
-| `src/scripts/run-irpf2026-migration.ts`, `migrate:irpf2026`, migrations do IRPF 2026 | As tabelas continuam no banco; migrations nunca são tocadas | Manter até decidir o destino das tabelas |
 | `src/config/database.ts` (cliente Supabase) | Só scripts usam; chaves vazias no `.env` | Sai junto quando os scripts de migração Supabase forem aposentados |
 
 ---

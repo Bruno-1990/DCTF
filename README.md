@@ -52,7 +52,6 @@ Sistema completo de gestão fiscal para escritórios de contabilidade brasileiro
 - Gestão de clientes com sync automático via OneClick/MySQL
 - Consulta de situação fiscal na Receita Federal
 - Geração de relatórios Excel/PDF
-- Módulo IRPF 2026 com área do cliente e painel admin
 - Banco de horas via integração Firebird SCI
 - Comunicação em tempo real via WebSocket (Socket.io)
 
@@ -159,7 +158,6 @@ DCTF_MPC/
 │       │   ├── UI/               # Componentes base (Button, Input, Modal, Table)
 │       │   ├── conferences/      # Seções de conferência DCTF
 │       │   └── sped/             # Componentes SPED (upload, validação)
-│       ├── contexts/             # Irpf2026AuthContext
 │       ├── hooks/                # Hooks customizados (useClientes, useDCTF, useToast)
 │       ├── services/             # Camada de API (axios)
 │       ├── store/                # Zustand (estado global)
@@ -247,7 +245,6 @@ cp .env.example .env
 | `EMAIL_USER` | Não | — | E-mail SMTP (Gmail) |
 | `EMAIL_PASSWORD` | Não | — | App password do Gmail |
 | `FRONTEND_URL` | Não | — | URLs permitidas para CORS |
-| `IRPF2026_ADMIN_EMAILS` | Não | `ti@central-rnc.com.br,...` | E-mails admin do módulo IRPF |
 | `COTA_SCHEDULER_ENABLED` | Não | `false` | Liga a apuração mensal da cota de aprendizagem |
 | `COTA_SCHEDULER_DIA` | Não | `5` | Dia do mês em que a apuração roda |
 | `COTA_ALERT_EMAILS` | Não | `ti@central-rnc.com.br` | Destinatários do aviso de cota de aprendizagem |
@@ -311,7 +308,6 @@ docker compose -f docker-compose.production.yml up -d
 | import:clientes | `npm run import:clientes` | Importa clientes para MySQL |
 | verify:duplicados | `npm run verify:duplicados` | Verifica clientes duplicados |
 | fix:razoes-sociais | `npm run fix:razoes-sociais` | Corrige razões sociais via CNPJ |
-| migrate:irpf2026 | `npm run migrate:irpf2026` | Roda migração IRPF 2026 |
 | deploy:dev | `npm run deploy:dev` | Deploy ambiente desenvolvimento |
 | deploy:prod | `npm run deploy:prod` | Deploy ambiente produção |
 
@@ -384,7 +380,6 @@ Serviços:
 | `receita` | `/api/receita` | Consulta Receita Federal |
 | `relatorios` | `/api/relatorios` | Geração de relatórios |
 | `irpf` | `/api/irpf` | IRPF produção |
-| `irpf2026` | `/api/irpf-2026` | IRPF 2026 (auth, admin, docs) |
 | `sci` | `/api/sci` | Integração SCI (banco horas, catálogo) |
 | `admin-dashboard` | `/api/dashboard/admin` | Dashboard administrativo |
 | `flags` | `/api/flags` | Flags de clientes |
@@ -415,8 +410,6 @@ Serviços:
 | `/sped/v2` | SpedValidacaoV2 | Validação SPED V2 |
 | `/sped/knowledge` | SpedKnowledgeBase | Base de conhecimento SPED |
 | `/irpf-2026` | Irpf2025 | Landing page IRPF 2026 |
-| `/irpf-2026/cliente/login` | Irpf2026LoginPage | Login de clientes IRPF |
-| `/irpf-2026/admin` | Irpf2026AdminLayout | Painel admin IRPF (protegido) |
 
 ---
 
