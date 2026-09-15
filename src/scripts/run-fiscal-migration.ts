@@ -1,6 +1,7 @@
 /**
- * Executa a migration 053: tabelas da ficha fiscal
- * (`fiscal_colaboradores`, `fiscal_ficha`).
+ * Executa as migrations da aba Fiscal: tabelas da ficha
+ * (`fiscal_colaboradores`, `fiscal_ficha`) e as respostas dos questionários
+ * (`fiscal_questionario_respostas`).
  *
  * Uso: npx ts-node --transpile-only src/scripts/run-fiscal-migration.ts
  *      ou: npm run migrate:fiscal
@@ -20,8 +21,9 @@ const MIGRATIONS = [
   '053_create_fiscal_ficha.sql',
   '054_fiscal_sped_quem_envia.sql',
   '055_fiscal_particularidade.sql',
+  '056_fiscal_questionario_respostas.sql',
 ];
-const TABELAS = ['fiscal_colaboradores', 'fiscal_ficha'];
+const TABELAS = ['fiscal_colaboradores', 'fiscal_ficha', 'fiscal_questionario_respostas'];
 
 /**
  * Remove as linhas de comentário do INÍCIO de um statement.

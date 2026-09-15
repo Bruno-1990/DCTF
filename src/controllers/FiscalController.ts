@@ -9,6 +9,7 @@
 import { Request, Response } from 'express';
 import fiscalFichaService, { ErroValidacao } from '../services/FiscalFichaService';
 import { opcoesFicha } from '../services/FiscalOpcoes';
+import fiscalQuestionarioService from '../services/FiscalQuestionarioService';
 import { enviarAviso } from '../services/fiscal.email';
 
 /** `id` de rota → inteiro positivo, ou null quando veio lixo. */
@@ -177,6 +178,96 @@ export class FiscalController {
     } catch (err: any) {
       console.error('[FISCAL] clientesDisponiveis:', err);
       res.status(500).json({ success: false, error: 'Erro ao buscar empresas.' });
+    }
+  }
+
+  // ─── Questionários ───────────────────────────────────────────────────────
+
+  /** Os questionários existentes, em resumo. Vem do código, não do banco. */
+  async questionarios(_req: Request, res: Response): Promise<void> {
+    res.json({ success: true, data: fiscalQuestionarioService.listar() });
+  }
+
+  /** A definição completa de um questionário — é o que monta o formulário. */
+  async questionario(req: Request, res: Response): Promise<void> {
+    const definicao = fiscalQuestionarioService.definicao(String(req.params['slug'] ?? ''));
+    if (!definicao) {
+      res.status(404).json({ success: false, error: 'Questionário não encontrado.' });
+      return;
+    }
+    res.json({ success: true, data: definicao });
+  }
+
+  /** Todas as respostas do questionário — alimenta a visão consolidada. */
+  async questionarioRespostas(req: Request, res: Response): Promise<void> {
+    const slug = String(req.params['slug'] ?? '');
+    if (!fiscalQuestionarioService.definicao(slug)) {
+      res.status(404).json({ success: false, error: 'Questionário não encontrado.' });
+      return;
+    }
+    try {
+      const data = await fiscalQuestionarioService.respostas(slug);
+      res.json({ success: true, data });
+    } catch (err: any) {
+      console.error('[FISCAL] questionarioRespostas:', err);
+      res.status(500).json({ success: false, error: 'Erro ao carregar as respostas.' });
+    }
+  }
+
+  /**
+   * O que um colaborador respondeu.
+   *
+   * 200 com `data: null` quando ainda não respondeu: "não respondeu" é um
+   * estado normal do formulário em branco, não um recurso que falta — um 404
+   * faria a tela tratar o primeiro acesso como erro.
+   */
+  async questionarioRespostaColaborador(req: Request, res: Response): Promise<void> {
+    const slug = String(req.params['slug'] ?? '');
+    if (!fiscalQuestionarioService.definicao(slug)) {
+      res.status(404).json({ success: false, error: 'Questionário não encontrado.' });
+      return;
+    }
+    const colaboradorId = idNumerico(req.params['colaboradorId']);
+    if (colaboradorId === null) {
+      res.status(400).json({ success: false, error: 'Informe o colaborador.' });
+      return;
+    }
+    try {
+      const data = await fiscalQuestionarioService.respostaDe(slug, colaboradorId);
+      res.json({ success: true, data });
+    } catch (err: any) {
+      console.error('[FISCAL] questionarioRespostaColaborador:', err);
+      res.status(500).json({ success: false, error: 'Erro ao carregar as respostas.' });
+    }
+  }
+
+  /** Grava (ou substitui) as respostas de um colaborador. É o autosave da tela. */
+  async questionarioSalvar(req: Request, res: Response): Promise<void> {
+    const slug = String(req.params['slug'] ?? '');
+    if (!fiscalQuestionarioService.definicao(slug)) {
+      res.status(400).json({ success: false, error: 'Questionário não encontrado.' });
+      return;
+    }
+    const colaboradorId = idNumerico(req.params['colaboradorId']);
+    if (colaboradorId === null) {
+      res.status(400).json({ success: false, error: 'Informe o colaborador.' });
+      return;
+    }
+    try {
+      const data = await fiscalQuestionarioService.salvar(
+        slug,
+        colaboradorId,
+        req.body?.respostas ?? {},
+        req.body?.observacoes ?? null
+      );
+      res.json({ success: true, data });
+    } catch (err: any) {
+      if (err instanceof ErroValidacao) {
+        res.status(400).json({ success: false, error: err.message });
+        return;
+      }
+      console.error('[FISCAL] questionarioSalvar:', err);
+      res.status(500).json({ success: false, error: 'Erro ao salvar as respostas.' });
     }
   }
 }

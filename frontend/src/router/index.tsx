@@ -18,6 +18,7 @@ import Beneficios from '../pages/Beneficios';
 import Legalizacao from '../pages/Legalizacao';
 import Trabalhista from '../pages/Trabalhista';
 import Fiscal from '../pages/Fiscal';
+import FiscalQuestionario from '../pages/FiscalQuestionario';
 
 const router = createBrowserRouter([
   {
@@ -45,6 +46,7 @@ const router = createBrowserRouter([
           { path: 'legalizacao', element: <Legalizacao /> },
           { path: 'trabalhista', element: <Trabalhista /> },
           { path: 'fiscal', element: <Fiscal /> },
+          { path: 'fiscal/questionario', element: <FiscalQuestionario /> },
           { path: 'irpf-2026', element: <Irpf2025 /> },
           // Rotas removidas (/sci/banco-horas, /relatorios) e qualquer URL desconhecida sob a casca
           // caem aqui. Sem isto o <Outlet /> nao renderiza nada e o usuario ve

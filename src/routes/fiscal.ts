@@ -24,6 +24,20 @@ router.get('/clientes-disponiveis', (req, res) => controller.clientesDisponiveis
 // Aviso por e-mail (mesmo padrao de /beneficios/substituto/aviso)
 router.post('/aviso', (req, res) => controller.aviso(req, res));
 
+// Questionarios: definicao vem do codigo, respostas vem do banco.
+// `/questionarios` ANTES de `/questionarios/:slug`, pela mesma regra do topo.
+router.get('/questionarios', (req, res) => controller.questionarios(req, res));
+router.get('/questionarios/:slug', (req, res) => controller.questionario(req, res));
+router.get('/questionarios/:slug/respostas', (req, res) =>
+  controller.questionarioRespostas(req, res)
+);
+router.get('/questionarios/:slug/respostas/:colaboradorId', (req, res) =>
+  controller.questionarioRespostaColaborador(req, res)
+);
+router.put('/questionarios/:slug/respostas/:colaboradorId', (req, res) =>
+  controller.questionarioSalvar(req, res)
+);
+
 // Escrita
 router.post('/ficha', (req, res) => controller.adicionar(req, res));
 router.patch('/ficha/:id', (req, res) => controller.atualizar(req, res));

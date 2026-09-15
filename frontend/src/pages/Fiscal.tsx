@@ -9,13 +9,15 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   ClipboardDocumentListIcon,
+  ClipboardDocumentCheckIcon,
   BuildingOffice2Icon,
   InboxIcon,
   LockClosedIcon,
   PencilSquareIcon,
   RectangleStackIcon,
 } from '@heroicons/react/24/outline';
-import fiscalService from '../services/fiscal';
+import { Link } from 'react-router-dom';
+import fiscalService, { CHAVE_COLABORADOR } from '../services/fiscal';
 import ModoFoco from '../components/Fiscal/ModoFoco';
 import type {
   ClienteDisponivel,
@@ -60,9 +62,6 @@ const iniciais = (nome: string) =>
     .map((p) => p[0])
     .join('')
     .toUpperCase();
-
-/** Lembra quem estava preenchendo — ninguém quer reescolher o nome a cada visita. */
-const CHAVE_COLABORADOR = 'fiscal:colaboradorId';
 
 /**
  * A ordem das colunas editáveis na navegação por teclado. O índice é o
@@ -878,13 +877,22 @@ const Fiscal: React.FC = () => {
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
             <ClipboardDocumentListIcon className="h-6 w-6 text-white" />
           </span>
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold text-white">Fiscal</h1>
             <p className="mt-0.5 text-sm text-blue-100">
               Perfil, volume de notas e envio de SPED por empresa. CNPJ, razão social, regime e
               benefício vêm do cadastro — aqui você preenche só as quatro últimas colunas.
             </p>
           </div>
+          {/* Discreto de propósito: o questionário é ocasional, a ficha é o
+              trabalho do dia. Um botão do mesmo peso disputaria o olho. */}
+          <Link
+            to="/fiscal/questionario"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white/15 px-3 py-2 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/60"
+          >
+            <ClipboardDocumentCheckIcon className="h-4 w-4" />
+            Questionário
+          </Link>
         </div>
       </motion.div>
 

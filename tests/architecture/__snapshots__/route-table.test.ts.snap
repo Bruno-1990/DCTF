@@ -85,6 +85,10 @@ exports[`Caracterização — endpoints montados no server.ts a tabela de rotas 
   "GET /api/fiscal/colaboradores",
   "GET /api/fiscal/ficha",
   "GET /api/fiscal/opcoes",
+  "GET /api/fiscal/questionarios",
+  "GET /api/fiscal/questionarios/:slug",
+  "GET /api/fiscal/questionarios/:slug/respostas",
+  "GET /api/fiscal/questionarios/:slug/respostas/:colaboradorId",
   "GET /api/flags",
   "GET /api/flags/:id",
   "GET /api/host-dados/cliente/:cnpj",
@@ -218,6 +222,7 @@ exports[`Caracterização — endpoints montados no server.ts a tabela de rotas 
   "PUT /api/clientes/:id/editar-participacao-manual",
   "PUT /api/clientes/:id/recalcular-valores-participacao",
   "PUT /api/dctf/:id",
+  "PUT /api/fiscal/questionarios/:slug/respostas/:colaboradorId",
   "PUT /api/relatorios/:id",
 ]
 `;

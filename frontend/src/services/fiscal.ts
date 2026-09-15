@@ -49,6 +49,89 @@ export interface ClienteDisponivel {
   jaCom: string[];
 }
 
+/**
+ * Lembra quem estava preenchendo — ninguém quer reescolher o nome a cada
+ * visita. Fica aqui, e não numa página, porque a aba Fiscal e o questionário
+ * compartilham a escolha: quem selecionou o nome numa tela não reescolhe na
+ * outra.
+ */
+export const CHAVE_COLABORADOR = 'fiscal:colaboradorId';
+
+// ─── Questionários ───
+// Estes tipos são uma CÓPIA de src/services/FiscalQuestionarios.ts (backend).
+// O front não importa do backend — são dois pacotes com tsconfig próprio — e
+// duplicar a forma é mais barato que montar um pacote compartilhado só para
+// isto. A fonte da verdade continua sendo o backend: ele valida a resposta.
+
+export interface LinhaCaso {
+  rotulo: string;
+  texto: string;
+}
+
+export interface OpcaoPergunta {
+  valor: string;
+  texto: string;
+}
+
+export type TipoPergunta = 'unica' | 'multipla' | 'texto';
+
+export interface PerguntaDefinicao {
+  id: string;
+  numero: number;
+  enunciado: string;
+  caso?: LinhaCaso[];
+  tipo: TipoPergunta;
+  opcoes?: OpcaoPergunta[];
+  defineNoMotor?: string;
+  placeholderObs?: string;
+}
+
+export interface SecaoDefinicao {
+  codigo: string;
+  titulo: string;
+  intro?: string;
+  perguntas: PerguntaDefinicao[];
+  observacoesGerais?: { placeholder: string };
+}
+
+export interface QuestionarioDefinicao {
+  slug: string;
+  chapeu?: string;
+  titulo: string;
+  lead: string;
+  comoResponder: string[];
+  versao: number;
+  secoes: SecaoDefinicao[];
+}
+
+export interface QuestionarioResumo {
+  slug: string;
+  titulo: string;
+  versao: number;
+  totalPerguntas: number;
+}
+
+/** String em pergunta de opção única/texto; array em múltipla escolha. */
+export type ValorResposta = string | string[];
+
+/** Mapa `id da pergunta` (ou `obs:<id>`) → valor. */
+export type MapaRespostas = Record<string, ValorResposta>;
+
+export interface RespostaQuestionario {
+  id: number;
+  questionarioSlug: string;
+  questionarioVersao: number;
+  colaboradorId: number;
+  colaboradorNome: string;
+  respostas: MapaRespostas;
+  observacoes: string | null;
+  criadoEm: string | null;
+  atualizadoEm: string | null;
+}
+
+/** Prefixo das chaves de observação por pergunta — igual ao do backend. */
+export const PREFIXO_OBSERVACAO = 'obs:';
+
 /** Campos editáveis. Ausente = não mexe; `null` = limpa. */
 export interface EdicaoFicha {
   perfil?: string | null;
@@ -125,6 +208,62 @@ export const fiscalService = {
       params: { colaboradorId, q },
     });
     return data.data;
+  },
+
+  // ─── Questionários ───
+
+  async questionarios(): Promise<QuestionarioResumo[]> {
+    const { data } = await api.get('/fiscal/questionarios');
+    return data.data;
+  },
+
+  async questionario(slug: string): Promise<QuestionarioDefinicao> {
+    try {
+      const { data } = await api.get(`/fiscal/questionarios/${slug}`);
+      return data.data;
+    } catch (err: any) {
+      throw new Error(mensagemErro(err, 'Não foi possível carregar o questionário.'));
+    }
+  },
+
+  /** Todas as respostas — é o que a visão consolidada consome. */
+  async questionarioRespostas(slug: string): Promise<RespostaQuestionario[]> {
+    try {
+      const { data } = await api.get(`/fiscal/questionarios/${slug}/respostas`);
+      return data.data;
+    } catch (err: any) {
+      throw new Error(mensagemErro(err, 'Não foi possível carregar as respostas.'));
+    }
+  },
+
+  /** `null` quando o colaborador ainda não respondeu — não é erro. */
+  async questionarioResposta(
+    slug: string,
+    colaboradorId: number
+  ): Promise<RespostaQuestionario | null> {
+    try {
+      const { data } = await api.get(`/fiscal/questionarios/${slug}/respostas/${colaboradorId}`);
+      return data.data ?? null;
+    } catch (err: any) {
+      throw new Error(mensagemErro(err, 'Não foi possível carregar suas respostas.'));
+    }
+  },
+
+  async salvarQuestionario(
+    slug: string,
+    colaboradorId: number,
+    respostas: MapaRespostas,
+    observacoes: string | null
+  ): Promise<RespostaQuestionario> {
+    try {
+      const { data } = await api.put(`/fiscal/questionarios/${slug}/respostas/${colaboradorId}`, {
+        respostas,
+        observacoes,
+      });
+      return data.data;
+    } catch (err: any) {
+      throw new Error(mensagemErro(err, 'Não foi possível salvar.'));
+    }
   },
 };
 
