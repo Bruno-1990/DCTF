@@ -25,6 +25,8 @@
  */
 
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { spawn } from 'child_process';
 import type { ProcSpe } from './DetProcuracoesRegra';
 import { reconciliarProcuracoes, type ResumoSincronizacao } from './DetProcuracoesSync';
@@ -164,8 +166,44 @@ export class DetColetorService {
   private reautenticacoes = 0;
   private log: (m: string) => void;
 
+  /** Arquivo desta rodada, criado na primeira mensagem. */
+  private arquivoLog: string | null = null;
+
+  /**
+   * O log da rodada também vai para disco.
+   *
+   * POR QUE: quando a coleta de 16/09/2026 abortou com 122 dos 137 clientes
+   * por varrer, não sobrou material nenhum para investigar — a saída do
+   * serviço só existe em memória no Server Manager, que não a grava em lugar
+   * nenhum. O resumo em `det_coletas` diz QUANTOS falharam; o arquivo diz o
+   * que o portal respondeu, cliente a cliente.
+   *
+   * O envelope fica aqui, no construtor, e não espalhado pelas dezenas de
+   * chamadas de `this.log` — quem chama continua escrevendo do mesmo jeito.
+   */
   constructor(log: (m: string) => void = (m) => console.log('[DET]', m)) {
-    this.log = log;
+    this.log = (m: string) => {
+      log(m);
+      this.gravarNoArquivo(m);
+    };
+  }
+
+  /** Nunca derruba a coleta: log é apoio, e disco cheio não pode custar o dia. */
+  private gravarNoArquivo(mensagem: string): void {
+    try {
+      if (!this.arquivoLog) {
+        const dir = path.join(process.cwd(), 'logs');
+        fs.mkdirSync(dir, { recursive: true });
+        const a = new Date();
+        const dd = (n: number): string => String(n).padStart(2, '0');
+        const carimbo = `${a.getFullYear()}-${dd(a.getMonth() + 1)}-${dd(a.getDate())}_${dd(a.getHours())}${dd(a.getMinutes())}`;
+        this.arquivoLog = path.join(dir, `det-coleta-${carimbo}.log`);
+      }
+      const hora = new Date().toLocaleTimeString('pt-BR');
+      fs.appendFileSync(this.arquivoLog, `[${hora}] ${mensagem}\n`, 'utf8');
+    } catch {
+      /* sem log em disco a coleta segue — é o resumo em det_coletas que fecha o dia */
+    }
   }
 
   // ─── Navegador ───────────────────────────────────────────────────────────
@@ -1347,6 +1385,12 @@ export class DetColetorService {
             res.erros++;
             res.detalhes.push({ cnpj, ok: false, motivo: recusa, mensagens: 0, novas: 0 });
             this.log(`   recusado: ${recusa.slice(0, 90)}`);
+            // Recusa é falha com nome e CNPJ: sem esta marca, o cliente
+            // continuava exibindo a coleta ANTIGA como se nada tivesse
+            // acontecido. Em 16/09/2026 a rodada abortou com 122 dos 137
+            // clientes sem coletar e a tela não tinha como mostrar quem —
+            // só o total de erros no resumo da execução.
+            await this.marcarColeta(cnpj, 'erro', null).catch(() => undefined);
             precisaReset = true;
             falhasSeguidas++;
 
