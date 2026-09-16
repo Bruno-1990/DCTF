@@ -26,18 +26,19 @@
 
 import { executeQuery, mysqlPool } from '../config/mysql';
 import { SubstitutoService, construirJanela } from './SubstitutoService';
+import agendamentoConfigService from './agendamentos/AgendamentoConfigService';
 
-const DIA_PADRAO = Number(process.env['REOA_SCHEDULER_DIA'] || 5);
+const ID_AGENDAMENTO = 'reoa-substituto';
 /**
- * 2h, uma hora depois do job da cota.
+ * O padrão são 2h, uma hora depois do job da cota.
  *
  * Os dois consultam o SCI e compartilham o mesmo lock, então rodar junto não
  * corromperia nada — apenas empilharia a fila e faria os dois demorarem o dobro.
  * Escalonar mantém cada janela de execução curta o bastante para caber na
- * madrugada.
+ * madrugada. Quem muda esses horários pelo painel deve manter o afastamento.
  */
-const HORA_PADRAO = Number(process.env['REOA_SCHEDULER_HORA'] || 2);
-const HABILITADO = process.env['REOA_SCHEDULER_ENABLED'] === 'true';
+const HORA_FALLBACK = 2;
+const DIA_FALLBACK = 5;
 const INTERVALO_MS = 60 * 1000; // confere a cada minuto
 
 let logTableReady = false;
@@ -72,17 +73,12 @@ export class SubstitutoScheduler {
   private rodandoAgora = false;
   private readonly service = new SubstitutoService();
 
+  /** O intervalo sobe sempre; liga/desliga e horário vêm do painel (ver Cota). */
   start(): void {
-    if (!HABILITADO) {
-      console.log(
-        '[REOA Scheduler] Desabilitado. Para ligar, defina REOA_SCHEDULER_ENABLED=true no .env.'
-      );
-      return;
-    }
     if (this.intervalId) return;
 
     console.log(
-      `[REOA Scheduler] Ativo — coleta todo dia ${DIA_PADRAO} às ${String(HORA_PADRAO).padStart(2, '0')}:00.`
+      '[REOA Scheduler] Verificando a cada minuto — dia, hora e liga/desliga vêm do painel de agendamentos.'
     );
     this.intervalId = setInterval(() => {
       void this.verificar();
@@ -112,6 +108,18 @@ export class SubstitutoScheduler {
    */
   private async verificar(): Promise<void> {
     if (this.rodandoAgora || this.service.statusColeta.rodando) return;
+
+    let cfg;
+    try {
+      cfg = await agendamentoConfigService.obter(ID_AGENDAMENTO);
+    } catch (err: any) {
+      console.error('[REOA Scheduler] Não consegui ler a configuração:', err?.message || err);
+      return;
+    }
+    if (!cfg.ativo) return;
+
+    const DIA_PADRAO = cfg.dia ?? DIA_FALLBACK;
+    const HORA_PADRAO = cfg.hora ?? HORA_FALLBACK;
 
     const agora = new Date();
     const dia = agora.getDate();

@@ -2,6 +2,7 @@
 
 exports[`Caracterização — endpoints montados no server.ts a tabela de rotas da API não muda 1`] = `
 [
+  "DELETE /api/agendamentos/:id/emails",
   "DELETE /api/beneficios/compete/limpar",
   "DELETE /api/beneficios/invest/limpar",
   "DELETE /api/clientes/:id",
@@ -15,6 +16,8 @@ exports[`Caracterização — endpoints montados no server.ts a tabela de rotas 
   "DELETE /api/relatorios/:id",
   "DELETE /api/situacao-fiscal/history/:id",
   "DELETE /api/sped/validacao/:validationId",
+  "GET /api/agendamentos",
+  "GET /api/agendamentos/:id/historico",
   "GET /api/beneficios/compete",
   "GET /api/beneficios/compete/comparacao",
   "GET /api/beneficios/fonte/:programa",
@@ -122,10 +125,13 @@ exports[`Caracterização — endpoints montados no server.ts a tabela de rotas 
   "GET /api/spreadsheet/template",
   "GET /api/spreadsheet/uploads",
   "GET /api/spreadsheet/validation-rules",
+  "PATCH /api/agendamentos/:id",
   "PATCH /api/clientes/:id/ativo",
   "PATCH /api/clientes/ebef/:id/envio",
   "PATCH /api/darf/lote/:id",
   "PATCH /api/fiscal/ficha/:id",
+  "POST /api/agendamentos/:id/emails",
+  "POST /api/agendamentos/:id/executar",
   "POST /api/beneficios/compete/importar",
   "POST /api/beneficios/invest/importar",
   "POST /api/beneficios/substituto/aviso",

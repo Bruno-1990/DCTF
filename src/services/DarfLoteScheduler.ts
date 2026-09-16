@@ -24,10 +24,11 @@
 
 import { executeQuery } from '../config/mysql';
 import darfLoteService, { competenciaAlvo, modoCompetencia } from './DarfLoteService';
+import agendamentoConfigService from './agendamentos/AgendamentoConfigService';
 
-const HABILITADO = process.env['DARF_LOTE_ENABLED'] === 'true';
-const DIA_PADRAO = Number(process.env['DARF_LOTE_DIA'] || 25);
-const HORA_PADRAO = Number(process.env['DARF_LOTE_HORA'] || 6);
+const ID_AGENDAMENTO = 'darf-lote';
+const DIA_FALLBACK = 25;
+const HORA_FALLBACK = 6;
 const INTERVALO_MS = 60 * 1000; // confere a cada minuto
 
 export { competenciaAlvo };
@@ -36,18 +37,16 @@ export class DarfLoteScheduler {
   private intervalId: NodeJS.Timeout | null = null;
   private rodandoAgora = false;
 
+  /**
+   * O intervalo sobe sempre, mas este job nasce DESLIGADO na semeadura (o
+   * DARF_LOTE_ENABLED desta instalação é false, porque quem dispara é o Server
+   * Manager). O painel mostra isso e não deixa editar o horário aqui.
+   */
   start(): void {
-    if (!HABILITADO) {
-      console.log(
-        '[DarfLote Scheduler] Desabilitado. Para ligar, defina DARF_LOTE_ENABLED=true no .env.'
-      );
-      return;
-    }
     if (this.intervalId) return;
 
     console.log(
-      `[DarfLote Scheduler] Ativo — todo dia ${DIA_PADRAO} às ` +
-        `${String(HORA_PADRAO).padStart(2, '0')}:00, competência ${modoCompetencia()}.`
+      `[DarfLote Scheduler] Verificando a cada minuto — liga/desliga vem do painel de agendamentos, competência ${modoCompetencia()}.`
     );
     this.intervalId = setInterval(() => {
       void this.verificar();
@@ -64,6 +63,18 @@ export class DarfLoteScheduler {
 
   private async verificar(): Promise<void> {
     if (this.rodandoAgora) return;
+
+    let cfg;
+    try {
+      cfg = await agendamentoConfigService.obter(ID_AGENDAMENTO);
+    } catch (err: any) {
+      console.error('[DarfLote Scheduler] Não consegui ler a configuração:', err?.message || err);
+      return;
+    }
+    if (!cfg.ativo) return;
+
+    const DIA_PADRAO = cfg.dia ?? DIA_FALLBACK;
+    const HORA_PADRAO = cfg.hora ?? HORA_FALLBACK;
 
     const agora = new Date();
     const dia = agora.getDate();

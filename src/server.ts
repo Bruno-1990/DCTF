@@ -33,6 +33,8 @@ import cotaAprendizagemRoutes from './routes/cota-aprendizagem';
 import detRoutes from './routes/det';
 import darfRoutes from './routes/darf';
 import fiscalRoutes from './routes/fiscal';
+import agendamentosRoutes from './routes/agendamentos';
+import agendamentoConfigService from './services/agendamentos/AgendamentoConfigService';
 import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
 import substitutoScheduler from './services/SubstitutoScheduler';
 import detScheduler from './services/DetScheduler';
@@ -54,16 +56,42 @@ class Server {
     this.setupRoutes();
     this.setupErrorHandling();
     this.setupWebSocket();
-    // Scheduler de faturamento IRPF desabilitado: consulta ao banco apenas manual (quando o usuário clica em atualizar).
-    // Cota de aprendizagem: apuração mensal automática, atrás de COTA_SCHEDULER_ENABLED.
-    cotaAprendizagemScheduler.start();
-    substitutoScheduler.start();
-  // DET: varredura diária das caixas postais, atrás de DET_SCHEDULER_ENABLED.
-  detScheduler.start();
-  // DARF: lote mensal para a Acessórias, atrás de DARF_LOTE_ENABLED.
-  darfLoteScheduler.start();
-  // Lançamentos (SCI): sincronização diária do host_dados, atrás de HOST_DADOS_SCHEDULER_ENABLED.
-  hostDadosScheduler.start();
+    /*
+     * Semeadura do painel de agendamentos: cria a linha de cada job que ainda
+     * não existe na tabela `agendamentos`, com o horário e os destinatários que
+     * estavam no .env. Roda antes dos .start() de propósito — assim a primeira
+     * verificação, um minuto depois, já lê a configuração pronta.
+     *
+     * Best-effort: banco fora do ar não pode impedir a API de subir. Sem a
+     * semente, cada scheduler cai no fallback do próprio código, que é o mesmo
+     * valor de antes.
+     */
+    void agendamentoConfigService
+      .semear()
+      .catch((err: any) => console.error('[Agendamentos] Falha ao semear a configuração:', err?.message || err));
+
+    /*
+     * SCHEDULERS_DISABLED=true sobe a API sem nenhum agendador.
+     *
+     * Existe porque agora quem liga e desliga cada job é o banco, compartilhado:
+     * uma segunda instância (desenvolvimento, worktree, teste em outra porta)
+     * leria a mesma configuração e dispararia de verdade — duas coletas do DET,
+     * dois e-mails ao DP. Desligar pelo painel não serve: pararia produção
+     * junto. Esta trava é por PROCESSO, e é o jeito seguro de rodar uma segunda
+     * instância contra o mesmo banco.
+     */
+    if (process.env['SCHEDULERS_DISABLED'] === 'true') {
+      console.log('[Agendamentos] SCHEDULERS_DISABLED=true — nenhum job será iniciado neste processo.');
+    } else {
+      // Scheduler de faturamento IRPF desabilitado: consulta ao banco apenas manual (quando o usuário clica em atualizar).
+      // Os demais sobem SEMPRE: quem liga, desliga e muda horário é o painel de
+      // agendamentos (área administrativa), sem reiniciar o serviço.
+      cotaAprendizagemScheduler.start();
+      substitutoScheduler.start();
+      detScheduler.start();
+      darfLoteScheduler.start();
+      hostDadosScheduler.start();
+    }
   }
 
   private setupMiddleware(): void {
@@ -196,6 +224,7 @@ class Server {
     this.app.use('/api/cota-aprendizagem', cotaAprendizagemRoutes);
     this.app.use('/api/det', detRoutes);
     this.app.use('/api/fiscal', fiscalRoutes);
+    this.app.use('/api/agendamentos', agendamentosRoutes);
 
     // DARF: cada chamada aqui é uma ida ao SERPRO, que é
     // cota contratada. Este limiter protege a cota, não o servidor — por isso é

@@ -23,9 +23,10 @@
 
 import { executeQuery, mysqlPool } from '../config/mysql';
 import { FirebirdSyncService, sincronizacaoEmAndamento } from './FirebirdSyncService';
+import agendamentoConfigService from './agendamentos/AgendamentoConfigService';
 
-const HORA_PADRAO = Number(process.env['HOST_DADOS_SCHEDULER_HORA'] || 4);
-const HABILITADO = process.env['HOST_DADOS_SCHEDULER_ENABLED'] === 'true';
+const ID_AGENDAMENTO = 'lancamentos-sci';
+const HORA_FALLBACK = 4;
 const INTERVALO_MS = 60 * 1000; // confere a cada minuto
 
 let logTableReady = false;
@@ -53,17 +54,12 @@ export class HostDadosScheduler {
   private rodandoAgora = false;
   private readonly sync = new FirebirdSyncService();
 
+  /** O intervalo sobe sempre; hora e liga/desliga vêm do painel (ver Cota). */
   start(): void {
-    if (!HABILITADO) {
-      console.log(
-        '[Lançamentos SCI Scheduler] Desabilitado. Para ligar, defina HOST_DADOS_SCHEDULER_ENABLED=true no .env.'
-      );
-      return;
-    }
     if (this.intervalId) return;
 
     console.log(
-      `[Lançamentos SCI Scheduler] Ativo — sincroniza a competência anterior todo dia às ${String(HORA_PADRAO).padStart(2, '0')}:00.`
+      '[Lançamentos SCI Scheduler] Verificando a cada minuto — hora e liga/desliga vêm do painel de agendamentos.'
     );
     this.intervalId = setInterval(() => {
       void this.verificar();
@@ -85,7 +81,16 @@ export class HostDadosScheduler {
    */
   private async verificar(): Promise<void> {
     if (this.rodandoAgora || sincronizacaoEmAndamento()) return;
-    if (new Date().getHours() < HORA_PADRAO) return;
+
+    let cfg;
+    try {
+      cfg = await agendamentoConfigService.obter(ID_AGENDAMENTO);
+    } catch (err: any) {
+      console.error('[Lançamentos SCI Scheduler] Não consegui ler a configuração:', err?.message || err);
+      return;
+    }
+    if (!cfg.ativo) return;
+    if (new Date().getHours() < (cfg.hora ?? HORA_FALLBACK)) return;
 
     try {
       await ensureLogTable();
