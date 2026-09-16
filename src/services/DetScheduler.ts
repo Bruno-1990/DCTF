@@ -29,15 +29,17 @@
 
 import { executeQuery } from '../config/mysql';
 import { DetColetorService, coletaEmAndamento } from './DetColetorService';
-import {
-  HORA,
-  MINUTO,
-  PROC_HORA,
-  PROC_MINUTO,
-  HABILITADO,
-  janelaDeDisparo,
-  nomesDias,
-} from './DetSchedulerRegras';
+import { janelaDeDisparo, nomesDias } from './DetSchedulerRegras';
+import agendamentoConfigService from './agendamentos/AgendamentoConfigService';
+
+/**
+ * Os dois jobs do DET são itens separados no painel: têm horários diferentes e
+ * podem ser ligados e desligados de forma independente (a checagem noturna do
+ * SPE não precisa parar quando só a varredura da manhã incomoda).
+ */
+const ID_PROCURACOES = 'det-procuracoes';
+const ID_CAIXAS = 'det-caixas';
+const DIAS_FALLBACK = [1, 2, 3, 4, 5];
 
 const INTERVALO_MS = 60 * 1000; // confere a cada minuto
 
@@ -66,8 +68,16 @@ async function verificar(): Promise<void> {
     if (coletaEmAndamento()) return; // nunca duas rodadas ao mesmo tempo
     const agora = new Date();
 
+    const [proc, caixas] = await Promise.all([
+      agendamentoConfigService.obter(ID_PROCURACOES),
+      agendamentoConfigService.obter(ID_CAIXAS),
+    ]);
+
     // ─── PROCURAÇÕES (noite) ───────────────────────────────────────────────
-    if (janelaDeDisparo(agora, PROC_HORA, PROC_MINUTO)) {
+    if (
+      proc.ativo &&
+      janelaDeDisparo(agora, proc.hora ?? 22, proc.minuto ?? 0, proc.diasSemana ?? DIAS_FALLBACK)
+    ) {
       if (await jaChecouProcuracoesHoje()) return;
       console.log('[DET-Scheduler] iniciando checagem de procurações (SPE)');
       const coletor = new DetColetorService((m) => console.log('[DET]', m));
@@ -77,7 +87,10 @@ async function verificar(): Promise<void> {
     }
 
     // ─── CAIXAS (manhã) ────────────────────────────────────────────────────
-    if (janelaDeDisparo(agora, HORA, MINUTO)) {
+    if (
+      caixas.ativo &&
+      janelaDeDisparo(agora, caixas.hora ?? 6, caixas.minuto ?? 0, caixas.diasSemana ?? DIAS_FALLBACK)
+    ) {
       if (await jaColetouCaixasHoje()) return;
       console.log('[DET-Scheduler] iniciando coleta das caixas (sem refazer SPE)');
       const coletor = new DetColetorService((m) => console.log('[DET]', m));
@@ -97,20 +110,12 @@ async function verificar(): Promise<void> {
 }
 
 export const detScheduler = {
+  /** O intervalo sobe sempre; horários, dias e liga/desliga vêm do painel (ver Cota). */
   start(): void {
-    if (!HABILITADO) {
-      console.log('[DET-Scheduler] desligado (DET_SCHEDULER_ENABLED != true)');
-      return;
-    }
     if (timer) return;
     timer = setInterval(verificar, INTERVALO_MS);
-    const hhmm = (h: number, m: number) =>
-      `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     console.log(
-      `[DET-Scheduler] ligado (${nomesDias()}) — procurações ${hhmm(
-        PROC_HORA,
-        PROC_MINUTO
-      )}, caixas ${hhmm(HORA, MINUTO)}`
+      `[DET-Scheduler] verificando a cada minuto (padrão ${nomesDias()}) — horários e liga/desliga vêm do painel de agendamentos`
     );
   },
   stop(): void {

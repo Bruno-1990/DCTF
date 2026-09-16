@@ -25,10 +25,9 @@ import { executeQuery } from '../config/mysql';
 import cotaAprendizagemService from './CotaAprendizagemService';
 import cadastroRefreshService from './CadastroRefreshService';
 import { mesReferencia, bdrefDe } from './cotaAprendizagem.rules';
+import agendamentoConfigService from './agendamentos/AgendamentoConfigService';
 
-const DIA_PADRAO = Number(process.env['COTA_SCHEDULER_DIA'] || 5);
-const HORA_PADRAO = Number(process.env['COTA_SCHEDULER_HORA'] || 1);
-const HABILITADO = process.env['COTA_SCHEDULER_ENABLED'] === 'true';
+const ID_AGENDAMENTO = 'cota-aprendizagem';
 /** Ligada por padrão; `COTA_REFRESH_CADASTRO=false` pula a etapa 1. */
 const REFRESH_CADASTRO = process.env['COTA_REFRESH_CADASTRO'] !== 'false';
 const INTERVALO_MS = 60 * 1000; // confere a cada minuto
@@ -37,17 +36,19 @@ export class CotaAprendizagemScheduler {
   private intervalId: NodeJS.Timeout | null = null;
   private rodandoAgora = false;
 
+  /**
+   * O intervalo sobe SEMPRE, mesmo com o job desligado.
+   *
+   * Antes, `COTA_SCHEDULER_ENABLED=false` impedia o intervalo de nascer: ligar
+   * o job exigia editar o .env e reiniciar o processo. Agora quem liga/desliga
+   * é a configuração do painel, lida a cada verificação — o que custa uma
+   * consulta barata por minuto e devolve o controle para quem opera.
+   */
   start(): void {
-    if (!HABILITADO) {
-      console.log(
-        '[Cota Scheduler] Desabilitado. Para ligar, defina COTA_SCHEDULER_ENABLED=true no .env.'
-      );
-      return;
-    }
     if (this.intervalId) return;
 
     console.log(
-      `[Cota Scheduler] Ativo — apuração todo dia ${DIA_PADRAO} às ${String(HORA_PADRAO).padStart(2, '0')}:00.`
+      '[Cota Scheduler] Verificando a cada minuto — dia, hora e liga/desliga vêm do painel de agendamentos.'
     );
     this.intervalId = setInterval(() => {
       void this.verificar();
@@ -82,6 +83,20 @@ export class CotaAprendizagemScheduler {
    */
   private async verificar(): Promise<void> {
     if (this.rodandoAgora || cotaAprendizagemService.status.rodando) return;
+
+    // Banco fora do ar não pode virar apuração fora de hora: sem configuração,
+    // a verificação simplesmente espera o minuto seguinte.
+    let cfg;
+    try {
+      cfg = await agendamentoConfigService.obter(ID_AGENDAMENTO);
+    } catch (err: any) {
+      console.error('[Cota Scheduler] Não consegui ler a configuração:', err?.message || err);
+      return;
+    }
+    if (!cfg.ativo) return;
+
+    const DIA_PADRAO = cfg.dia ?? 5;
+    const HORA_PADRAO = cfg.hora ?? 1;
 
     const agora = new Date();
     const dia = agora.getDate();

@@ -7,6 +7,7 @@ import { relatoriosService } from '../services/relatorios';
 import { clientesService } from '../services/clientes';
 import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentTextIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import AgendamentosPanel from '../components/Administracao/AgendamentosPanel';
 import { exportToExcel, formatarValorLegivel } from '../utils/exportExcel';
 
 const ADMIN_CREDENTIALS = {
@@ -1766,6 +1767,9 @@ const Administracao: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Agendamentos: o que roda sozinho, quando roda e para quem avisa */}
+      <AgendamentosPanel />
 
       {/* Seção de Sincronização do e-CAC */}
       <div className="bg-green-50 border-2 border-green-200 shadow-lg rounded-lg p-6 mb-6">
