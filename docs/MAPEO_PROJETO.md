@@ -249,6 +249,35 @@ Saíram junto com a página: `AdminDashboardController`, `EnhancedDashboardServi
 
 ---
 
+### 11. **Agendamentos** ⏰
+**Responsabilidade**: painel de tudo que o sistema dispara sozinho — horário, liga/desliga, destinatários dos e-mails e última execução.
+
+#### Onde fica
+- **Tela**: card "Agendamentos e envios de e-mail" em `/administracao`
+- **Componente**: `frontend/src/components/Administracao/AgendamentosPanel.tsx`
+- **Service**: `frontend/src/services/agendamentos.ts`
+- **Backend**: `src/routes/agendamentos.ts` → `src/controllers/AgendamentoController.ts` → `src/services/agendamentos/`
+- **Tabelas**: `agendamentos`, `agendamento_emails`, `agendamento_alteracoes` (migration `057`, `npm run migrate:agendamentos`)
+
+#### As duas fontes (a parte que importa)
+- **Catálogo** (`src/services/agendamentos/catalogo.ts`) — o que o job **é**: nome, descrição, tipo de janela, listas de e-mail. Mora no código.
+- **Configuração** (tabela `agendamentos`) — **quando** roda e **para quem** avisa. Mora no banco, editada pela tela.
+
+**Agendou coisa nova? Acrescente uma entrada no catálogo** e ela nasce no painel, com horário e destinatários editáveis. O teste `tests/architecture/agendamentos-catalogo.test.ts` falha se um agendador iniciado no `server.ts` ficar de fora.
+
+#### Como o horário chega até o job
+Cada scheduler lê a configuração **a cada verificação** (uma vez por minuto), via `AgendamentoConfigService` (cache de 30s). Por isso:
+- o intervalo sobe **sempre**, mesmo com o job desligado — quem desliga é a configuração, não a ausência do timer;
+- o `.env` virou **semente**: vale só na primeira subida, quando o job ainda não tem linha na tabela;
+- alteração feita na tela vale na verificação seguinte, **sem reiniciar o serviço**.
+
+#### Cuidados
+- **`SCHEDULERS_DISABLED=true`** sobe a API sem nenhum agendador. Use em qualquer instância secundária que aponte para o mesmo banco — sem isso, dois processos disparam o mesmo job.
+- **DARF em lote** é "externo": quem agenda é o Server Manager (:9000). O painel mostra e deixa editar destinatários, mas recusa mudança de horário.
+- **Dia do mês só até 28**: 29 a 31 fariam o mês curto pular a competência em silêncio.
+
+---
+
 ## 🔍 Onde Encontrar...
 
 ### **Quero adicionar um novo campo em Clientes**

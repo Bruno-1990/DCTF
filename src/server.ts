@@ -70,17 +70,28 @@ class Server {
       .semear()
       .catch((err: any) => console.error('[Agendamentos] Falha ao semear a configuração:', err?.message || err));
 
-    // Scheduler de faturamento IRPF desabilitado: consulta ao banco apenas manual (quando o usuário clica em atualizar).
-    // Os schedulers abaixo agora sobem SEMPRE: quem liga, desliga e muda horário
-    // é o painel de agendamentos (área administrativa), sem reiniciar o serviço.
-    cotaAprendizagemScheduler.start();
-    substitutoScheduler.start();
-  // DET: varredura diária das caixas postais, atrás de DET_SCHEDULER_ENABLED.
-  detScheduler.start();
-  // DARF: lote mensal para a Acessórias, atrás de DARF_LOTE_ENABLED.
-  darfLoteScheduler.start();
-  // Lançamentos (SCI): sincronização diária do host_dados, atrás de HOST_DADOS_SCHEDULER_ENABLED.
-  hostDadosScheduler.start();
+    /*
+     * SCHEDULERS_DISABLED=true sobe a API sem nenhum agendador.
+     *
+     * Existe porque agora quem liga e desliga cada job é o banco, compartilhado:
+     * uma segunda instância (desenvolvimento, worktree, teste em outra porta)
+     * leria a mesma configuração e dispararia de verdade — duas coletas do DET,
+     * dois e-mails ao DP. Desligar pelo painel não serve: pararia produção
+     * junto. Esta trava é por PROCESSO, e é o jeito seguro de rodar uma segunda
+     * instância contra o mesmo banco.
+     */
+    if (process.env['SCHEDULERS_DISABLED'] === 'true') {
+      console.log('[Agendamentos] SCHEDULERS_DISABLED=true — nenhum job será iniciado neste processo.');
+    } else {
+      // Scheduler de faturamento IRPF desabilitado: consulta ao banco apenas manual (quando o usuário clica em atualizar).
+      // Os demais sobem SEMPRE: quem liga, desliga e muda horário é o painel de
+      // agendamentos (área administrativa), sem reiniciar o serviço.
+      cotaAprendizagemScheduler.start();
+      substitutoScheduler.start();
+      detScheduler.start();
+      darfLoteScheduler.start();
+      hostDadosScheduler.start();
+    }
   }
 
   private setupMiddleware(): void {
