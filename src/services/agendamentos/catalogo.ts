@@ -134,12 +134,22 @@ export const CATALOGO: AgendamentoCatalogo[] = [
     nome: 'DARF em lote (Acessórias)',
     descricao:
       'Emite o DARF previdenciário de todos os clientes do lote, grava os PDFs na pasta de rede da Acessórias e manda o relatório ao Departamento Pessoal.',
-    tipo: 'externo',
+    tipo: 'mensal',
     arquivoScheduler: 'src/services/DarfLoteScheduler.ts',
-    editavel: false,
+    editavel: true,
     envAtivo: 'DARF_LOTE_ENABLED',
+    /*
+     * Passou a ser agendado AQUI em 16/09/2026, a pedido: antes quem disparava
+     * era o Server Manager (porta 9000), chamando `npm run darf:lote`.
+     *
+     * A troca é uma só e não admite meio-termo: a tarefa `darf-lote-acessorias`
+     * do Server Manager foi para `"habilitada": false` no port-registry.json no
+     * mesmo movimento. Os dois ligados produzem duas execuções e dois e-mails ao
+     * DP no mesmo dia — a segunda rodada reaproveita as guias da primeira, então
+     * não sai guia duplicada, mas o DP recebe o relatório duas vezes.
+     */
     alerta:
-      'Quem dispara este lote é o Server Manager (porta 9000), chamando "npm run darf:lote". O agendador interno fica desligado de propósito: ligar os dois produz duas execuções e dois e-mails no mesmo dia. Para mudar o horário, ajuste a tarefa no Server Manager.',
+      'Este lote é agendado aqui desde 16/09/2026. A tarefa equivalente no Server Manager (porta 9000) foi desativada no mesmo dia — não reative lá sem desligar aqui, senão o Departamento Pessoal recebe o relatório duas vezes.',
     log: {
       tabela: 'darf_lote_execucoes',
       colunaInicio: 'iniciado_em',
