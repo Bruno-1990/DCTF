@@ -15,7 +15,7 @@ Este guia explica como usar a classe `SCIConnection` para fazer consultas no ban
    SCI_FB_HOST=192.168.0.2
    SCI_FB_DATABASE=S:\SCI\banco\VSCI.SDB
    SCI_FB_USER=INTEGRACOES
-   SCI_FB_PASSWORD=8t0Ry!W,
+   SCI_FB_PASSWORD=<senha do usuário INTEGRACOES, pedir ao responsável>
    SCI_FB_DLL_PATH=C:\caminho\para\fbclient.dll
    ```
 

@@ -20,7 +20,8 @@ class DatabaseConfig:
     HOST = os.getenv('SCI_FB_HOST', '192.168.0.2')
     DATABASE = os.getenv('SCI_FB_DATABASE', r'S:\SCI\banco\VSCI.SDB')
     USER = os.getenv('SCI_FB_USER', 'INTEGRACOES')
-    PASSWORD = os.getenv('SCI_FB_PASSWORD', '8t0Ry!W,')
+    # Sem default: a senha vem só do .env (SCI_FB_PASSWORD), nunca do código
+    PASSWORD = os.getenv('SCI_FB_PASSWORD', '')
     
     # Caminho da DLL (relativo ao projeto BANCO SCI original)
     # Se a DLL não estiver no projeto DCTF_MPC, tentar usar o caminho padrão do sistema
