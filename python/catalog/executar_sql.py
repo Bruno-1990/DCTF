@@ -65,8 +65,15 @@ def main():
         sql_limpo = sql
         sql_limpo = re.sub(r'--.*?$', '', sql_limpo, flags=re.MULTILINE)  # Remove comentários de linha
         sql_limpo = re.sub(r'/\*.*?\*/', '', sql_limpo, flags=re.DOTALL)  # Remove comentários de bloco
-        sql_limpo = re.sub(r';\s*$', '', sql_limpo, flags=re.MULTILINE)  # Remove ponto e vírgula no final de cada linha
-        sql_limpo = re.sub(r';\s*', ' ', sql_limpo)  # Remove ponto e vírgula em qualquer lugar (Firebird não aceita)
+        # EXECUTE BLOCK / EXECUTE PROCEDURE usam ';' como separador interno do corpo PSQL,
+        # então nesses casos só o ponto e vírgula final pode ser removido.
+        eh_execute = sql_limpo.lstrip().upper().startswith('EXECUTE')
+        
+        if eh_execute:
+            sql_limpo = re.sub(r';\s*$', '', sql_limpo)  # Remove apenas o ponto e vírgula final
+        else:
+            sql_limpo = re.sub(r';\s*$', '', sql_limpo, flags=re.MULTILINE)  # Remove ponto e vírgula no final de cada linha
+            sql_limpo = re.sub(r';\s*', ' ', sql_limpo)  # Remove ponto e vírgula em qualquer lugar (Firebird não aceita)
         sql_limpo = re.sub(r'\s+', ' ', sql_limpo)  # Normaliza espaços
         sql_limpo = sql_limpo.strip()
         
@@ -74,21 +81,25 @@ def main():
         if not sql_limpo:
             raise ValueError("SQL inválido após remover comentários")
         
-        # VALIDAÇÃO DE SEGURANÇA - Garantir que é apenas SELECT
+        # VALIDAÇÃO DE SEGURANÇA - Somente leitura (SELECT / WITH / EXECUTE)
         # A validação também é feita no SCIConnection, mas fazemos aqui também para segurança extra
         sql_upper = sql_limpo.upper()
         
-        # Verificar se começa com SELECT ou WITH
-        if not (sql_upper.startswith('SELECT') or sql_upper.startswith('WITH')):
+        # Verificar se começa com SELECT, WITH ou EXECUTE (procedure / EXECUTE BLOCK)
+        if not (sql_upper.startswith('SELECT') or
+                sql_upper.startswith('WITH') or
+                sql_upper.startswith('EXECUTE')):
             raise ValueError(
-                "Apenas consultas SELECT são permitidas. "
+                "Apenas consultas SELECT, WITH ou EXECUTE são permitidas. "
                 "Operações de INSERT, UPDATE, DELETE são bloqueadas por segurança."
             )
         
         # Verificar comandos perigosos
+        # EXECUTE/EXEC liberados para permitir procedures e EXECUTE BLOCK;
+        # escrita e DDL continuam bloqueados, inclusive dentro do bloco.
         forbidden_keywords = [
             'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER',
-            'TRUNCATE', 'EXECUTE', 'EXEC', 'GRANT', 'REVOKE', 'COMMIT', 'ROLLBACK'
+            'TRUNCATE', 'GRANT', 'REVOKE', 'COMMIT', 'ROLLBACK'
         ]
         
         for keyword in forbidden_keywords:
@@ -96,7 +107,7 @@ def main():
             if re.search(pattern, sql_upper):
                 raise ValueError(
                     f"Comando '{keyword}' não é permitido. "
-                    "Este sistema permite apenas consultas de leitura (SELECT)."
+                    "Este sistema permite apenas consultas de leitura (SELECT/WITH/EXECUTE)."
                 )
         
         # Remover LIMIT do SQL se existir (Firebird usa FIRST)
@@ -113,7 +124,8 @@ def main():
         
         sql_final = sql_final.strip()
         
-        if limit:
+        # EXECUTE PROCEDURE / EXECUTE BLOCK não podem ser envolvidos em subquery
+        if limit and not eh_execute:
             # Adicionar FIRST N se não existir
             if 'FIRST' not in sql_final.upper():
                 # No Firebird, FIRST deve vir logo após SELECT
@@ -121,6 +133,7 @@ def main():
                 sql_final = f"SELECT FIRST {limit} * FROM ({sql_final})"
         
         # Garantir que não há ponto e vírgula no final
+        # (no EXECUTE BLOCK o corpo termina em END, então nada é removido aqui)
         sql_final = re.sub(r';\s*$', '', sql_final).strip()
         
         # Executar query (SCIConnection também valida internamente)
@@ -130,15 +143,15 @@ def main():
         cursor = con.cursor()
         
         # Validação adicional via SCIConnection (usa o SQL limpo)
-        conn._validate_query(sql_final)
+        conn._validate_query(sql_final, allow_execute=True)
         
         cursor.execute(sql_final)
         
         # Obter nomes das colunas
         colunas = [desc[0] for desc in cursor.description] if cursor.description else []
         
-        # Buscar resultados
-        resultado = cursor.fetchall()
+        # Buscar resultados (EXECUTE PROCEDURE sem retorno não gera result set)
+        resultado = cursor.fetchall() if cursor.description else []
         cursor.close()
         con.close()
         

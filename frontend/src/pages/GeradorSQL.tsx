@@ -526,7 +526,7 @@ const GeradorSQL: React.FC = () => {
                       SQL Gerado
                     </h2>
                     <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
-                      Apenas SELECT permitido
+                      Somente leitura (SELECT / EXECUTE)
                     </span>
                   </div>
                   {objetoSelecionado && (
@@ -535,7 +535,7 @@ const GeradorSQL: React.FC = () => {
                     </p>
                   )}
                   <p className="text-xs text-gray-500 mt-1">
-                    ⚠️ Por segurança, apenas consultas SELECT são permitidas. Comandos INSERT, UPDATE, DELETE são bloqueados.
+                    ⚠️ Por segurança, só são permitidas consultas de leitura (SELECT, WITH e EXECUTE de procedures). Comandos INSERT, UPDATE, DELETE e DDL são bloqueados.
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -678,7 +678,7 @@ const GeradorSQL: React.FC = () => {
               <div className="px-6 py-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Consulta SQL Direta</h2>
                 <p className="text-xs text-gray-500 mt-1">
-                  ⚠️ Por segurança, apenas consultas SELECT são permitidas. Pressione Ctrl+Enter para executar.
+                  ⚠️ Por segurança, só são permitidas consultas de leitura (SELECT, WITH e EXECUTE de procedures). Pressione Ctrl+Enter para executar.
                 </p>
               </div>
               <div className="p-6">

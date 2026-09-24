@@ -129,7 +129,7 @@ export class CatalogController {
         return;
       }
 
-      // VALIDAÇÃO DE SEGURANÇA - Apenas SELECT é permitido
+      // VALIDAÇÃO DE SEGURANÇA - Somente leitura (SELECT / WITH / EXECUTE)
       const sqlUpper = sql.trim().toUpperCase();
       
       // Remover comentários para análise mais precisa
@@ -137,18 +137,21 @@ export class CatalogController {
         .replace(/--.*$/gm, '') // Comentários de linha
         .replace(/\/\*[\s\S]*?\*\//g, ''); // Comentários de bloco
       
-      // Verificar se começa com SELECT ou WITH (CTE)
-      if (!sqlClean.trim().startsWith('SELECT') && !sqlClean.trim().startsWith('WITH')) {
+      // Verificar se começa com SELECT, WITH (CTE) ou EXECUTE (procedure / EXECUTE BLOCK)
+      const sqlStart = sqlClean.trim();
+      if (!sqlStart.startsWith('SELECT') && !sqlStart.startsWith('WITH') && !sqlStart.startsWith('EXECUTE')) {
         res.status(400).json({ 
-          error: 'Apenas consultas SELECT são permitidas por segurança. Operações de INSERT, UPDATE, DELETE são bloqueadas.' 
+          error: 'Apenas consultas SELECT, WITH ou EXECUTE são permitidas por segurança. Operações de INSERT, UPDATE, DELETE são bloqueadas.' 
         });
         return;
       }
 
       // Verificar comandos perigosos usando word boundaries para evitar falsos positivos
+      // EXECUTE/EXEC ficam fora da lista para permitir procedures e EXECUTE BLOCK.
+      // Escrita e DDL seguem bloqueados, inclusive dentro do corpo de um EXECUTE BLOCK.
       const forbiddenKeywords = [
         'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER',
-        'TRUNCATE', 'EXECUTE', 'EXEC', 'GRANT', 'REVOKE', 'COMMIT', 'ROLLBACK'
+        'TRUNCATE', 'GRANT', 'REVOKE', 'COMMIT', 'ROLLBACK'
       ];
       
       for (const keyword of forbiddenKeywords) {
@@ -156,7 +159,7 @@ export class CatalogController {
         const pattern = new RegExp(`\\b${keyword}\\b`, 'i');
         if (pattern.test(sqlClean)) {
           res.status(400).json({ 
-            error: `Comando '${keyword}' não é permitido. Apenas consultas SELECT são permitidas por segurança.` 
+            error: `Comando '${keyword}' não é permitido. Apenas consultas de leitura (SELECT/WITH/EXECUTE) são permitidas por segurança.` 
           });
           return;
         }

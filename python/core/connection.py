@@ -35,12 +35,14 @@ class SCIConnection:
             except Exception as e:
                 logging.warning(f"Falha ao carregar fbclient.dll: {e}")
     
-    def _validate_query(self, sql: str) -> bool:
+    def _validate_query(self, sql: str, allow_execute: bool = False) -> bool:
         """
         Valida se a query é apenas SELECT (leitura)
         
         Args:
             sql: Query SQL a validar
+            allow_execute: Se True, aceita EXECUTE PROCEDURE / EXECUTE BLOCK
+                (usado pelo Gerador de SQL). Escrita e DDL seguem bloqueados.
         
         Returns:
             True se for apenas SELECT, False caso contrário
@@ -57,6 +59,7 @@ class SCIConnection:
         # Verifica se começa com SELECT ou é uma query de metadados
         if not (sql_clean.startswith('SELECT') or 
                 sql_clean.startswith('WITH') or
+                (allow_execute and sql_clean.startswith('EXECUTE')) or
                 'RDB$' in sql_clean):  # Metadados do Firebird
             raise ValueError(
                 "Apenas consultas SELECT são permitidas. "
@@ -64,7 +67,13 @@ class SCIConnection:
             )
         
         # Verifica palavras-chave perigosas
-        for keyword in self.FORBIDDEN_KEYWORDS:
+        # Com allow_execute, EXECUTE/EXEC saem da lista; escrita e DDL permanecem
+        keywords = [
+            k for k in self.FORBIDDEN_KEYWORDS
+            if not (allow_execute and k in ('EXECUTE', 'EXEC'))
+        ]
+        
+        for keyword in keywords:
             # Usa word boundary para evitar falsos positivos
             pattern = r'\b' + keyword + r'\b'
             if re.search(pattern, sql_clean):
