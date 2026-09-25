@@ -126,11 +126,13 @@ export const darfService = {
   async historico(
     cnpj?: string,
     incluirExcluidos = false,
-    limit = 100
+    limit = 100,
+    busca?: string
   ): Promise<DarfHistorico[]> {
     const { data } = await api.get('/darf/historico', {
       params: {
         cnpj: cnpj || undefined,
+        busca: busca?.trim() || undefined,
         incluirExcluidos: incluirExcluidos ? 1 : undefined,
         limit,
       },

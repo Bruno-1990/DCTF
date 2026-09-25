@@ -21,6 +21,7 @@ import {
   TrashIcon,
   InboxIcon,
   ExclamationTriangleIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { TrashIcon as TrashSolidIcon } from '@heroicons/react/24/solid';
 import Modal from '../UI/Modal';
@@ -118,6 +119,9 @@ const Vencimento: React.FC<{ iso: string | null; apagado?: boolean }> = ({ iso, 
   );
 };
 
+/** Espera entre a última tecla e a busca — evita uma requisição por letra. */
+const DEBOUNCE_BUSCA_MS = 300;
+
 const DarfTab: React.FC = () => {
   const toast = useToast();
 
@@ -127,6 +131,15 @@ const DarfTab: React.FC = () => {
   const [carregando, setCarregando] = useState(true);
   const [filtrarPeloCliente, setFiltrarPeloCliente] = useState(false);
   const [verExcluidos, setVerExcluidos] = useState(false);
+  const [busca, setBusca] = useState('');
+  // Só o valor com debounce dispara a consulta; o campo em si acompanha cada
+  // tecla, para a pessoa ver o que está digitando sem esperar nada.
+  const [buscaEfetiva, setBuscaEfetiva] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaEfetiva(busca.trim()), DEBOUNCE_BUSCA_MS);
+    return () => clearTimeout(t);
+  }, [busca]);
 
   /**
    * O que a confirmação está segurando. null = modal fechado.
@@ -163,7 +176,11 @@ const DarfTab: React.FC = () => {
       setHistorico(
         await darfService.historico(
           filtrarPeloCliente && cliente ? cliente.cnpj : undefined,
-          verExcluidos
+          verExcluidos,
+          // Buscando, o padrão de 100 corta guia antiga cedo demais — a
+          // pessoa está caçando uma linha específica, não olhando as recentes.
+          buscaEfetiva ? 300 : undefined,
+          buscaEfetiva || undefined
         )
       );
     } catch {
@@ -174,7 +191,7 @@ const DarfTab: React.FC = () => {
     // `toast` é recriado a cada render do provider; incluí-lo aqui recarregaria
     // o histórico sem parar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cliente, filtrarPeloCliente, verExcluidos]);
+  }, [cliente, filtrarPeloCliente, verExcluidos, buscaEfetiva]);
 
   useEffect(() => {
     void carregarHistorico();
@@ -306,6 +323,34 @@ const DarfTab: React.FC = () => {
           </div>
         </header>
 
+        {/* Busca livre, separada dos filtros de cima: aqueles restringem o
+            cliente já escolhido no formulário; esta acha uma guia qualquer,
+            de qualquer cliente, sem precisar abrir o seletor. */}
+        <div className="border-b border-gray-100 px-6 py-3">
+          <div className="relative max-w-sm">
+            <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome ou CNPJ…"
+              autoComplete="off"
+              className="h-9 w-full rounded-lg border border-gray-200 pl-9 pr-8 text-sm
+                focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            />
+            {busca && (
+              <button
+                type="button"
+                onClick={() => setBusca('')}
+                title="Limpar busca"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-300
+                  transition hover:bg-gray-100 hover:text-gray-500"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
         {carregando && historico.length === 0 ? (
           // Esqueleto em vez de "Carregando…": a lista não muda de altura
           // quando os dados chegam, e a tela não dá aquele pulo.
@@ -324,9 +369,13 @@ const DarfTab: React.FC = () => {
         ) : historico.length === 0 ? (
           <div className="px-6 py-14 text-center">
             <InboxIcon className="mx-auto h-9 w-9 text-gray-300" />
-            <p className="mt-3 text-sm font-medium text-gray-700">Nenhuma guia emitida ainda</p>
+            <p className="mt-3 text-sm font-medium text-gray-700">
+              {buscaEfetiva ? 'Nenhuma guia encontrada' : 'Nenhuma guia emitida ainda'}
+            </p>
             <p className="mt-1 text-xs text-gray-500">
-              Escolha o contribuinte e a competência acima para gerar a primeira.
+              {buscaEfetiva
+                ? `Nada em nome ou CNPJ bate com "${buscaEfetiva}".`
+                : 'Escolha o contribuinte e a competência acima para gerar a primeira.'}
             </p>
           </div>
         ) : (

@@ -128,14 +128,20 @@ export class DarfController {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * GET /api/darf/historico?cnpj=&incluirExcluidos=&limit=
+   * GET /api/darf/historico?cnpj=&busca=&incluirExcluidos=&limit=
    *
    * Nunca traz `pdf_base64`: um DARF em base64 tem ~100 KB e 50 linhas viravam
    * 5 MB de resposta para uma tabela que só mostra valores e datas.
+   *
+   * `cnpj` (exato) e `busca` (parcial, nome OU CNPJ) convivem porque servem
+   * pedidos diferentes: `cnpj` é o "só deste cliente" de quem já escolheu o
+   * contribuinte no formulário acima; `busca` é o campo livre de quem está
+   * caçando uma guia antiga sem lembrar em qual aba ela ficou.
    */
   async historico(req: Request, res: Response): Promise<void> {
     try {
       const cnpj = soDigitos(req.query['cnpj']);
+      const busca = String(req.query['busca'] ?? '').trim();
       // Excluído não some do banco, só sai da lista. `?incluirExcluidos=1`
       // existe para recuperar um documento que alguém tirou por engano.
       const incluirExcluidos = String(req.query['incluirExcluidos'] ?? '') === '1';
@@ -151,6 +157,20 @@ export class DarfController {
       if (cnpj) {
         condicoes.push('cnpj = ?');
         params.push(cnpj);
+      }
+      if (busca) {
+        // Dígito vira busca por CNPJ (a coluna guarda só dígitos, então
+        // "12.345" bate igual a "12345"); o resto vira busca por razão social.
+        // As duas condições convivem — nunca custa comparar com a razão
+        // social também, mesmo quando o termo veio todo em números.
+        const digitos = busca.replace(/\D/g, '');
+        if (digitos) {
+          condicoes.push('(razao_social LIKE ? OR cnpj LIKE ?)');
+          params.push(`%${busca}%`, `%${digitos}%`);
+        } else {
+          condicoes.push('razao_social LIKE ?');
+          params.push(`%${busca}%`);
+        }
       }
       if (!incluirExcluidos) condicoes.push('excluido_em IS NULL');
       const filtro = condicoes.length ? `WHERE ${condicoes.join(' AND ')}` : '';
