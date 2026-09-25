@@ -104,6 +104,43 @@ export interface ItemLote {
   /** Nome do arquivo gravado na pasta. Nulo quando falhou. */
   arquivo: string | null;
   erro: string | null;
+  /**
+   * Valor da guia entregue na competência anterior, para este mesmo cliente.
+   * Nulo quando o cliente falhou nesta rodada, quando não houve rodada no mês
+   * passado, ou quando ele não tinha guia entregue naquela rodada.
+   *
+   * PRA QUE SERVE: a carteira deste lote é toda de pró-labore, e pró-labore
+   * não muda todo mês — o dono da empresa recebe o mesmo valor. Um DARF que sai
+   * diferente do mês passado quase sempre é sinal de problema (declaração
+   * errada, competência trocada), não de aumento de salário. Comparar só com
+   * o mês anterior, e não guardar uma série histórica: é a pergunta que
+   * importa aqui ("mudou de repente?"), não uma tendência ao longo do tempo.
+   */
+  valorAnterior: number | null;
+}
+
+/**
+ * Competência anterior à informada — janeiro vira dezembro do ano anterior.
+ * Pura de propósito: é o que o teste de unidade cobre sem precisar de banco.
+ */
+export function competenciaAnterior(anoPA: string, mesPA: string): { anoPA: string; mesPA: string } {
+  const ano = Number(anoPA);
+  const mes = Number(mesPA);
+  const anterior = mes - 1;
+  return anterior < 1
+    ? { anoPA: String(ano - 1), mesPA: '12' }
+    : { anoPA: String(ano), mesPA: String(anterior).padStart(2, '0') };
+}
+
+/**
+ * Compara em centavos, não em número de ponto flutuante puro — `0.1 + 0.2`
+ * já ensinou por que. Cliente que só tem guia numa das duas competências
+ * (falhou numa delas, ou entrou no lote depois) não é "diferente": é "sem
+ * comparação possível", e cabe a quem chama decidir o que fazer com null.
+ */
+export function valorDivergente(atual: number | null, anterior: number | null): boolean {
+  if (atual == null || anterior == null) return false;
+  return Math.round(atual * 100) !== Math.round(anterior * 100);
 }
 
 export interface ResultadoLote {
@@ -233,6 +270,42 @@ export class DarfLoteService {
     );
   }
 
+  /**
+   * `cnpj → valor da guia entregue` na competência anterior à informada.
+   *
+   * Pega a rodada mais recente daquele mês — se ele foi reprocessado (uma
+   * segunda tentativa depois de corrigir alguém), é a última que vale, não a
+   * primeira. Cliente com falha, ou sem guia, não entra no mapa: sem valor
+   * anterior não há o que comparar, e `valorDivergente` já trata isso como
+   * "nada a dizer", não como "diferente de zero".
+   */
+  private async valoresDaCompetenciaAnterior(anoPA: string, mesPA: string): Promise<Map<string, number>> {
+    const mapa = new Map<string, number>();
+    const { anoPA: anoAnt, mesPA: mesAnt } = competenciaAnterior(anoPA, mesPA);
+
+    const linhas = await executeQuery<{ itens: unknown }>(
+      `SELECT itens
+         FROM darf_lote_execucoes
+        WHERE ano_pa = ? AND mes_pa = ?
+        ORDER BY iniciado_em DESC
+        LIMIT 1`,
+      [anoAnt, mesAnt]
+    );
+    if (linhas.length === 0) return mapa;
+
+    const bruto = linhas[0]!.itens;
+    const itens: ItemLote[] = Array.isArray(bruto)
+      ? (bruto as ItemLote[])
+      : ((bruto as { itens?: ItemLote[] })?.itens ?? []);
+
+    for (const item of itens) {
+      if (item.status !== 'falha' && item.valorTotal != null) {
+        mapa.set(item.cnpj, Number(item.valorTotal));
+      }
+    }
+    return mapa;
+  }
+
   // ─── A rodada ────────────────────────────────────────────────────────────
 
   async executar(opcoes: OpcoesLote): Promise<ResultadoLote> {
@@ -291,6 +364,8 @@ export class DarfLoteService {
       `[DarfLote] ${clientes.length} clientes — competência ${mesPA}/${anoPA}, categoria ${categoria}.`
     );
 
+    const valoresMesPassado = await this.valoresDaCompetenciaAnterior(anoPA, mesPA);
+
     for (const cliente of clientes) {
       const item = await this.processar(cliente, { anoPA, mesPA, categoria }, opcoes.forcar === true, disparadoPor);
       base.itens.push(item);
@@ -300,6 +375,7 @@ export class DarfLoteService {
         if (item.status === 'emitido') base.emitidos++;
         else base.reaproveitados++;
         base.valorTotal += Number(item.valorTotal ?? 0);
+        item.valorAnterior = valoresMesPassado.get(item.cnpj) ?? null;
       }
 
       // Só quem foi ao SERPRO precisa da folga; cópia de PDF do banco não.
@@ -332,6 +408,7 @@ export class DarfLoteService {
       vencimento: null,
       arquivo: null,
       erro: null,
+      valorAnterior: null,
     };
 
     try {

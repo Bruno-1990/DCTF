@@ -32,6 +32,7 @@ import {
   formatMoeda,
   itensDaExecucao,
   abortoDaExecucao,
+  valorDivergente,
   type ClienteLote,
   type ExecucaoLote,
 } from '../../services/darf';
@@ -67,6 +68,9 @@ const UltimaRodada: React.FC<{ execucao: ExecucaoLote }> = ({ execucao }) => {
   const itens = itensDaExecucao(execucao);
   const falhas = itens.filter((i) => i.status === 'falha');
   const entregues = itens.length - falhas.length;
+  // Carteira é toda pró-labore: valor diferente do mês passado é o sinal mais
+  // barato de erro que existe aqui, mesmo com a guia já entregue.
+  const divergentes = itens.filter(valorDivergente);
 
   if (abortado) {
     return (
@@ -115,6 +119,12 @@ const UltimaRodada: React.FC<{ execucao: ExecucaoLote }> = ({ execucao }) => {
             {falhas.length} sem guia
           </span>
         )}
+        {divergentes.length > 0 && (
+          <span className="inline-flex items-center gap-1.5 font-medium text-amber-700">
+            <ExclamationTriangleIcon className="h-3.5 w-3.5" />
+            {divergentes.length} com valor diferente do mês passado
+          </span>
+        )}
         {Number(execucao.valor_total ?? 0) > 0 && (
           <span className="tabular-nums font-semibold text-gray-700">
             {formatMoeda(execucao.valor_total)}
@@ -133,6 +143,23 @@ const UltimaRodada: React.FC<{ execucao: ExecucaoLote }> = ({ execucao }) => {
               </span>
               {' — '}
               {f.erro}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Pró-labore não muda todo mês: valor fora do padrão do cliente é o
+          sinal mais barato de erro que existe aqui, mesmo com guia entregue. */}
+      {divergentes.length > 0 && (
+        <ul className="mt-2 space-y-1 border-t border-gray-200 pt-2">
+          {divergentes.map((d) => (
+            <li key={d.cnpj} className="text-[11px] leading-relaxed text-gray-600">
+              <span className="font-medium text-gray-800">
+                {d.razaoSocial || formatCnpj(d.cnpj)}
+              </span>
+              {' — '}
+              {formatMoeda(d.valorTotal)}
+              <span className="text-gray-400"> (mês passado {formatMoeda(d.valorAnterior)})</span>
             </li>
           ))}
         </ul>

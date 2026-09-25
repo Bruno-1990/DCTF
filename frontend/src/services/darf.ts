@@ -210,6 +210,18 @@ export interface ItemLote {
   vencimento: string | null;
   arquivo: string | null;
   erro: string | null;
+  /** Valor da guia do mês passado deste mesmo cliente. Nulo sem comparação possível. */
+  valorAnterior: number | null;
+}
+
+/**
+ * A carteira é toda de pró-labore, que não muda de mês para mês. `null` em
+ * qualquer lado é "nada a comparar" (cliente novo, ou uma das rodadas falhou),
+ * não "diferente de zero" — mesma regra do backend (`DarfLoteService`).
+ */
+export function valorDivergente(item: ItemLote): boolean {
+  if (item.valorTotal == null || item.valorAnterior == null) return false;
+  return Math.round(item.valorTotal * 100) !== Math.round(item.valorAnterior * 100);
 }
 
 export interface ExecucaoLote {

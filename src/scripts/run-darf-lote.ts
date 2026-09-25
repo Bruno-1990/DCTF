@@ -30,7 +30,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: path.join(process.cwd(), '.env') });
 
 import { mysqlPool } from '../config/mysql';
-import darfLoteService, { competenciaAlvo, modoCompetencia } from '../services/DarfLoteService';
+import darfLoteService, { competenciaAlvo, modoCompetencia, valorDivergente } from '../services/DarfLoteService';
 
 const brl = (v: number): string =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -73,7 +73,10 @@ async function main(): Promise<number> {
     if (i.status === 'falha') {
       console.log(`  ${sci}  FALHA          ${quem} — ${i.erro}`);
     } else {
-      console.log(`  ${sci}  ${i.status.padEnd(14)} ${quem} → ${i.arquivo}`);
+      const aviso = valorDivergente(i.valorTotal, i.valorAnterior)
+        ? `  ⚠ era ${brl(Number(i.valorAnterior))}`
+        : '';
+      console.log(`  ${sci}  ${i.status.padEnd(14)} ${quem} → ${i.arquivo}${aviso}`);
     }
   }
 

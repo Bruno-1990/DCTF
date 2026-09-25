@@ -21,7 +21,8 @@ const ok = (
   cnpj: string,
   doc: string,
   valor: number,
-  status: 'emitido' | 'reaproveitado'
+  status: 'emitido' | 'reaproveitado',
+  valorAnterior: number | null = valor
 ): ItemLote => ({
   cnpj,
   razaoSocial: razao,
@@ -33,6 +34,7 @@ const ok = (
   vencimento: '2026-09-18',
   arquivo: `${cnpj}_DARF_PREVIDENCIARIO_082026.pdf`,
   erro: null,
+  valorAnterior,
 });
 
 const falha = (sci: string, razao: string, cnpj: string, erro: string): ItemLote => ({
@@ -46,13 +48,16 @@ const falha = (sci: string, razao: string, cnpj: string, erro: string): ItemLote
   vencimento: null,
   arquivo: null,
   erro,
+  valorAnterior: null,
 });
 
 const itens: ItemLote[] = [
   ok('238', 'AJ PORT CONSULTORIA LTDA', '47306185000120', '07.16.26247.3908130-2', 502.51, 'reaproveitado'),
   ok('49', 'CURTUME SILVESTRE LTDA.', '39811708000168', '07.16.26247.3912900-1', 8123.44, 'emitido'),
   ok('427', 'AKL TECNOLOGIA E SERVICOS LTDA', '64515496000119', '07.16.26247.3909170-7', 178.31, 'reaproveitado'),
-  ok('144', 'UP LOG SOLUCOES EM ARMAZENS E LOGISTICA LTDA', '30691293000161', '07.16.26247.3911568-1', 4374.75, 'reaproveitado'),
+  // Valor diferente do mês passado — de propósito, para o bloco de
+  // divergências aparecer nesta prévia e não só na descrição do código.
+  ok('144', 'UP LOG SOLUCOES EM ARMAZENS E LOGISTICA LTDA', '30691293000161', '07.16.26247.3911568-1', 4374.75, 'reaproveitado', 3980.10),
   falha(
     '120',
     'RV NEGOCIOS IMOBILIARIOS, RURAIS E URBANOS LTDA',

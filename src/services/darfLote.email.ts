@@ -38,7 +38,7 @@ import {
   type ColunaTabela,
 } from './email.layout';
 import { EmailService } from './EmailService';
-import type { ResultadoLote, ItemLote } from './DarfLoteService';
+import { valorDivergente, type ResultadoLote, type ItemLote } from './DarfLoteService';
 
 /** Para quem vai. Vírgula separa vários, no padrão dos outros avisos. */
 const DESTINATARIOS = (
@@ -124,6 +124,40 @@ function blocoFalhas(itens: ItemLote[]): string {
   });
 }
 
+/**
+ * Bloco de quem saiu com valor diferente do mês passado.
+ *
+ * A carteira deste lote é toda de pró-labore, e pró-labore não muda todo mês.
+ * Um DARF fora do padrão do cliente quase sempre é sinal de problema (guia da
+ * competência errada, retificação que mudou a base) — vale o DP olhar antes
+ * de mandar pra Acessórias, mesmo a guia já estando na pasta.
+ */
+function blocoDivergencias(itens: ItemLote[]): string {
+  const divergentes = itens.filter((i) => valorDivergente(i.valorTotal, i.valorAnterior));
+  if (divergentes.length === 0) return '';
+
+  const linhas = divergentes
+    .map((item, i) =>
+      itemLista({
+        titulo: identificacao(item),
+        meta: `Mês passado: ${moeda(item.valorAnterior)}`,
+        valor: moeda(item.valorTotal),
+        cor: C.ATENCAO,
+        indice: i,
+      })
+    )
+    .join('');
+
+  return secao({
+    titulo: 'Valor diferente do mês passado',
+    subtitulo: 'Pró-labore costuma repetir o valor — vale conferir antes de considerar entregue',
+    contagem: divergentes.length,
+    cor: C.ATENCAO,
+    fundo: C.ATENCAO_FUNDO,
+    itens: linhas,
+  });
+}
+
 export function montarRelatorio(r: ResultadoLote): string {
   const entregues = r.itens.filter((i) => i.status !== 'falha');
   const falhas = r.itens.filter((i) => i.status === 'falha');
@@ -142,6 +176,7 @@ export function montarRelatorio(r: ResultadoLote): string {
     : entregues.length === 0 && falhas.length === 0
       ? blocoVazio('Nenhum cliente ativo no lote', 'Inclua as empresas na aba Trabalhista > DARF.')
       : blocoFalhas(falhas) +
+        blocoDivergencias(entregues) +
         (entregues.length > 0
           ? tabelaEntregues(entregues)
           : blocoVazio('Nenhuma guia entregue', 'Todos os clientes do lote falharam — veja os motivos acima.'));
