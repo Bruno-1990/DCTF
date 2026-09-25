@@ -15,13 +15,14 @@
  * sai da rotina, que costuma ser temporário. Remover é para quem entrou errado.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowPathIcon,
   BuildingOffice2Icon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
   FolderArrowDownIcon,
+  MagnifyingGlassIcon,
   PlusIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline';
@@ -35,6 +36,11 @@ import {
   type ExecucaoLote,
 } from '../../services/darf';
 import { useToast } from '../../hooks/useToast';
+import { clientesService } from '../../services/clientes';
+import type { Cliente } from '../../types';
+
+/** Espera entre a última tecla e a busca — evita uma requisição por letra. */
+const DEBOUNCE_MS = 250;
 
 const MES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -143,6 +149,13 @@ const LoteAcessorias: React.FC = () => {
   const [novoCnpj, setNovoCnpj] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [aberto, setAberto] = useState(false);
+  const [sugestoes, setSugestoes] = useState<Cliente[]>([]);
+  const [buscando, setBuscando] = useState(false);
+  const [destaque, setDestaque] = useState(0);
+  const [mostrarSugestoes, setMostrarSugestoes] = useState(false);
+  // Resposta que chega fora de ordem (termo antigo mais lento que o novo) não
+  // pode sobrescrever a lista do termo atual.
+  const buscaSeq = useRef(0);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -176,16 +189,58 @@ const LoteAcessorias: React.FC = () => {
 
   const ativos = useMemo(() => lista.filter((c) => c.ativo).length, [lista]);
 
-  const incluir = async () => {
-    const digitos = novoCnpj.replace(/\D/g, '');
+  const noLote = useMemo(() => new Set(lista.map((c) => c.cnpj.replace(/\D/g, ''))), [lista]);
+
+  // Busca enquanto digita: nome, CNPJ ou código SCI (a API /clientes já trata
+  // os três no parâmetro `search`). Quem já está no lote sai das sugestões.
+  useEffect(() => {
+    const termo = novoCnpj.trim();
+    if (termo.length < 2) {
+      setSugestoes([]);
+      setBuscando(false);
+      return;
+    }
+    const seq = ++buscaSeq.current;
+    setBuscando(true);
+    const t = setTimeout(async () => {
+      try {
+        const { items } = await clientesService.getAll({ search: termo, limit: 10, ativo: 'ativos' });
+        if (seq !== buscaSeq.current) return;
+        const filtrados = items.filter(
+          (c) => !noLote.has(String(c.cnpj_limpo || c.cnpj || '').replace(/\D/g, ''))
+        );
+        setSugestoes(filtrados.slice(0, 8));
+        setDestaque(0);
+      } catch {
+        if (seq === buscaSeq.current) setSugestoes([]);
+      } finally {
+        if (seq === buscaSeq.current) setBuscando(false);
+      }
+    }, DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [novoCnpj, noLote]);
+
+  const incluir = async (cnpjEscolhido?: string) => {
+    const digitos = (cnpjEscolhido ?? novoCnpj).replace(/\D/g, '');
     if (digitos.length !== 14) {
-      toast.error('Informe os 14 dígitos do CNPJ.');
+      // Texto que não é CNPJ: a sugestão destacada é o que a pessoa quis dizer.
+      const escolhida = sugestoes[destaque] ?? sugestoes[0];
+      if (!cnpjEscolhido && escolhida) {
+        void incluir(String(escolhida.cnpj_limpo || escolhida.cnpj));
+        return;
+      }
+      toast.error('Escolha uma empresa da lista ou informe os 14 dígitos do CNPJ.');
+      return;
+    }
+    if (noLote.has(digitos)) {
+      toast.error('Essa empresa já está no lote.');
       return;
     }
     setSalvando(true);
     try {
       await darfLoteService.adicionar(digitos);
       setNovoCnpj('');
+      setSugestoes([]);
       await carregar();
       toast.success('Cliente incluído no lote.');
     } catch (e) {
@@ -267,17 +322,78 @@ const LoteAcessorias: React.FC = () => {
 
         {aberto && (
           <>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                value={novoCnpj}
-                onChange={(e) => setNovoCnpj(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void incluir();
-                }}
-                placeholder="CNPJ da empresa a incluir"
-                className="h-10 flex-1 rounded-xl border border-gray-200 px-3 text-sm
-                  focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-              />
+            <div className="flex flex-wrap items-start gap-2">
+              <div className="relative flex-1">
+                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <input
+                  value={novoCnpj}
+                  onChange={(e) => {
+                    setNovoCnpj(e.target.value);
+                    setMostrarSugestoes(true);
+                  }}
+                  onFocus={() => setMostrarSugestoes(true)}
+                  onBlur={() => setMostrarSugestoes(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setDestaque((i) => Math.min(i + 1, Math.max(sugestoes.length - 1, 0)));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setDestaque((i) => Math.max(i - 1, 0));
+                    } else if (e.key === 'Escape') {
+                      setMostrarSugestoes(false);
+                    } else if (e.key === 'Enter') {
+                      void incluir();
+                    }
+                  }}
+                  placeholder="Buscar empresa por nome, CNPJ ou código SCI"
+                  autoComplete="off"
+                  className="h-10 w-full rounded-xl border border-gray-200 pl-9 pr-3 text-sm
+                    focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                />
+
+                {mostrarSugestoes && novoCnpj.trim().length >= 2 && (
+                  <ul
+                    className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-xl border
+                      border-gray-200 bg-white py-1 shadow-lg"
+                  >
+                    {buscando && sugestoes.length === 0 ? (
+                      <li className="px-4 py-2.5 text-xs text-gray-500">buscando…</li>
+                    ) : sugestoes.length === 0 ? (
+                      <li className="px-4 py-2.5 text-xs text-gray-500">
+                        Nenhuma empresa encontrada fora do lote.
+                      </li>
+                    ) : (
+                      sugestoes.map((c, i) => {
+                        const cnpj = String(c.cnpj_limpo || c.cnpj || '');
+                        return (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              // mousedown sem preventDefault tiraria o foco do
+                              // input e a lista sumiria antes do clique.
+                              onMouseDown={(e) => e.preventDefault()}
+                              onMouseEnter={() => setDestaque(i)}
+                              onClick={() => void incluir(cnpj)}
+                              className={`flex w-full flex-col px-4 py-2 text-left transition ${
+                                i === destaque ? 'bg-emerald-50' : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <span className="truncate text-sm font-medium text-gray-900">
+                                {c.razao_social || c.nome}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {c.codigo_sci ? `SCI ${c.codigo_sci} · ` : ''}
+                                {formatCnpj(cnpj)}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })
+                    )}
+                  </ul>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => void incluir()}
