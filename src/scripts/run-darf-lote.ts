@@ -4,6 +4,9 @@
  *   npm run darf:lote                 → competência conforme DARF_LOTE_COMPETENCIA
  *   npm run darf:lote -- 2026 08      → competência explícita (ano mês)
  *   npm run darf:lote -- --forcar     → reemite mesmo quem já tem guia
+ *   npm run darf:lote -- --disparado-por=agendador
+ *                                     → registra como a rodada agendada do mês
+ *                                       (o agendador da API não repete depois)
  *
  * POR QUE UM PROCESSO SEPARADO, E NÃO O AGENDADOR DENTRO DA API:
  *   O agendador interno depende da API estar de pé no minuto exato e some junto
@@ -36,6 +39,8 @@ async function main(): Promise<number> {
   const args = process.argv.slice(2);
   const forcar = args.includes('--forcar');
   const posicionais = args.filter((a) => !a.startsWith('--'));
+  const disparadoPor =
+    args.find((a) => a.startsWith('--disparado-por='))?.split('=')[1]?.trim() || 'server-manager';
 
   // Ano e mês na linha de comando vencem a regra do .env: é assim que se
   // reprocessa uma competência antiga sem mexer em configuração.
@@ -53,7 +58,7 @@ async function main(): Promise<number> {
   const r = await darfLoteService.executar({
     anoPA: alvo.anoPA,
     mesPA: alvo.mesPA,
-    disparadoPor: 'server-manager',
+    disparadoPor,
     forcar,
   });
 

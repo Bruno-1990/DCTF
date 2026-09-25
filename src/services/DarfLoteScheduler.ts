@@ -1,12 +1,12 @@
 /**
  * Job mensal do lote de DARF para a Acessórias — agendador INTERNO.
  *
- * DESLIGADO NESTA INSTALAÇÃO: o agendamento mora no Server Manager (:9000),
- * como tarefa que chama `npm run darf:lote`. Este módulo continua aqui porque
- * é a alternativa para uma instalação sem Server Manager, e porque ligá-lo é
- * uma variável de ambiente. NÃO LIGUE OS DOIS AO MESMO TEMPO — não chega a
- * emitir guia duplicada (a segunda rodada reaproveita a primeira), mas produz
- * duas execuções e dois e-mails para o DP no mesmo dia.
+ * Dia, hora e liga/desliga vêm do painel de agendamentos (tabela
+ * `agendamentos`, id 'darf-lote'), lidos a cada verificação. Desde 16/09/2026 é
+ * ESTE o agendador em uso; a tarefa `darf-lote-acessorias` do Server Manager
+ * está desabilitada. NÃO LIGUE OS DOIS AO MESMO TEMPO — não chega a emitir guia
+ * duplicada (a segunda rodada reaproveita a primeira), mas produz duas
+ * execuções e dois e-mails para o DP no mesmo dia.
  *
  * QUAL COMPETÊNCIA ELE EMITE: decidido por `DARF_LOTE_COMPETENCIA`, em
  * `DarfLoteService` — 'vigente' (o próprio mês) ou 'anterior' (o mês fechado).
@@ -15,11 +15,9 @@
  * servidor fora do ar naquela hora faria a competência inteira ser pulada — e
  * ninguém descobriria antes do cliente reclamar da guia que não chegou. Com
  * `>=`, o dia perdido vira o dia seguinte. O que impede rodar de novo todo dia
- * é a consulta ao banco: competência já executada com sucesso encerra a
- * verificação. Essa consulta também é o que sobrevive a um restart do
+ * é a consulta ao banco: uma rodada DO AGENDADOR iniciada a partir do dia
+ * agendado encerra a verificação — rodadas manuais/de teste anteriores não. Essa consulta também é o que sobrevive a um restart do
  * processo, coisa que um flag em memória não faz.
- *
- * Desligado por padrão — precisa de `DARF_LOTE_ENABLED=true` no .env.
  */
 
 import { executeQuery } from '../config/mysql';
@@ -33,15 +31,17 @@ const INTERVALO_MS = 60 * 1000; // confere a cada minuto
 
 export { competenciaAlvo };
 
+/** 'YYYY-MM-DD' do dia agendado no mês de `agora` — início da janela da rodada. */
+export function inicioDaJanela(agora: Date, dia: number): string {
+  const mm = String(agora.getMonth() + 1).padStart(2, '0');
+  const dd = String(dia).padStart(2, '0');
+  return `${agora.getFullYear()}-${mm}-${dd}`;
+}
+
 export class DarfLoteScheduler {
   private intervalId: NodeJS.Timeout | null = null;
   private rodandoAgora = false;
 
-  /**
-   * O intervalo sobe sempre, mas este job nasce DESLIGADO na semeadura (o
-   * DARF_LOTE_ENABLED desta instalação é false, porque quem dispara é o Server
-   * Manager). O painel mostra isso e não deixa editar o horário aqui.
-   */
   start(): void {
     if (this.intervalId) return;
 
@@ -87,15 +87,24 @@ export class DarfLoteScheduler {
     const { anoPA, mesPA } = competenciaAlvo(agora);
 
     try {
-      // Só execução que entregou alguma guia conta como feita. Uma rodada que
-      // abortou porque a pasta estava fora do ar não pode bloquear a próxima
-      // tentativa — seria transformar uma falha de rede em competência perdida.
+      // O que conta como "este mês já rodou" é SÓ a rodada do próprio
+      // agendador, iniciada a partir do dia agendado. Rodada manual, de teste
+      // ou do Server Manager — mesmo da mesma competência e com guia emitida —
+      // não substitui a agendada: em 25/09/2026 um teste de 04/09 (1 guia, 16
+      // "Não foi encontrada Declaração") fez o mês ser dado como feito e o lote
+      // não rodou. As guias vivas dessas rodadas continuam sendo reaproveitadas
+      // pelo serviço, então rodar de novo não gasta cota com elas.
+      //
+      // Rodada que abortou antes de processar alguém (pasta fora do ar, carteira
+      // vazia) não conta: transformaria falha de rede em competência perdida.
       const feito = await executeQuery<{ total: number }>(
         `SELECT COUNT(*) AS total
            FROM darf_lote_execucoes
           WHERE ano_pa = ? AND mes_pa = ?
-            AND (emitidos + reaproveitados) > 0`,
-        [anoPA, mesPA]
+            AND disparado_por = 'agendador'
+            AND iniciado_em >= ?
+            AND (emitidos + reaproveitados + falhas) > 0`,
+        [anoPA, mesPA, inicioDaJanela(agora, DIA_PADRAO)]
       );
       if (Number(feito[0]?.total ?? 0) > 0) return;
 
