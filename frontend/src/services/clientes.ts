@@ -7,7 +7,7 @@ export type ClientesListResponse = {
 };
 
 export const clientesService = {
-  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string; socio?: string; payments?: 'all' | 'with' | 'without'; semCodigoSci?: boolean; ativo?: 'ativos' | 'inativos' | 'todos' }): Promise<ClientesListResponse> {
+  async getAll(params?: { page?: number; limit?: number; nome?: string; cnpj?: string; email?: string; search?: string; socio?: string; payments?: 'all' | 'with' | 'without'; semCodigoSci?: boolean; ativo?: 'ativos' | 'inativos' | 'todos'; regime?: string }): Promise<ClientesListResponse> {
     const response = await api.get<any>('/clientes', { params });
     const body = response.data;
     if (Array.isArray(body)) {

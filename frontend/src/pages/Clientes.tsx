@@ -617,6 +617,29 @@ const Clientes: React.FC = () => {
   // Filtro Ativo/Inativo da carteira. Default 'ativos': cliente que saiu não
   // polui o dia a dia, mas continua na base (inativar nunca exclui nada).
   const [filtroAtivo, setFiltroAtivo] = useState<'ativos' | 'inativos' | 'todos'>('ativos');
+  // Filtro por regime tributário (checkboxes). Nenhum marcado = sem filtro.
+  const [filtroRegime, setFiltroRegime] = useState<Array<'simples' | 'presumido' | 'real'>>([]);
+  const filtroRegimeParam = filtroRegime.length > 0 ? filtroRegime.join(',') : undefined;
+  const [filtroRegimeAberto, setFiltroRegimeAberto] = useState(false);
+  const filtroRegimeRef = useRef<HTMLDivElement>(null);
+  // Fecha o painel do filtro de regime ao clicar fora ou apertar Esc.
+  useEffect(() => {
+    if (!filtroRegimeAberto) return;
+    const aoClicarFora = (e: MouseEvent) => {
+      if (filtroRegimeRef.current && !filtroRegimeRef.current.contains(e.target as Node)) {
+        setFiltroRegimeAberto(false);
+      }
+    };
+    const aoApertarTecla = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFiltroRegimeAberto(false);
+    };
+    document.addEventListener('mousedown', aoClicarFora);
+    document.addEventListener('keydown', aoApertarTecla);
+    return () => {
+      document.removeEventListener('mousedown', aoClicarFora);
+      document.removeEventListener('keydown', aoApertarTecla);
+    };
+  }, [filtroRegimeAberto]);
   const [alterandoAtivoId, setAlterandoAtivoId] = useState<string | null>(null);
   // Sincronização de status com o OneClick (leitura lá, gravação só aqui)
   const [showStatusOneClickModal, setShowStatusOneClickModal] = useState(false);
@@ -1810,11 +1833,11 @@ const Clientes: React.FC = () => {
     // Não aplicar filtro de sócio fora da aba participação
     // Quando filtro "Sem Cod SCI" ativo, buscar todos para filtrar no frontend
     const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
-    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined , ativo: filtroAtivo }).then(({ pagination }) => {
+    loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch, socio: undefined , ativo: filtroAtivo, regime: filtroRegimeParam }).then(({ pagination }) => {
       setTotal(pagination?.total ?? null);
       setTotalPages(pagination?.totalPages ?? null);
     }).catch(() => {});
-  }, [page, limit, debouncedSearch, activeTab, ordenacaoClientes, filtroAtivo]);
+  }, [page, limit, debouncedSearch, activeTab, ordenacaoClientes, filtroAtivo, filtroRegimeParam]);
 
   // Carregar todos os clientes para a aba Participação
   useEffect(() => {
@@ -3153,7 +3176,7 @@ const Clientes: React.FC = () => {
           page,
           limit,
           search: debouncedSearch,
-          ativo: filtroAtivo,
+          ativo: filtroAtivo, regime: filtroRegimeParam,
         }).catch(() => {});
       } else {
         toast.error(res?.error || 'Erro ao alterar status do cliente');
@@ -3441,7 +3464,7 @@ const Clientes: React.FC = () => {
 
       // Recarregar lista de clientes mantendo filtros ativos
       const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
-      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch , ativo: filtroAtivo });
+      loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch , ativo: filtroAtivo, regime: filtroRegimeParam });
     } catch (error) {
       // Erro já é tratado pelo hook useClientes
       setShowError(true);
@@ -3601,6 +3624,23 @@ const Clientes: React.FC = () => {
 
   const [syncing, setSyncing] = useState(false);
   const [syncingAuto, setSyncingAuto] = useState(false);
+  const [ultimaSyncSci, setUltimaSyncSci] = useState<{
+    concluidoEm: string;
+    periodo: string;
+    origem: 'manual' | 'agendado';
+    linhas: number;
+    sucesso: boolean;
+    erro: string | null;
+  } | null>(null);
+
+  const carregarUltimaSyncSci = async () => {
+    try {
+      const response = await api.get('/host-dados/ultima-sincronizacao');
+      setUltimaSyncSci(response.data?.data?.ultima ?? null);
+    } catch {
+      // Informativo: sem o dado, a linha simplesmente não aparece.
+    }
+  };
 
   const sincronizarAutomatico = async (): Promise<boolean> => {
     try {
@@ -3624,23 +3664,6 @@ const Clientes: React.FC = () => {
         return true;
       }
       
-  const [ultimaSyncSci, setUltimaSyncSci] = useState<{
-    concluidoEm: string;
-    periodo: string;
-    origem: 'manual' | 'agendado';
-    linhas: number;
-    sucesso: boolean;
-    erro: string | null;
-  } | null>(null);
-
-  const carregarUltimaSyncSci = async () => {
-    try {
-      const response = await api.get('/host-dados/ultima-sincronizacao');
-      setUltimaSyncSci(response.data?.data?.ultima ?? null);
-    } catch {
-      // Informativo: sem o dado, a linha simplesmente não aparece.
-    }
-  };
       const errorMsg = response.data?.error || 'Erro desconhecido ao sincronizar automaticamente.';
       setHostError(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
       setShowSuccess(false); // Fechar toast de sucesso se houver erro
@@ -3860,6 +3883,12 @@ const Clientes: React.FC = () => {
     }
   }, [activeTab, debouncedSearch]);
 
+  useEffect(() => {
+    if (activeTab === 'lancamentos') {
+      void carregarUltimaSyncSci();
+    }
+  }, [activeTab, syncingAuto, syncing]);
+
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
       {/* Header */}
@@ -3883,12 +3912,6 @@ const Clientes: React.FC = () => {
           <div className="flex space-x-1 min-w-max">
             <button
               type="button"
-  useEffect(() => {
-    if (activeTab === 'lancamentos') {
-      void carregarUltimaSyncSci();
-    }
-  }, [activeTab, syncingAuto, syncing]);
-
               onClick={() => handleTabChange('clientes')}
               className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'clientes'
@@ -5176,6 +5199,107 @@ const Clientes: React.FC = () => {
               </div>
             </div>
           )}
+          {activeTab === 'clientes' && (
+            <div className="w-full md:w-60 relative" ref={filtroRegimeRef}>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
+                <FunnelIcon className="h-4 w-4 text-blue-600" />
+                Regime Tributário
+              </label>
+              {(() => {
+                const opcoesRegime = [
+                  { valor: 'simples', label: 'Simples Nacional', curto: 'Simples', cor: 'bg-emerald-500' },
+                  { valor: 'presumido', label: 'Lucro Presumido', curto: 'Presumido', cor: 'bg-blue-500' },
+                  { valor: 'real', label: 'Lucro Real', curto: 'Real', cor: 'bg-purple-500' },
+                ] as const;
+                const resumo = filtroRegime.length === 0
+                  ? 'Todos os regimes'
+                  : opcoesRegime.filter((o) => filtroRegime.includes(o.valor)).map((o) => o.curto).join(', ');
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setFiltroRegimeAberto((v) => !v)}
+                      aria-expanded={filtroRegimeAberto}
+                      className={`w-full relative pl-10 pr-10 h-12 text-left border-2 rounded-xl bg-white shadow-sm hover:shadow-md transition-all duration-200 font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        filtroRegimeAberto || filtroRegime.length > 0 ? 'border-blue-400' : 'border-gray-200 hover:border-blue-300'
+                      }`}
+                    >
+                      <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FunnelIcon className="h-5 w-5 text-blue-500" />
+                      </span>
+                      <span className="block truncate">{resumo}</span>
+                      <span className="absolute inset-y-0 right-0 pr-3 flex items-center gap-1.5 pointer-events-none">
+                        {filtroRegime.length > 0 && (
+                          <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
+                            {filtroRegime.length}
+                          </span>
+                        )}
+                        <ChevronDownIcon className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${filtroRegimeAberto ? 'rotate-180' : ''}`} />
+                      </span>
+                    </button>
+                    {filtroRegimeAberto && (
+                      <div className="absolute z-30 mt-2 w-full min-w-[15rem] bg-white border border-gray-200 rounded-xl shadow-xl p-2">
+                        {opcoesRegime.map(({ valor, label, cor }) => {
+                          const marcado = filtroRegime.includes(valor);
+                          return (
+                            <label
+                              key={valor}
+                              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer select-none transition-colors ${
+                                marcado ? 'bg-blue-50' : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={marcado}
+                                onChange={(e) => {
+                                  setFiltroRegime((prev) =>
+                                    e.target.checked ? [...prev, valor] : prev.filter((r) => r !== valor)
+                                  );
+                                  setPage(1);
+                                }}
+                                className="sr-only"
+                              />
+                              <span
+                                className={`h-5 w-5 rounded-md border-2 flex items-center justify-center transition-colors ${
+                                  marcado ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'
+                                }`}
+                              >
+                                {marcado && <CheckIcon className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+                              </span>
+                              <span className={`h-2.5 w-2.5 rounded-full ${cor}`} />
+                              <span className={`text-sm ${marcado ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
+                                {label}
+                              </span>
+                            </label>
+                          );
+                        })}
+                        <div className="flex items-center justify-between border-t border-gray-100 mt-2 pt-2 px-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFiltroRegime([]);
+                              setPage(1);
+                            }}
+                            disabled={filtroRegime.length === 0}
+                            className="text-xs font-semibold text-gray-500 hover:text-red-600 disabled:opacity-40 disabled:hover:text-gray-500 px-2 py-1"
+                          >
+                            Limpar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFiltroRegimeAberto(false)}
+                            className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5"
+                          >
+                            Fechar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
           {activeTab === 'clientes' && ordenacaoClientes === 'beneficio-fiscal' && (
             <div className="w-full md:w-64">
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 h-5">
@@ -5517,6 +5641,31 @@ const Clientes: React.FC = () => {
                 <ClipboardDocumentCheckIcon className="h-5 w-5" />
                 Conferências
               </button>
+              {ultimaSyncSci && (
+                <p
+                  className={`basis-full text-xs ${ultimaSyncSci.sucesso ? 'text-gray-500' : 'text-red-600'}`}
+                  title={ultimaSyncSci.erro ?? undefined}
+                >
+                  {ultimaSyncSci.sucesso ? 'Última atualização' : 'Última tentativa (falhou)'}:{' '}
+                  <span className="font-medium">
+                    {new Date(ultimaSyncSci.concluidoEm).toLocaleString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  {' · '}competência {ultimaSyncSci.periodo}
+                  {' · '}
+                  {ultimaSyncSci.linhas.toLocaleString('pt-BR')} lançamentos
+                  {' · '}
+                  {ultimaSyncSci.origem === 'agendado' ? 'automática' : 'manual'}
+                </p>
+              )}
+              {!ultimaSyncSci && (
+                <p className="basis-full text-xs text-gray-400">Última atualização: sem registro ainda</p>
+              )}
             </div>
           )}
         </div>
@@ -5641,31 +5790,6 @@ const Clientes: React.FC = () => {
                     className="text-xs text-gray-600 hover:underline"
                   >
                     {mostrarCadastroCompleto ? 'Ocultar cadastro completo' : 'Mostrar cadastro completo'}
-              {ultimaSyncSci && (
-                <p
-                  className={`basis-full text-xs ${ultimaSyncSci.sucesso ? 'text-gray-500' : 'text-red-600'}`}
-                  title={ultimaSyncSci.erro ?? undefined}
-                >
-                  {ultimaSyncSci.sucesso ? 'Última atualização' : 'Última tentativa (falhou)'}:{' '}
-                  <span className="font-medium">
-                    {new Date(ultimaSyncSci.concluidoEm).toLocaleString('pt-BR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                  {' · '}competência {ultimaSyncSci.periodo}
-                  {' · '}
-                  {ultimaSyncSci.linhas.toLocaleString('pt-BR')} lançamentos
-                  {' · '}
-                  {ultimaSyncSci.origem === 'agendado' ? 'automática' : 'manual'}
-                </p>
-              )}
-              {!ultimaSyncSci && (
-                <p className="basis-full text-xs text-gray-400">Última atualização: sem registro ainda</p>
-              )}
                   </button>
             </div>
               </div>
@@ -9082,7 +9206,7 @@ const Clientes: React.FC = () => {
                         if (res?.success) {
                           toast.success(res.message || 'Status sincronizado');
                           setShowStatusOneClickModal(false);
-                          await loadClientes({ page, limit, search: debouncedSearch, ativo: filtroAtivo }).catch(() => {});
+                          await loadClientes({ page, limit, search: debouncedSearch, ativo: filtroAtivo, regime: filtroRegimeParam }).catch(() => {});
                         } else {
                           toast.error(res?.error || 'Erro ao sincronizar status');
                         }
@@ -9310,7 +9434,7 @@ const Clientes: React.FC = () => {
                             const d = res.data || {};
                             toast.success(`OneClick: ${d.novos || 0} novo(s), ${d.atualizados || 0} atualizado(s), ${d.erros || 0} erro(s)`, 8000);
                             const paramLimit = ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 500 : limit;
-                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch , ativo: filtroAtivo });
+                            loadClientes({ page: ordenacaoClientes === 'sem-cod-sci' || ordenacaoClientes === 'beneficio-fiscal' || ordenacaoClientes === 'sem-reg-trib' || ordenacaoClientes === 'itens-faltantes' ? 1 : page, limit: paramLimit, search: debouncedSearch , ativo: filtroAtivo, regime: filtroRegimeParam });
                           } else {
                             toast.error(res.error || 'Erro ao importar');
                           }

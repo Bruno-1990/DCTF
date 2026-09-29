@@ -190,7 +190,7 @@ export class ClienteController {
    */
   async listarClientes(req: Request, res: Response): Promise<void> {
     try {
-      const { page = 1, limit = 10, search, nome, cnpj, socio, ativo } = req.query;
+      const { page = 1, limit = 10, search, nome, cnpj, socio, ativo, regime } = req.query;
 
       // 'inativos' e 'todos' precisam que o banco devolva os inativos também —
       // o default de findAll() é só ativos.
@@ -210,6 +210,26 @@ export class ClienteController {
       // 'inativos' (o 'todos' não filtra nada).
       if (filtroAtivo === 'inativos') {
         data = data.filter((c: any) => c.ativo === false);
+      }
+
+      // Filtro por regime tributário: lista separada por vírgula com as chaves
+      // 'simples', 'presumido' e 'real'. Vazio = sem filtro.
+      if (regime && typeof regime === 'string' && regime.trim()) {
+        const regimesPorChave: Record<string, string> = {
+          simples: 'SIMPLES',
+          presumido: 'PRESUMIDO',
+          real: 'REAL',
+        };
+        const termos = regime
+          .split(',')
+          .map((r) => regimesPorChave[r.trim().toLowerCase()])
+          .filter(Boolean);
+        if (termos.length > 0) {
+          data = data.filter((c: any) => {
+            const regimeCliente = String(c.regime_tributario || '').toUpperCase();
+            return termos.some((t) => regimeCliente.includes(t));
+          });
+        }
       }
 
       // Filtros (compatível com 'search' legado e novos 'nome'/'cnpj')

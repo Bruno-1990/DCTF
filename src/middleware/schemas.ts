@@ -97,7 +97,9 @@ export const clienteSchemas = {
     socio: Joi.string().allow('').optional(),
     // Filtro Ativo/Inativo da tela de Clientes. Default 'ativos': quem saiu da
     // carteira some da listagem do dia a dia, mas segue na base (nada é excluído).
-    ativo: Joi.string().valid('ativos', 'inativos', 'todos').optional()
+    ativo: Joi.string().valid('ativos', 'inativos', 'todos').optional(),
+    // Filtro por regime tributário: 'simples', 'presumido' e/ou 'real' separados por vírgula.
+    regime: Joi.string().pattern(/^(simples|presumido|real)(,(simples|presumido|real))*$/).allow('').optional()
   })
 };
 
