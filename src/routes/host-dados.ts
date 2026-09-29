@@ -16,6 +16,9 @@ router.get('/clientes-sem-dctf-com-movimento', (req, res) => controller.listarCl
 // GET /api/host-dados/stats/dctf-declaracoes (para debug)
 router.get('/stats/dctf-declaracoes', (req, res) => controller.getDCTFDeclaracoesStats(req, res));
 
+// GET /api/host-dados/ultima-sincronizacao
+router.get('/ultima-sincronizacao', (req, res) => controller.ultimaSincronizacao(req, res));
+
 // POST /api/host-dados/sincronizar?ano=YYYY&mes=MM
 router.post('/sincronizar', (req, res) => controller.sincronizarPeriodo(req, res));
 

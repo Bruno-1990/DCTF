@@ -3624,6 +3624,23 @@ const Clientes: React.FC = () => {
         return true;
       }
       
+  const [ultimaSyncSci, setUltimaSyncSci] = useState<{
+    concluidoEm: string;
+    periodo: string;
+    origem: 'manual' | 'agendado';
+    linhas: number;
+    sucesso: boolean;
+    erro: string | null;
+  } | null>(null);
+
+  const carregarUltimaSyncSci = async () => {
+    try {
+      const response = await api.get('/host-dados/ultima-sincronizacao');
+      setUltimaSyncSci(response.data?.data?.ultima ?? null);
+    } catch {
+      // Informativo: sem o dado, a linha simplesmente não aparece.
+    }
+  };
       const errorMsg = response.data?.error || 'Erro desconhecido ao sincronizar automaticamente.';
       setHostError(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
       setShowSuccess(false); // Fechar toast de sucesso se houver erro
@@ -3866,6 +3883,12 @@ const Clientes: React.FC = () => {
           <div className="flex space-x-1 min-w-max">
             <button
               type="button"
+  useEffect(() => {
+    if (activeTab === 'lancamentos') {
+      void carregarUltimaSyncSci();
+    }
+  }, [activeTab, syncingAuto, syncing]);
+
               onClick={() => handleTabChange('clientes')}
               className={`px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 relative whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'clientes'
@@ -5618,6 +5641,31 @@ const Clientes: React.FC = () => {
                     className="text-xs text-gray-600 hover:underline"
                   >
                     {mostrarCadastroCompleto ? 'Ocultar cadastro completo' : 'Mostrar cadastro completo'}
+              {ultimaSyncSci && (
+                <p
+                  className={`basis-full text-xs ${ultimaSyncSci.sucesso ? 'text-gray-500' : 'text-red-600'}`}
+                  title={ultimaSyncSci.erro ?? undefined}
+                >
+                  {ultimaSyncSci.sucesso ? 'Última atualização' : 'Última tentativa (falhou)'}:{' '}
+                  <span className="font-medium">
+                    {new Date(ultimaSyncSci.concluidoEm).toLocaleString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  {' · '}competência {ultimaSyncSci.periodo}
+                  {' · '}
+                  {ultimaSyncSci.linhas.toLocaleString('pt-BR')} lançamentos
+                  {' · '}
+                  {ultimaSyncSci.origem === 'agendado' ? 'automática' : 'manual'}
+                </p>
+              )}
+              {!ultimaSyncSci && (
+                <p className="basis-full text-xs text-gray-400">Última atualização: sem registro ainda</p>
+              )}
                   </button>
             </div>
               </div>

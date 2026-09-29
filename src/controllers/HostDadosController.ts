@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { HostDadosObrigacaoService } from '../services/HostDadosObrigacaoService';
-import { FirebirdSyncService } from '../services/FirebirdSyncService';
+import { FirebirdSyncService, sincronizacaoEmAndamento, ultimaSincronizacao } from '../services/FirebirdSyncService';
 
 export class HostDadosController {
   private service: HostDadosObrigacaoService;
@@ -96,6 +96,20 @@ export class HostDadosController {
         success: false,
         error: 'Erro interno ao listar lançamentos do Banco SCI para o cliente.',
       });
+    }
+  }
+
+  /**
+   * GET /api/host-dados/ultima-sincronizacao
+   * Quando o SCI foi sincronizado por último (botão, período manual ou agendada).
+   */
+  public async ultimaSincronizacao(_req: Request, res: Response) {
+    try {
+      const ultima = await ultimaSincronizacao();
+      return res.json({ success: true, data: { ultima, emAndamento: sincronizacaoEmAndamento() } });
+    } catch (error) {
+      console.error('[HostDadosController] Erro em ultimaSincronizacao:', error);
+      return res.status(500).json({ success: false, error: 'Erro ao consultar a última sincronização.' });
     }
   }
 

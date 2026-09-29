@@ -19,7 +19,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
-import { getConnection } from '../config/mysql';
+import { executeQuery, getConnection } from '../config/mysql';
 import { comLockSci } from './sciLock';
 import {
   Competencia,
@@ -141,23 +141,99 @@ async function gravarMes(comp: Competencia, linhas: LinhaHostDados[]): Promise<v
   }
 }
 
+export type OrigemSync = 'manual' | 'agendado';
+
+export interface UltimaSincronizacao {
+  concluidoEm: string;
+  periodo: string;
+  origem: OrigemSync;
+  linhas: number;
+  sucesso: boolean;
+  erro: string | null;
+}
+
+let histTableReady = false;
+
+/**
+ * Histórico de TODA sincronização (botão, período manual e agendada). O
+ * `host_dados_sync_log` do agendador só tem a rodada das 4h e serve de trava do
+ * dia; não diz quando o dado foi atualizado de fato por quem clicou.
+ */
+async function garantirTabelaHistorico(): Promise<void> {
+  if (histTableReady) return;
+  await executeQuery(`
+    CREATE TABLE IF NOT EXISTS host_dados_sync_hist (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      iniciado_em DATETIME NOT NULL,
+      concluido_em DATETIME NOT NULL,
+      periodo VARCHAR(40) NOT NULL,
+      origem VARCHAR(10) NOT NULL,
+      linhas INT NOT NULL DEFAULT 0,
+      sucesso TINYINT(1) NOT NULL,
+      erro TEXT NULL,
+      PRIMARY KEY (id),
+      KEY idx_host_dados_sync_hist_fim (concluido_em)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  histTableReady = true;
+}
+
+async function registrarExecucao(
+  iniciadoEm: Date,
+  periodo: string,
+  origem: OrigemSync,
+  linhas: number,
+  erro: string | undefined
+): Promise<void> {
+  try {
+    await garantirTabelaHistorico();
+    await executeQuery(
+      `INSERT INTO host_dados_sync_hist (iniciado_em, concluido_em, periodo, origem, linhas, sucesso, erro)
+       VALUES (?, NOW(), ?, ?, ?, ?, ?)`,
+      [iniciadoEm, periodo, origem, linhas, erro ? 0 : 1, erro ? erro.slice(0, 2000) : null]
+    );
+  } catch (err: any) {
+    // Registro é informativo: nunca derruba uma sincronização que já gravou.
+    console.error('[FirebirdSync] Não consegui registrar o histórico:', err?.message || err);
+  }
+}
+
+/** Última sincronização que TERMINOU (com sucesso ou não), ou null se nunca houve. */
+export async function ultimaSincronizacao(): Promise<UltimaSincronizacao | null> {
+  await garantirTabelaHistorico();
+  const rows: any[] = await executeQuery(
+    `SELECT DATE_FORMAT(concluido_em, '%Y-%m-%dT%H:%i:%s') AS concluido_em, periodo, origem, linhas, sucesso, erro
+       FROM host_dados_sync_hist ORDER BY concluido_em DESC, id DESC LIMIT 1`
+  );
+  const r = rows?.[0];
+  if (!r) return null;
+  return {
+    concluidoEm: r.concluido_em,
+    periodo: r.periodo,
+    origem: r.origem,
+    linhas: Number(r.linhas),
+    sucesso: !!r.sucesso,
+    erro: r.erro ?? null,
+  };
+}
+
 export class FirebirdSyncService {
   /** Sincroniza uma competência (ano/mês). */
-  async sincronizarPeriodo(ano: number, mes: number): Promise<SyncResult> {
+  async sincronizarPeriodo(ano: number, mes: number, origem: OrigemSync = 'manual'): Promise<SyncResult> {
     if (mes < 1 || mes > 12) {
       return { success: false, periodo: rotulo({ ano, mes }), error: 'Mês deve estar entre 1 e 12' };
     }
-    return this.sincronizar([{ ano, mes }], rotulo({ ano, mes }));
+    return this.sincronizar([{ ano, mes }], rotulo({ ano, mes }), origem);
   }
 
   /** Botão "Atualizar" e agendamento diário: a competência anterior à data de hoje. */
-  async sincronizarAutomatico(): Promise<SyncResult> {
+  async sincronizarAutomatico(origem: OrigemSync = 'manual'): Promise<SyncResult> {
     const comp = mesAnterior(new Date());
-    return this.sincronizar([comp], rotulo(comp));
+    return this.sincronizar([comp], rotulo(comp), origem);
   }
 
   /** "Manual" da tela: cada mês tocado pelo intervalo, sempre inteiro. */
-  async sincronizarPorDatas(dataIni: string, dataFim: string): Promise<SyncResult> {
+  async sincronizarPorDatas(dataIni: string, dataFim: string, origem: OrigemSync = 'manual'): Promise<SyncResult> {
     let meses: Competencia[];
     try {
       meses = mesesDoIntervalo(dataIni, dataFim);
@@ -166,15 +242,16 @@ export class FirebirdSyncService {
     }
     const periodo =
       meses.length === 1 ? rotulo(meses[0]) : `${rotulo(meses[0])} a ${rotulo(meses[meses.length - 1])}`;
-    return this.sincronizar(meses, periodo);
+    return this.sincronizar(meses, periodo, origem);
   }
 
-  private async sincronizar(meses: Competencia[], periodo: string): Promise<SyncResult> {
+  private async sincronizar(meses: Competencia[], periodo: string, origem: OrigemSync): Promise<SyncResult> {
     if (emAndamento) {
       return { success: false, periodo, error: 'Já existe uma sincronização com o SCI em andamento. Aguarde terminar.' };
     }
     emAndamento = true;
 
+    const iniciadoEm = new Date();
     const contagem = { FPG: 0, CTB: 0, FISE: 0, FISS: 0 };
     const erros: string[] = [];
     try {
@@ -198,6 +275,7 @@ export class FirebirdSyncService {
     }
 
     const total = contagem.FPG + contagem.CTB + contagem.FISE + contagem.FISS;
+    await registrarExecucao(iniciadoEm, periodo, origem, total, erros.length > 0 ? erros.join('; ') : undefined);
     const primeiro = limitesDoMes(meses[0]);
     const ultimo = limitesDoMes(meses[meses.length - 1]);
     return {

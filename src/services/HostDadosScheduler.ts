@@ -99,7 +99,7 @@ export class HostDadosScheduler {
 
       this.rodandoAgora = true;
       console.log('[Lançamentos SCI Scheduler] Iniciando sincronização da competência anterior...');
-      const r = await this.sync.sincronizarAutomatico();
+      const r = await this.sync.sincronizarAutomatico('agendado');
 
       await mysqlPool.query(
         `UPDATE host_dados_sync_log
