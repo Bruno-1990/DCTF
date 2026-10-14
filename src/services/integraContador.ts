@@ -12,6 +12,7 @@
  */
 
 import axios from 'axios';
+import { headersServidorToken } from './serproTokenAuth';
 
 const BASE_URL =
   process.env['SERPRO_BASE_URL'] ||
@@ -63,7 +64,7 @@ export async function obterTokens(): Promise<{ accessToken: string; jwtToken: st
   }
 
   try {
-    const { data } = await axios.get(proxyUrl, { timeout: 20000 });
+    const { data } = await axios.get(proxyUrl, { timeout: 20000, headers: headersServidorToken() });
     const accessToken = data?.access_token;
     if (!accessToken) {
       throw new IntegraContadorError('O servidor de token não devolveu access_token.');

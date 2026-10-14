@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { headersServidorToken } from './serproTokenAuth';
 import { randomUUID } from 'crypto';
 import { createSupabaseAdapter } from './SupabaseAdapter';
 import { upsertExtractedSitfData, type SitfExtractedData } from './SitfDataExtractorService';
@@ -268,7 +269,7 @@ export async function fetchAccessToken(): Promise<string> {
     proxyUrl = `${authBase}${authEndpoint}`;
   }
   if (proxyUrl) {
-    const { data } = await axios.get(proxyUrl, { timeout: 20000 });
+    const { data } = await axios.get(proxyUrl, { timeout: 20000, headers: headersServidorToken() });
     const token = data?.access_token;
     if (!token) throw new Error('Token proxy não retornou access_token');
     return token;
@@ -306,7 +307,7 @@ async function fetchAuthTokens(): Promise<{ accessToken: string; jwtToken?: stri
   }
   if (proxyUrl) {
     console.log('[Sitf] Obtendo tokens do proxy:', proxyUrl);
-    const { data } = await axios.get(proxyUrl, { timeout: 20000 });
+    const { data } = await axios.get(proxyUrl, { timeout: 20000, headers: headersServidorToken() });
     const accessToken = data?.access_token;
     if (!accessToken) throw new Error('Token proxy não retornou access_token');
     const jwtToken = data?.jwt_token ?? null;

@@ -4,6 +4,7 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
+import { headersServidorToken } from './serproTokenAuth';
 
 export interface ReceitaPagamentoRequest {
   contratante: {
@@ -91,7 +92,7 @@ export class ReceitaFederalService {
       console.log(`[ReceitaFederal] Endpoint de autenticação: ${endpoint}`);
       
       console.log(`[ReceitaFederal] Fazendo requisição para: ${this.authURL}${endpoint}`);
-      const response = await this.authClient.get<TokenResponse>(endpoint);
+      const response = await this.authClient.get<TokenResponse>(endpoint, { headers: headersServidorToken() });
 
       console.log(`[ReceitaFederal] Status da resposta de autenticação: ${response.status}`);
       
