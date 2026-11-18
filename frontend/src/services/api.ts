@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { instalarCredencialAdmin } from './adminAuth';
 
 // Prefer VITE_API_BASE_URL; fallback to VITE_API_URL (append /api if missing);
 // final fallback: http://localhost:38572/api (porta 38572 para evitar colisão com outros apps)
@@ -84,7 +85,10 @@ api.interceptors.response.use(
     }
     
     // Erro do servidor (4xx, 5xx)
-    const message = error.response?.data?.error || error.response?.data?.message || error.message || 'Erro ao processar requisição';
+    // O handler global do backend às vezes manda `error` como objeto ({ message, stack }); usar a mensagem dele.
+    const rawError = error.response?.data?.error;
+    const message = (typeof rawError === 'string' ? rawError : rawError?.message)
+      || error.response?.data?.message || error.message || 'Erro ao processar requisição';
     const status = error.response?.status;
     const friendlyError = new Error(message) as Error & {
       status?: number;
@@ -99,6 +103,11 @@ api.interceptors.response.use(
     return Promise.reject(friendlyError);
   }
 );
+
+// Credencial da Administração: vai em toda chamada à nossa API (a do `api` e as feitas com o axios
+// global, que a Administração usa com caminho relativo), nunca para serviços de fora.
+instalarCredencialAdmin(api, [API_BASE_URL]);
+instalarCredencialAdmin(axios, [API_BASE_URL]);
 
 export default api;
 

@@ -7,6 +7,7 @@ import { Router } from 'express';
 import { DCTFController } from '../controllers/DCTFController';
 import { validate, validateParams, validateQuery, sanitizeData } from '../middleware/validation';
 import { dctfSchemas } from '../middleware/schemas';
+import { requireAdmin } from '../middleware/requireAdmin';
 
 const router = Router();
 const dctfController = new DCTFController();
@@ -50,7 +51,7 @@ router.post('/:id/cleanup', validateParams(dctfSchemas.params), (req, res) => {
 });
 
 // POST /api/dctf/admin/clear - Limpar todas as declarações (operação administrativa)
-router.post('/admin/clear', (req, res) => {
+router.post('/admin/clear', requireAdmin, (req, res) => {
   dctfController.limparTodasDeclaracoes(req, res);
 });
 
@@ -60,12 +61,12 @@ router.get('/admin/last-backup', (req, res) => {
 });
 
 // POST /api/dctf/admin/restore - Restaurar tabela a partir do backup mais recente
-router.post('/admin/restore', (req, res) => {
+router.post('/admin/restore', requireAdmin, (req, res) => {
   dctfController.restoreFromBackup(req, res);
 });
 
 // POST /api/dctf/admin/sync - Sincronizar declarações da tabela scrapecac (MySQL) para dctf_declaracoes
-router.post('/admin/sync', (req, res) => {
+router.post('/admin/sync', requireAdmin, (req, res) => {
   dctfController.sincronizarDoScrapecac(req, res);
 });
 
@@ -105,12 +106,12 @@ router.get('/admin/sync-errors-log', (req, res) => {
 });
 
 // POST /api/dctf/admin/retry-sync-errors - Retry automático dos registros com erro
-router.post('/admin/retry-sync-errors', (req, res) => {
+router.post('/admin/retry-sync-errors', requireAdmin, (req, res) => {
   dctfController.retrySyncErrors(req, res);
 });
 
 // POST /api/dctf/admin/send-email-pending - Enviar email com DCTFs em andamento
-router.post('/admin/send-email-pending', (req, res) => {
+router.post('/admin/send-email-pending', requireAdmin, (req, res) => {
   dctfController.sendEmailPending(req, res);
 });
 

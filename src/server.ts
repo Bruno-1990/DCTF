@@ -35,6 +35,7 @@ import detRoutes from './routes/det';
 import darfRoutes from './routes/darf';
 import fiscalRoutes from './routes/fiscal';
 import agendamentosRoutes from './routes/agendamentos';
+import adminAuthRoutes from './routes/admin-auth';
 import agendamentoConfigService from './services/agendamentos/AgendamentoConfigService';
 import cotaAprendizagemScheduler from './services/CotaAprendizagemScheduler';
 import substitutoScheduler from './services/SubstitutoScheduler';
@@ -186,6 +187,8 @@ class Server {
     this.app.use('/api/spreadsheet', spreadsheetRoutes);
     this.app.use('/api/flags', flagsRoutes);
     this.app.use('/api/dashboard/admin', adminDashboardRoutes);
+    // Login da Administração (as ações protegidas usam o middleware requireAdmin)
+    this.app.use('/api/admin', adminAuthRoutes);
     // Limiters dedicados para rotas sensíveis (evita que o limiter global derrube o app inteiro)
     const receitaLimiter = rateLimit({
       windowMs: 60 * 1000, // 1 minute

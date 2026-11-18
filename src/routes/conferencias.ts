@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ConferenciaController } from '../controllers/ConferenciaController';
 import { gerarResumoConferencias } from '../services/conferences/ConferenceModulesService';
 import EmailService from '../services/EmailService';
+import { requireAdmin } from '../middleware/requireAdmin';
 
 const router = Router();
 const controller = new ConferenciaController();
@@ -30,7 +31,7 @@ router.get('/summary', async (req, res) => {
 });
 
 // POST /api/conferencias/send-email-sem-dctf-com-movimento - Envia email com relatório "Clientes sem DCTF mas com Movimento"
-router.post('/send-email-sem-dctf-com-movimento', async (req, res) => {
+router.post('/send-email-sem-dctf-com-movimento', requireAdmin, async (req, res) => {
   try {
     const emailDestinoRaw = (req.body?.to ?? req.body?.email ?? '').toString().trim();
     if (!emailDestinoRaw) {

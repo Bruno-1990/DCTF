@@ -1,30 +1,117 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { dctfService } from '../services/dctf';
 import { sendEmailSemDCTFComMovimento } from '../services/conferences-modules';
 import { relatoriosService } from '../services/relatorios';
 import { clientesService } from '../services/clientes';
-import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentTextIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
+import { api } from '../services/api';
+import { EVENTO_SESSAO_ADMIN_EXPIRADA, salvarSessao, sair as sairAdmin, tokenAdmin } from '../services/adminAuth';
+import { ExclamationTriangleIcon, DocumentArrowDownIcon, TrashIcon, LockClosedIcon, ArrowPathIcon, ArrowLeftIcon, DocumentTextIcon, ArrowUturnLeftIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import AgendamentosPanel from '../components/Administracao/AgendamentosPanel';
+import AtualizarParticipacaoSitf from '../components/Clientes/AtualizarParticipacaoSitf';
 import { exportToExcel, formatarValorLegivel } from '../utils/exportExcel';
+import {
+  ClockIcon,
+  ArrowsRightLeftIcon,
+  QueueListIcon,
+  EnvelopeIcon,
+  InformationCircleIcon,
+  ChevronDownIcon,
+} from '@heroicons/react/24/outline';
 
-const ADMIN_CREDENTIALS = {
-  username: 'Admin',
-  password: 'Admin',
-};
+// ── Organização da página em grupos (menu lateral) ──────────────────────────
+// Cada grupo só controla o que aparece na tela: todo o estado das operações
+// continua no componente principal, então uma consulta em lote que esteja
+// rodando segue rodando ao trocar de grupo.
+type SecaoAdmin = 'rotinas' | 'sincronizacao' | 'lotes' | 'emails' | 'risco';
 
-const STORAGE_KEY = 'dctf_admin_authenticated';
-// AUTH_TIMEOUT removido - não expira automaticamente na aba admin para não atrapalhar consultas em lote
+const SECOES_ADMIN: Array<{
+  id: SecaoAdmin;
+  titulo: string;
+  descricao: string;
+  itens: number;
+  Icone: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: 'rotinas', titulo: 'Rotinas automáticas', descricao: 'Agendamentos', itens: 1, Icone: ClockIcon },
+  { id: 'sincronizacao', titulo: 'Sincronização e cadastro', descricao: 'Cartão CNPJ · e-CAC → DCTF', itens: 2, Icone: ArrowsRightLeftIcon },
+  { id: 'lotes', titulo: 'Consultas em lote', descricao: 'Divergências · Participação · Situação Fiscal', itens: 3, Icone: QueueListIcon },
+  { id: 'emails', titulo: 'E-mails', descricao: 'DCTFs em andamento · Sem DCTF', itens: 2, Icone: EnvelopeIcon },
+  { id: 'risco', titulo: 'Zona de risco', descricao: 'Limpeza de declarações', itens: 1, Icone: ExclamationTriangleIcon },
+];
+
+const ehSecaoAdmin = (v: string | null): v is SecaoAdmin => SECOES_ADMIN.some((s) => s.id === v);
+
+const AdminMenu: React.FC<{ secao: SecaoAdmin; onChange: (s: SecaoAdmin) => void }> = ({ secao, onChange }) => (
+  <nav className="w-full lg:w-64 flex-shrink-0 lg:sticky lg:top-24 bg-white border border-gray-200 rounded-xl shadow-sm p-2">
+    {SECOES_ADMIN.map(({ id, titulo, descricao, itens, Icone }) => {
+      const ativo = secao === id;
+      const risco = id === 'risco';
+      return (
+        <React.Fragment key={id}>
+          {risco && <div className="my-2 border-t border-gray-200" />}
+          <button
+            type="button"
+            onClick={() => onChange(id)}
+            aria-current={ativo ? 'page' : undefined}
+            className={`w-full flex items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+              ativo
+                ? risco
+                  ? 'bg-red-50 text-red-800 ring-1 ring-red-200'
+                  : 'bg-blue-50 text-blue-800 ring-1 ring-blue-200'
+                : risco
+                  ? 'text-red-700 hover:bg-red-50'
+                  : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <Icone className="h-5 w-5 mt-0.5 flex-shrink-0" />
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold">{titulo}</span>
+                <span className="text-xs text-gray-400 font-medium">{itens}</span>
+              </span>
+              <span className="block text-xs text-gray-500 truncate">{descricao}</span>
+            </span>
+          </button>
+        </React.Fragment>
+      );
+    })}
+  </nav>
+);
+
+// Explicações longas ("Como funciona", "Recomendações") ficam recolhidas:
+// o botão de ação aparece logo no topo de cada bloco.
+const ComoFunciona: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <details className="group bg-white rounded-lg border border-gray-200 mb-4 [&_summary::-webkit-details-marker]:hidden">
+    <summary className="flex items-center gap-2 cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg">
+      <InformationCircleIcon className="h-4 w-4 text-gray-500" />
+      Como funciona e recomendações
+      <ChevronDownIcon className="h-4 w-4 ml-auto text-gray-400 transition-transform group-open:rotate-180" />
+    </summary>
+    <div className="px-4 pb-4 pt-1 border-t border-gray-100">{children}</div>
+  </details>
+);
+
+// A senha é conferida no servidor (POST /api/admin/login). A credencial vale 12 h e acaba ao fechar
+// o navegador; um lote em andamento continua rodando no servidor mesmo se ela vencer.
 
 const Administracao: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const secaoParam = searchParams.get('secao');
+  const secao: SecaoAdmin = ehSecaoAdmin(secaoParam) ? secaoParam : 'rotinas';
+  const irParaSecao = (s: SecaoAdmin) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('secao', s);
+    setSearchParams(params, { replace: true });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(true);
-  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [entrando, setEntrando] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearConfirmCode, setClearConfirmCode] = useState('');
   const [clearConfirmText, setClearConfirmText] = useState('');
@@ -235,22 +322,23 @@ const Administracao: React.FC = () => {
     }
   };
 
-  // Verificar autenticação ao carregar
-  // Não expira automaticamente - logout apenas manual para não atrapalhar consultas em lote
+  // Sessão de administrador: a credencial emitida pelo servidor, enquanto vale.
   useEffect(() => {
-    const authData = sessionStorage.getItem(STORAGE_KEY);
-    if (authData) {
-      try {
-        // Verificar se há dados de autenticação (formato antigo ou novo)
-        const parsed = JSON.parse(authData);
-        // Se existe autenticação, permitir acesso independente do timestamp
-        setIsAuthenticated(true);
-        setShowLoginModal(false);
-      } catch {
-        // Formato inválido, remover
-        sessionStorage.removeItem(STORAGE_KEY);
-      }
+    try {
+      sessionStorage.removeItem('dctf_admin_authenticated'); // login antigo, conferido só no navegador
+    } catch {
+      /* ignora */
     }
+    if (tokenAdmin()) {
+      setIsAuthenticated(true);
+      setShowLoginModal(false);
+    }
+    const expirou = () => {
+      setIsAuthenticated(false);
+      setShowLoginModal(true);
+      setLoginError('Sua sessão de administrador terminou. Entre de novo; o que estava rodando no servidor continua.');
+    };
+    window.addEventListener(EVENTO_SESSAO_ADMIN_EXPIRADA, expirou);
     // Verificar se há processamento SITF em andamento no banco de dados
     const verificarProcessamentoSITF = async () => {
       try {
@@ -276,30 +364,30 @@ const Administracao: React.FC = () => {
     };
     
     verificarProcessamentoSITF();
+    return () => window.removeEventListener(EVENTO_SESSAO_ADMIN_EXPIRADA, expirou);
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
-
-    if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
+    setEntrando(true);
+    try {
+      const r = await api.post('/admin/login', { senha: password });
+      salvarSessao(r.data.data);
       setIsAuthenticated(true);
       setShowLoginModal(false);
-      // Armazenar autenticação sem timeout - logout apenas manual
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ authenticated: true, timestamp: Date.now() }));
-      setUsername('');
       setPassword('');
-      // Não configurar timeout automático - não expira durante consultas em lote
-    } else {
-      setLoginError('Usuário ou senha incorretos');
+    } catch (err: any) {
+      setLoginError(err?.message || 'Não foi possível entrar.');
+    } finally {
+      setEntrando(false);
     }
   };
 
   const handleLogout = () => {
+    sairAdmin();
     setIsAuthenticated(false);
     setShowLoginModal(true);
-    sessionStorage.removeItem(STORAGE_KEY);
-    setUsername('');
     setPassword('');
   };
 
@@ -1035,25 +1123,10 @@ const Administracao: React.FC = () => {
             </div>
             <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">Acesso Administrativo</h2>
             <p className="text-sm text-gray-600 text-center mb-6">
-              Esta área requer autenticação. Por favor, faça login para continuar.
+              Esta área é restrita aos administradores. Entre com a senha de administrador.
             </p>
 
             <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Usuário
-                </label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Digite o usuário"
-                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
-                  autoFocus
-                />
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Senha
@@ -1065,6 +1138,8 @@ const Administracao: React.FC = () => {
                   placeholder="Digite a senha"
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
+                  autoFocus
+                  autoComplete="current-password"
                 />
               </div>
 
@@ -1085,9 +1160,10 @@ const Administracao: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                  disabled={entrando}
+                  className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:opacity-60"
                 >
-                  Entrar
+                  {entrando ? 'Entrando…' : 'Entrar'}
                 </button>
               </div>
             </form>
@@ -1109,6 +1185,10 @@ const Administracao: React.FC = () => {
         </button>
       </div>
 
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <AdminMenu secao={secao} onChange={irParaSecao} />
+        <div className="flex-1 min-w-0 w-full">
+      {secao === 'risco' && (<>
       {/* Aviso de Segurança */}
       <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
         <div className="flex">
@@ -1133,7 +1213,7 @@ const Administracao: React.FC = () => {
               Esta ação é <strong>irreversível</strong> e deve ser executada antes de sincronizar novos dados do e-CAC.
             </p>
             
-            <div className="bg-white rounded-lg p-4 border border-red-300 mb-4">
+            <ComoFunciona>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será deletado (apenas no MySQL):</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
                 <li>Todas as declarações da tabela <code className="bg-gray-100 px-1 rounded">dctf_declaracoes</code> no <strong>MySQL</strong></li>
@@ -1155,7 +1235,7 @@ const Administracao: React.FC = () => {
                 <li>Verifique se não há processos importantes em andamento</li>
                 <li>Certifique-se de que todos os relatórios necessários foram gerados</li>
               </ul>
-            </div>
+            </ComoFunciona>
 
             {clearSuccess && (
               <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
@@ -1190,6 +1270,8 @@ const Administracao: React.FC = () => {
           </div>
         </div>
       </div>
+
+      </>)}
 
       {/* Modal de Confirmação */}
       {showClearModal && (
@@ -1282,6 +1364,7 @@ const Administracao: React.FC = () => {
         </div>
       )}
 
+      {secao === 'sincronizacao' && (<>
       {/* Seção de Atualização do Cadastro pelo Cartão CNPJ (ReceitaWS) */}
       <div className="bg-indigo-50 border-2 border-indigo-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
@@ -1298,7 +1381,7 @@ const Administracao: React.FC = () => {
               desatualizado é corrigido, e o que a Receita não informa fica exatamente como está.
             </p>
 
-            <div className="bg-white rounded-lg p-4 border border-indigo-300 mb-4">
+            <ComoFunciona>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Como funciona:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
                 <li>Consulta 1 CNPJ por vez, aguardando <strong>20 segundos</strong> entre cada um (limite da ReceitaWS: 3 consultas/minuto)</li>
@@ -1328,7 +1411,7 @@ const Administracao: React.FC = () => {
                 <li>Use o modo <strong>Simular</strong> para ver o que mudaria sem gravar nada</li>
                 <li>Dá para <strong>cancelar</strong> a qualquer momento; o que já foi gravado permanece</li>
               </ul>
-            </div>
+            </ComoFunciona>
 
             {/* Opções */}
             <div className="bg-white rounded-lg p-4 border border-indigo-300 mb-4 space-y-3">
@@ -1768,9 +1851,15 @@ const Administracao: React.FC = () => {
         </div>
       </div>
 
+      </>)}
+
+      {secao === 'rotinas' && (<>
       {/* Agendamentos: o que roda sozinho, quando roda e para quem avisa */}
       <AgendamentosPanel />
 
+      </>)}
+
+      {secao === 'sincronizacao' && (<>
       {/* Seção de Sincronização do e-CAC */}
       <div className="bg-green-50 border-2 border-green-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
@@ -1782,7 +1871,7 @@ const Administracao: React.FC = () => {
               e <strong>sincronizar</strong> para a tabela <code className="bg-green-100 px-1 rounded">dctf_declaracoes</code>. Apenas <strong>novos</strong> registros são inseridos; só é ignorado quem já existe com o <strong>mesmo ID</strong>. Mesmo CNPJ e período com outros campos diferentes (ex.: Original vs Retificadora) são inseridos como registros distintos.
             </p>
 
-            <div className="bg-white rounded-lg p-4 border border-green-300 mb-4">
+            <ComoFunciona>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Como funciona:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">
                 <li>O sistema lê todos os registros da tabela <code className="bg-gray-100 px-1 rounded">scrapecac</code> (mesmo banco MySQL)</li>
@@ -1799,7 +1888,7 @@ const Administracao: React.FC = () => {
                 <li>Esta operação pode levar alguns minutos dependendo da quantidade de registros</li>
                 <li>Você pode executar quantas vezes quiser — é idempotente por ID</li>
               </ul>
-            </div>
+            </ComoFunciona>
 
             {syncSuccess && (
               <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
@@ -1977,6 +2066,9 @@ const Administracao: React.FC = () => {
         </div>
       </div>
 
+      </>)}
+
+      {secao === 'emails' && (<>
       {/* Seção de Envio de Email com DCTFs em Andamento */}
       <div className="bg-purple-50 border-2 border-purple-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
@@ -2012,7 +2104,7 @@ const Administracao: React.FC = () => {
               </div>
             </div>
             
-            <div className="bg-white rounded-lg p-4 border border-purple-300 mb-4">
+            <ComoFunciona>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será incluído:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
                 <li>Todas as DCTFs com situação <strong>"Em andamento"</strong></li>
@@ -2021,7 +2113,7 @@ const Administracao: React.FC = () => {
                 <li>Totalizadores: Total de registros, soma de débitos e soma de saldos</li>
                 <li>HTML bem formatado para fácil leitura</li>
               </ul>
-            </div>
+            </ComoFunciona>
 
             {emailSuccess && (
               <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
@@ -2086,7 +2178,7 @@ const Administracao: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg p-4 border border-orange-300 mb-4">
+            <ComoFunciona>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">O que será incluído:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
                 <li>Empresa, CNPJ, Regime, Competência Obrigação, Movimento em</li>
@@ -2094,7 +2186,7 @@ const Administracao: React.FC = () => {
                 <li>Possível Obrigação de Envio</li>
                 <li>HTML formatado para fácil leitura</li>
               </ul>
-            </div>
+            </ComoFunciona>
 
             {emailSuccessSemDCTF && (
               <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
@@ -2124,6 +2216,9 @@ const Administracao: React.FC = () => {
         </div>
       </div>
 
+      </>)}
+
+      {secao === 'lotes' && (<>
       {/* Seção de Consulta em Lote de CNPJs com Divergências */}
       <div className="bg-amber-50 border-2 border-amber-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
@@ -2136,7 +2231,7 @@ const Administracao: React.FC = () => {
               Os CNPJs são armazenados em uma tabela temporária e removidos após processamento bem-sucedido.
             </p>
 
-            <div className="bg-white rounded-lg p-4 border border-amber-300 mb-4">
+            <ComoFunciona>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Como funciona:</h3>
               <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
                 <li>Clique em "Popular Tabela" para identificar CNPJs com divergências</li>
@@ -2144,7 +2239,7 @@ const Administracao: React.FC = () => {
                 <li>Cada CNPJ é removido da tabela após ser processado com sucesso</li>
                 <li>CNPJs com erro permanecem na tabela para nova tentativa</li>
               </ol>
-            </div>
+            </ComoFunciona>
 
             <div className="flex items-center gap-3 mb-4">
               <button
@@ -2193,6 +2288,22 @@ const Administracao: React.FC = () => {
         </div>
       </div>
 
+      {/* Consulta obrigatória do mês da Participação Societária (só administradores) */}
+      <div className="bg-amber-50 border-2 border-amber-200 shadow-lg rounded-lg p-6 mb-6">
+        <div className="flex items-start mb-4">
+          <UserGroupIcon className="h-6 w-6 text-amber-600 mr-3 mt-1" />
+          <div className="flex-1">
+            <h2 className="text-xl font-semibold text-amber-900 mb-2">Participação societária: consulta obrigatória do mês</h2>
+            <p className="text-sm text-amber-800">
+              Consulta no SERPRO a Situação Fiscal das empresas que ainda não têm a do mês corrente, para a aba
+              Participação poder atualizar os sócios. Cada empresa é uma consulta cobrada. Na aba Participação o
+              lote só é acompanhado: iniciar e parar ficam aqui.
+            </p>
+          </div>
+        </div>
+        <AtualizarParticipacaoSitf modo="admin" onAtualizados={() => undefined} />
+      </div>
+
       {/* Seção de Consulta em Lote de Situação Fiscal */}
       <div className="bg-emerald-50 border-2 border-emerald-200 shadow-lg rounded-lg p-6 mb-6">
         <div className="flex items-start mb-4">
@@ -2205,7 +2316,7 @@ const Administracao: React.FC = () => {
               e salvar os PDFs e dados extraídos na tabela <code className="bg-emerald-100 px-1 rounded">sitf_downloads</code>.
             </p>
 
-            <div className="bg-white rounded-lg p-4 border border-emerald-300 mb-4">
+            <ComoFunciona>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Informações Importantes:</h3>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
                 <li>A consulta é feita de forma sequencial (um CNPJ por vez)</li>
@@ -2214,7 +2325,7 @@ const Administracao: React.FC = () => {
                 <li>Sócios, débitos e pendências são atualizados no sistema</li>
                 <li>A operação pode levar vários minutos dependendo da quantidade de clientes</li>
               </ul>
-            </div>
+            </ComoFunciona>
 
             {erroSITF && (
               <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4 text-sm">
@@ -2431,6 +2542,9 @@ const Administracao: React.FC = () => {
         </div>
       </div>
 
+      </>)}
+        </div>
+      </div>
     </div>
   );
 };

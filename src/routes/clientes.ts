@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { ClienteController } from '../controllers/ClienteController';
 import { validate, validateParams, validateQuery, sanitizeData } from '../middleware/validation';
 import { clienteSchemas } from '../middleware/schemas';
+import { requireAdmin } from '../middleware/requireAdmin';
 
 const router = Router();
 const clienteController = new ClienteController();
@@ -153,13 +154,13 @@ router.post('/import-receita-ws', (req, res) => {
 
 // POST /api/clientes/atualizar-cadastro-receita-ws - Atualizar 1 CNPJ com o cartão CNPJ
 // (não-destrutivo: nunca apaga dado já existente no cadastro)
-router.post('/atualizar-cadastro-receita-ws', (req, res) => {
+router.post('/atualizar-cadastro-receita-ws', requireAdmin, (req, res) => {
   clienteController.atualizarCadastroReceitaWS(req, res);
 });
 
 // POST /api/clientes/aplicar-cadastro-simulado - Gravar o que foi calculado na simulação
 // (sem nova consulta na ReceitaWS)
-router.post('/aplicar-cadastro-simulado', (req, res) => {
+router.post('/aplicar-cadastro-simulado', requireAdmin, (req, res) => {
   clienteController.aplicarCadastroSimulado(req, res);
 });
 

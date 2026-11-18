@@ -7,6 +7,7 @@ import { Cliente } from '../models/Cliente';
 import { emitirParticipacao, resumirLote } from '../services/participacaoSitf/eventos';
 import { fecharLotesOrfaos } from '../services/participacaoSitf/lotesInterrompidos';
 import { extrairSociosComPython, converterSociosPythonParaNode, qualificacaoSemCapital } from '../utils/pythonExtractor';
+import { requireAdmin } from '../middleware/requireAdmin';
 
 const supabase = createSupabaseAdapter() as any;
 const supabaseAdmin = createSupabaseAdapter() as any;
@@ -1541,7 +1542,7 @@ async function verificarCNPJsProcessados(cnpjs: string[]): Promise<Set<string>> 
  * Query params:
  * - apenasFaltantes: boolean - Se true, processa apenas CNPJs que ainda não têm registros
  */
-router.post('/lote/iniciar', async (req, res, next) => {
+router.post('/lote/iniciar', requireAdmin, async (req, res, next) => {
   try {
     const { Cliente } = await import('../models/Cliente');
     const clienteModel = new Cliente();
@@ -1964,7 +1965,7 @@ router.get('/lote/em-andamento', async (req, res, next) => {
  * POST /api/situacao-fiscal/lote/:progressId/cancelar
  * Cancela uma consulta em lote em andamento
  */
-router.post('/lote/:progressId/cancelar', async (req, res, next) => {
+router.post('/lote/:progressId/cancelar', requireAdmin, async (req, res, next) => {
   try {
     const { progressId } = req.params;
     
@@ -2025,7 +2026,7 @@ router.post('/lote/:progressId/cancelar', async (req, res, next) => {
  * Popula a tabela temporária com CNPJs de empresas que têm divergências na aba Participação
  * Filtra apenas matrizes (tipo_empresa = 'Matriz') que têm divergências em percentuais ou valores
  */
-router.post('/lote/popular-pendentes', async (req, res, next) => {
+router.post('/lote/popular-pendentes', requireAdmin, async (req, res, next) => {
   try {
     const { Cliente } = await import('../models/Cliente');
     const clienteModel = new Cliente();
@@ -2218,7 +2219,7 @@ router.get('/lote/pendentes', async (req, res, next) => {
  * Inicia consulta em lote usando apenas os CNPJs da tabela temporária
  * Processa um CNPJ por vez e remove da tabela após sucesso
  */
-router.post('/lote/iniciar-pendentes', async (req, res, next) => {
+router.post('/lote/iniciar-pendentes', requireAdmin, async (req, res, next) => {
   try {
     // Buscar CNPJs pendentes da tabela
     const pendentesQuery = `
