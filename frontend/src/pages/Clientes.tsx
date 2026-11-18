@@ -29,6 +29,10 @@ import type { AxiosError } from 'axios';
 import CFOPTab from '../components/Clientes/CFOPTab';
 import EBEFTab from '../components/Clientes/EBEFTab';
 import CotaAprendizagemTab from '../components/Clientes/CotaAprendizagemTab';
+import AtualizarParticipacaoSitf from '../components/Clientes/AtualizarParticipacaoSitf';
+import { capitalZeradoEnquadrado } from '../utils/naturezaJuridica';
+import { exportToExcel } from '../utils/exportExcel';
+import { participacaoSitfService } from '../services/participacaoSitf';
 import ExportClientesModal from '../components/Clientes/ExportClientesModal';
 import { clientesService } from '../services';
 import { beneficiosService } from '../services/beneficios';
@@ -56,6 +60,56 @@ function fullPathRede(suffix: string): string {
 function displayUppercase(s: string | null | undefined, fallback = ''): string {
   const t = s != null && String(s).trim() !== '' ? String(s).trim().toUpperCase() : fallback;
   return t;
+}
+
+/**
+ * Participação dos sócios incompleta: algum sócio ativo SEM valor (percentual ou
+ * valor vazio) OU percentuais que não somam 100%. Zero preenchido é valor válido
+ * (ex.: sócio com 0%), então não conta como faltante.
+ * Sócio que não consta mais no cartão CNPJ (`ausente_no_cartao`) fica de fora.
+ * Usado pelo filtro "Informações Faltantes" (Participação) e "Itens Faltantes" (Cadastro).
+ */
+function temParticipacaoIncompleta(c: any): boolean {
+  const socios: any[] = (Array.isArray(c?.socios) ? c.socios : []).filter(
+    (s: any) => !(s?.ausente_no_cartao === true || s?.ausente_no_cartao === 1)
+  );
+  if (socios.length === 0) return false;
+
+  // CONSORCIO CONSERVA-VITORIA: participação zerada é esperada (mesma exceção do filtro "Divergente").
+  const cnpjLimpo = c?.cnpj_limpo || String(c?.cnpj ?? '').replace(/\D/g, '');
+  if (cnpjLimpo === '48401933000117') return false;
+  // Natureza jurídica que permite capital zerado (consórcio, empresário individual, associação...):
+  // sócio sem valor não é falta, a empresa está enquadrada.
+  if (capitalZeradoEnquadrado(c)) return false;
+
+  const semValor = (v: any) =>
+    v === null || v === undefined || String(v).trim() === '' || Number.isNaN(parseFloat(String(v)));
+  // Quem a qualificação já diz não ter capital (05-Administrador, 53-Sócio sem Capital)
+  // tem participação zero por definição: vazio aí não é informação faltante.
+  // Mesma regra de `qualificacaoSemCapital` no backend (src/utils/pythonExtractor.ts).
+  const semCapital = (qual: any) => {
+    const q = String(qual ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+    if (!q) return false;
+    if (/SEM\s+CAPITAL/.test(q)) return true;
+    if (/\bSOCIO\b/.test(q)) return false;
+    return /\bADMINISTRADOR\b/.test(q);
+  };
+  if (
+    socios.some(
+      (s) =>
+        !semCapital(s?.qual) && (semValor(s?.participacao_percentual) || semValor(s?.participacao_valor))
+    )
+  ) {
+    return true;
+  }
+
+  const comQualificacao = socios.filter((s) => s?.qual && String(s.qual).trim() !== '');
+  if (comQualificacao.length === 0) return false;
+  const somaPercentuais = comQualificacao.reduce((acc, s) => {
+    const p = parseFloat(String(s.participacao_percentual ?? 0));
+    return acc + (Number.isNaN(p) ? 0 : p);
+  }, 0);
+  return Math.abs(somaPercentuais - 100) >= 0.01;
 }
 
 /**
@@ -89,10 +143,7 @@ function getItensFaltantes(c: any): string[] {
   const ehMatriz = c?.tipo_empresa === 'Matriz';
   if (ehMatriz && socios.length === 0) {
     faltantes.push('Sócios');
-  } else if (
-    socios.length > 0 &&
-    socios.some((s) => !s?.participacao_percentual || !s?.participacao_valor)
-  ) {
+  } else if (temParticipacaoIncompleta(c)) {
     faltantes.push('Particip. sócio');
   }
 
@@ -835,6 +886,31 @@ const Clientes: React.FC = () => {
   const [atualizandoCliente, setAtualizandoCliente] = useState(false);
   const [sociosRefreshKey, setSociosRefreshKey] = useState(0);
   const [atualizandoSocios, setAtualizandoSocios] = useState<string | null>(null); // ID do cliente sendo atualizado
+  const [confirmandoSaidaSocioId, setConfirmandoSaidaSocioId] = useState<string | null>(null);
+
+  // Exclui um sócio que não consta mais no cartão CNPJ, depois de o usuário confirmar.
+  const confirmarSaidaSocio = async (cliente: Cliente, socio: any) => {
+    if (!cliente.id || !socio?.id) return;
+    const ok = window.confirm(
+      `Confirmar a saída de ${socio.nome || 'este sócio'} do quadro societário de ` +
+      `${cliente.razao_social || cliente.nome || 'esta empresa'}?\n\n` +
+      'O registro do sócio (CPF, participação e valor) será excluído e não dá para desfazer.'
+    );
+    if (!ok) return;
+    setConfirmandoSaidaSocioId(socio.id);
+    try {
+      const resp = await clientesService.confirmarSaidaSocio(cliente.id, socio.id);
+      if (!resp?.success) throw new Error(resp?.error || 'Falha ao excluir o sócio');
+      const semOSocio = (c: Cliente) =>
+        c.id === cliente.id ? { ...c, socios: (c.socios || []).filter((s: any) => s.id !== socio.id) } : c;
+      setClientesParticipacao(prev => prev.map(semOSocio));
+      toast.success(`${socio.nome || 'Sócio'} excluído do quadro societário.`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || error?.message || 'Erro ao confirmar saída do sócio');
+    } finally {
+      setConfirmandoSaidaSocioId(null);
+    }
+  };
   const [atualizandoCodigoSCI, setAtualizandoCodigoSCI] = useState(false);
  // ID do cliente sendo recalculado
   const [uploadingPdf, setUploadingPdf] = useState(false); // Estado para upload de PDF
@@ -846,6 +922,20 @@ const Clientes: React.FC = () => {
   // Estados para modal de exportação
   const [showExportModal, setShowExportModal] = useState(false);
   // Estados para modal de edição manual de participação
+  // Última consulta da Situação Fiscal por cliente (vem do painel da participação, ao vivo).
+  const [consultaSitfPorCliente, setConsultaSitfPorCliente] = useState<Record<string, string | null>>({});
+  // Depois de gravar a participação pela Situação Fiscal: recarrega só os clientes alterados.
+  const recarregarClientesParticipacao = async (ids: string[]) => {
+    for (const id of ids) {
+      try {
+        const atualizado = await clientesService.getById(id);
+        if (atualizado?.id) setClientesParticipacao((prev) => prev.map((c) => (c.id === id ? atualizado : c)));
+      } catch (e) {
+        console.warn('[Clientes] Não foi possível recarregar o cliente', id, e);
+      }
+    }
+  };
+
   const [showModalEdicaoParticipacao, setShowModalEdicaoParticipacao] = useState(false);
   const [clienteEditandoParticipacao, setClienteEditandoParticipacao] = useState<Cliente | null>(null);
   const [editandoParticipacao, setEditandoParticipacao] = useState(false);
@@ -1664,12 +1754,11 @@ const Clientes: React.FC = () => {
       // 2. Aplicar filtros especiais
       .filter(c => {
         if (ordenacaoParticipacao === 'faltantes') {
-          return c.socios && c.socios.length > 0 && c.socios.some(s => 
-            !s.participacao_percentual || !s.participacao_valor
-          );
+          return temParticipacaoIncompleta(c);
         } else if (ordenacaoParticipacao === 'sem-registro') {
           return !c.socios || c.socios.length === 0;
         } else if (ordenacaoParticipacao === 'capital-zerado') {
+          if (capitalZeradoEnquadrado(c)) return false; // zerado, mas enquadrado pela natureza jurídica
           const capital = c.capital_social;
           if (capital === null || capital === undefined || capital === '') return true;
           const capitalNum = typeof capital === 'number'
@@ -1682,6 +1771,7 @@ const Clientes: React.FC = () => {
           if (cnpjLimpo === '48401933000117') {
             return false; // Não é divergente, é esperado que seja zerado
           }
+          if (capitalZeradoEnquadrado(c)) return false; // natureza jurídica permite capital zerado
           
           const sociosComQualificacao = c.socios?.filter(s => s.qual && s.qual.trim() !== '') || [];
           if (sociosComQualificacao.length === 0) return false;
@@ -3366,6 +3456,133 @@ const Clientes: React.FC = () => {
     }
   };
 
+  /**
+   * Relatório da Participação Societária: todos os clientes da aba (sem filtro), um sócio por
+   * linha, no mesmo modelo das outras planilhas (exportToExcel, duas linhas em branco por CNPJ).
+   * A coluna "Verificação" usa as mesmas regras do card (100% e soma = Capital Social).
+   */
+  const [exportandoParticipacao, setExportandoParticipacao] = useState(false);
+  const handleRelatorioParticipacao = async () => {
+    setExportandoParticipacao(true);
+    try {
+      // Busca tudo de novo no servidor: a lista da tela é a da abertura da aba e fica velha
+      // depois das atualizações pela Situação Fiscal.
+      const frescos: Cliente[] = [];
+      for (let pagina = 1; pagina <= 100; pagina++) {
+        const { items, pagination } = await loadClientes({ page: pagina, limit: 100, search: '', socio: undefined });
+        frescos.push(...items);
+        const temMais = pagination?.totalPages ? pagina < pagination.totalPages : items.length === 100;
+        if (!temMais) break;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      const matrizes = frescos.filter((c) => c.tipo_empresa === 'Matriz');
+      if (matrizes.length === 0) {
+        toast.warning('Nenhuma empresa encontrada para o relatório.');
+        return;
+      }
+      setClientesParticipacao(matrizes); // a tela também fica em dia
+
+      const num = (v: any): number | null => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(',', '.'));
+        return Number.isNaN(n) ? null : n;
+      };
+      const moeda = (v: number | null) => (v === null ? '' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      const pctTxt = (v: number | null) =>
+        v === null ? '' : `${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+      const docFmt = (v: any) => {
+        const d = String(v ?? '').replace(/\D/g, '');
+        if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+        if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+        return String(v ?? '');
+      };
+      const ehAusente = (s: any) => s?.ausente_no_cartao === true || s?.ausente_no_cartao === 1;
+
+      const atualizadoEm = (c: Cliente): string => {
+        const receita = c.receita_ws_ultima_atualizacao ? new Date(c.receita_ws_ultima_atualizacao) : null;
+        const sitfIso = c.id ? consultaSitfPorCliente[c.id] : null;
+        const sitf = sitfIso ? new Date(sitfIso) : null;
+        const data = receita && sitf ? (sitf > receita ? sitf : receita) : receita || sitf;
+        return data && !isNaN(data.getTime()) ? data.toLocaleDateString('pt-BR') : '';
+      };
+
+      const ordenados = [...matrizes].sort((a, b) =>
+        String(a.razao_social || '').localeCompare(String(b.razao_social || ''), 'pt-BR'),
+      );
+      const linhas: string[][] = [];
+      for (const c of ordenados) {
+        const capital = num(c.capital_social) ?? 0;
+        const ativos = (c.socios || []).filter((s: any) => !ehAusente(s));
+        const ausentes = (c.socios || []).filter((s: any) => ehAusente(s));
+        const comQual = ativos.filter((s: any) => s.qual && String(s.qual).trim() !== '');
+        const somaPct = comQual.reduce((t: number, s: any) => t + (num(s.participacao_percentual) ?? 0), 0);
+        const somaValor = comQual.reduce((t: number, s: any) => t + (num(s.participacao_valor) ?? 0), 0);
+        let verificacao: string;
+        if (capitalZeradoEnquadrado(c)) verificacao = 'Capital zerado permitido pela natureza jurídica';
+        else if (ativos.length === 0) verificacao = 'Sem sócios cadastrados';
+        else {
+          const problemas: string[] = [];
+          if (Math.abs(somaPct - 100) >= 0.01) problemas.push(`Percentual ${pctTxt(somaPct)} (esperado 100%)`);
+          if (capital > 0 && Math.abs(somaValor - capital) >= 0.1) problemas.push('Soma de valores ≠ Capital Social');
+          if (capital <= 0) problemas.push('Capital Social zerado');
+          verificacao = problemas.length ? problemas.join(' • ') : 'Dados verificados';
+        }
+        const base = [
+          String(c.razao_social || ''),
+          docFmt(c.cnpj_limpo || c.cnpj),
+          String((c as any).natureza_juridica || ''),
+          moeda(num(c.capital_social)),
+          atualizadoEm(c),
+          verificacao,
+        ];
+        if (ativos.length === 0 && ausentes.length === 0) {
+          linhas.push([...base, '', '', '', '', '', '']);
+          continue;
+        }
+        for (const s of [...ativos, ...ausentes]) {
+          linhas.push([
+            ...base,
+            String(s.nome || ''),
+            docFmt(s.cpf),
+            String(s.qual || ''),
+            pctTxt(num(s.participacao_percentual)),
+            moeda(num(s.participacao_valor)),
+            ehAusente(s) ? 'Fora do quadro (não conta na soma)' : 'Ativo',
+          ]);
+        }
+      }
+
+      await exportToExcel({
+        filename: `participacao-societaria-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheetName: 'Participação Societária',
+        headers: [
+          'Razão Social',
+          'CNPJ',
+          'Natureza Jurídica',
+          'Capital Social',
+          'Atualizado em',
+          'Verificação',
+          'Sócio',
+          'CPF/CNPJ',
+          'Qualificação',
+          'Participação',
+          'Valor',
+          'Situação do Sócio',
+        ],
+        data: linhas,
+        groupByColumn: 1, // CNPJ
+        groupSpacing: 2,
+        wrapText: false,
+      });
+      toast.success(`Relatório gerado: ${ordenados.length} empresa(s), ${linhas.length} linha(s).`, 3000);
+    } catch (error: any) {
+      console.error('[Clientes] Erro ao gerar o relatório de participação:', error);
+      toast.error(error?.message || 'Erro ao gerar o relatório de participação');
+    } finally {
+      setExportandoParticipacao(false);
+    }
+  };
+
   const handleExportarClientes = async (campos: string[]) => {
     try {
       // Só aplicar filtro de sócio se estiver na aba participação
@@ -5022,6 +5239,10 @@ const Clientes: React.FC = () => {
         </>
       )}
 
+      {activeTab === 'participacao' && !showForm && !visualizandoCliente && (
+        <AtualizarParticipacaoSitf onAtualizados={recarregarClientesParticipacao} onConsultas={setConsultaSitfPorCliente} />
+      )}
+
       {/* Barra de Busca e Ações - Não exibir nas abas e-BEF, CNAE e Cota (que têm busca própria), nem quando o formulário estiver aberto, nem quando estiver visualizando cliente */}
       {activeTab !== 'e-bef' && activeTab !== 'cnae' && activeTab !== 'cota-aprendizagem' && !showForm && !visualizandoCliente && (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 mb-6 backdrop-blur-sm bg-opacity-95">
@@ -5436,6 +5657,22 @@ const Clientes: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={handleRelatorioParticipacao}
+                  disabled={exportandoParticipacao || loadingParticipacao}
+                  title="Baixar planilha com todos os clientes e sócios da Participação"
+                  className="h-12 px-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg shadow-green-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {exportandoParticipacao ? (
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <DocumentArrowDownIcon className="h-5 w-5" />
+                  )}
+                  {exportandoParticipacao ? 'Gerando...' : 'Relatório'}
+                </button>
               </div>
             </>
           )}
@@ -8153,15 +8390,14 @@ const Clientes: React.FC = () => {
               // 2. Aplicar filtros especiais
               .filter(c => {
                 if (ordenacaoParticipacao === 'faltantes') {
-                  // Tem sócio mas falta valores ou percentual
-                  return c.socios && c.socios.length > 0 && c.socios.some(s => 
-                    !s.participacao_percentual || !s.participacao_valor
-                  );
+                  // Sócio sem valor (zero é válido) ou percentuais que não somam 100%
+                  return temParticipacaoIncompleta(c);
                 } else if (ordenacaoParticipacao === 'sem-registro') {
                   // Sem sócios cadastrados
                   return !c.socios || c.socios.length === 0;
                 } else if (ordenacaoParticipacao === 'capital-zerado') {
-                  // Capital Social zerado ou nulo
+                  // Capital Social zerado ou nulo (menos quem a natureza jurídica permite zerado)
+                  if (capitalZeradoEnquadrado(c)) return false;
                   const capital = c.capital_social;
                   if (capital === null || capital === undefined || capital === '') {
                     return true;
@@ -8177,6 +8413,7 @@ const Clientes: React.FC = () => {
                   if (cnpjLimpo === '48401933000117') {
                     return false; // Não é divergente, é esperado que seja zerado
                   }
+                  if (capitalZeradoEnquadrado(c)) return false; // natureza jurídica permite capital zerado
                   
                   // Empresas com divergências na verificação de 2 fatores
                   // (percentuais não somam 100% OU valores não batem com Capital Social)
@@ -8258,8 +8495,14 @@ const Clientes: React.FC = () => {
               .map((cliente) => {
                 // Exibir TODOS os sócios do QSA (sem filtrar por qualificação)
                 // A Situação Fiscal apenas atualiza CPF/CNPJ e porcentagens dos sócios existentes
-                const todosSocios = cliente.socios || [];
-                
+                // Quem não consta mais no cartão CNPJ continua listado (por último, sinalizado)
+                // até alguém confirmar a saída, mas não entra na contagem nem na verificação.
+                const ehAusente = (s: any) => s.ausente_no_cartao === true || s.ausente_no_cartao === 1;
+                const sociosAtivos = (cliente.socios || []).filter(s => !ehAusente(s));
+                const sociosAusentes = (cliente.socios || []).filter(s => ehAusente(s));
+                const todosSocios = sociosAtivos;
+                const sociosExibidos = [...sociosAtivos, ...sociosAusentes];
+
                 // Verificação de 2 fatores: porcentagens e valores (apenas para sócios com qualificação)
                 const sociosComQualificacao = todosSocios.filter(s => s.qual && s.qual.trim() !== '');
                 const somaPercentuais = sociosComQualificacao.reduce((acc, s) => {
@@ -8289,6 +8532,8 @@ const Clientes: React.FC = () => {
                 // Verificar se os valores batem com o Capital Social (com tolerância de R$ 0.10 para arredondamentos)
                 // Aumentamos a tolerância para R$ 0,10 devido a arredondamentos em múltiplos cálculos
                 const valoresOk = capitalSocialNum > 0 && Math.abs(somaValores - capitalSocialNum) < 0.10;
+                // Natureza jurídica que permite capital zerado: capital 0 e sócio sem valor não são erro.
+                const enquadradoSemCapital = capitalZeradoEnquadrado(cliente);
                 
                 return (
               <div 
@@ -8373,14 +8618,28 @@ const Clientes: React.FC = () => {
                               </p>
                             </>
                           )}
-                          {cliente.receita_ws_ultima_atualizacao && (
-                            <>
-                              <span className="text-gray-400">•</span>
-                              <p className="text-xs text-gray-400" title={`Última atualização: ${new Date(cliente.receita_ws_ultima_atualizacao).toLocaleString('pt-BR')}`}>
-                                Atualizado em {new Date(cliente.receita_ws_ultima_atualizacao).toLocaleDateString('pt-BR')}
-                              </p>
-                            </>
-                          )}
+                          {(() => {
+                            // A data que vale é a mais recente: ReceitaWS ou Situação Fiscal (sócios e participação).
+                            const receita = cliente.receita_ws_ultima_atualizacao ? new Date(cliente.receita_ws_ultima_atualizacao) : null;
+                            const sitfIso = cliente.id ? consultaSitfPorCliente[cliente.id] : null;
+                            const sitf = sitfIso ? new Date(sitfIso) : null;
+                            const data = receita && sitf ? (sitf > receita ? sitf : receita) : receita || sitf;
+                            if (!data || isNaN(data.getTime())) return null;
+                            const fonte = data === sitf ? 'Situação Fiscal (SERPRO)' : 'ReceitaWS';
+                            const titulo = [
+                              `Última atualização: ${data.toLocaleString('pt-BR')} (${fonte})`,
+                              receita ? `ReceitaWS: ${receita.toLocaleString('pt-BR')}` : null,
+                              sitf ? `Situação Fiscal: ${sitf.toLocaleString('pt-BR')}` : null,
+                            ].filter(Boolean).join(' | ');
+                            return (
+                              <>
+                                <span className="text-gray-400">•</span>
+                                <p className="text-xs text-gray-400" title={titulo}>
+                                  Atualizado em {data.toLocaleDateString('pt-BR')}
+                                </p>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -8408,7 +8667,20 @@ const Clientes: React.FC = () => {
                 {/* Conteúdo */}
                 <div className="border-t border-gray-200 bg-gray-50">
                   {/* Verificação de 2 Fatores - Versão Simplificada */}
-                  {sociosComQualificacao.length > 0 && todosSocios.length > 0 && (
+                  {enquadradoSemCapital && (
+                    <div className="px-4 py-2.5 border-b bg-blue-50 border-blue-200">
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                          <CheckIcon className="h-3.5 w-3.5 text-white" />
+                        </div>
+                        <span className="text-sm font-medium text-blue-800">
+                          Capital Social zerado permitido pela natureza jurídica
+                          {(cliente as any).natureza_juridica ? ` (${(cliente as any).natureza_juridica})` : ''}: não é erro
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {!enquadradoSemCapital && sociosComQualificacao.length > 0 && todosSocios.length > 0 && (
                     <div className={`px-4 py-2.5 border-b transition-colors ${
                       percentuaisOk && valoresOk 
                         ? 'bg-green-50 border-green-200' 
@@ -8517,6 +8789,7 @@ const Clientes: React.FC = () => {
                               console.log('[Clientes] Iniciando consulta de Situação Fiscal para CNPJ:', cnpjLimpo);
                               toast.info('Iniciando consulta de Situação Fiscal...');
                               
+                              const inicioConsulta = new Date();
                               let consultaConcluida = false;
                               let tentativas = 0;
                               let errosConsecutivos = 0; // Contador de erros consecutivos (não 202/429)
@@ -8620,31 +8893,22 @@ const Clientes: React.FC = () => {
                               
                               console.log('[Clientes] Loop terminou. consultaConcluida:', consultaConcluida, 'tentativas:', tentativas);
                               
-                              // Se a consulta foi concluída, os sócios já foram atualizados automaticamente durante a extração
-                              // Agora vamos recalcular os valores para garantir formatação correta
+                              // A consulta só grava a extração (sitf_extracted_data). Quem leva os sócios ao
+                              // cadastro é o /participacao-sitf/aplicar, depois que a extração em segundo plano termina.
                               if (consultaConcluida) {
-                                console.log('[Clientes] Consulta concluída! Os sócios foram atualizados automaticamente durante a extração.');
-                                toast.info('Recalculando valores de participação...', 2000);
-                                
-                                // Aguardar o backend salvar completamente (a extração já atualizou os sócios)
-                                await new Promise(resolve => setTimeout(resolve, 2000));
-                                
+                                toast.info('Aplicando os sócios da Situação Fiscal...', 2000);
+
                                 try {
-                                  // Recalcular valores de participação (incorporando a lógica do segundo botão)
-                                  console.log('[Clientes] Recalculando valores de participação para cliente:', cliente.id);
-                                  const recalculoResult = await clientesService.recalcularValoresParticipacao(cliente.id!);
-                                  
-                                  if (recalculoResult.success) {
-                                    const atualizados = recalculoResult.data?.atualizados || 0;
-                                    console.log('[Clientes] Valores recalculados com sucesso. Sócios atualizados:', atualizados);
-                                    
-                                    // Aguardar um pouco para garantir que o backend salvou
-                                    await new Promise(resolve => setTimeout(resolve, 500));
-                                  } else {
-                                    console.warn('[Clientes] Recalculo retornou erro, mas continuando:', recalculoResult.error);
-                                    // Continuar mesmo se o recálculo falhar (os dados da Situação Fiscal já foram salvos)
-                                  }
-                                  
+                                  const { resultado, extracaoNova } = await participacaoSitfService.aplicarDepoisDaConsulta(
+                                    clienteIdLocal,
+                                    inicioConsulta,
+                                  );
+                                  const n = resultado.aplicados[0]?.sociosAtualizados ?? 0;
+                                  const motivo = resultado.ignorados[0]?.motivo;
+                                  if (!extracaoNova) toast.warning('A extração não ficou mais nova que a consulta: foi usada a última extração disponível.');
+                                  if (motivo && motivo !== 'nada a mudar') toast.warning(`Sócios não atualizados: ${motivo}.`);
+                                  console.log('[Clientes] Participação aplicada:', { n, motivo });
+
                                   // Buscar cliente atualizado (com valores recalculados)
                                   console.log('[Clientes] Buscando cliente atualizado...');
                                   const clienteAtualizado = await clientesService.obterCliente(cliente.id!);
@@ -8667,7 +8931,11 @@ const Clientes: React.FC = () => {
                                       prevClientes.map(c => c.id === cliente.id ? clienteComSocios : c)
                                     );
                                     
-                                    toast.success('Sócios atualizados e valores recalculados com sucesso!');
+                                    toast.success(
+                                      n > 0
+                                        ? `${n} sócio(s) atualizado(s) pela Situação Fiscal.`
+                                        : 'Os sócios já estavam em dia com a Situação Fiscal.',
+                                    );
                                   } else {
                                     console.error('[Clientes] Formato de resposta inválido:', clienteAtualizado);
                                     toast.error('Erro ao obter dados atualizados do cliente');
@@ -8722,7 +8990,18 @@ const Clientes: React.FC = () => {
                       </div>
                     </div>
 
-                    {todosSocios.length === 0 ? (
+                    {sociosAusentes.length > 0 && (
+                      <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                        <p className="text-xs text-amber-900">
+                          <strong>⚠ Mudança no quadro societário:</strong>{' '}
+                          {sociosAusentes.length === 1 ? 'o sócio marcado abaixo não consta' : `os ${sociosAusentes.length} sócios marcados abaixo não constam`}{' '}
+                          mais no cartão CNPJ da Receita Federal e já não entram na contagem nem na verificação.
+                          Confira e use "Confirmar saída" para excluir.
+                        </p>
+                      </div>
+                    )}
+
+                    {sociosExibidos.length === 0 ? (
                       <div className="text-center py-6 bg-white rounded border border-dashed border-gray-200">
                         <UserGroupIcon className="h-8 w-8 text-gray-300 mx-auto mb-1" />
                         <p className="text-gray-500 text-xs">Nenhum sócio cadastrado</p>
@@ -8740,16 +9019,48 @@ const Clientes: React.FC = () => {
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                            {todosSocios.map((socio, idx) => (
-                              <tr key={socio.id || idx} className="hover:bg-amber-50 transition-colors">
+                            {sociosExibidos.map((socio, idx) => {
+                              const ausente = ehAusente(socio);
+                              const ausenteEm = (socio as any).ausente_no_cartao_em;
+                              const ausenteDesde = ausenteEm ? new Date(ausenteEm).toLocaleDateString('pt-BR') : null;
+                              return (
+                              <tr
+                                key={socio.id || idx}
+                                className={ausente ? 'bg-amber-50/60 transition-colors' : 'hover:bg-amber-50 transition-colors'}
+                              >
                                 <td className="px-3 py-2.5 whitespace-nowrap">
                                   <div className="flex items-center gap-2">
-                                    <div className="w-7 h-7 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
-                                      <span className="text-amber-700 font-semibold text-xs">
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${ausente ? 'bg-gray-200' : 'bg-amber-100'}`}>
+                                      <span className={`font-semibold text-xs ${ausente ? 'text-gray-500' : 'text-amber-700'}`}>
                                         {socio.nome?.charAt(0).toUpperCase() || '?'}
                                       </span>
                                     </div>
-                                    <span className="text-sm font-medium text-gray-900">{socio.nome || 'Sem nome'}</span>
+                                    <span className={`text-sm font-medium ${ausente ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                                      {socio.nome || 'Sem nome'}
+                                    </span>
+                                    {ausente && (
+                                      <>
+                                        <span
+                                          className="inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                                          title="Não consta mais no cartão CNPJ da Receita Federal. Mantido para conferência."
+                                        >
+                                          Saiu do quadro{ausenteDesde ? ` (desde ${ausenteDesde})` : ''}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          disabled={confirmandoSaidaSocioId === socio.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            confirmarSaidaSocio(cliente, socio);
+                                          }}
+                                          className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                          title="Excluir este sócio do cadastro"
+                                        >
+                                          <TrashIcon className="h-3 w-3" />
+                                          {confirmandoSaidaSocioId === socio.id ? 'Excluindo...' : 'Confirmar saída'}
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-600">
@@ -8771,7 +9082,8 @@ const Clientes: React.FC = () => {
                                     : 'R$ 0,00'}
                                 </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>

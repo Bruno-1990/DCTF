@@ -2187,6 +2187,55 @@ export class ClienteController {
   }
 
   /**
+   * Confirmar a saída de um sócio que não consta mais no cartão CNPJ.
+   * DELETE /api/clientes/:id/socios/:socioId/confirmar-saida
+   *
+   * A atualização pela ReceitaWS nunca apaga sócio: só marca `ausente_no_cartao`.
+   * Esta rota é o passo humano que conclui a saída. Só apaga se o sócio for
+   * deste cliente E já estiver marcado como ausente — sócio ativo não sai por aqui.
+   */
+  async confirmarSaidaSocio(req: Request, res: Response): Promise<void> {
+    try {
+      const { id, socioId } = req.params;
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuid.test(String(id || '')) || !uuid.test(String(socioId || ''))) {
+        res.status(400).json({ success: false, error: 'ID do cliente ou do sócio inválido' });
+        return;
+      }
+
+      const { executeQuery } = await import('../config/mysql');
+      const existente = await executeQuery<{ id: string; nome: string; ausente_no_cartao: number }>(
+        'SELECT id, nome, ausente_no_cartao FROM clientes_socios WHERE id = ? AND cliente_id = ?',
+        [socioId, id]
+      );
+
+      if (existente.length === 0) {
+        res.status(404).json({ success: false, error: 'Sócio não encontrado neste cliente' });
+        return;
+      }
+
+      if (Number(existente[0].ausente_no_cartao) !== 1) {
+        res.status(409).json({
+          success: false,
+          error: 'Este sócio ainda consta no cartão CNPJ. Só é possível confirmar a saída de quem não consta mais.',
+        });
+        return;
+      }
+
+      await executeQuery(
+        'DELETE FROM clientes_socios WHERE id = ? AND cliente_id = ? AND ausente_no_cartao = 1',
+        [socioId, id]
+      );
+      console.log(`[Confirmar Saída] 🗑️ Sócio "${existente[0].nome}" (${socioId}) excluído do cliente ${id}`);
+
+      res.json({ success: true, data: { clienteId: id, socioId, nome: existente[0].nome } });
+    } catch (error: any) {
+      console.error('[Confirmar Saída] Erro:', error);
+      res.status(500).json({ success: false, error: 'Erro ao confirmar saída do sócio', message: error.message });
+    }
+  }
+
+  /**
    * Identificar clientes sem DCTF no mês vigente
    * Conforme IN RFB 2.237/2024, 2.267/2025 e 2.248/2025
    * Faz confronto direto entre tabelas clientes e dctf_declaracoes
@@ -3387,12 +3436,17 @@ export class ClienteController {
   private static ebefBatchRunning = false;
   private static ebefCnpjAtual: string | null = null;
 
+  /** Escopo do e-BEF: `?escopo=todos` inclui filiais; qualquer outro valor fica só nas matrizes. */
+  private static ebefSomenteMatrizes(req: Request): boolean {
+    return String(req.query.escopo || '').toLowerCase() !== 'todos';
+  }
+
   /**
    * GET /api/clientes/ebef
    */
-  async listarEBEF(_req: Request, res: Response): Promise<void> {
+  async listarEBEF(req: Request, res: Response): Promise<void> {
     try {
-      const result = await this.clienteModel.listarEBEF();
+      const result = await this.clienteModel.listarEBEF(ClienteController.ebefSomenteMatrizes(req));
       res.json(result);
     } catch (error: any) {
       console.error('[ClienteController] Erro ao listar e-BEF:', error);
@@ -3403,9 +3457,9 @@ export class ClienteController {
   /**
    * GET /api/clientes/ebef/progresso
    */
-  async obterProgressoEBEF(_req: Request, res: Response): Promise<void> {
+  async obterProgressoEBEF(req: Request, res: Response): Promise<void> {
     try {
-      const result = await this.clienteModel.obterProgressoEBEF();
+      const result = await this.clienteModel.obterProgressoEBEF(ClienteController.ebefSomenteMatrizes(req));
       const data = result.success ? result.data : {};
       res.json({
         success: true,
@@ -3425,19 +3479,30 @@ export class ClienteController {
    * POST /api/clientes/ebef/lote
    * Inicia processamento em lote (background). Responde 202 imediatamente.
    */
-  async iniciarLoteEBEF(_req: Request, res: Response): Promise<void> {
+  async iniciarLoteEBEF(req: Request, res: Response): Promise<void> {
+    const somenteMatrizes = ClienteController.ebefSomenteMatrizes(req);
     if (ClienteController.ebefBatchRunning) {
       res.status(409).json({ success: false, error: 'Processamento e-BEF em lote já está em andamento' });
       return;
     }
 
     try {
+      // "Reconsultar tudo": volta as consultas do escopo para pendente antes de montar a fila
+      const reconsultar = ['1', 'true'].includes(String(req.query.reconsultar || '').toLowerCase());
+      if (reconsultar) {
+        const reset = await this.clienteModel.resetarEBEFParaPendente(somenteMatrizes);
+        if (!reset.success) {
+          res.status(500).json(reset);
+          return;
+        }
+      }
+
       // Popular pendentes
-      const popResult = await this.clienteModel.popularEBEFPendentes();
+      const popResult = await this.clienteModel.popularEBEFPendentes(somenteMatrizes);
       const inseridos = popResult.success ? popResult.data?.inseridos || 0 : 0;
 
       // Buscar lista de pendentes
-      const pendentesResult = await this.clienteModel.listarEBEFPendentes();
+      const pendentesResult = await this.clienteModel.listarEBEFPendentes(somenteMatrizes);
       const pendentes = pendentesResult.success ? (pendentesResult.data || []) : [];
 
       if (pendentes.length === 0) {
@@ -3509,9 +3574,9 @@ export class ClienteController {
    * — para cada empresa-mãe, gera uma linha "MÃE" e abaixo as linhas dos sócios PJ filhos,
    *   separando cada bloco com 2 linhas em branco.
    */
-  async exportarEBEFXlsx(_req: Request, res: Response): Promise<void> {
+  async exportarEBEFXlsx(req: Request, res: Response): Promise<void> {
     try {
-      const result = await this.clienteModel.listarEBEF();
+      const result = await this.clienteModel.listarEBEF(ClienteController.ebefSomenteMatrizes(req));
       if (!result.success) {
         res.status(500).json(result);
         return;
@@ -3643,7 +3708,7 @@ export class ClienteController {
   async atualizarEBEFEnvio(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { enviado } = req.body;
+      const { enviado, enviado_em } = req.body;
       if (!id) {
         res.status(400).json({ success: false, error: 'id é obrigatório' });
         return;
@@ -3652,7 +3717,28 @@ export class ClienteController {
         res.status(400).json({ success: false, error: 'enviado deve ser booleano' });
         return;
       }
-      const result = await this.clienteModel.atualizarEBEFEnvio(id, enviado);
+      // enviado_em (opcional): data informada manualmente, ISO 8601
+      let enviadoEm: Date | undefined;
+      if (enviado_em !== undefined && enviado_em !== null && enviado_em !== '') {
+        if (!enviado) {
+          res.status(400).json({ success: false, error: 'enviado_em só pode ser informado com enviado=true' });
+          return;
+        }
+        enviadoEm = new Date(enviado_em);
+        if (typeof enviado_em !== 'string' || Number.isNaN(enviadoEm.getTime())) {
+          res.status(400).json({ success: false, error: 'enviado_em inválido' });
+          return;
+        }
+        if (enviadoEm.getTime() > Date.now() + 5 * 60 * 1000) {
+          res.status(400).json({ success: false, error: 'A data de envio não pode ser no futuro' });
+          return;
+        }
+        if (enviadoEm.getUTCFullYear() < 2000) {
+          res.status(400).json({ success: false, error: 'A data de envio é anterior a 2000' });
+          return;
+        }
+      }
+      const result = await this.clienteModel.atualizarEBEFEnvio(id, enviado, enviadoEm);
       if (!result.success) {
         res.status(400).json(result);
         return;

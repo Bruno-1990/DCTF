@@ -22,6 +22,7 @@ import receitaRoutes from './routes/receita';
 import conferenciasRoutes from './routes/conferencias';
 import conferencesRoutes from './routes/conferences';
 import situacaoFiscalRoutes from './routes/situacao-fiscal';
+import participacaoSitfRoutes from './routes/participacao-sitf';
 import hostDadosRoutes from './routes/host-dados';
 import sciRoutes from './routes/sci';
 import spedRoutes from './routes/sped';
@@ -206,6 +207,7 @@ class Server {
     this.app.use('/api/conferencias', conferenciasRoutes);
     this.app.use('/api/conferences', conferencesRoutes);
     this.app.use('/api/situacao-fiscal', sitfLimiter, situacaoFiscalRoutes);
+    this.app.use('/api/participacao-sitf', participacaoSitfRoutes);
     this.app.use('/api/host-dados', hostDadosRoutes);
     this.app.use('/api/sci', sciRoutes);
     // Rotas de correções automáticas (DEVEM vir ANTES de /api/sped para evitar conflito)

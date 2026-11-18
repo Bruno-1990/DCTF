@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { createSupabaseAdapter } from './SupabaseAdapter';
 import { upsertExtractedSitfData, type SitfExtractedData } from './SitfDataExtractorService';
 import { extrairSociosComPythonBase64, converterSociosPythonParaNode } from '../utils/pythonExtractor';
+import { emitirParticipacao } from './participacaoSitf/eventos';
 
 const supabaseAdmin = createSupabaseAdapter() as any;
 const supabase = createSupabaseAdapter() as any;
@@ -936,6 +937,7 @@ export class SituacaoFiscalOrchestrator {
           const updateData: any = {
             file_url: url || existingRecord.file_url, // Manter URL existente se nova for null
             pdf_base64: emit.pdfBase64, // Sempre atualizar com o PDF mais recente
+            consultado_em: new Date(), // vigência da Situação Fiscal (migration 058)
           };
           
           try {
@@ -969,6 +971,7 @@ export class SituacaoFiscalOrchestrator {
                 cnpj: clean, 
             file_url: url || null,
             pdf_base64: emit.pdfBase64,
+            consultado_em: new Date(), // vigência da Situação Fiscal (migration 058)
               };
               
           console.log('[Sitf] Salvando novo PDF base64 no banco para extração sob demanda');
@@ -994,7 +997,7 @@ export class SituacaoFiscalOrchestrator {
                   isUpdate = true;
                   const { error: updateErr } = await client
                     .from('sitf_downloads')
-                    .update({ pdf_base64: emit.pdfBase64, file_url: url || null })
+                    .update({ pdf_base64: emit.pdfBase64, file_url: url || null, consultado_em: new Date() })
                     .eq('id', downloadId);
                   
                   if (updateErr) {
@@ -2182,7 +2185,10 @@ async function extractDataAndSave(
         cnpjExtraido: extractedDataToSave.cnpj || 'não extraído',
       });
     }
+    // Avisa a aba Participação (SSE): a linha deste CNPJ é refeita com a extração nova.
+    emitirParticipacao({ tipo: 'extracao', cnpj, sucesso: !!structuredData });
   } catch (error: any) {
+    emitirParticipacao({ tipo: 'extracao', cnpj, sucesso: false });
     // Log do erro mas não propagar (não é crítico)
     console.error('[Sitf Extract] Erro na extração automática:', {
       id: downloadId,

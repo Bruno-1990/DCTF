@@ -1,6 +1,9 @@
 import api from './api';
 import type { Cliente } from '../types';
 
+/** Escopo da aba e-BEF: só matrizes (padrão) ou todas as empresas, filiais incluídas. */
+export type EBEFEscopo = 'matrizes' | 'todos';
+
 export type ClientesListResponse = {
   items: Cliente[];
   pagination?: { total: number; totalPages: number; page: number; limit: number };
@@ -223,6 +226,12 @@ export const clientesService = {
     return response.data; // { success, data: { clienteId, message } }
   },
 
+  // Confirma a saída de um sócio que não consta mais no cartão CNPJ (apaga o registro).
+  async confirmarSaidaSocio(clienteId: string, socioId: string) {
+    const response = await api.delete(`/clientes/${clienteId}/socios/${socioId}/confirmar-saida`);
+    return response.data; // { success, data: { clienteId, socioId, nome } }
+  },
+
   async abrirPasta(caminho: string) {
     const response = await api.post('/clientes/abrir-pasta', { caminho });
     return response.data;
@@ -285,18 +294,19 @@ export const clientesService = {
 
   // ── e-BEF (Beneficiários Finais) ──
 
-  async listarEBEF() {
-    const response = await api.get('/clientes/ebef');
+  async listarEBEF(escopo: EBEFEscopo = 'matrizes') {
+    const response = await api.get('/clientes/ebef', { params: { escopo } });
     return response.data; // { success, data: EBEFParent[] }
   },
 
-  async obterProgressoEBEF() {
-    const response = await api.get('/clientes/ebef/progresso');
+  async obterProgressoEBEF(escopo: EBEFEscopo = 'matrizes') {
+    const response = await api.get('/clientes/ebef/progresso', { params: { escopo } });
     return response.data; // { success, data: EBEFProgress }
   },
 
-  async iniciarLoteEBEF() {
-    const response = await api.post('/clientes/ebef/lote');
+  async iniciarLoteEBEF(escopo: EBEFEscopo = 'matrizes', reconsultar = false) {
+    const params = reconsultar ? { escopo, reconsultar: 1 } : { escopo };
+    const response = await api.post('/clientes/ebef/lote', {}, { params });
     return response.data; // { success, data: { total, inseridos }, message }
   },
 
@@ -305,13 +315,15 @@ export const clientesService = {
     return response.data; // { success, data }
   },
 
-  async atualizarEnvioEBEF(clienteId: string, enviado: boolean) {
-    const response = await api.patch(`/clientes/ebef/${clienteId}/envio`, { enviado });
+  async atualizarEnvioEBEF(clienteId: string, enviado: boolean, enviadoEm?: string) {
+    const body: { enviado: boolean; enviado_em?: string } = { enviado };
+    if (enviadoEm) body.enviado_em = enviadoEm;
+    const response = await api.patch(`/clientes/ebef/${clienteId}/envio`, body);
     return response.data; // { success, data: { ebef_enviado, ebef_enviado_em } }
   },
 
-  async exportarEBEFXlsx() {
-    const response = await api.get('/clientes/ebef/exportar', { responseType: 'blob' });
+  async exportarEBEFXlsx(escopo: EBEFEscopo = 'matrizes') {
+    const response = await api.get('/clientes/ebef/exportar', { responseType: 'blob', params: { escopo } });
     const blob = new Blob([response.data], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });

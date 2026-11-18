@@ -42,6 +42,7 @@
     "migrate:det": "ts-node --transpile-only src/scripts/run-det-migration.ts",
     "migrate:fiscal": "ts-node --transpile-only src/scripts/run-fiscal-migration.ts",
     "migrate:agendamentos": "ts-node --transpile-only src/scripts/run-agendamentos-migration.ts",
+    "migrate:sitf-consultado-em": "ts-node --transpile-only src/scripts/run-sitf-consultado-em-migration.ts",
     "import:fiscal-distribuicao": "ts-node --transpile-only src/scripts/import-fiscal-distribuicao.ts",
     "det:coleta": "ts-node --transpile-only src/scripts/run-det-coleta.ts",
     "verify:clientes-schema": "ts-node src/scripts/verify-clientes-schema.ts",

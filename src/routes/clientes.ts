@@ -43,6 +43,12 @@ router.put('/:id/editar-participacao-manual', validateParams(clienteSchemas.para
   clienteController.editarParticipacaoManual(req, res);
 });
 
+// DELETE /api/clientes/:id/socios/:socioId/confirmar-saida - Confirma a saída de um sócio
+// que não consta mais no cartão CNPJ (só apaga sócio já marcado como ausente)
+router.delete('/:id/socios/:socioId/confirmar-saida', (req, res) => {
+  clienteController.confirmarSaidaSocio(req, res);
+});
+
 // PUT /api/clientes/:id/atualizar-codigo-sci - Atualizar código SCI do cliente
 router.put('/:id/atualizar-codigo-sci', validateParams(clienteSchemas.params), (req, res) => {
   clienteController.atualizarCodigoSCI(req, res);

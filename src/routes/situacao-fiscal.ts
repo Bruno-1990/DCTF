@@ -4,6 +4,8 @@ import { SituacaoFiscalOrchestrator, fetchAccessToken, extractDataFromPdfBase64,
 import { createSupabaseAdapter } from '../services/SupabaseAdapter';
 import { executeQuery } from '../config/mysql';
 import { Cliente } from '../models/Cliente';
+import { emitirParticipacao, resumirLote } from '../services/participacaoSitf/eventos';
+import { fecharLotesOrfaos } from '../services/participacaoSitf/lotesInterrompidos';
 import { extrairSociosComPython, converterSociosPythonParaNode, qualificacaoSemCapital } from '../utils/pythonExtractor';
 
 const supabase = createSupabaseAdapter() as any;
@@ -1351,6 +1353,8 @@ function formatarDataParaMySQL(dataISO: string | null | undefined): string | nul
  * Função auxiliar para salvar progresso no banco de dados
  */
 async function salvarProgressoNoBanco(progressId: string, progressData: any): Promise<void> {
+  // Todo passo do lote passa por aqui: a aba Participação (SSE) vê a empresa da vez e o progresso.
+  emitirParticipacao(resumirLote(progressId, progressData));
   try {
     const query = `
       INSERT INTO sitf_lote_progress (
@@ -1890,6 +1894,13 @@ router.get('/lote/progresso/:progressId', async (req, res, next) => {
  */
 router.get('/lote/em-andamento', async (req, res, next) => {
   try {
+    // 'em_andamento' no banco sem o laço vivo neste processo (reiniciado no meio) é órfão:
+    // sem isso, um lote morto bloqueava todo lote novo com "já há um lote rodando".
+    try {
+      await fecharLotesOrfaos();
+    } catch (e: any) {
+      console.error('[SITF Lote Em Andamento] Erro ao fechar lotes órfãos:', e?.message);
+    }
     // Buscar processamentos em andamento no banco de dados
     const query = `
       SELECT progress_id, status, iniciado_em, processados, total
