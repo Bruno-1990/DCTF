@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { clientesService } from '../../services/clientes';
+import { clientesService, type EBEFEscopo } from '../../services/clientes';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import Alert from '../UI/Alert';
-import { ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, ArrowDownTrayIcon, PencilSquareIcon, CalendarDaysIcon } from '@heroicons/react/24/outline';
+import { motion, AnimatePresence } from 'framer-motion';
+import EnvioDatePicker from './EnvioDatePicker';
 import type { EBEFParent, EBEFProgress } from '../../types';
 
 /** Formata CNPJ de 14 dígitos para XX.XXX.XXX/XXXX-XX */
@@ -24,13 +26,17 @@ export default function EBEFTab() {
   const [envioSavingId, setEnvioSavingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [escopo, setEscopo] = useState<EBEFEscopo>('matrizes');
+  const [info, setInfo] = useState<string | null>(null);
+  // "Reconsultar tudo" pede um segundo clique antes de disparar (leva ~21 s por CNPJ)
+  const [confirmandoReconsulta, setConfirmandoReconsulta] = useState(false);
 
   // ── Carregar dados ──
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await clientesService.listarEBEF();
+      const res = await clientesService.listarEBEF(escopo);
       if (res.success) {
         setData(res.data || []);
       } else {
@@ -41,12 +47,12 @@ export default function EBEFTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [escopo]);
 
   // ── Polling de progresso ──
   const pollProgress = useCallback(async () => {
     try {
-      const res = await clientesService.obterProgressoEBEF();
+      const res = await clientesService.obterProgressoEBEF(escopo);
       if (res.success) {
         const p = res.data as EBEFProgress;
         setProgress(p);
@@ -64,14 +70,20 @@ export default function EBEFTab() {
     } catch {
       // Ignora erros de polling
     }
-  }, [loadData]);
+  }, [loadData, escopo]);
 
   // ── Iniciar lote ──
-  const handleStartBatch = async () => {
+  // reconsultar=true refaz também as consultas já concluídas (botão "Reconsultar tudo").
+  const handleStartBatch = async (reconsultar = false) => {
     try {
       setBatchStarting(true);
-      const res = await clientesService.iniciarLoteEBEF();
-      if (res.success) {
+      setInfo(null);
+      setConfirmandoReconsulta(false);
+      const res = await clientesService.iniciarLoteEBEF(escopo, reconsultar);
+      if (res.success && !(res.data?.total > 0)) {
+        // Nada na fila: avisa em vez de ficar parado sem resposta
+        setInfo('Nenhum CNPJ pendente: todas as consultas já estão concluídas. Use "Reconsultar tudo" para refazê-las.');
+      } else if (res.success) {
         setBatchRunning(true);
         // Iniciar polling
         pollRef.current = setInterval(pollProgress, 5000);
@@ -91,7 +103,7 @@ export default function EBEFTab() {
   const handleExport = async () => {
     try {
       setExporting(true);
-      await clientesService.exportarEBEFXlsx();
+      await clientesService.exportarEBEFXlsx(escopo);
     } catch (err: any) {
       setError(err.message || 'Erro ao exportar XLSX');
     } finally {
@@ -114,7 +126,8 @@ export default function EBEFTab() {
   };
 
   // ── Toggle envio do e-BEF (controle manual do usuário) ──
-  const handleToggleEnvio = async (clienteId: string, novoValor: boolean) => {
+  // enviadoEmIso: data escolhida à mão; sem ela o servidor grava o horário atual.
+  const handleToggleEnvio = async (clienteId: string, novoValor: boolean, enviadoEmIso?: string): Promise<boolean> => {
     const anterior = data.find(p => p.id === clienteId);
     // Atualização otimista
     setData(prev => prev.map(p =>
@@ -122,13 +135,13 @@ export default function EBEFTab() {
         ? {
             ...p,
             ebef_enviado: novoValor,
-            ebef_enviado_em: novoValor ? new Date().toISOString() : null,
+            ebef_enviado_em: novoValor ? (enviadoEmIso || new Date().toISOString()) : null,
           }
         : p
     ));
     try {
       setEnvioSavingId(clienteId);
-      const res = await clientesService.atualizarEnvioEBEF(clienteId, novoValor);
+      const res = await clientesService.atualizarEnvioEBEF(clienteId, novoValor, enviadoEmIso);
       if (res.success) {
         // Sincroniza data exata vinda do servidor
         setData(prev => prev.map(p =>
@@ -140,6 +153,7 @@ export default function EBEFTab() {
               }
             : p
         ));
+        return true;
       } else {
         // Reverte
         setData(prev => prev.map(p =>
@@ -148,6 +162,7 @@ export default function EBEFTab() {
             : p
         ));
         setError(res.error || 'Erro ao salvar envio do e-BEF');
+        return false;
       }
     } catch (err: any) {
       setData(prev => prev.map(p =>
@@ -155,11 +170,17 @@ export default function EBEFTab() {
           ? { ...p, ebef_enviado: anterior.ebef_enviado, ebef_enviado_em: anterior.ebef_enviado_em }
           : p
       ));
-      setError(err.message || 'Erro ao salvar envio do e-BEF');
+      setError(err?.response?.data?.error || err.message || 'Erro ao salvar envio do e-BEF');
+      return false;
     } finally {
       setEnvioSavingId(null);
     }
   };
+
+  // ── Edição manual da data de envio ──
+  // Popover de data aberto: qual empresa e o elemento onde ele ancora
+  const [editandoData, setEditandoData] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  const fecharEdicaoData = useCallback(() => setEditandoData(null), []);
 
   // ── Formata data para exibição ──
   const formatDataEnvio = (iso: string | null): string => {
@@ -185,7 +206,7 @@ export default function EBEFTab() {
     // Checar se já há batch rodando
     (async () => {
       try {
-        const res = await clientesService.obterProgressoEBEF();
+        const res = await clientesService.obterProgressoEBEF(escopo);
         if (res.success && res.data?.em_andamento) {
           setBatchRunning(true);
           setProgress(res.data);
@@ -196,7 +217,7 @@ export default function EBEFTab() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [loadData, pollProgress]);
+  }, [loadData, pollProgress, escopo]);
 
   // ── Contadores ──
   const totalMaes = data.length;
@@ -224,7 +245,8 @@ export default function EBEFTab() {
   };
 
   // ── Render ──
-  if (loading) {
+  // Spinner de tela cheia só na primeira carga; ao trocar o filtro a lista fica visível até a nova chegar.
+  if (loading && data.length === 0) {
     return (
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-12 flex justify-center">
         <LoadingSpinner />
@@ -244,6 +266,27 @@ export default function EBEFTab() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Filtro de escopo: Matrizes (padrão) ou Todos, filiais incluídas */}
+            <div className="inline-flex rounded-xl bg-gray-100 p-1" role="group" aria-label="Filtrar empresas">
+              {([
+                { value: 'matrizes', label: 'Matrizes' },
+                { value: 'todos', label: 'Todos' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEscopo(opt.value)}
+                  aria-pressed={escopo === opt.value}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    escopo === opt.value
+                      ? 'bg-white text-indigo-700 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
             <button
               onClick={handleExport}
               disabled={exporting || data.length === 0}
@@ -257,7 +300,28 @@ export default function EBEFTab() {
               {exporting ? 'Exportando...' : 'Exportar XLSX'}
             </button>
             <button
-              onClick={handleStartBatch}
+              onClick={() => {
+                if (confirmandoReconsulta) handleStartBatch(true);
+                else setConfirmandoReconsulta(true);
+              }}
+              onBlur={() => setConfirmandoReconsulta(false)}
+              disabled={batchRunning || batchStarting || totalFilhos === 0}
+              title={`Refaz as consultas de todos os ${totalFilhos} CNPJ(s) filho, inclusive as concluídas`}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all duration-200 ${
+                batchRunning || batchStarting || totalFilhos === 0
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  : confirmandoReconsulta
+                    ? 'bg-amber-500 text-white hover:bg-amber-600'
+                    : 'bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 hover:shadow'
+              }`}
+            >
+              <ArrowPathIcon className="h-4 w-4" />
+              {confirmandoReconsulta
+                ? `Confirmar? (~${Math.max(1, Math.ceil((totalFilhos * 21) / 60))} min)`
+                : 'Reconsultar tudo'}
+            </button>
+            <button
+              onClick={() => handleStartBatch(false)}
               disabled={batchRunning || batchStarting}
               className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all duration-200 ${
                 batchRunning || batchStarting
@@ -295,6 +359,11 @@ export default function EBEFTab() {
       {error && (
         <Alert type="error" onClose={() => setError(null)}>
           {error}
+        </Alert>
+      )}
+      {info && (
+        <Alert type="info" onClose={() => setInfo(null)}>
+          {info}
         </Alert>
       )}
 
@@ -345,28 +414,79 @@ export default function EBEFTab() {
             </button>
 
             {/* Controle de envio do e-BEF (clique não propaga para o accordion) */}
-            <label
-              className="inline-flex items-center gap-2 ml-4 cursor-pointer select-none"
-              onClick={(e) => e.stopPropagation()}
-              title={parent.ebef_enviado && parent.ebef_enviado_em
-                ? `Marcado em ${formatDataEnvio(parent.ebef_enviado_em)}`
-                : 'Marcar como enviado'}
-            >
-              <input
-                type="checkbox"
-                checked={!!parent.ebef_enviado}
-                disabled={envioSavingId === parent.id}
-                onChange={(e) => handleToggleEnvio(parent.id, e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
-              />
-              <span className={`text-xs font-medium ${parent.ebef_enviado ? 'text-emerald-700' : 'text-gray-500'}`}>
-                {parent.ebef_enviado
-                  ? (parent.ebef_enviado_em
-                      ? `Enviado em ${formatDataEnvio(parent.ebef_enviado_em)}`
-                      : 'Enviado')
-                  : 'Enviado?'}
-              </span>
-            </label>
+            <div className="inline-flex items-center gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
+              <label
+                className="inline-flex items-center gap-2 cursor-pointer select-none"
+                title={parent.ebef_enviado ? 'Desmarcar envio' : 'Marcar como enviado'}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!parent.ebef_enviado}
+                  disabled={envioSavingId === parent.id}
+                  onChange={(e) => {
+                    if (!e.target.checked && editandoData?.id === parent.id) fecharEdicaoData();
+                    handleToggleEnvio(parent.id, e.target.checked);
+                  }}
+                  className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
+                />
+                <span className={`text-xs font-medium ${parent.ebef_enviado ? 'text-emerald-700' : 'text-gray-500'}`}>
+                  {parent.ebef_enviado ? 'Enviado' : 'Enviado?'}
+                </span>
+              </label>
+
+              {/* Chip da data: clique abre o calendário */}
+              <AnimatePresence initial={false}>
+                {parent.ebef_enviado && parent.ebef_enviado_em && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, x: -6, scale: 0.9 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: -6, scale: 0.9 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                    whileTap={{ scale: 0.95 }}
+                    disabled={envioSavingId === parent.id}
+                    onClick={(e) => {
+                      const anchor = e.currentTarget;
+                      setEditandoData(prev => (prev?.id === parent.id ? null : { id: parent.id, anchor }));
+                    }}
+                    title="Alterar data de envio"
+                    aria-label="Alterar data de envio"
+                    aria-expanded={editandoData?.id === parent.id}
+                    className={`group inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all disabled:opacity-60
+                      ${editandoData?.id === parent.id
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                        : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 hover:ring-emerald-300'}`}
+                  >
+                    <CalendarDaysIcon className="h-3.5 w-3.5" />
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.span
+                        key={parent.ebef_enviado_em}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.15 }}
+                        className="tabular-nums"
+                      >
+                        {formatDataEnvio(parent.ebef_enviado_em)}
+                      </motion.span>
+                    </AnimatePresence>
+                    <PencilSquareIcon className={`h-3.5 w-3.5 transition-opacity ${editandoData?.id === parent.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <AnimatePresence>
+              {editandoData?.id === parent.id && (
+                <EnvioDatePicker
+                  anchorEl={editandoData.anchor}
+                  value={parent.ebef_enviado_em}
+                  saving={envioSavingId === parent.id}
+                  onSave={(iso) => handleToggleEnvio(parent.id, true, iso)}
+                  onClose={fecharEdicaoData}
+                />
+              )}
+            </AnimatePresence>
 
             <button
               type="button"

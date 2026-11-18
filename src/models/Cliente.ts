@@ -3174,11 +3174,17 @@ export class Cliente extends DatabaseService<ICliente> {
   //  e-BEF — Beneficiários Finais
   // =====================================================================
 
+  /** Trecho SQL que restringe o e-BEF às matrizes (ordem 0001 no CNPJ); vazio para "todos". */
+  private ebefFiltroMatriz(somenteMatrizes: boolean): string {
+    return somenteMatrizes ? "AND SUBSTRING(c.cnpj_limpo, 9, 4) = '0001'" : '';
+  }
+
   /**
    * Lista empresas mãe com seus sócios PJ (CNPJ) e dados das consultas e-BEF.
    */
-  async listarEBEF(): Promise<ApiResponse<any[]>> {
+  async listarEBEF(somenteMatrizes = true): Promise<ApiResponse<any[]>> {
     try {
+      const filtroMatriz = this.ebefFiltroMatriz(somenteMatrizes);
       // Detecta se as colunas de controle de envio existem (migration 008).
       const clienteCols = await this.getTableColumns('clientes');
       const hasEnvioCols = clienteCols.has('ebef_enviado') && clienteCols.has('ebef_enviado_em');
@@ -3186,12 +3192,14 @@ export class Cliente extends DatabaseService<ICliente> {
         ? ', c.ebef_enviado, c.ebef_enviado_em'
         : '';
 
-      // 1. Empresas mãe que possuem ao menos 1 sócio PJ
+      // 1. Empresas mãe que possuem ao menos 1 sócio PJ.
+      // Por padrão só matrizes (ordem 0001 no CNPJ): a filial tem o mesmo QSA da matriz.
       const parentResp = await this.executeCustomQuery<any>(
         `SELECT DISTINCT c.id, c.razao_social, c.cnpj_limpo${envioSelect}
          FROM clientes c
          INNER JOIN clientes_socios cs ON cs.cliente_id = c.id
          WHERE c.ativo = 1
+           ${filtroMatriz}
            AND LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14
          ORDER BY c.razao_social ASC`
       );
@@ -3272,6 +3280,7 @@ export class Cliente extends DatabaseService<ICliente> {
   async atualizarEBEFEnvio(
     clienteId: string,
     enviado: boolean,
+    enviadoEm?: Date,
   ): Promise<ApiResponse<{ ebef_enviado: boolean; ebef_enviado_em: string | null }>> {
     try {
       const clienteCols = await this.getTableColumns('clientes');
@@ -3283,13 +3292,19 @@ export class Cliente extends DatabaseService<ICliente> {
       }
 
       const flag = enviado ? 1 : 0;
-      // UTC_TIMESTAMP() em vez de NOW() porque o pool MySQL está com timezone '+00:00'
-      // (src/config/mysql.ts) — assim o driver lê e o frontend converte corretamente para
-      // horário local sem deslocamento extra.
-      const sql = enviado
-        ? 'UPDATE `clientes` SET `ebef_enviado` = ?, `ebef_enviado_em` = UTC_TIMESTAMP() WHERE `id` = ?'
-        : 'UPDATE `clientes` SET `ebef_enviado` = ?, `ebef_enviado_em` = NULL WHERE `id` = ?';
-      const upd = await this.executeCustomQuery<any>(sql, [flag, clienteId]);
+      // A data sempre sai do Node como Date (a informada à mão ou o agora): o mysql2 serializa
+      // no mesmo timezone do pool (src/config/mysql.ts) e lê de volta igual, sem deslocamento.
+      // Não usar UTC_TIMESTAMP(): com o pool em 'local' (BRT) ele aparecia 3h adiantado.
+      let sql: string;
+      let params: any[];
+      if (enviado) {
+        sql = 'UPDATE `clientes` SET `ebef_enviado` = ?, `ebef_enviado_em` = ? WHERE `id` = ?';
+        params = [flag, enviadoEm ?? new Date(), clienteId];
+      } else {
+        sql = 'UPDATE `clientes` SET `ebef_enviado` = ?, `ebef_enviado_em` = NULL WHERE `id` = ?';
+        params = [flag, clienteId];
+      }
+      const upd = await this.executeCustomQuery<any>(sql, params);
       if (!upd.success) return upd as any;
 
       const sel = await this.executeCustomQuery<any>(
@@ -3314,14 +3329,16 @@ export class Cliente extends DatabaseService<ICliente> {
   /**
    * Popula ebef_consultas com sócios PJ que ainda não têm registro.
    */
-  async popularEBEFPendentes(): Promise<ApiResponse<{ inseridos: number }>> {
+  async popularEBEFPendentes(somenteMatrizes = true): Promise<ApiResponse<{ inseridos: number }>> {
     try {
+      const filtroMatriz = this.ebefFiltroMatriz(somenteMatrizes);
       const resp = await this.executeCustomQuery<any>(
         `INSERT IGNORE INTO ebef_consultas (id, cliente_id, socio_id, cnpj_filho, status)
          SELECT UUID(), cs.cliente_id, cs.id, REPLACE(COALESCE(cs.cpf,''), ' ', ''), 'pendente'
          FROM clientes_socios cs
          INNER JOIN clientes c ON c.id = cs.cliente_id
          WHERE c.ativo = 1
+           ${filtroMatriz}
            AND LENGTH(REPLACE(COALESCE(cs.cpf,''), ' ', '')) = 14`
       );
       const inseridos = (resp as any)?.data?.affectedRows ?? 0;
@@ -3406,13 +3423,15 @@ export class Cliente extends DatabaseService<ICliente> {
   /**
    * Retorna contadores de progresso das consultas e-BEF.
    */
-  async obterProgressoEBEF(): Promise<ApiResponse<any>> {
+  async obterProgressoEBEF(somenteMatrizes = true): Promise<ApiResponse<any>> {
     try {
+      const filtroMatriz = this.ebefFiltroMatriz(somenteMatrizes);
       const resp = await this.executeCustomQuery<any>(
         `SELECT ec.status, COUNT(*) AS total
            FROM ebef_consultas ec
            INNER JOIN clientes c ON c.id = ec.cliente_id
           WHERE c.ativo = 1
+            ${filtroMatriz}
           GROUP BY ec.status`
       );
       if (!resp.success) return resp as any;
@@ -3442,12 +3461,41 @@ export class Cliente extends DatabaseService<ICliente> {
   }
 
   /**
+   * Volta para 'pendente' todas as consultas e-BEF do escopo (para o "Reconsultar tudo").
+   * Os sócios do filho já gravados ficam até a nova consulta substituí-los.
+   */
+  async resetarEBEFParaPendente(somenteMatrizes = true): Promise<ApiResponse<{ resetados: number }>> {
+    try {
+      const filtroMatriz = this.ebefFiltroMatriz(somenteMatrizes);
+      const resp = await this.executeCustomQuery<any>(
+        `UPDATE ebef_consultas ec
+           INNER JOIN clientes c ON c.id = ec.cliente_id
+            SET ec.status = 'pendente', ec.erro_mensagem = NULL
+          WHERE c.ativo = 1
+            ${filtroMatriz}
+            AND ec.status <> 'processando'`
+      );
+      const resetados = (resp as any)?.data?.affectedRows ?? 0;
+      return { success: true, data: { resetados } };
+    } catch (e: any) {
+      if (this.isNoSuchTableError(e)) return { success: true, data: { resetados: 0 } };
+      return { success: false, error: e?.message || 'Erro ao resetar consultas e-BEF' };
+    }
+  }
+
+  /**
    * Lista consultas e-BEF pendentes (para processamento em lote).
    */
-  async listarEBEFPendentes(): Promise<ApiResponse<any[]>> {
+  async listarEBEFPendentes(somenteMatrizes = true): Promise<ApiResponse<any[]>> {
     try {
+      const filtroMatriz = this.ebefFiltroMatriz(somenteMatrizes);
       const resp = await this.executeCustomQuery<any>(
-        `SELECT id, cnpj_filho FROM ebef_consultas WHERE status = 'pendente' ORDER BY created_at ASC`
+        `SELECT ec.id, ec.cnpj_filho
+           FROM ebef_consultas ec
+           INNER JOIN clientes c ON c.id = ec.cliente_id
+          WHERE ec.status = 'pendente'
+            ${filtroMatriz}
+          ORDER BY ec.created_at ASC`
       );
       return { success: true, data: resp.success ? (resp.data || []) : [] };
     } catch (e: any) {
